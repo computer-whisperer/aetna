@@ -304,6 +304,10 @@ where
 }
 
 /// A horizontal container with sensible default gap, vertically centered.
+///
+/// Rows default to `Size::Hug` height — they're as tall as their tallest
+/// child. Override with `.height(Size::Fill(1.0))` if you want the row
+/// to claim leftover vertical space.
 pub fn row<I, E>(children: I) -> El
 where
     I: IntoIterator<Item = E>,
@@ -313,6 +317,7 @@ where
         .children(children)
         .gap(theme().space.sm)
         .align(Align::Center)
+        .height(Size::Hug)
         .clone_with_axis(Axis::Row)
 }
 

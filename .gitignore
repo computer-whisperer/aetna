@@ -1,1 +1,4 @@
 target/
+
+# Rendered PNG fixtures — regenerated from SVG by tools/svg_to_png.sh
+attempts/*/out/*.png
