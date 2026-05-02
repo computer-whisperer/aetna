@@ -1,0 +1,13 @@
+[package]
+name = "ui_lib_demo"
+version = "0.1.0"
+edition = "2024"
+description = "MVP sketch of an LLM-native retained UI toolkit: semantic tree, tokens, SVG backend, inspector artifacts"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+[[example]]
+name = "git_dashboard"
+path = "examples/git_dashboard.rs"

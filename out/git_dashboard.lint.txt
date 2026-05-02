@@ -1,0 +1,40 @@
+duplicate_ids=[]
+raw_colors=20
+raw_numbers=0
+tokens={
+    Color: {
+        "accent",
+        "accent_soft",
+        "border",
+        "border_strong",
+        "danger",
+        "success",
+        "surface",
+        "surface_hover",
+        "surface_raised",
+        "text",
+        "text_muted",
+    },
+    Space: {
+        "list_row_h",
+        "md",
+        "sm",
+        "xs",
+    },
+    Radius: {
+        "lg",
+        "md",
+        "pill",
+        "xl",
+    },
+    Shadow: {
+        "card",
+        "overlay",
+    },
+    Text: {
+        "body",
+        "mono",
+        "small",
+        "title",
+    },
+}
