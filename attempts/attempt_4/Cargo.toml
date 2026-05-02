@@ -1,0 +1,19 @@
+[package]
+name = "attempt_4"
+version = "0.1.0"
+edition = "2024"
+description = "Attempt 4: shader-first wgpu/vulkano UI library for LLM authoring"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+[[example]]
+name = "settings"
+path = "examples/settings.rs"
+
+[dependencies]
+# Rendering layer dependencies will be added as the wgpu renderer lands.
+# wgpu = "..."
+# glyphon = "..."
+# naga = "..."

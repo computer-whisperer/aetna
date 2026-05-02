@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # render — one command to produce the full agent feedback bundle for an
-# attempt_3 example.
+# example.
 #
 # Usage:  ./tools/render <example-name> [-p <package>]
 #
-# Defaults: package=attempt_3.
+# Defaults: package=attempt_4. Pass `-p attempt_3` for the older
+# attempt's examples.
 #
-# Runs the cargo example (which writes svg + tree + lint + commands),
-# converts the SVG to PNG, then prints the path of every artifact.
+# Runs the cargo example (which writes the bundle artifacts), converts
+# the SVG to PNG, then prints the path of every artifact.
 
 set -uo pipefail
 
 example="${1:-}"
 shift || true
-pkg="attempt_3"
+pkg="attempt_4"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -41,7 +42,9 @@ cargo run -q -p "$pkg" --example "$example" || exit $?
 out_dir="attempts/$pkg/out"
 echo
 echo "artifacts:"
-for ext in svg png tree.txt lint.txt commands.txt; do
+# attempt_4 emits draw_ops.txt + shader_manifest.txt; attempt_3 emits
+# commands.txt. List whichever exist.
+for ext in svg png tree.txt lint.txt draw_ops.txt shader_manifest.txt commands.txt; do
     f="$out_dir/$example.$ext"
     [ -f "$f" ] && echo "  $f"
 done
