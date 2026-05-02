@@ -67,6 +67,9 @@ pub mod button;
 pub mod badge;
 pub mod card;
 
+pub mod wgpu_render;
+pub use wgpu_render::UiRenderer;
+
 // Prelude — for `use attempt_4::*;`.
 pub use tree::{
     El, Kind, Color, Size, Sides, Rect, Axis, Align, Justify, FontWeight,

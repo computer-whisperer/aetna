@@ -13,7 +13,8 @@ name = "settings"
 path = "examples/settings.rs"
 
 [dependencies]
-# Rendering layer dependencies will be added as the wgpu renderer lands.
-# wgpu = "..."
-# glyphon = "..."
-# naga = "..."
+wgpu = "23"
+bytemuck = { version = "1.21", features = ["derive"] }
+# glyphon (for stock::text_sdf) lands in the next slice.
+# naga is pulled in transitively by wgpu for wgsl→spirv when targeting
+# vulkano in a later slice.

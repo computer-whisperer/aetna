@@ -1,0 +1,21 @@
+[package]
+name = "attempt_4_demo"
+version = "0.1.0"
+edition = "2024"
+description = "Standalone winit harness for attempt_4 — runs UI fixtures against the wgpu backend"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "settings"
+path = "src/bin/settings.rs"
+
+[[bin]]
+name = "render_png"
+path = "src/bin/render_png.rs"
+
+[dependencies]
+attempt_4 = { path = "../attempt_4" }
+wgpu = "23"
+winit = "0.30"
+pollster = "0.4"
+png = "0.17"
