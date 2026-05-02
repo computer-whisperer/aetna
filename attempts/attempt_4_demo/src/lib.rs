@@ -142,8 +142,16 @@ impl ApplicationHandler for App {
                 let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
                 let mut tree = (self.build)();
-                let viewport = Rect::new(0.0, 0.0, gfx.config.width as f32, gfx.config.height as f32);
-                gfx.renderer.prepare(&gfx.device, &gfx.queue, &mut tree, viewport);
+                // Window is configured at physical size; layout works in
+                // logical pixels so divide by the OS-reported scale.
+                let scale_factor = gfx.window.scale_factor() as f32;
+                let viewport = Rect::new(
+                    0.0,
+                    0.0,
+                    gfx.config.width as f32 / scale_factor,
+                    gfx.config.height as f32 / scale_factor,
+                );
+                gfx.renderer.prepare(&gfx.device, &gfx.queue, &mut tree, viewport, scale_factor);
 
                 let mut encoder = gfx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("attempt_4_demo::encoder"),

@@ -46,9 +46,12 @@ fn settings() -> El {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let width: u32 = 720;
-    let height: u32 = 760;
-    let viewport = Rect::new(0.0, 0.0, width as f32, height as f32);
+    let logical_width: u32 = 720;
+    let logical_height: u32 = 760;
+    let scale_factor: f32 = 2.0;
+    let width = (logical_width as f32 * scale_factor) as u32;
+    let height = (logical_height as f32 * scale_factor) as u32;
+    let viewport = Rect::new(0.0, 0.0, logical_width as f32, logical_height as f32);
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -70,7 +73,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     ))?;
 
-    // Target texture (RGBA8 unorm so byte readback is direct).
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("attempt_4_demo::headless::target"),
@@ -98,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut renderer = UiRenderer::new(&device, &queue, format);
     let mut tree = settings();
-    renderer.prepare(&device, &queue, &mut tree, viewport);
+    renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("attempt_4_demo::headless::encoder"),

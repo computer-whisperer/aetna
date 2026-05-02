@@ -222,7 +222,15 @@ impl UiRenderer {
         });
 
         // ---- Text pipeline (glyphon) ----
-        let font_system = FontSystem::new();
+        let mut font_system = FontSystem::new();
+        // Bundle Roboto with the crate so typography is consistent
+        // across machines (no fontconfig surprises). FontSystem still
+        // sees system fonts as a fallback, but our explicit Family::Name
+        // request below picks the bundled face.
+        let db = font_system.db_mut();
+        db.load_font_data(include_bytes!("../fonts/Roboto-Regular.ttf").to_vec());
+        db.load_font_data(include_bytes!("../fonts/Roboto-Medium.ttf").to_vec());
+        db.load_font_data(include_bytes!("../fonts/Roboto-Bold.ttf").to_vec());
         let swash_cache = SwashCache::new();
         let glyph_cache = Cache::new(device);
         let glyph_viewport = Viewport::new(device, &glyph_cache);
@@ -257,12 +265,20 @@ impl UiRenderer {
     /// Lay out the tree, resolve to draw ops, and upload per-frame
     /// buffers (quad instances + glyph atlas). Must be called before
     /// [`Self::draw`] and outside of any render pass.
+    ///
+    /// `viewport` is in **logical** pixels — the units the layout pass
+    /// works in. `scale_factor` is the HiDPI multiplier (1.0 on a
+    /// regular display, 2.0 on most modern HiDPI, can be fractional).
+    /// The host's render-pass target should be sized at physical pixels
+    /// (`viewport × scale_factor`); the renderer maps logical → physical
+    /// internally so layout, fonts, and SDF math stay device-independent.
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         root: &mut El,
         viewport: Rect,
+        scale_factor: f32,
     ) {
         layout::layout(root, viewport);
         let ops = draw_ops::draw_ops(root);
@@ -302,6 +318,13 @@ impl UiRenderer {
         queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
 
         // ---- Text ----
+        //
+        // Canonical HiDPI: rasterize glyphs at physical DPI. Pre-multiply
+        // every text quantity (size, line height, position, bounds) by
+        // scale_factor and set TextArea.scale = 1.0. Glyphon then sees
+        // physical-coord positions and rasterizes at physical glyph size,
+        // producing crisp text. The glyphon Viewport is the physical
+        // framebuffer resolution.
         self.text_buffers.clear();
         self.text_metas.clear();
         for op in &ops {
@@ -317,6 +340,7 @@ impl UiRenderer {
                     *mono,
                     *anchor,
                     *color,
+                    scale_factor,
                     &mut self.text_buffers,
                     &mut self.text_metas,
                 );
@@ -326,8 +350,8 @@ impl UiRenderer {
         self.glyph_viewport.update(
             queue,
             Resolution {
-                width: viewport.w as u32,
-                height: viewport.h as u32,
+                width: (viewport.w * scale_factor) as u32,
+                height: (viewport.h * scale_factor) as u32,
             },
         );
 
@@ -351,6 +375,8 @@ impl UiRenderer {
                 buffer,
                 left: meta.left,
                 top: meta.top,
+                // Positions/sizes are pre-multiplied to physical pixels
+                // already; tell glyphon not to scale further.
                 scale: 1.0,
                 bounds: meta.bounds,
                 default_color: meta.color,
@@ -431,30 +457,39 @@ fn build_text_buffer(
     mono: bool,
     anchor: TextAnchor,
     color: Color,
+    scale: f32,
     out_buffers: &mut Vec<Buffer>,
     out_metas: &mut Vec<TextMeta>,
 ) {
-    let line_height = size * 1.4;
-    let metrics = Metrics::new(size, line_height);
+    // All text quantities are pre-multiplied to physical pixels here so
+    // glyphon rasterizes at native device DPI (crisp text on HiDPI).
+    let physical_size = size * scale;
+    let physical_line_height = physical_size * 1.4;
+    let metrics = Metrics::new(physical_size, physical_line_height);
     let mut buffer = Buffer::new(font_system, metrics);
 
-    // Buffer width controls cosmic-text wrapping AND alignment. For
+    // Buffer width drives cosmic-text wrapping AND alignment. For
     // Middle/End anchors we need a known width so the alignment math
     // works. For Start anchors, constraining width to a too-tight
     // intrinsic rect causes silent wrapping ("Theme" → "Them" + "e"
     // on a hidden second line); leave width unbounded.
     let buffer_width = match anchor {
         TextAnchor::Start => None,
-        TextAnchor::Middle | TextAnchor::End => Some(rect.w),
+        TextAnchor::Middle | TextAnchor::End => Some(rect.w * scale),
     };
-    buffer.set_size(font_system, buffer_width, Some(rect.h.max(line_height)));
+    buffer.set_size(
+        font_system,
+        buffer_width,
+        Some((rect.h * scale).max(physical_line_height)),
+    );
 
-    let attrs = Attrs::new()
-        .family(if mono { Family::Monospace } else { Family::SansSerif })
-        .weight(map_weight(weight));
+    // Use bundled Roboto for sans-serif so typography is consistent
+    // regardless of what fonts the host has installed. fontdb resolves
+    // Name("Roboto") to whichever weight matches the request.
+    let family = if mono { Family::Monospace } else { Family::Name("Roboto") };
+    let attrs = Attrs::new().family(family).weight(map_weight(weight));
     buffer.set_text(font_system, text, attrs, Shaping::Advanced);
 
-    // Per-line alignment (cosmic-text convention).
     if let Some(align) = match anchor {
         TextAnchor::Start => None,
         TextAnchor::Middle => Some(Align::Center),
@@ -463,28 +498,28 @@ fn build_text_buffer(
         for line in buffer.lines.iter_mut() {
             line.set_align(Some(align));
         }
-        // Re-shape so the new alignment takes effect.
         buffer.shape_until_scroll(font_system, false);
     }
 
-    // Vertically center one line of text inside the rect.
-    let top = rect.y + ((rect.h - line_height) * 0.5).max(0.0);
+    // Vertically center one line of text inside the rect (in logical),
+    // then scale to physical.
+    let top_logical = rect.y + ((rect.h - size * 1.4) * 0.5).max(0.0);
+    let top = top_logical * scale;
+    let left = rect.x * scale;
 
     // v0.1: don't tightly clip text to its rect bounds — the layout's
-    // intrinsic-width estimator (`chars × 0.56 × size`) is approximate
-    // and can be a few pixels narrower than cosmic-text's actual run
-    // width. A real lint or scissor clip is a v0.2 concern; for now
-    // give text plenty of slack on the right/bottom so glyphs aren't
-    // sliced off. Real overflow shows up in the lint pass and as
-    // visible overlap, not as silently chopped-off characters.
+    // intrinsic-width estimator is approximate and can be a few pixels
+    // narrower than cosmic-text's actual run width. Real overflow shows
+    // up in the lint pass and as visible overlap, not silent glyph
+    // chopping.
     out_buffers.push(buffer);
     out_metas.push(TextMeta {
-        left: rect.x,
+        left,
         top,
         color: glyphon_color(color),
         bounds: TextBounds {
-            left: rect.x.floor() as i32 - 2,
-            top: rect.y.floor() as i32 - 2,
+            left: (rect.x * scale).floor() as i32 - 2,
+            top: (rect.y * scale).floor() as i32 - 2,
             right: i32::MAX / 2,
             bottom: i32::MAX / 2,
         },
@@ -512,10 +547,10 @@ fn as_f32(v: &UniformValue) -> Option<f32> {
 }
 
 fn rgba_f32(c: Color) -> [f32; 4] {
-    // Tokens are authored in sRGB display space; the surface is typically
-    // an *Srgb format which auto-converts linear→sRGB at write. So we
-    // convert sRGB→linear here to keep the round-trip neutral and
-    // produce display-correct colors. Alpha stays linear.
+    // Tokens are authored in sRGB display space; the surface is an
+    // *Srgb format so alpha blending happens in linear space (correct
+    // for color blending, slightly fattens light-on-dark text — see
+    // the font notes in the module-level docs).
     [
         srgb_to_linear(c.r as f32 / 255.0),
         srgb_to_linear(c.g as f32 / 255.0),
