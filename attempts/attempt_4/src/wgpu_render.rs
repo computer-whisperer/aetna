@@ -1,10 +1,9 @@
 //! Wgpu renderer — the production paint path.
 //!
-//! v0.1 scope: paints `stock::rounded_rect` quads only. Text
-//! (`stock::text_sdf`) and focus rings (`stock::focus_ring`) land in the
-//! next slice. Shadow is reserved as a uniform but not visually applied
-//! yet (v0.2 will widen the instance quad and add a blur term outside
-//! the SDF). Custom-shader registration also lands later.
+//! v0.1 scope: paints `stock::rounded_rect` quads + `stock::text_sdf`
+//! glyph runs. Focus rings and shadow are reserved (focus_ring lights up
+//! easily via the same instance-buffer pattern; shadow needs SDF
+//! widening — both follow). Custom-shader registration also lands later.
 //!
 //! # Insert-into-pass integration
 //!
@@ -14,26 +13,41 @@
 //! into the pass. The host then ends the pass, submits, and presents.
 //!
 //! ```ignore
-//! let mut ui = UiRenderer::new(&device, surface_format);
+//! let mut ui = UiRenderer::new(&device, &queue, surface_format);
 //! // per frame:
-//! ui.prepare(&queue, &mut tree, viewport);
-//! pass.set_*(...);
+//! ui.prepare(&device, &queue, &mut tree, viewport);
 //! ui.draw(&mut pass);
 //! ```
 //!
-//! `prepare` is split from `draw` so all `queue.write_buffer` calls
-//! happen before the render pass begins, matching wgpu's expected order.
+//! `prepare` is split from `draw` so all `queue.write_buffer` calls and
+//! glyphon atlas updates happen before the render pass begins, matching
+//! wgpu's expected order.
+//!
+//! # Text rendering
+//!
+//! `stock::text_sdf` is implemented with [glyphon](https://github.com/grovesNL/glyphon),
+//! which wraps cosmic-text for shaping/layout and rasterizes glyphs into
+//! a wgpu texture atlas. We rebuild glyphon `Buffer`s per frame from
+//! [`DrawOp::GlyphRun`]s — fine for v0.1 (no caching), and matches our
+//! current "tree is rebuilt each frame" loop.
+//!
+//! Paint order: rounded_rect quads first, then text on top.
 
 use std::borrow::Cow;
 
 use bytemuck::{Pod, Zeroable};
+use glyphon::cosmic_text::Align;
+use glyphon::{
+    Attrs, Buffer, Cache, Color as GlyphColor, Family, FontSystem, Metrics, Resolution, Shaping,
+    SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
+};
 use wgpu::util::DeviceExt;
 
 use crate::draw_ops;
-use crate::ir::DrawOp;
+use crate::ir::{DrawOp, TextAnchor};
 use crate::layout;
 use crate::shader::{ShaderHandle, StockShader, UniformValue};
-use crate::tree::{Color, El, Rect};
+use crate::tree::{Color, El, FontWeight, Rect};
 
 /// Per-frame globals bound at @group(0).
 #[repr(C)]
@@ -62,28 +76,40 @@ const INITIAL_INSTANCE_CAPACITY: usize = 256;
 
 /// Renderer state owned by the host. One instance per surface/format.
 pub struct UiRenderer {
+    // Quad pipeline (stock::rounded_rect).
     quad_pipeline: wgpu::RenderPipeline,
     quad_bind_group: wgpu::BindGroup,
     frame_buf: wgpu::Buffer,
     quad_vbo: wgpu::Buffer,
     instance_buf: wgpu::Buffer,
     instance_capacity: usize,
-    pending: PendingFrame,
+    quad_count: u32,
+    quad_scratch: Vec<QuadInstance>,
+
+    // Text pipeline (stock::text_sdf, via glyphon).
+    font_system: FontSystem,
+    swash_cache: SwashCache,
+    glyph_atlas: TextAtlas,
+    glyph_viewport: Viewport,
+    text_renderer: TextRenderer,
+    text_buffers: Vec<Buffer>,
+    text_metas: Vec<TextMeta>,
 }
 
-#[derive(Default)]
-struct PendingFrame {
-    instances: Vec<QuadInstance>,
-    /// Cached so `draw()` knows how many instances to issue without
-    /// touching `pending.instances` again (it's already been uploaded).
-    instance_count: u32,
+#[derive(Clone, Copy)]
+struct TextMeta {
+    left: f32,
+    top: f32,
+    color: GlyphColor,
+    bounds: TextBounds,
 }
 
 impl UiRenderer {
     /// Create a renderer for the given target color format. The host
-    /// passes its swapchain/render-target format here so the pipeline
-    /// is built compatible.
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+    /// passes its swapchain/render-target format here so pipelines and
+    /// the glyph atlas are built compatible.
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, target_format: wgpu::TextureFormat) -> Self {
+        // ---- Quad pipeline ----
         let frame_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("attempt_4::frame_uniforms"),
             size: std::mem::size_of::<FrameUniforms>() as u64,
@@ -195,6 +221,19 @@ impl UiRenderer {
             cache: None,
         });
 
+        // ---- Text pipeline (glyphon) ----
+        let font_system = FontSystem::new();
+        let swash_cache = SwashCache::new();
+        let glyph_cache = Cache::new(device);
+        let glyph_viewport = Viewport::new(device, &glyph_cache);
+        let mut glyph_atlas = TextAtlas::new(device, queue, &glyph_cache, target_format);
+        let text_renderer = TextRenderer::new(
+            &mut glyph_atlas,
+            device,
+            wgpu::MultisampleState::default(),
+            None,
+        );
+
         Self {
             quad_pipeline,
             quad_bind_group,
@@ -202,13 +241,22 @@ impl UiRenderer {
             quad_vbo,
             instance_buf,
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
-            pending: PendingFrame::default(),
+            quad_count: 0,
+            quad_scratch: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
+
+            font_system,
+            swash_cache,
+            glyph_atlas,
+            glyph_viewport,
+            text_renderer,
+            text_buffers: Vec::new(),
+            text_metas: Vec::new(),
         }
     }
 
     /// Lay out the tree, resolve to draw ops, and upload per-frame
-    /// buffers. Must be called before [`Self::draw`] and outside of any
-    /// render pass.
+    /// buffers (quad instances + glyph atlas). Must be called before
+    /// [`Self::draw`] and outside of any render pass.
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -219,17 +267,17 @@ impl UiRenderer {
         layout::layout(root, viewport);
         let ops = draw_ops::draw_ops(root);
 
-        self.pending.instances.clear();
+        // ---- Quads ----
+        self.quad_scratch.clear();
         for op in &ops {
             if let Some(inst) = quad_instance(op) {
-                self.pending.instances.push(inst);
+                self.quad_scratch.push(inst);
             }
         }
-        self.pending.instance_count = self.pending.instances.len() as u32;
+        self.quad_count = self.quad_scratch.len() as u32;
 
-        // Grow instance buffer if needed (next pow2).
-        if self.pending.instances.len() > self.instance_capacity {
-            let new_cap = self.pending.instances.len().next_power_of_two();
+        if self.quad_scratch.len() > self.instance_capacity {
+            let new_cap = self.quad_scratch.len().next_power_of_two();
             self.instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("attempt_4::instance_buf (resized)"),
                 size: (new_cap * std::mem::size_of::<QuadInstance>()) as u64,
@@ -239,11 +287,11 @@ impl UiRenderer {
             self.instance_capacity = new_cap;
         }
 
-        if !self.pending.instances.is_empty() {
+        if !self.quad_scratch.is_empty() {
             queue.write_buffer(
                 &self.instance_buf,
                 0,
-                bytemuck::cast_slice(&self.pending.instances),
+                bytemuck::cast_slice(&self.quad_scratch),
             );
         }
 
@@ -252,19 +300,91 @@ impl UiRenderer {
             _pad: [0.0, 0.0],
         };
         queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
+
+        // ---- Text ----
+        self.text_buffers.clear();
+        self.text_metas.clear();
+        for op in &ops {
+            if let DrawOp::GlyphRun {
+                rect, color, text, size, weight, mono, anchor, ..
+            } = op {
+                build_text_buffer(
+                    &mut self.font_system,
+                    *rect,
+                    text,
+                    *size,
+                    *weight,
+                    *mono,
+                    *anchor,
+                    *color,
+                    &mut self.text_buffers,
+                    &mut self.text_metas,
+                );
+            }
+        }
+
+        self.glyph_viewport.update(
+            queue,
+            Resolution {
+                width: viewport.w as u32,
+                height: viewport.h as u32,
+            },
+        );
+
+        // Split borrow so glyphon::prepare can take &mut on font_system,
+        // glyph_atlas, etc. simultaneously with &TextArea borrowed from
+        // self.text_buffers.
+        let Self {
+            text_buffers,
+            text_metas,
+            text_renderer,
+            glyph_atlas,
+            glyph_viewport,
+            font_system,
+            swash_cache,
+            ..
+        } = self;
+        let text_areas: Vec<TextArea> = text_buffers
+            .iter()
+            .zip(text_metas.iter())
+            .map(|(buffer, meta)| TextArea {
+                buffer,
+                left: meta.left,
+                top: meta.top,
+                scale: 1.0,
+                bounds: meta.bounds,
+                default_color: meta.color,
+                custom_glyphs: &[],
+            })
+            .collect();
+        text_renderer
+            .prepare(
+                device,
+                queue,
+                font_system,
+                glyph_atlas,
+                glyph_viewport,
+                text_areas,
+                swash_cache,
+            )
+            .expect("glyphon prepare");
     }
 
     /// Record draws into the host-managed render pass. Call after
-    /// [`Self::prepare`].
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        if self.pending.instance_count == 0 {
-            return;
+    /// [`Self::prepare`]. Paint order: rounded_rect quads, then text.
+    pub fn draw<'pass>(&'pass self, pass: &mut wgpu::RenderPass<'pass>) {
+        if self.quad_count > 0 {
+            pass.set_pipeline(&self.quad_pipeline);
+            pass.set_bind_group(0, &self.quad_bind_group, &[]);
+            pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
+            pass.set_vertex_buffer(1, self.instance_buf.slice(..));
+            pass.draw(0..4, 0..self.quad_count);
         }
-        pass.set_pipeline(&self.quad_pipeline);
-        pass.set_bind_group(0, &self.quad_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
-        pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-        pass.draw(0..4, 0..self.pending.instance_count);
+        if !self.text_buffers.is_empty() {
+            self.text_renderer
+                .render(&self.glyph_atlas, &self.glyph_viewport, pass)
+                .expect("glyphon render");
+        }
     }
 }
 
@@ -283,8 +403,6 @@ const INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
 fn quad_instance(op: &DrawOp) -> Option<QuadInstance> {
     let DrawOp::Quad { rect, shader, uniforms, .. } = op else { return None };
 
-    // v0.1: only rounded_rect lands. Other stock shaders + custom
-    // shaders are deferred.
     if !matches!(shader, ShaderHandle::Stock(StockShader::RoundedRect)) {
         return None;
     }
@@ -301,6 +419,89 @@ fn quad_instance(op: &DrawOp) -> Option<QuadInstance> {
         stroke,
         params: [stroke_width, radius, shadow, 0.0],
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_text_buffer(
+    font_system: &mut FontSystem,
+    rect: Rect,
+    text: &str,
+    size: f32,
+    weight: FontWeight,
+    mono: bool,
+    anchor: TextAnchor,
+    color: Color,
+    out_buffers: &mut Vec<Buffer>,
+    out_metas: &mut Vec<TextMeta>,
+) {
+    let line_height = size * 1.4;
+    let metrics = Metrics::new(size, line_height);
+    let mut buffer = Buffer::new(font_system, metrics);
+
+    // Buffer width controls cosmic-text wrapping AND alignment. For
+    // Middle/End anchors we need a known width so the alignment math
+    // works. For Start anchors, constraining width to a too-tight
+    // intrinsic rect causes silent wrapping ("Theme" → "Them" + "e"
+    // on a hidden second line); leave width unbounded.
+    let buffer_width = match anchor {
+        TextAnchor::Start => None,
+        TextAnchor::Middle | TextAnchor::End => Some(rect.w),
+    };
+    buffer.set_size(font_system, buffer_width, Some(rect.h.max(line_height)));
+
+    let attrs = Attrs::new()
+        .family(if mono { Family::Monospace } else { Family::SansSerif })
+        .weight(map_weight(weight));
+    buffer.set_text(font_system, text, attrs, Shaping::Advanced);
+
+    // Per-line alignment (cosmic-text convention).
+    if let Some(align) = match anchor {
+        TextAnchor::Start => None,
+        TextAnchor::Middle => Some(Align::Center),
+        TextAnchor::End => Some(Align::End),
+    } {
+        for line in buffer.lines.iter_mut() {
+            line.set_align(Some(align));
+        }
+        // Re-shape so the new alignment takes effect.
+        buffer.shape_until_scroll(font_system, false);
+    }
+
+    // Vertically center one line of text inside the rect.
+    let top = rect.y + ((rect.h - line_height) * 0.5).max(0.0);
+
+    // v0.1: don't tightly clip text to its rect bounds — the layout's
+    // intrinsic-width estimator (`chars × 0.56 × size`) is approximate
+    // and can be a few pixels narrower than cosmic-text's actual run
+    // width. A real lint or scissor clip is a v0.2 concern; for now
+    // give text plenty of slack on the right/bottom so glyphs aren't
+    // sliced off. Real overflow shows up in the lint pass and as
+    // visible overlap, not as silently chopped-off characters.
+    out_buffers.push(buffer);
+    out_metas.push(TextMeta {
+        left: rect.x,
+        top,
+        color: glyphon_color(color),
+        bounds: TextBounds {
+            left: rect.x.floor() as i32 - 2,
+            top: rect.y.floor() as i32 - 2,
+            right: i32::MAX / 2,
+            bottom: i32::MAX / 2,
+        },
+    });
+}
+
+fn map_weight(w: FontWeight) -> Weight {
+    match w {
+        FontWeight::Regular => Weight::NORMAL,
+        FontWeight::Medium => Weight::MEDIUM,
+        FontWeight::Semibold => Weight::SEMIBOLD,
+        FontWeight::Bold => Weight::BOLD,
+    }
+}
+
+fn glyphon_color(c: Color) -> GlyphColor {
+    GlyphColor::rgba(c.r, c.g, c.b, c.a)
 }
 
 fn as_color(v: &UniformValue) -> Option<Color> {

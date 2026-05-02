@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mapped_at_creation: false,
     });
 
-    let mut renderer = UiRenderer::new(&device, format);
+    let mut renderer = UiRenderer::new(&device, &queue, format);
     let mut tree = settings();
     renderer.prepare(&device, &queue, &mut tree, viewport);
 

@@ -111,7 +111,7 @@ impl ApplicationHandler for App {
         };
         surface.configure(&device, &config);
 
-        let renderer = UiRenderer::new(&device, format);
+        let renderer = UiRenderer::new(&device, &queue, format);
 
         self.gfx = Some(Gfx { window, surface, device, queue, config, renderer });
         self.gfx.as_ref().unwrap().window.request_redraw();

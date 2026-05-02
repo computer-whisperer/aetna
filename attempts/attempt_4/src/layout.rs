@@ -222,7 +222,12 @@ fn apply_min(c: &El, mut w: f32, mut h: f32) -> (f32, f32) {
 }
 
 fn char_width_factor(mono: bool) -> f32 {
-    if mono { 0.62 } else { 0.56 }
+    // Conservative-leaning estimate. cosmic-text's actual run width for
+    // typical sans-serif sits around 0.56–0.62 of size depending on the
+    // glyph mix; pick the upper end so layout reserves enough width for
+    // text that the wgpu glyph run won't overflow visibly. The SVG
+    // fixture path also benefits — fewer false-positive overflow lints.
+    if mono { 0.62 } else { 0.60 }
 }
 
 #[cfg(test)]
