@@ -1,0 +1,42 @@
+root kind=Group rect=(0,0,720,760) size=(Fill(1.0),Fill(1.0)) source=examples/settings.rs:13
+  root.heading.0 kind=Heading rect=(28,28,116,36) size=(Hug,Hug) text="Settings" text_color=text-foreground source=examples/settings.rs:14
+  root.card.1 kind=Card rect=(28,82,664,172) size=(Fill(1.0),Hug) fill=bg-card source=examples/settings.rs:16
+    root.card.1.heading.0 kind=Heading rect=(46,100,63,22) size=(Hug,Hug) text="Account" text_color=text-foreground source=examples/settings.rs:16
+    root.card.1.group.1 kind=Group rect=(46,135,628,20) size=(Fill(1.0),Hug) source=examples/settings.rs:17
+      root.card.1.group.1.text.0 kind=Text rect=(46,135,39,20) size=(Hug,Hug) text="Email" text_color=text-foreground source=examples/settings.rs:17
+      root.card.1.group.1.spacer.1 kind=Spacer rect=(93,145,447,0) size=(Fill(1.0),Fill(1.0)) source=examples/settings.rs:17
+      root.card.1.group.1.text.2 kind=Text rect=(549,135,125,20) size=(Hug,Hug) text="user@example.com" text_color=text-muted-foreground source=examples/settings.rs:17
+    root.card.1.group.2 kind=Group rect=(46,166,628,22) size=(Fill(1.0),Hug) source=examples/settings.rs:18
+      root.card.1.group.2.text.0 kind=Text rect=(46,168,196,20) size=(Hug,Hug) text="Two-factor authentication" text_color=text-foreground source=examples/settings.rs:18
+      root.card.1.group.2.spacer.1 kind=Spacer rect=(250,177,353,0) size=(Fill(1.0),Fill(1.0)) source=examples/settings.rs:18
+      root.card.1.group.2.badge.2 kind=Badge rect=(611,166,63,22) size=(Hug,Fixed(22.0)) text="Enabled" fill=success text_color=success source=examples/settings.rs:18
+    root.card.1.group.3 kind=Group rect=(46,200,628,36) size=(Fill(1.0),Hug) source=examples/settings.rs:19
+      root.card.1.group.3.text.0 kind=Text rect=(46,209,110,20) size=(Hug,Hug) text="Recovery codes" text_color=text-foreground source=examples/settings.rs:19
+      root.card.1.group.3.spacer.1 kind=Spacer rect=(164,218,416,0) size=(Fill(1.0),Fill(1.0)) source=examples/settings.rs:19
+      root.card.1.group.3.button.2 kind=Button rect=(587,200,87,36) size=(Hug,Fixed(36.0)) text="Generate" fill=bg-muted text_color=text-foreground source=examples/settings.rs:19
+  root.card.2 kind=Card rect=(28,272,664,172) size=(Fill(1.0),Hug) fill=bg-card source=examples/settings.rs:22
+    root.card.2.heading.0 kind=Heading rect=(46,290,90,22) size=(Hug,Hug) text="Appearance" text_color=text-foreground source=examples/settings.rs:22
+    root.card.2.group.1 kind=Group rect=(46,325,628,36) size=(Fill(1.0),Hug) source=examples/settings.rs:23
+      root.card.2.group.1.text.0 kind=Text rect=(46,333,39,20) size=(Hug,Hug) text="Theme" text_color=text-foreground source=examples/settings.rs:23
+      root.card.2.group.1.spacer.1 kind=Spacer rect=(93,343,517,0) size=(Fill(1.0),Fill(1.0)) source=examples/settings.rs:23
+      root.card.2.group.1.button.2 kind=Button rect=(619,325,55,36) size=(Hug,Fixed(36.0)) text="Dark" fill=bg-muted text_color=text-foreground source=examples/settings.rs:23
+    root.card.2.group.2 kind=Group rect=(46,373,628,22) size=(Fill(1.0),Hug) source=examples/settings.rs:24
+      root.card.2.group.2.text.0 kind=Text rect=(46,374,94,20) size=(Hug,Hug) text="Compact mode" text_color=text-foreground source=examples/settings.rs:24
+      root.card.2.group.2.spacer.1 kind=Spacer rect=(148,384,482,0) size=(Fill(1.0),Fill(1.0)) source=examples/settings.rs:24
+      root.card.2.group.2.badge.2 kind=Badge rect=(638,373,36,22) size=(Hug,Fixed(22.0)) text="Off" fill=bg-muted text_color=text-muted-foreground source=examples/settings.rs:24
+    root.card.2.group.3 kind=Group rect=(46,407,628,20) size=(Fill(1.0),Hug) source=examples/settings.rs:25
+      root.card.2.group.3.text.0 kind=Text rect=(46,407,71,20) size=(Hug,Hug) text="Font size" text_color=text-foreground source=examples/settings.rs:25
+      root.card.2.group.3.spacer.1 kind=Spacer rect=(125,417,526,0) size=(Fill(1.0),Fill(1.0)) source=examples/settings.rs:25
+      root.card.2.group.3.text.2 kind=Text rect=(658,407,16,20) size=(Hug,Hug) text="14" text_color=text-foreground source=examples/settings.rs:25
+  root.card.3 kind=Card rect=(28,462,664,111) size=(Fill(1.0),Hug) fill=bg-card source=examples/settings.rs:28
+    root.card.3.heading.0 kind=Heading rect=(46,480,99,22) size=(Hug,Hug) text="Danger zone" text_color=text-foreground source=examples/settings.rs:28
+    root.card.3.group.1 kind=Group rect=(46,515,628,40) size=(Fill(1.0),Hug) source=examples/settings.rs:29
+      root.card.3.group.1.group.0 kind=Group rect=(46,515,302,40) size=(Hug,Fill(1.0)) source=examples/settings.rs:30
+        root.card.3.group.1.group.0.text.0 kind=Text rect=(46,515,110,20) size=(Hug,Hug) text="Delete account" text_color=text-foreground source=examples/settings.rs:31
+        root.card.3.group.1.group.0.text.1 kind=Text rect=(46,538,302,17) size=(Hug,Hug) text="Permanently remove your account and all …" text_color=text-muted-foreground source=examples/settings.rs:32
+      root.card.3.group.1.spacer.1 kind=Spacer rect=(356,535,239,0) size=(Fill(1.0),Fill(1.0)) source=examples/settings.rs:37
+      root.card.3.group.1.button.2 kind=Button rect=(603,517,71,36) size=(Hug,Fixed(36.0)) text="Delete" fill=destructive text_color=text-on-solid-light source=examples/settings.rs:38
+  root.group.4 kind=Group rect=(28,591,664,36) size=(Fill(1.0),Hug) source=examples/settings.rs:42
+    root.group.4.spacer.0 kind=Spacer rect=(28,609,522,0) size=(Fill(1.0),Fill(1.0)) source=examples/settings.rs:43
+    root.group.4.button.1 kind=Button rect=(558,591,71,36) size=(Hug,Fixed(36.0)) text="Cancel" text_color=text-muted-foreground source=examples/settings.rs:44
+    root.group.4.button.2 kind=Button rect=(637,591,55,36) size=(Hug,Fixed(36.0)) text="Save" fill=primary text_color=text-on-solid-dark source=examples/settings.rs:45

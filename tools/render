@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# render — one command to produce the full agent feedback bundle for an
+# attempt_3 example.
+#
+# Usage:  ./tools/render <example-name> [-p <package>]
+#
+# Defaults: package=attempt_3.
+#
+# Runs the cargo example (which writes svg + tree + lint + commands),
+# converts the SVG to PNG, then prints the path of every artifact.
+
+set -uo pipefail
+
+example="${1:-}"
+shift || true
+pkg="attempt_3"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -p|--package) pkg="$2"; shift 2 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+if [ -z "$example" ]; then
+    echo "usage: $0 <example-name> [-p <package>]" >&2
+    echo >&2
+    echo "available examples in $pkg:" >&2
+    find "attempts/$pkg/examples" -maxdepth 1 -name '*.rs' -printf '  %f\n' 2>/dev/null \
+        | sed 's/\.rs$//' >&2
+    exit 2
+fi
+
+cd "$(dirname "$0")/.."
+
+cargo run -q -p "$pkg" --example "$example" || exit $?
+
+# Produce PNGs for the just-rendered SVG.
+./tools/svg_to_png.sh >/dev/null 2>&1 || true
+
+out_dir="attempts/$pkg/out"
+echo
+echo "artifacts:"
+for ext in svg png tree.txt lint.txt commands.txt; do
+    f="$out_dir/$example.$ext"
+    [ -f "$f" ] && echo "  $f"
+done

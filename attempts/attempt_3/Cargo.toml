@@ -1,0 +1,17 @@
+[package]
+name = "attempt_3"
+version = "0.1.0"
+edition = "2024"
+description = "Attempt 3 at an LLM-native UI library: agent-loop-first design"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+[[example]]
+name = "settings"
+path = "examples/settings.rs"
+
+[[example]]
+name = "button_states"
+path = "examples/button_states.rs"

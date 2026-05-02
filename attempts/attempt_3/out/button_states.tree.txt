@@ -1,0 +1,39 @@
+root kind=Group rect=(0,0,900,540) size=(Fill(1.0),Fill(1.0)) source=examples/button_states.rs:17
+  root.heading.0 kind=Heading rect=(28,28,146,28) size=(Hug,Hug) text="Button states" text_color=text-foreground source=examples/button_states.rs:18
+  root.group.1 kind=Group rect=(28,84,844,428) size=(Fill(1.0),Fill(1.0)) source=examples/button_states.rs:19
+    root.group.1.group.0 kind=Group rect=(28,84,844,94) size=(Fill(1.0),Fill(1.0)) source=examples/button_states.rs:63
+      root.group.1.group.0.text.0 kind=Text rect=(28,84,47,17) size=(Hug,Hug) text="primary" text_color=text-muted-foreground source=examples/button_states.rs:64
+      root.group.1.group.0.group.1 kind=Group rect=(28,109,494,36) size=(Fill(1.0),Hug) source=examples/button_states.rs:65
+        root.group.1.group.0.group.1.button.0 kind=Button rect=(28,109,79,36) size=(Hug,Fixed(36.0)) text="Default" fill=primary text_color=text-on-solid-dark source=examples/button_states.rs:21
+        root.group.1.group.0.group.1.button.1 kind=Button rect=(119,109,63,36) size=(Hug,Fixed(36.0)) state=Hover text="Hover" fill=primary text_color=text-on-solid-dark source=examples/button_states.rs:22
+        root.group.1.group.0.group.1.button.2 kind=Button rect=(194,109,63,36) size=(Hug,Fixed(36.0)) state=Press text="Press" fill=primary text_color=text-on-solid-dark source=examples/button_states.rs:23
+        root.group.1.group.0.group.1.button.3 kind=Button rect=(269,109,63,36) size=(Hug,Fixed(36.0)) state=Focus text="Focus" fill=primary text_color=text-on-solid-dark source=examples/button_states.rs:24
+        root.group.1.group.0.group.1.button.4 kind=Button rect=(344,109,87,36) size=(Hug,Fixed(36.0)) state=Disabled text="Disabled" fill=primary text_color=text-on-solid-dark source=examples/button_states.rs:25
+        root.group.1.group.0.group.1.button.5 kind=Button rect=(443,109,79,36) size=(Hug,Fixed(36.0)) state=Loading text="Loading" fill=primary text_color=text-on-solid-dark source=examples/button_states.rs:26
+    root.group.1.group.1 kind=Group rect=(28,196,844,94) size=(Fill(1.0),Fill(1.0)) source=examples/button_states.rs:63
+      root.group.1.group.1.text.0 kind=Text rect=(28,196,60,17) size=(Hug,Hug) text="secondary" text_color=text-muted-foreground source=examples/button_states.rs:64
+      root.group.1.group.1.group.1 kind=Group rect=(28,220,494,36) size=(Fill(1.0),Hug) source=examples/button_states.rs:65
+        root.group.1.group.1.group.1.button.0 kind=Button rect=(28,220,79,36) size=(Hug,Fixed(36.0)) text="Default" fill=bg-muted text_color=text-foreground source=examples/button_states.rs:29
+        root.group.1.group.1.group.1.button.1 kind=Button rect=(119,220,63,36) size=(Hug,Fixed(36.0)) state=Hover text="Hover" fill=bg-muted text_color=text-foreground source=examples/button_states.rs:30
+        root.group.1.group.1.group.1.button.2 kind=Button rect=(194,220,63,36) size=(Hug,Fixed(36.0)) state=Press text="Press" fill=bg-muted text_color=text-foreground source=examples/button_states.rs:31
+        root.group.1.group.1.group.1.button.3 kind=Button rect=(269,220,63,36) size=(Hug,Fixed(36.0)) state=Focus text="Focus" fill=bg-muted text_color=text-foreground source=examples/button_states.rs:32
+        root.group.1.group.1.group.1.button.4 kind=Button rect=(344,220,87,36) size=(Hug,Fixed(36.0)) state=Disabled text="Disabled" fill=bg-muted text_color=text-foreground source=examples/button_states.rs:33
+        root.group.1.group.1.group.1.button.5 kind=Button rect=(443,220,79,36) size=(Hug,Fixed(36.0)) state=Loading text="Loading" fill=bg-muted text_color=text-foreground source=examples/button_states.rs:34
+    root.group.1.group.2 kind=Group rect=(28,307,844,94) size=(Fill(1.0),Fill(1.0)) source=examples/button_states.rs:63
+      root.group.1.group.2.text.0 kind=Text rect=(28,307,74,17) size=(Hug,Hug) text="destructive" text_color=text-muted-foreground source=examples/button_states.rs:64
+      root.group.1.group.2.group.1 kind=Group rect=(28,332,494,36) size=(Fill(1.0),Hug) source=examples/button_states.rs:65
+        root.group.1.group.2.group.1.button.0 kind=Button rect=(28,332,79,36) size=(Hug,Fixed(36.0)) text="Default" fill=destructive text_color=text-on-solid-light source=examples/button_states.rs:37
+        root.group.1.group.2.group.1.button.1 kind=Button rect=(119,332,63,36) size=(Hug,Fixed(36.0)) state=Hover text="Hover" fill=destructive text_color=text-on-solid-light source=examples/button_states.rs:38
+        root.group.1.group.2.group.1.button.2 kind=Button rect=(194,332,63,36) size=(Hug,Fixed(36.0)) state=Press text="Press" fill=destructive text_color=text-on-solid-light source=examples/button_states.rs:39
+        root.group.1.group.2.group.1.button.3 kind=Button rect=(269,332,63,36) size=(Hug,Fixed(36.0)) state=Focus text="Focus" fill=destructive text_color=text-on-solid-light source=examples/button_states.rs:40
+        root.group.1.group.2.group.1.button.4 kind=Button rect=(344,332,87,36) size=(Hug,Fixed(36.0)) state=Disabled text="Disabled" fill=destructive text_color=text-on-solid-light source=examples/button_states.rs:41
+        root.group.1.group.2.group.1.button.5 kind=Button rect=(443,332,79,36) size=(Hug,Fixed(36.0)) state=Loading text="Loading" fill=destructive text_color=text-on-solid-light source=examples/button_states.rs:42
+    root.group.1.group.3 kind=Group rect=(28,418,844,94) size=(Fill(1.0),Fill(1.0)) source=examples/button_states.rs:63
+      root.group.1.group.3.text.0 kind=Text rect=(28,418,34,17) size=(Hug,Hug) text="ghost" text_color=text-muted-foreground source=examples/button_states.rs:64
+      root.group.1.group.3.group.1 kind=Group rect=(28,443,494,36) size=(Fill(1.0),Hug) source=examples/button_states.rs:65
+        root.group.1.group.3.group.1.button.0 kind=Button rect=(28,443,79,36) size=(Hug,Fixed(36.0)) text="Default" text_color=text-muted-foreground source=examples/button_states.rs:45
+        root.group.1.group.3.group.1.button.1 kind=Button rect=(119,443,63,36) size=(Hug,Fixed(36.0)) state=Hover text="Hover" text_color=text-muted-foreground source=examples/button_states.rs:46
+        root.group.1.group.3.group.1.button.2 kind=Button rect=(194,443,63,36) size=(Hug,Fixed(36.0)) state=Press text="Press" text_color=text-muted-foreground source=examples/button_states.rs:47
+        root.group.1.group.3.group.1.button.3 kind=Button rect=(269,443,63,36) size=(Hug,Fixed(36.0)) state=Focus text="Focus" text_color=text-muted-foreground source=examples/button_states.rs:48
+        root.group.1.group.3.group.1.button.4 kind=Button rect=(344,443,87,36) size=(Hug,Fixed(36.0)) state=Disabled text="Disabled" text_color=text-muted-foreground source=examples/button_states.rs:49
+        root.group.1.group.3.group.1.button.5 kind=Button rect=(443,443,79,36) size=(Hug,Fixed(36.0)) state=Loading text="Loading" text_color=text-muted-foreground source=examples/button_states.rs:50
