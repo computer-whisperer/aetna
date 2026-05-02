@@ -1,0 +1,97 @@
+root kind=Group rect=(0,0,280,720) size=(Fixed(280.0),Fill(1.0)) fill=bg-sidebar source=examples/branch_sidebar.rs:22
+  root.group.0 kind=Group rect=(8,8,264,28) size=(Fill(1.0),Fixed(28.0)) fill=bg-muted source=examples/branch_sidebar.rs:61
+    root.group.0.text.0 kind=Text rect=(16,14,7,17) size=(Hug,Hug) text="⌕" text_color=text-muted-foreground source=examples/branch_sidebar.rs:62
+    root.group.0.text.1 kind=Text rect=(31,12,125,20) size=(Hug,Hug) text="Filter branches…" text_color=text-muted-foreground source=examples/branch_sidebar.rs:63
+  root.group.1 kind=Group rect=(8,44,264,152) size=(Fill(1.0),Hug) source=examples/branch_sidebar.rs:91
+    root.group.1.group.0 kind=Group rect=(8,44,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:100
+      root.group.1.group.0.text.0 kind=Text rect=(16,47,6,15) size=(Hug,Hug) text="▼" text_color=text-muted-foreground source=examples/branch_sidebar.rs:101
+      root.group.1.group.0.text.1 kind=Text rect=(30,47,31,15) size=(Hug,Hug) text="LOCAL" text_color=text-muted-foreground source=examples/branch_sidebar.rs:102
+      root.group.1.group.0.spacer.2 kind=Spacer rect=(69,55,181,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:103
+      root.group.1.group.0.text.3 kind=Text rect=(258,47,6,15) size=(Hug,Hug) text="5" text_color=text-muted-foreground source=examples/branch_sidebar.rs:104
+    root.group.1.group.1 kind=Group rect=(8,68,264,24) size=(Fill(1.0),Fixed(24.0)) fill=bg-muted source=examples/branch_sidebar.rs:181
+      root.group.1.group.1.spacer.0 kind=Spacer rect=(16,70,3,20) size=(Fixed(3.0),Fixed(20.0)) fill=primary source=examples/branch_sidebar.rs:160
+      root.group.1.group.1.text.1 kind=Text rect=(27,70,31,20) size=(Hug,Hug) text="main" text_color=text-foreground source=examples/branch_sidebar.rs:168
+      root.group.1.group.1.spacer.2 kind=Spacer rect=(66,80,198,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:173
+    root.group.1.group.2 kind=Group rect=(8,94,264,24) size=(Fill(1.0),Fixed(24.0)) source=examples/branch_sidebar.rs:181
+      root.group.1.group.2.spacer.0 kind=Spacer rect=(16,96,3,20) size=(Fixed(3.0),Fixed(20.0)) fill=primary source=examples/branch_sidebar.rs:160
+      root.group.1.group.2.text.1 kind=Text rect=(27,96,149,20) size=(Hug,Hug) text="feature/ui-lib-demo" text_color=text-muted-foreground source=examples/branch_sidebar.rs:170
+      root.group.1.group.2.spacer.2 kind=Spacer rect=(184,106,60,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:173
+      root.group.1.group.2.group.3 kind=Group rect=(252,98,12,15) size=(Hug,Hug) source=examples/branch_sidebar.rs:218
+        root.group.1.group.2.group.3.text.0 kind=Text rect=(252,98,12,15) size=(Hug,Hug) text="↑3" text_color=success source=examples/branch_sidebar.rs:213
+    root.group.1.group.3 kind=Group rect=(8,120,264,24) size=(Fill(1.0),Fixed(24.0)) state=Hover fill=bg-muted source=examples/branch_sidebar.rs:181
+      root.group.1.group.3.spacer.0 kind=Spacer rect=(16,122,3,20) size=(Fixed(3.0),Fixed(20.0)) fill=primary source=examples/branch_sidebar.rs:160
+      root.group.1.group.3.text.1 kind=Text rect=(27,122,165,20) size=(Hug,Hug) text="vulkan-render-cleanup" text_color=text-muted-foreground source=examples/branch_sidebar.rs:170
+      root.group.1.group.3.spacer.2 kind=Spacer rect=(200,132,28,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:173
+      root.group.1.group.3.group.3 kind=Group rect=(235,124,29,15) size=(Hug,Hug) source=examples/branch_sidebar.rs:218
+        root.group.1.group.3.group.3.text.0 kind=Text rect=(235,124,12,15) size=(Hug,Hug) text="↑1" text_color=success source=examples/branch_sidebar.rs:213
+        root.group.1.group.3.group.3.text.1 kind=Text rect=(252,124,12,15) size=(Hug,Hug) text="↓2" text_color=warning source=examples/branch_sidebar.rs:216
+    root.group.1.group.4 kind=Group rect=(8,146,264,24) size=(Fill(1.0),Fixed(24.0)) source=examples/branch_sidebar.rs:181
+      root.group.1.group.4.spacer.0 kind=Spacer rect=(16,148,3,20) size=(Fixed(3.0),Fixed(20.0)) fill=primary source=examples/branch_sidebar.rs:160
+      root.group.1.group.4.text.1 kind=Text rect=(27,148,133,20) size=(Hug,Hug) text="agentic-inspector" text_color=text-muted-foreground source=examples/branch_sidebar.rs:170
+      root.group.1.group.4.spacer.2 kind=Spacer rect=(168,158,96,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:173
+    root.group.1.group.5 kind=Group rect=(8,172,264,24) size=(Fill(1.0),Fixed(24.0)) source=examples/branch_sidebar.rs:181
+      root.group.1.group.5.spacer.0 kind=Spacer rect=(16,174,3,20) size=(Fixed(3.0),Fixed(20.0)) fill=primary source=examples/branch_sidebar.rs:160
+      root.group.1.group.5.text.1 kind=Text rect=(27,174,196,20) size=(Hug,Hug) text="topic/staging-well-rework" text_color=text-muted-foreground source=examples/branch_sidebar.rs:170
+      root.group.1.group.5.spacer.2 kind=Spacer rect=(231,184,7,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:173
+      root.group.1.group.5.group.3 kind=Group rect=(246,176,18,15) size=(Hug,Hug) source=examples/branch_sidebar.rs:218
+        root.group.1.group.5.group.3.text.0 kind=Text rect=(246,176,18,15) size=(Hug,Hug) text="↓14" text_color=warning source=examples/branch_sidebar.rs:216
+  root.group.2 kind=Group rect=(8,204,264,142) size=(Fill(1.0),Hug) source=examples/branch_sidebar.rs:131
+    root.group.2.group.0 kind=Group rect=(8,204,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:100
+      root.group.2.group.0.text.0 kind=Text rect=(16,207,6,15) size=(Hug,Hug) text="▼" text_color=text-muted-foreground source=examples/branch_sidebar.rs:101
+      root.group.2.group.0.text.1 kind=Text rect=(30,207,37,15) size=(Hug,Hug) text="REMOTE" text_color=text-muted-foreground source=examples/branch_sidebar.rs:102
+      root.group.2.group.0.spacer.2 kind=Spacer rect=(75,215,175,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:103
+      root.group.2.group.0.text.3 kind=Text rect=(258,207,6,15) size=(Hug,Hug) text="1" text_color=text-muted-foreground source=examples/branch_sidebar.rs:104
+    root.group.2.group.1 kind=Group rect=(8,228,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:140
+      root.group.2.group.1.text.0 kind=Text rect=(26,231,6,15) size=(Hug,Hug) text="▾" text_color=text-muted-foreground source=examples/branch_sidebar.rs:141
+      root.group.2.group.1.text.1 kind=Text rect=(40,231,40,17) size=(Hug,Hug) text="origin" text_color=text-muted-foreground source=examples/branch_sidebar.rs:142
+      root.group.2.group.1.spacer.2 kind=Spacer rect=(88,239,151,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:143
+      root.group.2.group.1.text.3 kind=Text rect=(248,231,6,15) size=(Hug,Hug) text="4" text_color=text-muted-foreground source=examples/branch_sidebar.rs:144
+    root.group.2.group.2 kind=Group rect=(8,252,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:203
+      root.group.2.group.2.text.0 kind=Text rect=(36,255,27,17) size=(Hug,Hug) text="main" text_color=text-muted-foreground source=examples/branch_sidebar.rs:197
+      root.group.2.group.2.spacer.1 kind=Spacer rect=(71,263,173,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:198
+    root.group.2.group.3 kind=Group rect=(8,276,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:203
+      root.group.2.group.3.text.0 kind=Text rect=(36,279,128,17) size=(Hug,Hug) text="feature/ui-lib-demo" text_color=text-muted-foreground source=examples/branch_sidebar.rs:197
+      root.group.2.group.3.spacer.1 kind=Spacer rect=(172,287,52,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:198
+      root.group.2.group.3.group.2 kind=Group rect=(232,279,12,15) size=(Hug,Hug) source=examples/branch_sidebar.rs:218
+        root.group.2.group.3.group.2.text.0 kind=Text rect=(232,279,12,15) size=(Hug,Hug) text="↑3" text_color=success source=examples/branch_sidebar.rs:213
+    root.group.2.group.4 kind=Group rect=(8,300,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:203
+      root.group.2.group.4.text.0 kind=Text rect=(36,303,94,17) size=(Hug,Hug) text="hotfix/2026-04" text_color=text-muted-foreground source=examples/branch_sidebar.rs:197
+      root.group.2.group.4.spacer.1 kind=Spacer rect=(138,311,86,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:198
+      root.group.2.group.4.group.2 kind=Group rect=(232,303,12,15) size=(Hug,Hug) source=examples/branch_sidebar.rs:218
+        root.group.2.group.4.group.2.text.0 kind=Text rect=(232,303,12,15) size=(Hug,Hug) text="↓1" text_color=warning source=examples/branch_sidebar.rs:216
+    root.group.2.group.5 kind=Group rect=(8,324,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:203
+      root.group.2.group.5.text.0 kind=Text rect=(36,327,161,17) size=(Hug,Hug) text="dependabot/cargo/serde-2" text_color=text-muted-foreground source=examples/branch_sidebar.rs:197
+      root.group.2.group.5.spacer.1 kind=Spacer rect=(205,335,39,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:198
+  root.group.3 kind=Group rect=(8,354,264,94) size=(Fill(1.0),Hug) source=examples/branch_sidebar.rs:91
+    root.group.3.group.0 kind=Group rect=(8,354,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:100
+      root.group.3.group.0.text.0 kind=Text rect=(16,357,6,15) size=(Hug,Hug) text="▼" text_color=text-muted-foreground source=examples/branch_sidebar.rs:101
+      root.group.3.group.0.text.1 kind=Text rect=(30,357,25,15) size=(Hug,Hug) text="TAGS" text_color=text-muted-foreground source=examples/branch_sidebar.rs:102
+      root.group.3.group.0.spacer.2 kind=Spacer rect=(63,365,187,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:103
+      root.group.3.group.0.text.3 kind=Text rect=(258,357,6,15) size=(Hug,Hug) text="3" text_color=text-muted-foreground source=examples/branch_sidebar.rs:104
+    root.group.3.group.1 kind=Group rect=(8,378,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:224
+      root.group.3.group.1.text.0 kind=Text rect=(16,381,6,15) size=(Hug,Hug) text="🏷" text_color=text-foreground source=examples/branch_sidebar.rs:225
+      root.group.3.group.1.text.1 kind=Text rect=(30,381,40,17) size=(Hug,Hug) text="v0.3.0" text_color=text-muted-foreground source=examples/branch_sidebar.rs:226
+    root.group.3.group.2 kind=Group rect=(8,402,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:224
+      root.group.3.group.2.text.0 kind=Text rect=(16,405,6,15) size=(Hug,Hug) text="🏷" text_color=text-foreground source=examples/branch_sidebar.rs:225
+      root.group.3.group.2.text.1 kind=Text rect=(30,405,40,17) size=(Hug,Hug) text="v0.2.4" text_color=text-muted-foreground source=examples/branch_sidebar.rs:226
+    root.group.3.group.3 kind=Group rect=(8,426,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:224
+      root.group.3.group.3.text.0 kind=Text rect=(16,429,6,15) size=(Hug,Hug) text="🏷" text_color=text-foreground source=examples/branch_sidebar.rs:225
+      root.group.3.group.3.text.1 kind=Text rect=(30,429,40,17) size=(Hug,Hug) text="v0.2.3" text_color=text-muted-foreground source=examples/branch_sidebar.rs:226
+  root.group.4 kind=Group rect=(8,456,264,114) size=(Fill(1.0),Hug) source=examples/branch_sidebar.rs:91
+    root.group.4.group.0 kind=Group rect=(8,456,264,22) size=(Fill(1.0),Fixed(22.0)) source=examples/branch_sidebar.rs:100
+      root.group.4.group.0.text.0 kind=Text rect=(16,459,6,15) size=(Hug,Hug) text="▼" text_color=text-muted-foreground source=examples/branch_sidebar.rs:101
+      root.group.4.group.0.text.1 kind=Text rect=(30,459,43,15) size=(Hug,Hug) text="STASHES" text_color=text-muted-foreground source=examples/branch_sidebar.rs:102
+      root.group.4.group.0.spacer.2 kind=Spacer rect=(81,467,169,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:103
+      root.group.4.group.0.text.3 kind=Text rect=(258,459,6,15) size=(Hug,Hug) text="2" text_color=text-muted-foreground source=examples/branch_sidebar.rs:104
+    root.group.4.group.1 kind=Group rect=(8,480,264,44) size=(Fill(1.0),Hug) source=examples/branch_sidebar.rs:237
+      root.group.4.group.1.group.0 kind=Group rect=(16,484,248,15) size=(Fill(1.0),Hug) source=examples/branch_sidebar.rs:238
+        root.group.4.group.1.group.0.text.0 kind=Text rect=(16,484,55,15) size=(Hug,Hug) text="stash@{0}" text_color=info source=examples/branch_sidebar.rs:239
+        root.group.4.group.1.group.0.spacer.1 kind=Spacer rect=(79,492,140,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:240
+        root.group.4.group.1.group.0.text.2 kind=Text rect=(227,484,37,15) size=(Hug,Hug) text="2h ago" text_color=text-muted-foreground source=examples/branch_sidebar.rs:241
+      root.group.4.group.1.text.1 kind=Text rect=(16,503,202,17) size=(Hug,Hug) text="WIP on main: rework filter bar" text_color=text-muted-foreground source=examples/branch_sidebar.rs:244
+    root.group.4.group.2 kind=Group rect=(8,526,264,44) size=(Fill(1.0),Hug) source=examples/branch_sidebar.rs:237
+      root.group.4.group.2.group.0 kind=Group rect=(16,530,248,15) size=(Fill(1.0),Hug) source=examples/branch_sidebar.rs:238
+        root.group.4.group.2.group.0.text.0 kind=Text rect=(16,530,55,15) size=(Hug,Hug) text="stash@{1}" text_color=info source=examples/branch_sidebar.rs:239
+        root.group.4.group.2.group.0.spacer.1 kind=Spacer rect=(79,538,121,0) size=(Fill(1.0),Fill(1.0)) source=examples/branch_sidebar.rs:240
+        root.group.4.group.2.group.0.text.2 kind=Text rect=(209,530,55,15) size=(Hug,Hug) text="yesterday" text_color=text-muted-foreground source=examples/branch_sidebar.rs:241
+      root.group.4.group.2.text.1 kind=Text rect=(16,550,202,17) size=(Hug,Hug) text="Untracked changes after rebase" text_color=text-muted-foreground source=examples/branch_sidebar.rs:244

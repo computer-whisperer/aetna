@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="720" viewBox="0 0 280 720">
+<defs>
+  <filter id="shadow-sm" x="-20%" y="-20%" width="140%" height="140%">
+    <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.20"/>
+  </filter>
+  <filter id="shadow-md" x="-20%" y="-20%" width="140%" height="140%">
+    <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity="0.28"/>
+  </filter>
+  <filter id="shadow-lg" x="-20%" y="-20%" width="140%" height="140%">
+    <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.32"/>
+  </filter>
+</defs>
+<rect width="100%" height="100%" fill="#0e1016"/>
+<rect data-node="root" x="0.00" y="0.00" width="280.00" height="720.00" rx="0.00" fill="#0b0c10" stroke="#323a48" stroke-width="1.00" />
+<rect data-node="root.group.0" x="8.00" y="8.00" width="264.00" height="28.00" rx="8.00" fill="#20242d" stroke="#323a48" stroke-width="1.00" />
+<text data-node="root.group.0.text.0" x="18.00" y="26.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">⌕</text>
+<text data-node="root.group.0.text.1" x="32.72" y="26.76" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">Filter branches…</text>
+<text data-node="root.group.1.group.0.text.0" x="18.00" y="58.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">▼</text>
+<text data-node="root.group.1.group.0.text.1" x="32.16" y="58.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="600" fill="#94a0b0" text-anchor="start">LOCAL</text>
+<text data-node="root.group.1.group.0.text.3" x="259.84" y="58.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">5</text>
+<rect data-node="root.group.1.group.1" x="8.00" y="68.00" width="264.00" height="24.00" rx="4.00" fill="#20242d" />
+<rect data-node="root.group.1.group.1.spacer.0" x="16.00" y="70.00" width="3.00" height="20.00" rx="0.00" fill="#5caaff" />
+<text data-node="root.group.1.group.1.text.1" x="29.00" y="84.76" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">main</text>
+<rect data-node="root.group.1.group.2.spacer.0" x="16.00" y="96.00" width="3.00" height="20.00" rx="0.00" fill="rgba(92,170,255,0.000)" />
+<text data-node="root.group.1.group.2.text.1" x="29.00" y="110.76" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">feature/ui-lib-demo</text>
+<text data-node="root.group.1.group.2.group.3.text.0" x="253.68" y="109.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#50d28c" text-anchor="start">↑3</text>
+<rect data-node="root.group.1.group.3" x="8.00" y="120.00" width="264.00" height="24.00" rx="4.00" fill="rgba(45,49,58,0.471)" />
+<rect data-node="root.group.1.group.3.spacer.0" x="16.00" y="122.00" width="3.00" height="20.00" rx="0.00" fill="rgba(92,170,255,0.000)" />
+<text data-node="root.group.1.group.3.text.1" x="29.00" y="136.76" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">vulkan-render-cleanup</text>
+<text data-node="root.group.1.group.3.group.3.text.0" x="237.36" y="135.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#50d28c" text-anchor="start">↑1</text>
+<text data-node="root.group.1.group.3.group.3.text.1" x="253.68" y="135.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#f5be55" text-anchor="start">↓2</text>
+<rect data-node="root.group.1.group.4.spacer.0" x="16.00" y="148.00" width="3.00" height="20.00" rx="0.00" fill="rgba(92,170,255,0.000)" />
+<text data-node="root.group.1.group.4.text.1" x="29.00" y="162.76" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">agentic-inspector</text>
+<rect data-node="root.group.1.group.5.spacer.0" x="16.00" y="174.00" width="3.00" height="20.00" rx="0.00" fill="rgba(92,170,255,0.000)" />
+<text data-node="root.group.1.group.5.text.1" x="29.00" y="188.76" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">topic/staging-well-rework</text>
+<text data-node="root.group.1.group.5.group.3.text.0" x="247.52" y="187.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#f5be55" text-anchor="start">↓14</text>
+<text data-node="root.group.2.group.0.text.0" x="18.00" y="218.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">▼</text>
+<text data-node="root.group.2.group.0.text.1" x="32.16" y="218.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="600" fill="#94a0b0" text-anchor="start">REMOTE</text>
+<text data-node="root.group.2.group.0.text.3" x="259.84" y="218.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">1</text>
+<text data-node="root.group.2.group.1.text.0" x="28.00" y="242.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">▾</text>
+<text data-node="root.group.2.group.1.text.1" x="42.16" y="243.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">origin</text>
+<text data-node="root.group.2.group.1.text.3" x="249.84" y="242.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">4</text>
+<text data-node="root.group.2.group.2.text.0" x="38.00" y="267.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">main</text>
+<text data-node="root.group.2.group.3.text.0" x="38.00" y="291.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">feature/ui-lib-demo</text>
+<text data-node="root.group.2.group.3.group.2.text.0" x="233.68" y="290.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#50d28c" text-anchor="start">↑3</text>
+<text data-node="root.group.2.group.4.text.0" x="38.00" y="315.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">hotfix/2026-04</text>
+<text data-node="root.group.2.group.4.group.2.text.0" x="233.68" y="314.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#f5be55" text-anchor="start">↓1</text>
+<text data-node="root.group.2.group.5.text.0" x="38.00" y="339.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">dependabot/cargo/serde-2</text>
+<text data-node="root.group.3.group.0.text.0" x="18.00" y="368.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">▼</text>
+<text data-node="root.group.3.group.0.text.1" x="32.16" y="368.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="600" fill="#94a0b0" text-anchor="start">TAGS</text>
+<text data-node="root.group.3.group.0.text.3" x="259.84" y="368.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">3</text>
+<text data-node="root.group.3.group.1.text.0" x="18.00" y="392.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#e8eef6" text-anchor="start">🏷</text>
+<text data-node="root.group.3.group.1.text.1" x="32.16" y="393.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">v0.3.0</text>
+<text data-node="root.group.3.group.2.text.0" x="18.00" y="416.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#e8eef6" text-anchor="start">🏷</text>
+<text data-node="root.group.3.group.2.text.1" x="32.16" y="417.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">v0.2.4</text>
+<text data-node="root.group.3.group.3.text.0" x="18.00" y="440.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#e8eef6" text-anchor="start">🏷</text>
+<text data-node="root.group.3.group.3.text.1" x="32.16" y="441.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">v0.2.3</text>
+<text data-node="root.group.4.group.0.text.0" x="18.00" y="470.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">▼</text>
+<text data-node="root.group.4.group.0.text.1" x="32.16" y="470.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="600" fill="#94a0b0" text-anchor="start">STASHES</text>
+<text data-node="root.group.4.group.0.text.3" x="259.84" y="470.74" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">2</text>
+<text data-node="root.group.4.group.1.group.0.text.0" x="18.00" y="495.44" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#5caaff" text-anchor="start">stash@{0}</text>
+<text data-node="root.group.4.group.1.group.0.text.2" x="229.04" y="495.44" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">2h ago</text>
+<text data-node="root.group.4.group.1.text.1" x="18.00" y="515.88" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">WIP on main: rework filter bar</text>
+<text data-node="root.group.4.group.2.group.0.text.0" x="18.00" y="541.64" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#5caaff" text-anchor="start">stash@{1}</text>
+<text data-node="root.group.4.group.2.group.0.text.2" x="210.56" y="541.64" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11.00" font-weight="400" fill="#94a0b0" text-anchor="start">yesterday</text>
+<text data-node="root.group.4.group.2.text.1" x="18.00" y="562.08" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="400" fill="#94a0b0" text-anchor="start">Untracked changes after rebase</text>
+</svg>

@@ -15,3 +15,7 @@ path = "examples/settings.rs"
 [[example]]
 name = "button_states"
 path = "examples/button_states.rs"
+
+[[example]]
+name = "branch_sidebar"
+path = "examples/branch_sidebar.rs"
