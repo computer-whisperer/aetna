@@ -63,7 +63,8 @@ use vulkano::{
     sync::{self, GpuFuture},
 };
 
-use crate::instance::{PhysicalScissor, rgba_f32};
+use aetna_core::paint::{PhysicalScissor, rgba_f32};
+
 use crate::naga_compile::wgsl_to_spirv;
 
 const INITIAL_INSTANCE_CAPACITY: u64 = 256;

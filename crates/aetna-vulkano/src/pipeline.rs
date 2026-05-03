@@ -38,7 +38,8 @@ use vulkano::{
     shader::{ShaderModule, ShaderModuleCreateInfo},
 };
 
-use crate::instance::QuadInstance;
+use aetna_core::paint::QuadInstance;
+
 use crate::naga_compile::wgsl_to_spirv;
 
 /// Per-frame globals at @group(0) @binding(0). Mirrors

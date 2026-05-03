@@ -2,7 +2,7 @@
 //!
 //! Stock surfaces (`rounded_rect`, `focus_ring`) and any user-registered
 //! custom shader all use the same vertex layout — a unit-quad strip plus
-//! the [`crate::instance::QuadInstance`] attributes. That means one
+//! the [`aetna_core::paint::QuadInstance`] attributes. That means one
 //! pipeline-builder function covers the whole catalog; the only thing
 //! that varies is the WGSL source and a label.
 
@@ -10,7 +10,7 @@ use std::borrow::Cow;
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::instance::QuadInstance;
+use aetna_core::paint::QuadInstance;
 
 /// Per-frame globals bound at @group(0).
 #[repr(C)]

@@ -20,7 +20,7 @@ use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::instance::{PhysicalScissor, rgba_f32};
+use aetna_core::paint::{PhysicalScissor, rgba_f32};
 
 const INITIAL_INSTANCE_CAPACITY: usize = 256;
 

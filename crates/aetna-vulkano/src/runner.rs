@@ -47,10 +47,12 @@ use vulkano::{
     render_pass::{RenderPass, Subpass},
 };
 
-use crate::instance::{
+use aetna_core::paint::{
     InstanceRun, PaintItem, PhysicalScissor, QuadInstance, close_run, pack_instance,
-    physical_scissor, set_scissor,
+    physical_scissor,
 };
+
+use crate::instance::set_scissor;
 use crate::naga_compile::wgsl_to_spirv;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
 use crate::text::TextPaint;

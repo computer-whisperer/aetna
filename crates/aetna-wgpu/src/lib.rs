@@ -75,10 +75,12 @@ use aetna_core::shader::{ShaderHandle, StockShader, stock_wgsl};
 use aetna_core::state::{AnimationMode, UiState};
 use aetna_core::tree::{El, Rect};
 
-use crate::instance::{
+use aetna_core::paint::{
     InstanceRun, PaintItem, PhysicalScissor, QuadInstance, close_run, pack_instance,
-    physical_scissor, set_scissor,
+    physical_scissor,
 };
+
+use crate::instance::set_scissor;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
 use crate::text::TextPaint;
 
