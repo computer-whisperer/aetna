@@ -19,6 +19,7 @@
 use std::fmt::Write as _;
 
 use crate::layout;
+use crate::state::UiState;
 use crate::tree::*;
 
 /// A single lint finding.
@@ -68,12 +69,12 @@ impl LintReport {
 
 /// Run the lint pass. Findings whose source path contains
 /// `library_path_marker` are filtered out so the report focuses on
-/// user code. Pass `Some("attempts/attempt_4/src")` (or similar) to
+/// user code. Pass `Some("crates/aetna-core/src")` (or similar) to
 /// scrub library-internal raw values; pass `None` to see everything.
-pub fn lint(root: &El, library_path_marker: Option<&str>) -> LintReport {
+pub fn lint(root: &El, ui_state: &UiState, library_path_marker: Option<&str>) -> LintReport {
     let mut r = LintReport::default();
     let mut seen_ids: std::collections::BTreeMap<String, usize> = Default::default();
-    walk(root, &mut r, &mut seen_ids, library_path_marker);
+    walk(root, ui_state, &mut r, &mut seen_ids, library_path_marker);
     for (id, n) in seen_ids {
         if n > 1 {
             r.findings.push(Finding {
@@ -89,11 +90,13 @@ pub fn lint(root: &El, library_path_marker: Option<&str>) -> LintReport {
 
 fn walk(
     n: &El,
+    ui_state: &UiState,
     r: &mut LintReport,
     seen: &mut std::collections::BTreeMap<String, usize>,
     lib_marker: Option<&str>,
 ) {
     *seen.entry(n.computed_id.clone()).or_default() += 1;
+    let computed = ui_state.rect(&n.computed_id);
 
     let from_user = match lib_marker {
         Some(marker) => !n.source.file.contains(marker),
@@ -128,11 +131,11 @@ fn walk(
         if n.text.is_some() {
             let available_width = match n.text_wrap {
                 TextWrap::NoWrap => None,
-                TextWrap::Wrap => Some(n.computed.w),
+                TextWrap::Wrap => Some(computed.w),
             };
             if let Some((text_w, text_h)) = layout::estimated_text_size(n, available_width) {
-                let overflow_x = (text_w - n.computed.w).max(0.0);
-                let overflow_y = (text_h - n.computed.h).max(0.0);
+                let overflow_x = (text_w - computed.w).max(0.0);
+                let overflow_y = (text_h - computed.h).max(0.0);
                 if overflow_x > 0.5 || overflow_y > 0.5 {
                     r.findings.push(Finding {
                         kind: FindingKind::Overflow,
@@ -152,11 +155,12 @@ fn walk(
     // whole point — so don't flag children of a scroll viewport.
     let suppress_overflow = n.scrollable;
     for c in &n.children {
-        if !suppress_overflow && !rect_contains(n.computed, c.computed, 0.5) {
-            let dx_left = (n.computed.x - c.computed.x).max(0.0);
-            let dx_right = (c.computed.right() - n.computed.right()).max(0.0);
-            let dy_top = (n.computed.y - c.computed.y).max(0.0);
-            let dy_bottom = (c.computed.bottom() - n.computed.bottom()).max(0.0);
+        let c_rect = ui_state.rect(&c.computed_id);
+        if !suppress_overflow && !rect_contains(computed, c_rect, 0.5) {
+            let dx_left = (computed.x - c_rect.x).max(0.0);
+            let dx_right = (c_rect.right() - computed.right()).max(0.0);
+            let dy_top = (computed.y - c_rect.y).max(0.0);
+            let dy_bottom = (c_rect.bottom() - computed.bottom()).max(0.0);
             r.findings.push(Finding {
                 kind: FindingKind::Overflow,
                 node_id: c.computed_id.clone(),
@@ -167,7 +171,7 @@ fn walk(
                 ),
             });
         }
-        walk(c, r, seen, lib_marker);
+        walk(c, ui_state, r, seen, lib_marker);
     }
 }
 

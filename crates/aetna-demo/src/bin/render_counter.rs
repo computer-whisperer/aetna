@@ -44,12 +44,12 @@ impl App for Counter {
     }
 }
 
-fn find_rect(node: &El, key: &str) -> Option<Rect> {
+fn find_rect(node: &El, ui_state: &aetna_core::UiState, key: &str) -> Option<Rect> {
     if node.key.as_deref() == Some(key) {
-        return Some(node.computed);
+        return Some(ui_state.rect(&node.computed_id));
     }
     for c in &node.children {
-        if let Some(r) = find_rect(c, key) {
+        if let Some(r) = find_rect(c, ui_state, key) {
             return Some(r);
         }
     }
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Find the "+" button's center from the laid-out tree, then move
     // the simulated pointer there. The renderer hit-tests against its
     // stored last_tree and updates its hover key.
-    let plus = find_rect(&tree1, "inc").ok_or("missing 'inc' button in tree")?;
+    let plus = find_rect(&tree1, renderer.ui_state(), "inc").ok_or("missing 'inc' button in tree")?;
     let cx = plus.x + plus.w * 0.5;
     let cy = plus.y + plus.h * 0.5;
     let hovered = renderer.pointer_moved(cx, cy);

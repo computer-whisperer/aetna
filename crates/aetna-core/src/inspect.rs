@@ -7,18 +7,20 @@
 
 use std::fmt::Write as _;
 
+use crate::state::UiState;
 use crate::tree::*;
 
-/// Produce a tree dump string. Run after layout has populated `computed`
-/// and `computed_id`.
-pub fn dump_tree(root: &El) -> String {
+/// Produce a tree dump string. Run after layout has populated
+/// `computed_id` and the rect/state side maps in `ui_state`.
+pub fn dump_tree(root: &El, ui_state: &UiState) -> String {
     let mut s = String::new();
-    dump_node(root, 0, &mut s);
+    dump_node(root, ui_state, 0, &mut s);
     s
 }
 
-fn dump_node(n: &El, depth: usize, s: &mut String) {
+fn dump_node(n: &El, ui_state: &UiState, depth: usize, s: &mut String) {
     let indent = "  ".repeat(depth);
+    let computed = ui_state.rect(&n.computed_id);
     let _ = write!(
         s,
         "{indent}{id} kind={kind} rect=({x:.0},{y:.0},{w:.0},{h:.0}) size=({sw:?},{sh:?})",
@@ -28,21 +30,27 @@ fn dump_node(n: &El, depth: usize, s: &mut String) {
             &n.computed_id
         },
         kind = kind_str(&n.kind),
-        x = n.computed.x,
-        y = n.computed.y,
-        w = n.computed.w,
-        h = n.computed.h,
+        x = computed.x,
+        y = computed.y,
+        w = computed.w,
+        h = computed.h,
         sw = n.width,
         sh = n.height,
     );
-    if !matches!(n.state, InteractionState::Default) {
-        let _ = write!(s, " state={:?}", n.state);
+    let state = ui_state.node_state(&n.computed_id);
+    if !matches!(state, InteractionState::Default) {
+        let _ = write!(s, " state={state:?}");
     }
     if n.clip {
         s.push_str(" clip=true");
     }
     if n.scrollable {
-        let _ = write!(s, " scroll_y={:.0}", n.scroll_offset_y);
+        let off = ui_state
+            .scroll_offsets
+            .get(&n.computed_id)
+            .copied()
+            .unwrap_or(0.0);
+        let _ = write!(s, " scroll_y={off:.0}");
     }
     if let Some(text) = &n.text {
         let preview: String = text.chars().take(40).collect();
@@ -70,7 +78,7 @@ fn dump_node(n: &El, depth: usize, s: &mut String) {
     s.push('\n');
 
     for c in &n.children {
-        dump_node(c, depth + 1, s);
+        dump_node(c, ui_state, depth + 1, s);
     }
 }
 

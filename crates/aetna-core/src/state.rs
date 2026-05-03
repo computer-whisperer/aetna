@@ -19,10 +19,8 @@ use crate::anim::{AnimProp, Animation};
 use crate::anim::tick::{is_in_flight, tick_node};
 use crate::event::{KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget};
 use crate::focus::focus_order;
-use crate::hit_test::{
-    apply_scroll_rec, collect_scroll_rec, scroll_target_at, set_state_for_target,
-};
-use crate::tree::{El, InteractionState};
+use crate::hit_test::scroll_target_at;
+use crate::tree::{El, InteractionState, Rect};
 
 /// Animation pacing.
 ///
@@ -36,8 +34,25 @@ pub enum AnimationMode {
     Settled,
 }
 
-/// Internal UI state — pointer position, hovered key, pressed key.
-/// Owned by the renderer; the host doesn't interact with this directly.
+/// State-driven visual envelope kind. Each is a 0..1 amount written by
+/// the animation tick and consumed by [`crate::draw_ops::draw_ops`] to
+/// modulate a node's surface visuals (lighten on hover, darken on press,
+/// fade in/out the focus ring).
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum EnvelopeKind {
+    Hover,
+    Press,
+    FocusRing,
+}
+
+/// Internal UI state — interaction trackers + the side maps the library
+/// writes during layout / state-apply / animation-tick passes. Owned by
+/// the renderer; the host doesn't interact with this directly.
+///
+/// The side maps replace the per-node bookkeeping fields that used to
+/// live on `El` (computed rect, interaction state, envelope amounts).
+/// Keying is by `El::computed_id`, the path-shaped string assigned by
+/// the layout pass.
 #[derive(Default, Debug)]
 pub struct UiState {
     /// Last known pointer position in **logical** pixels. `None` until
@@ -48,9 +63,8 @@ pub struct UiState {
     pub focused: Option<UiTarget>,
     pub(crate) focus_order: Vec<UiTarget>,
     /// Scroll offset (logical pixels) per scrollable node, keyed by
-    /// `El::computed_id`. The library applies these to the tree before
-    /// layout; the layout pass clamps them to the available range and
-    /// the renderer writes the clamped values back here.
+    /// `El::computed_id`. The layout pass reads this when positioning a
+    /// scrollable's children and writes back the clamped value.
     pub(crate) scroll_offsets: HashMap<String, f32>,
     /// App-level hotkey registry; the host snapshots `App::hotkeys()`
     /// each frame and stores it here. Matched in `key_down` ahead of
@@ -64,6 +78,17 @@ pub struct UiState {
     /// binaries switch to `Settled` so single-frame snapshots reflect
     /// the post-animation visual.
     animation_mode: AnimationMode,
+
+    // ---- side maps (formerly El bookkeeping) ----
+    /// Computed rect per node, written by the layout pass.
+    pub(crate) computed_rects: HashMap<String, Rect>,
+    /// Library-resolved interaction state per node, derived each frame
+    /// from the focused/pressed/hovered trackers by [`Self::apply_to_state`].
+    pub(crate) node_states: HashMap<String, InteractionState>,
+    /// State-envelope amounts (0..1) per (node, kind), written by the
+    /// animation tick. `draw_ops` reads these to modulate the surface
+    /// visuals; missing entries read as `0.0`.
+    pub(crate) envelopes: HashMap<(String, EnvelopeKind), f32>,
 }
 
 impl UiState {
@@ -71,28 +96,61 @@ impl UiState {
         Self::default()
     }
 
-    /// Walk the tree and set `state` on nodes whose keys match the
-    /// current hovered/pressed trackers. Press wins over hover.
-    pub fn apply_to_tree(&self, root: &mut El) {
+    /// Look up the layout-assigned rect for `id`; returns a zero rect
+    /// when `id` is unknown (pre-layout, or not in the laid-out tree).
+    pub fn rect(&self, id: &str) -> Rect {
+        self.computed_rects.get(id).copied().unwrap_or_default()
+    }
+
+    /// Resolved interaction state for `id`. Returns
+    /// [`InteractionState::Default`] when no tracker matches.
+    pub fn node_state(&self, id: &str) -> InteractionState {
+        self.node_states.get(id).copied().unwrap_or_default()
+    }
+
+    /// Current eased state envelope amount in `[0, 1]` for `(id, kind)`.
+    /// Missing entries read as `0.0`.
+    pub fn envelope(&self, id: &str, kind: EnvelopeKind) -> f32 {
+        self.envelopes
+            .get(&(id.to_string(), kind))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    /// Rebuild [`Self::node_states`] from the current focused/pressed/
+    /// hovered trackers. Press wins over Focus on a same-node match;
+    /// Hover only applies when the node isn't already pressed or focused.
+    pub fn apply_to_state(&mut self) {
+        self.node_states.clear();
         if let Some(target) = &self.focused {
-            set_state_for_target(root, target, InteractionState::Focus);
+            self.node_states
+                .insert(target.node_id.clone(), InteractionState::Focus);
         }
         if let Some(target) = &self.pressed {
-            set_state_for_target(root, target, InteractionState::Press);
+            self.node_states
+                .insert(target.node_id.clone(), InteractionState::Press);
         }
         if let Some(target) = &self.hovered {
-            // Don't overwrite a press visual if both happen to match.
-            if self.pressed.as_ref().map(|p| p.node_id.as_str()) != Some(target.node_id.as_str())
-                && self.focused.as_ref().map(|p| p.node_id.as_str())
-                    != Some(target.node_id.as_str())
-            {
-                set_state_for_target(root, target, InteractionState::Hover);
+            let already = self
+                .pressed
+                .as_ref()
+                .map(|p| p.node_id == target.node_id)
+                .unwrap_or(false)
+                || self
+                    .focused
+                    .as_ref()
+                    .map(|f| f.node_id == target.node_id)
+                    .unwrap_or(false);
+            if !already {
+                self.node_states
+                    .insert(target.node_id.clone(), InteractionState::Hover);
             }
         }
     }
 
     pub fn sync_focus_order(&mut self, root: &El) {
-        self.focus_order = focus_order(root);
+        let order = focus_order(root, self);
+        self.focus_order = order;
         if let Some(focused) = &self.focused {
             if let Some(current) = self
                 .focus_order
@@ -122,28 +180,11 @@ impl UiState {
         self.move_focus(-1)
     }
 
-    /// Copy stored scroll offsets onto the matching scrollable nodes so
-    /// the layout pass can use them. Call after `assign_ids` and before
-    /// `layout`. Nodes without a stored offset get `0.0`.
-    pub fn apply_scroll_to_tree(&self, root: &mut El) {
-        apply_scroll_rec(root, &self.scroll_offsets);
-    }
-
-    /// Walk the laid-out tree and read the (now-clamped) `scroll_offset_y`
-    /// values back. Call after `layout`. Removes entries for ids that no
-    /// longer exist in the tree so stale offsets don't pile up across
-    /// rebuilds.
-    pub fn read_scroll_from_tree(&mut self, root: &El) {
-        let mut next = HashMap::new();
-        collect_scroll_rec(root, &mut next);
-        self.scroll_offsets = next;
-    }
-
     /// Increment the scroll offset for the deepest scrollable container
     /// containing `point`. Returns `true` if any scrollable was hit and
     /// updated (host can use this to decide whether to request a redraw).
     pub fn pointer_wheel(&mut self, root: &El, point: (f32, f32), dy: f32) -> bool {
-        if let Some(id) = scroll_target_at(root, point) {
+        if let Some(id) = scroll_target_at(root, self, point) {
             *self.scroll_offsets.entry(id).or_insert(0.0) += dy;
             true
         } else {
@@ -158,14 +199,12 @@ impl UiState {
     }
 
     /// Walk the laid-out tree, retarget per-(node, prop) animations to
-    /// the values implied by each node's current `state`, step them
-    /// forward to `now`, and write the eased values back into the El's
-    /// `fill` / `text_color` / `stroke` / `focus_ring_alpha`.
-    ///
-    /// The build closure regenerates `n.fill` etc. from the author's
-    /// intent each frame, so writing eased values back into the same
-    /// fields is safe — the next rebuild restores the originals before
-    /// this method runs again.
+    /// the values implied by each node's current state, step them
+    /// forward to `now`, and write back: app-driven props mutate the
+    /// El's `fill` / `text_color` / `stroke` / `opacity` / `translate` /
+    /// `scale` (so the next rebuild reads the eased value); state
+    /// envelopes are written to [`Self::envelopes`] for `draw_ops` to
+    /// modulate visuals from.
     ///
     /// Returns `true` if any animation is still in flight; the host
     /// should request another redraw next frame.
@@ -173,9 +212,22 @@ impl UiState {
         let mut visited: HashSet<(String, AnimProp)> = HashSet::new();
         let mut needs_redraw = false;
         let mode = self.animation_mode;
-        tick_node(root, &mut self.animations, &mut visited, now, mode, &mut needs_redraw);
+        tick_node(
+            root,
+            &mut self.animations,
+            &mut self.envelopes,
+            &self.node_states,
+            &mut visited,
+            now,
+            mode,
+            &mut needs_redraw,
+        );
         // GC: drop animations whose node left the tree this frame.
         self.animations.retain(|key, _| visited.contains(key));
+        // GC envelopes: drop entries for nodes that left the tree.
+        self.envelopes.retain(|(id, _), _| {
+            visited.iter().any(|(visited_id, _)| visited_id == id)
+        });
         needs_redraw
     }
 
@@ -275,61 +327,43 @@ impl UiState {
 mod tests {
     use super::*;
     use crate::hit_test::hit_test;
-    use crate::layout::layout;
+    use crate::layout::{assign_ids, layout};
     use crate::tree::*;
     use crate::{button, column, row, scroll};
 
-    fn lay_out_counter() -> El {
+    fn lay_out_counter() -> (El, UiState) {
         let mut tree = column([
             crate::text("0"),
             row([button("-").key("dec"), button("+").key("inc")]),
         ])
         .padding(20.0);
-        layout(&mut tree, Rect::new(0.0, 0.0, 400.0, 200.0));
-        tree
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        (tree, state)
     }
 
     #[test]
     fn ui_state_applies_hover() {
-        let mut tree = lay_out_counter();
-        let state = UiState {
-            pointer_pos: None,
-            hovered: Some(target(&tree, "inc")),
-            pressed: None,
-            focused: None,
-            focus_order: Vec::new(),
-            scroll_offsets: HashMap::new(),
-            hotkeys: Vec::new(),
-            animations: HashMap::new(),
-            animation_mode: AnimationMode::default(),
-        };
-        state.apply_to_tree(&mut tree);
-        assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Hover));
-        assert_eq!(node_state(&tree, "dec"), Some(InteractionState::Default));
+        let (tree, mut state) = lay_out_counter();
+        state.hovered = Some(target(&tree, &state, "inc"));
+        state.apply_to_state();
+        assert_eq!(node_state(&tree, &state, "inc"), InteractionState::Hover);
+        assert_eq!(node_state(&tree, &state, "dec"), InteractionState::Default);
     }
 
     #[test]
     fn ui_state_press_wins_over_hover_on_same_key() {
-        let mut tree = lay_out_counter();
-        let state = UiState {
-            pointer_pos: None,
-            hovered: Some(target(&tree, "inc")),
-            pressed: Some(target(&tree, "inc")),
-            focused: None,
-            focus_order: Vec::new(),
-            scroll_offsets: HashMap::new(),
-            hotkeys: Vec::new(),
-            animations: HashMap::new(),
-            animation_mode: AnimationMode::default(),
-        };
-        state.apply_to_tree(&mut tree);
-        assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Press));
+        let (tree, mut state) = lay_out_counter();
+        let inc = target(&tree, &state, "inc");
+        state.hovered = Some(inc.clone());
+        state.pressed = Some(inc);
+        state.apply_to_state();
+        assert_eq!(node_state(&tree, &state, "inc"), InteractionState::Press);
     }
 
     #[test]
     fn sync_focus_order_preserves_existing_focus_by_node_id() {
-        let tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (tree, mut state) = lay_out_counter();
         state.sync_focus_order(&tree);
         assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), None);
         state.focus_next();
@@ -337,15 +371,14 @@ mod tests {
         state.focus_next();
         assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("inc"));
 
-        let rebuilt = lay_out_counter();
+        let (rebuilt, _) = lay_out_counter();
         state.sync_focus_order(&rebuilt);
         assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("inc"));
     }
 
     #[test]
     fn shift_tab_moves_focus_backward() {
-        let tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (tree, mut state) = lay_out_counter();
         state.sync_focus_order(&tree);
         state.focus_prev();
         assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("inc"));
@@ -353,8 +386,7 @@ mod tests {
 
     #[test]
     fn enter_key_activates_focused_target() {
-        let tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (tree, mut state) = lay_out_counter();
         state.sync_focus_order(&tree);
         state.focus_next();
         state.focus_next();
@@ -373,8 +405,7 @@ mod tests {
 
     #[test]
     fn enter_without_focus_is_key_down() {
-        let tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (tree, mut state) = lay_out_counter();
         state.sync_focus_order(&tree);
 
         let event = state
@@ -387,8 +418,7 @@ mod tests {
 
     #[test]
     fn tab_changes_focus_without_app_event() {
-        let tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (tree, mut state) = lay_out_counter();
         state.sync_focus_order(&tree);
 
         assert!(
@@ -411,18 +441,20 @@ mod tests {
         ])
         .key("list")
         .height(Size::Fixed(100.0));
-        tree.scroll_offset_y = 60.0;
-        layout(&mut tree, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let mut state = UiState::new();
+        assign_ids(&mut tree);
+        state.scroll_offsets.insert(tree.computed_id.clone(), 60.0);
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
 
         // Buttons hug their text width — click at b1's center after the
         // scroll shift to land inside its actual rect.
-        let r1 = find_rect(&tree, "b1").expect("b1 rect");
-        let hit = hit_test(&tree, (r1.center_x(), r1.center_y()));
+        let r1 = find_rect(&tree, &state, "b1").expect("b1 rect");
+        let hit = hit_test(&tree, &state, (r1.center_x(), r1.center_y()));
         assert_eq!(hit.as_deref(), Some("b1"));
 
         // b0 has been scrolled above the viewport — clicking where it
         // would now sit (above y=0) misses it.
-        let r0 = find_rect(&tree, "b0").expect("b0 rect");
+        let r0 = find_rect(&tree, &state, "b0").expect("b0 rect");
         assert!(r0.bottom() <= 0.0, "b0 should be above the viewport, was {:?}", r0);
     }
 
@@ -492,8 +524,7 @@ mod tests {
     fn hotkey_wins_over_focused_activate() {
         // A hotkey on Ctrl+Enter should not be intercepted by the
         // focused-Enter activation routing.
-        let tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (tree, mut state) = lay_out_counter();
         state.sync_focus_order(&tree);
         state.focus_next();
         state.set_hotkeys(vec![(
@@ -561,11 +592,12 @@ mod tests {
         ])
         .key("outer")
         .height(Size::Fixed(300.0));
-        layout(&mut tree, Rect::new(0.0, 0.0, 200.0, 300.0));
-
-        let inner_rect = find_rect(&tree, "inner-row").expect("inner row rect");
         let mut state = UiState::new();
-        let routed = state.pointer_wheel(&tree, (inner_rect.center_x(), inner_rect.center_y()), 30.0);
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 300.0));
+
+        let inner_rect = find_rect(&tree, &state, "inner-row").expect("inner row rect");
+        let routed =
+            state.pointer_wheel(&tree, (inner_rect.center_x(), inner_rect.center_y()), 30.0);
         assert!(routed, "wheel should route to a scrollable");
         // Inner's id includes its key.
         let inner_id = find_id_for_kind(&tree, "inner").expect("inner id");
@@ -585,8 +617,7 @@ mod tests {
 
     #[test]
     fn stale_focus_clears_on_rebuild() {
-        let tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (tree, mut state) = lay_out_counter();
         state.focused = Some(UiTarget {
             key: "gone".into(),
             node_id: "root.missing".into(),
@@ -604,23 +635,13 @@ mod tests {
         }
         node.children.iter().find_map(|c| find_fill(c, key))
     }
-    fn find_focus_ring_alpha(node: &El, key: &str) -> Option<f32> {
+    fn envelope_for(node: &El, state: &UiState, key: &str, kind: EnvelopeKind) -> Option<f32> {
         if node.key.as_deref() == Some(key) {
-            return Some(node.focus_ring_alpha);
+            return Some(state.envelope(&node.computed_id, kind));
         }
-        node.children.iter().find_map(|c| find_focus_ring_alpha(c, key))
-    }
-    fn find_hover_amount(node: &El, key: &str) -> Option<f32> {
-        if node.key.as_deref() == Some(key) {
-            return Some(node.hover_amount);
-        }
-        node.children.iter().find_map(|c| find_hover_amount(c, key))
-    }
-    fn find_press_amount(node: &El, key: &str) -> Option<f32> {
-        if node.key.as_deref() == Some(key) {
-            return Some(node.press_amount);
-        }
-        node.children.iter().find_map(|c| find_press_amount(c, key))
+        node.children
+            .iter()
+            .find_map(|c| envelope_for(c, state, key, kind))
     }
 
     #[test]
@@ -628,17 +649,16 @@ mod tests {
         // Headless contract: Settled mode must produce the post-hover
         // envelope on a single prepare. A windowed runner (Live mode)
         // would ease over many frames; the fixture path can't wait.
-        let mut tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (mut tree, mut state) = lay_out_counter();
         state.set_animation_mode(AnimationMode::Settled);
-        state.hovered = Some(target(&tree, "inc"));
-        state.apply_to_tree(&mut tree);
+        state.hovered = Some(target(&tree, &state, "inc"));
+        state.apply_to_state();
 
         let needs_redraw = state.tick_visual_animations(&mut tree, Instant::now());
 
         assert!(!needs_redraw, "Settled mode should never report in flight");
-        assert_eq!(find_hover_amount(&tree, "inc"), Some(1.0));
-        assert_eq!(find_press_amount(&tree, "inc"), Some(0.0));
+        assert_eq!(envelope_for(&tree, &state, "inc", EnvelopeKind::Hover), Some(1.0));
+        assert_eq!(envelope_for(&tree, &state, "inc", EnvelopeKind::Press), Some(0.0));
         // The build fill stays untouched — the lightening happens in
         // apply_state at draw time, mixing by hover_amount.
     }
@@ -647,18 +667,17 @@ mod tests {
     fn live_mode_eases_hover_envelope_over_multiple_ticks() {
         // After a single 8 ms tick the hover envelope should be
         // strictly between 0 and 1 — neither snapped to either end.
-        let mut tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (mut tree, mut state) = lay_out_counter();
         let t0 = Instant::now();
         state.tick_visual_animations(&mut tree, t0);
 
-        state.hovered = Some(target(&tree, "inc"));
-        state.apply_to_tree(&mut tree);
+        state.hovered = Some(target(&tree, &state, "inc"));
+        state.apply_to_state();
         let needs_redraw = state.tick_visual_animations(
             &mut tree,
             t0 + std::time::Duration::from_millis(8),
         );
-        let mid = find_hover_amount(&tree, "inc").expect("hover envelope");
+        let mid = envelope_for(&tree, &state, "inc", EnvelopeKind::Hover).expect("hover envelope");
 
         assert!(needs_redraw, "spring should still be in flight after one 8 ms tick");
         assert!(
@@ -677,21 +696,21 @@ mod tests {
             .key("x")
             .fill(Color::rgb(255, 0, 0))])])
         .padding(20.0);
-        layout(&mut tree_a, Rect::new(0.0, 0.0, 400.0, 200.0));
         let mut state = UiState::new();
+        layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.set_animation_mode(AnimationMode::Settled);
-        state.hovered = Some(target(&tree_a, "x"));
-        state.apply_to_tree(&mut tree_a);
+        state.hovered = Some(target(&tree_a, &state, "x"));
+        state.apply_to_state();
         state.tick_visual_animations(&mut tree_a, Instant::now());
-        assert_eq!(find_hover_amount(&tree_a, "x"), Some(1.0));
+        assert_eq!(envelope_for(&tree_a, &state, "x", EnvelopeKind::Hover), Some(1.0));
 
         // Rebuild: same button, fill swapped to blue.
         let mut tree_b = column([row([button("X")
             .key("x")
             .fill(Color::rgb(0, 0, 255))])])
         .padding(20.0);
-        layout(&mut tree_b, Rect::new(0.0, 0.0, 400.0, 200.0));
-        state.apply_to_tree(&mut tree_b);
+        layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.apply_to_state();
         state.tick_visual_animations(&mut tree_b, Instant::now());
 
         let observed = find_fill(&tree_b, "x").expect("x fill");
@@ -700,32 +719,43 @@ mod tests {
             (0, 0, 255),
             "build fill should pass through unchanged — envelope handles state delta separately",
         );
-        assert_eq!(find_hover_amount(&tree_b, "x"), Some(1.0));
+        assert_eq!(envelope_for(&tree_b, &state, "x", EnvelopeKind::Hover), Some(1.0));
     }
 
     #[test]
     fn focus_ring_alpha_eases_in_and_out() {
-        let mut tree = lay_out_counter();
-        let mut state = UiState::new();
+        let (mut tree, mut state) = lay_out_counter();
         state.set_animation_mode(AnimationMode::Settled);
 
         // No focus → alpha settled at 0.
         state.tick_visual_animations(&mut tree, Instant::now());
-        assert_eq!(find_focus_ring_alpha(&tree, "inc"), Some(0.0));
+        assert_eq!(
+            envelope_for(&tree, &state, "inc", EnvelopeKind::FocusRing),
+            Some(0.0)
+        );
 
         // Focus on inc → alpha settles at 1.0.
-        let mut tree = lay_out_counter();
-        state.focused = Some(target(&tree, "inc"));
-        state.apply_to_tree(&mut tree);
+        let (mut tree, _) = lay_out_counter();
+        // Re-layout against the existing state so the rect map is fresh.
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.focused = Some(target(&tree, &state, "inc"));
+        state.apply_to_state();
         state.tick_visual_animations(&mut tree, Instant::now());
-        assert_eq!(find_focus_ring_alpha(&tree, "inc"), Some(1.0));
+        assert_eq!(
+            envelope_for(&tree, &state, "inc", EnvelopeKind::FocusRing),
+            Some(1.0)
+        );
 
         // Lose focus → alpha settles back to 0.
-        let mut tree = lay_out_counter();
+        let (mut tree, _) = lay_out_counter();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.focused = None;
-        state.apply_to_tree(&mut tree);
+        state.apply_to_state();
         state.tick_visual_animations(&mut tree, Instant::now());
-        assert_eq!(find_focus_ring_alpha(&tree, "inc"), Some(0.0));
+        assert_eq!(
+            envelope_for(&tree, &state, "inc", EnvelopeKind::FocusRing),
+            Some(0.0)
+        );
     }
 
     #[test]
@@ -742,9 +772,9 @@ mod tests {
                 .animate(Timing::SPRING_STANDARD)]),
         ])
         .padding(20.0);
-        layout(&mut tree_a, Rect::new(0.0, 0.0, 400.0, 200.0));
-
         let mut state = UiState::new();
+        layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+
         state.set_animation_mode(AnimationMode::Settled);
         state.tick_visual_animations(&mut tree_a, Instant::now());
         assert_eq!(find_fill(&tree_a, "x").map(|c| (c.r, c.g, c.b)), Some((255, 0, 0)));
@@ -758,7 +788,7 @@ mod tests {
                 .animate(Timing::SPRING_STANDARD)]),
         ])
         .padding(20.0);
-        layout(&mut tree_b, Rect::new(0.0, 0.0, 400.0, 200.0));
+        layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.tick_visual_animations(&mut tree_b, Instant::now());
 
         assert_eq!(
@@ -778,9 +808,9 @@ mod tests {
             .fill(Color::rgb(255, 0, 0))
             .animate(Timing::SPRING_STANDARD)])])
         .padding(20.0);
-        layout(&mut tree_a, Rect::new(0.0, 0.0, 400.0, 200.0));
-
         let mut state = UiState::new();
+        layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+
         let t0 = Instant::now();
         state.tick_visual_animations(&mut tree_a, t0);
 
@@ -789,7 +819,7 @@ mod tests {
             .fill(Color::rgb(0, 0, 255))
             .animate(Timing::SPRING_STANDARD)])])
         .padding(20.0);
-        layout(&mut tree_b, Rect::new(0.0, 0.0, 400.0, 200.0));
+        layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         let needs_redraw = state.tick_visual_animations(
             &mut tree_b,
             t0 + std::time::Duration::from_millis(8),
@@ -815,8 +845,8 @@ mod tests {
             .translate(0.0, 0.0)
             .animate(Timing::SPRING_STANDARD)])])
         .padding(20.0);
-        layout(&mut tree_a, Rect::new(0.0, 0.0, 400.0, 200.0));
         let mut state = UiState::new();
+        layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.set_animation_mode(AnimationMode::Settled);
         state.tick_visual_animations(&mut tree_a, Instant::now());
 
@@ -826,7 +856,7 @@ mod tests {
             .translate(100.0, 50.0)
             .animate(Timing::SPRING_STANDARD)])])
         .padding(20.0);
-        layout(&mut tree_b, Rect::new(0.0, 0.0, 400.0, 200.0));
+        layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.tick_visual_animations(&mut tree_b, Instant::now());
 
         let n = find_node(&tree_b, "s").expect("s node");
@@ -848,18 +878,18 @@ mod tests {
             .fill(Color::rgb(100, 100, 100))
             .animate(Timing::SPRING_STANDARD)])])
         .padding(20.0);
-        layout(&mut tree, Rect::new(0.0, 0.0, 400.0, 200.0));
-
         let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+
         state.set_animation_mode(AnimationMode::Settled);
-        state.hovered = Some(target(&tree, "x"));
-        state.apply_to_tree(&mut tree);
+        state.hovered = Some(target(&tree, &state, "x"));
+        state.apply_to_state();
         state.tick_visual_animations(&mut tree, Instant::now());
 
         // Build fill survives untouched (envelope handles the delta).
         let n_fill = find_fill(&tree, "x").expect("x fill");
         assert_eq!((n_fill.r, n_fill.g, n_fill.b), (100, 100, 100));
-        assert_eq!(find_hover_amount(&tree, "x"), Some(1.0));
+        assert_eq!(envelope_for(&tree, &state, "x", EnvelopeKind::Hover), Some(1.0));
     }
 
     #[test]
@@ -870,15 +900,15 @@ mod tests {
             .key("x")
             .fill(Color::rgb(255, 0, 0))])]) // no .animate()
         .padding(20.0);
-        layout(&mut tree_a, Rect::new(0.0, 0.0, 400.0, 200.0));
         let mut state = UiState::new();
+        layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.tick_visual_animations(&mut tree_a, Instant::now());
 
         let mut tree_b = column([row([button("X")
             .key("x")
             .fill(Color::rgb(0, 0, 255))])])
         .padding(20.0);
-        layout(&mut tree_b, Rect::new(0.0, 0.0, 400.0, 200.0));
+        layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.tick_visual_animations(&mut tree_b, Instant::now());
 
         let observed = find_fill(&tree_b, "x").expect("x fill");
@@ -901,10 +931,9 @@ mod tests {
         // Build a tree with two buttons; hover one to seed an entry.
         // Then build a different tree with only one button. The orphan's
         // animation entries should be trimmed.
-        let mut tree_a = lay_out_counter();
-        let mut state = UiState::new();
-        state.hovered = Some(target(&tree_a, "inc"));
-        state.apply_to_tree(&mut tree_a);
+        let (mut tree_a, mut state) = lay_out_counter();
+        state.hovered = Some(target(&tree_a, &state, "inc"));
+        state.apply_to_state();
         state.tick_visual_animations(&mut tree_a, Instant::now());
         let inc_id_a = find_id(&tree_a, "inc").expect("inc id");
         assert!(
@@ -921,9 +950,9 @@ mod tests {
             row([button("-").key("dec")]),
         ])
         .padding(20.0);
-        layout(&mut tree_b, Rect::new(0.0, 0.0, 400.0, 200.0));
+        layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.hovered = None;
-        state.apply_to_tree(&mut tree_b);
+        state.apply_to_state();
         state.tick_visual_animations(&mut tree_b, Instant::now());
         assert!(
             !state
@@ -934,20 +963,38 @@ mod tests {
         );
     }
 
-    fn find_rect(node: &El, key: &str) -> Option<Rect> {
+    fn find_rect(node: &El, state: &UiState, key: &str) -> Option<Rect> {
         if node.key.as_deref() == Some(key) {
-            return Some(node.computed);
+            return Some(state.rect(&node.computed_id));
         }
-        node.children.iter().find_map(|c| find_rect(c, key))
+        node.children
+            .iter()
+            .find_map(|c| find_rect(c, state, key))
     }
-    fn node_state(node: &El, key: &str) -> Option<InteractionState> {
+    fn node_state(node: &El, state: &UiState, key: &str) -> InteractionState {
+        let mut found = None;
+        find_node_state(node, state, key, &mut found);
+        found.unwrap_or_default()
+    }
+    fn find_node_state(
+        node: &El,
+        state: &UiState,
+        key: &str,
+        out: &mut Option<InteractionState>,
+    ) {
         if node.key.as_deref() == Some(key) {
-            return Some(node.state);
+            *out = Some(state.node_state(&node.computed_id));
+            return;
         }
-        node.children.iter().find_map(|c| node_state(c, key))
+        for c in &node.children {
+            find_node_state(c, state, key, out);
+            if out.is_some() {
+                return;
+            }
+        }
     }
-    fn target(node: &El, key: &str) -> UiTarget {
-        let rect = find_rect(node, key).expect("target rect");
+    fn target(node: &El, state: &UiState, key: &str) -> UiTarget {
+        let rect = find_rect(node, state, key).expect("target rect");
         UiTarget {
             key: key.to_string(),
             node_id: find_id(node, key).expect("target id"),

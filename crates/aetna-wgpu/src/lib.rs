@@ -281,6 +281,13 @@ impl Runner {
         self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
     }
 
+    /// Borrow the internal [`UiState`] — primarily for headless fixtures
+    /// that want to look up a node's rect after `prepare` (e.g., to
+    /// simulate a pointer at a specific button's center).
+    pub fn ui_state(&self) -> &UiState {
+        &self.ui_state
+    }
+
     /// Lay out the tree, resolve to draw ops, and upload per-frame
     /// buffers (quad instances + glyph atlas). Must be called before
     /// [`Self::draw`] and outside of any render pass.
@@ -299,27 +306,22 @@ impl Runner {
         viewport: Rect,
         scale_factor: f32,
     ) -> PrepareResult {
-        // Pre-pass: assign IDs so scroll offsets (keyed by id) can be
-        // applied before layout positions anything.
-        layout::assign_ids(root);
-        self.ui_state.apply_scroll_to_tree(root);
-
-        layout::layout(root, viewport);
-        // Layout has clamped any out-of-range scroll offsets; persist
-        // the clamped values so the next frame starts from a valid state.
-        self.ui_state.read_scroll_from_tree(root);
-
+        // Layout writes computed_id on each El + writes the rect map +
+        // reads/clamps/writes scroll offsets, all on UiState's side maps.
+        layout::layout(root, &mut self.ui_state, viewport);
         self.ui_state.sync_focus_order(root);
         // Apply UI-state visual deltas after layout, so focus targets can
         // survive rebuilds by node id and update their current rect.
-        self.ui_state.apply_to_tree(root);
+        self.ui_state.apply_to_state();
         // Tick visual animations: retarget springs to the values implied
         // by current state, sample at `now`, write eased values into the
-        // tree. Anything in flight forces another redraw next frame.
+        // envelope side map (state envelopes) and the El's app-driven
+        // fields (fill/translate/etc.). Anything in flight forces another
+        // redraw next frame.
         let needs_redraw = self
             .ui_state
             .tick_visual_animations(root, Instant::now());
-        let ops = draw_ops::draw_ops(root);
+        let ops = draw_ops::draw_ops(root, &self.ui_state);
 
         self.viewport_px = (
             (viewport.w * scale_factor).ceil().max(1.0) as u32,
@@ -519,7 +521,7 @@ impl Runner {
         let hit = self
             .last_tree
             .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, (x, y)));
+            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
         self.ui_state.hovered = hit;
         self.ui_state
             .hovered
@@ -541,7 +543,7 @@ impl Runner {
         let hit = self
             .last_tree
             .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, (x, y)));
+            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
         self.ui_state.set_focus(hit.clone());
         self.ui_state.pressed = hit;
     }
@@ -553,7 +555,7 @@ impl Runner {
         let hit = self
             .last_tree
             .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, (x, y)));
+            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
         let pressed = self.ui_state.pressed.take();
         match (pressed, hit) {
             (Some(p), Some(h)) if p.node_id == h.node_id => Some(UiEvent {

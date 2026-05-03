@@ -2,29 +2,36 @@
 //! order Tab/Shift-Tab walks. Ancestors with `clip` shrink the visible
 //! rect so a focusable that's been scrolled out of view is dropped.
 //!
-//! Rich composites can layer roving focus on top later; this is the
-//! library default.
+//! Reads computed rects from [`UiState::computed_rects`]; the tree
+//! itself only carries identity (`computed_id`).
 
 use crate::event::UiTarget;
+use crate::state::UiState;
 use crate::tree::{El, Rect};
 
 /// Collect focusable, keyed nodes in tree order (Tab walks forward,
 /// Shift-Tab walks backward). Nodes outside their inherited clip are
 /// skipped.
-pub fn focus_order(root: &El) -> Vec<UiTarget> {
+pub fn focus_order(root: &El, ui_state: &UiState) -> Vec<UiTarget> {
     let mut out = Vec::new();
-    collect_focus(root, None, &mut out);
+    collect_focus(root, ui_state, None, &mut out);
     out
 }
 
-fn collect_focus(node: &El, inherited_clip: Option<Rect>, out: &mut Vec<UiTarget>) {
+fn collect_focus(
+    node: &El,
+    ui_state: &UiState,
+    inherited_clip: Option<Rect>,
+    out: &mut Vec<UiTarget>,
+) {
+    let computed = ui_state.rect(&node.computed_id);
     let clip = if node.clip {
         match inherited_clip {
             Some(clip) => Some(
-                clip.intersect(node.computed)
+                clip.intersect(computed)
                     .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
             ),
-            None => Some(node.computed),
+            None => Some(computed),
         }
     } else {
         inherited_clip
@@ -32,19 +39,19 @@ fn collect_focus(node: &El, inherited_clip: Option<Rect>, out: &mut Vec<UiTarget
     if node.focusable {
         if let Some(key) = &node.key {
             if clip
-                .map(|c| c.intersect(node.computed).is_some())
+                .map(|c| c.intersect(computed).is_some())
                 .unwrap_or(true)
             {
                 out.push(UiTarget {
                     key: key.clone(),
                     node_id: node.computed_id.clone(),
-                    rect: node.computed,
+                    rect: computed,
                 });
             }
         }
     }
     for child in &node.children {
-        collect_focus(child, clip, out);
+        collect_focus(child, ui_state, clip, out);
     }
 }
 
@@ -52,6 +59,7 @@ fn collect_focus(node: &El, inherited_clip: Option<Rect>, out: &mut Vec<UiTarget
 mod tests {
     use super::*;
     use crate::layout::layout;
+    use crate::state::UiState;
     use crate::tree::*;
     use crate::{button, column, row};
 
@@ -62,9 +70,10 @@ mod tests {
             row([button("-").key("dec"), button("+").key("inc")]),
         ])
         .padding(20.0);
-        layout(&mut tree, Rect::new(0.0, 0.0, 400.0, 200.0));
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
 
-        let order = focus_order(&tree);
+        let order = focus_order(&tree, &state);
         let keys: Vec<&str> = order.iter().map(|t| t.key.as_str()).collect();
         assert_eq!(keys, vec!["dec", "inc"]);
     }

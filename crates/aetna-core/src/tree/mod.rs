@@ -48,7 +48,6 @@ use crate::style::StyleProfile;
 pub struct El {
     pub kind: Kind,
     pub style_profile: StyleProfile,
-    pub state: InteractionState,
     pub key: Option<String>,
     pub block_pointer: bool,
     pub focusable: bool,
@@ -78,17 +77,11 @@ pub struct El {
     /// where overflow should not leak visually or receive events.
     pub clip: bool,
 
-    /// This element is a vertical scroll viewport. The layout pass measures
-    /// content height ignoring `scroll_offset_y`, then translates child
-    /// rects by `-scroll_offset_y` and writes the clamped offset back.
-    /// Set automatically by [`scroll`]; the offset itself is owned by
-    /// [`crate::state::UiState`] and applied before layout.
+    /// This element is a vertical scroll viewport. The layout pass reads
+    /// the offset from [`crate::state::UiState::scroll_offsets`] keyed
+    /// by `computed_id`, clamps it to `[0, content_h - viewport_h]`, and
+    /// writes the clamped value back. Set automatically by [`scroll`].
     pub scrollable: bool,
-    /// Vertical scroll offset in logical pixels. Set by
-    /// `UiState::apply_scroll_to_tree` from the per-node tracker; the
-    /// layout pass clamps it to `[0, content_h - viewport_h]` and writes
-    /// the clamped value back here so the renderer can persist it.
-    pub scroll_offset_y: f32,
 
     /// Override the implicit `stock::rounded_rect` binding for this
     /// node's surface. v0.1 ships no users of this; it's the escape
@@ -133,27 +126,11 @@ pub struct El {
     /// press / focus ring) keep their own library defaults regardless.
     pub animate: Option<Timing>,
 
-    /// Filled by the layout pass.
-    pub computed: Rect,
-    /// Stable path-based ID, filled by the layout pass for inspection.
+    /// Stable path-based ID, filled by the layout pass. Used as the
+    /// key for every side map that holds per-node bookkeeping in
+    /// [`crate::state::UiState`] — computed rects, interaction state,
+    /// state-envelope amounts, scroll offsets, in-flight animations.
     pub computed_id: String,
-
-    /// Focus-ring alpha for this node, in `[0, 1]`. Written by
-    /// [`crate::state::UiState::tick_visual_animations`]; eases 0→1 on
-    /// focus enter and 1→0 on focus leave. The renderer emits a focus
-    /// ring quad iff this is > 0 and scales the ring's color alpha
-    /// by it. Lets the ring fade out after focus moves elsewhere.
-    pub focus_ring_alpha: f32,
-    /// Hover-state visual envelope in `[0, 1]`. Written by the
-    /// animation tracker. `apply_state` in `draw_ops` lerps the display
-    /// fill / stroke / text-colour between the build-time value and
-    /// `lighten(value, HOVER_LIGHTEN)` based on this. Storing the
-    /// *amount* instead of the absolute eased colour keeps state
-    /// transitions independent of mid-flight build-value changes.
-    pub hover_amount: f32,
-    /// Press-state envelope, mirroring [`Self::hover_amount`]. Lerps
-    /// toward `darken(value, PRESS_DARKEN)`.
-    pub press_amount: f32,
 }
 
 impl Default for El {
@@ -161,7 +138,6 @@ impl Default for El {
         Self {
             kind: Kind::Group,
             style_profile: StyleProfile::TextOnly,
-            state: InteractionState::Default,
             key: None,
             block_pointer: false,
             focusable: false,
@@ -180,7 +156,6 @@ impl Default for El {
             shadow: 0.0,
             clip: false,
             scrollable: false,
-            scroll_offset_y: 0.0,
             shader_override: None,
             text: None,
             text_color: None,
@@ -194,11 +169,7 @@ impl Default for El {
             translate: (0.0, 0.0),
             scale: 1.0,
             animate: None,
-            computed: Rect::default(),
             computed_id: String::new(),
-            focus_ring_alpha: 0.0,
-            hover_amount: 0.0,
-            press_amount: 0.0,
         }
     }
 }
@@ -219,15 +190,6 @@ impl El {
         self.source = Source::from_caller(loc);
         self
     }
-
-    // ---- State ----
-    pub fn with_state(mut self, s: InteractionState) -> Self { self.state = s; self }
-    /// Convenience for fixtures that demonstrate hover/press/etc.
-    pub fn hovered(self) -> Self { self.with_state(InteractionState::Hover) }
-    pub fn pressed(self) -> Self { self.with_state(InteractionState::Press) }
-    pub fn focused(self) -> Self { self.with_state(InteractionState::Focus) }
-    pub fn disabled(self) -> Self { self.with_state(InteractionState::Disabled) }
-    pub fn loading(self) -> Self { self.with_state(InteractionState::Loading) }
 
     // ---- Sizing ----
     pub fn width(mut self, w: Size) -> Self { self.width = w; self }

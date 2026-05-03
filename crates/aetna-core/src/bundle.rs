@@ -25,6 +25,7 @@ use crate::ir::DrawOp;
 use crate::layout;
 use crate::lint::{LintReport, lint};
 use crate::manifest;
+use crate::state::UiState;
 use crate::svg::svg_from_ops;
 use crate::tokens;
 use crate::tree::{El, Rect};
@@ -47,19 +48,23 @@ pub struct Bundle {
 /// Lay out, resolve to draw ops, dump, lint.
 ///
 /// `library_marker` filters lint findings whose source path contains
-/// the marker — typically `"attempts/attempt_4/src"` to ignore values
+/// the marker — typically `"crates/aetna-core/src"` to ignore values
 /// inside library defaults. Pass `None` to see everything.
+///
+/// Constructs a fresh [`UiState`] internally — bundle artifacts are a
+/// snapshot of the tree at rest, with no hover/press/focus state.
 pub fn render_bundle(
     root: &mut El,
     viewport: Rect,
     library_marker: Option<&str>,
 ) -> Bundle {
-    layout::layout(root, viewport);
-    let draw_ops = draw_ops::draw_ops(root);
+    let mut ui_state = UiState::new();
+    layout::layout(root, &mut ui_state, viewport);
+    let draw_ops = draw_ops::draw_ops(root, &ui_state);
     let svg = svg_from_ops(viewport.w, viewport.h, &draw_ops, tokens::BG_APP);
-    let tree_dump = inspect::dump_tree(root);
+    let tree_dump = inspect::dump_tree(root, &ui_state);
     let shader_manifest = manifest::shader_manifest(&draw_ops);
-    let lint = lint(root, library_marker);
+    let lint = lint(root, &ui_state, library_marker);
     Bundle { svg, tree_dump, draw_ops, shader_manifest, lint }
 }
 

@@ -5,32 +5,42 @@
 //! or custom shader, with uniforms packed) or a `GlyphRun`.
 //!
 //! State styling lands here on the CPU side. Hover lightens / press
-//! darkens / focus-ring fade are pre-eased into `n.fill`, `n.text_color`,
-//! `n.stroke`, and `n.focus_ring_alpha` by
-//! [`crate::state::UiState::tick_visual_animations`] *before* this
-//! pass runs. What remains here are the deltas that don't ease — alpha
-//! multiplication for `Disabled`, and the `Loading` text suffix.
+//! darkens / focus-ring fade come from the eased envelopes in
+//! [`UiState::envelopes`] (written by
+//! [`UiState::tick_visual_animations`] in the prior pass). What this
+//! module computes are the deltas: lerp the build-time colours toward
+//! the state-modulated ones by the envelope amount, plus the non-eased
+//! `Disabled` (alpha multiply) and `Loading` (text suffix) deltas.
 
 use crate::ir::*;
 use crate::shader::*;
+use crate::state::{EnvelopeKind, UiState};
 use crate::tokens;
 use crate::tree::*;
 
 /// Walk the laid-out tree and emit draw ops in paint order.
-pub fn draw_ops(root: &El) -> Vec<DrawOp> {
+pub fn draw_ops(root: &El, ui_state: &UiState) -> Vec<DrawOp> {
     let mut out = Vec::new();
-    push_node(root, &mut out, None, (0.0, 0.0), 1.0);
+    push_node(root, ui_state, &mut out, None, (0.0, 0.0), 1.0);
     out
 }
 
 fn push_node(
     n: &El,
+    ui_state: &UiState,
     out: &mut Vec<DrawOp>,
     inherited_scissor: Option<Rect>,
     inherited_translate: (f32, f32),
     inherited_opacity: f32,
 ) {
-    let (fill, stroke, text_color, weight, suffix) = apply_state(n);
+    let computed = ui_state.rect(&n.computed_id);
+    let state = ui_state.node_state(&n.computed_id);
+    let hover_amount = ui_state.envelope(&n.computed_id, EnvelopeKind::Hover);
+    let press_amount = ui_state.envelope(&n.computed_id, EnvelopeKind::Press);
+    let focus_ring_alpha = ui_state.envelope(&n.computed_id, EnvelopeKind::FocusRing);
+
+    let (fill, stroke, text_color, weight, suffix) =
+        apply_state(n, state, hover_amount, press_amount);
 
     // `translate` is subtree-inheriting: descendants paint at their
     // computed rect plus all ancestor `translate` accumulated through
@@ -44,7 +54,7 @@ fn push_node(
     );
     let opacity = inherited_opacity * n.opacity;
 
-    let translated_rect = translated(n.computed, total_translate);
+    let translated_rect = translated(computed, total_translate);
     let painted_rect = scaled_around_center(translated_rect, n.scale);
     let painted_font_size = n.font_size * n.scale;
 
@@ -93,7 +103,7 @@ fn push_node(
     // animation tracker on focus enter / leave) is non-zero. The ring
     // colour multiplies `tokens::FOCUS_RING.a` by the alpha so the ring
     // fades in on focus and fades out after focus moves elsewhere.
-    if n.focus_ring_alpha > 0.0
+    if focus_ring_alpha > 0.0
         && (matches!(
             n.kind,
             Kind::Button | Kind::Card | Kind::Badge | Kind::Custom(_)
@@ -102,7 +112,7 @@ fn push_node(
         let ring_rect = inset_rect(painted_rect, -tokens::FOCUS_RING_WIDTH * 0.5);
         let mut uniforms = UniformBlock::new();
         let base = tokens::FOCUS_RING;
-        let eased_alpha = (base.a as f32 * n.focus_ring_alpha * opacity)
+        let eased_alpha = (base.a as f32 * focus_ring_alpha * opacity)
             .round()
             .clamp(0.0, 255.0) as u8;
         uniforms.insert("color", UniformValue::Color(base.with_alpha(eased_alpha)));
@@ -151,7 +161,7 @@ fn push_node(
     }
 
     for c in &n.children {
-        push_node(c, out, own_scissor, total_translate, opacity);
+        push_node(c, ui_state, out, own_scissor, total_translate, opacity);
     }
 }
 
@@ -186,18 +196,21 @@ fn opaque(c: Color, opacity: f32) -> Color {
 /// Resolve the effective `(fill, stroke, text_color, font_weight,
 /// optional text suffix)` for paint.
 ///
-/// Hover and press are applied as **envelope mixes**: `apply_state`
-/// reads `n.hover_amount` / `n.press_amount` (both 0..1, eased by the
-/// animation tracker) and lerps the build-time colour toward the
-/// state-modulated colour. This composition keeps state easing
+/// Hover and press are applied as **envelope mixes**: the eased amounts
+/// `hover` / `press` (both 0..1, written by the animation tracker into
+/// [`UiState::envelopes`]) lerp the build-time colour toward its
+/// state-modulated form. This composition keeps state easing
 /// independent of mid-flight changes to `n.fill` — the author can swap
 /// a button's colour during a hover and the new colour appears with
 /// the same eased lighten amount, no fighting between trackers.
 ///
 /// Disabled (alpha multiply) and Loading (text suffix) aren't eased
-/// and are still applied here.
+/// and are still applied here, branching on the resolved `state`.
 fn apply_state(
     n: &El,
+    state: InteractionState,
+    hover: f32,
+    press: f32,
 ) -> (
     Option<Color>,
     Option<Color>,
@@ -211,19 +224,17 @@ fn apply_state(
     let weight = n.font_weight;
     let mut suffix = None;
 
-    if n.hover_amount > 0.0 {
-        let h = n.hover_amount;
-        fill = fill.map(|c| c.mix(c.lighten(tokens::HOVER_LIGHTEN), h));
-        stroke = stroke.map(|c| c.mix(c.lighten(tokens::HOVER_LIGHTEN), h));
-        text_color = text_color.map(|c| c.mix(c.lighten(tokens::HOVER_LIGHTEN * 0.5), h));
+    if hover > 0.0 {
+        fill = fill.map(|c| c.mix(c.lighten(tokens::HOVER_LIGHTEN), hover));
+        stroke = stroke.map(|c| c.mix(c.lighten(tokens::HOVER_LIGHTEN), hover));
+        text_color = text_color.map(|c| c.mix(c.lighten(tokens::HOVER_LIGHTEN * 0.5), hover));
     }
-    if n.press_amount > 0.0 {
-        let p = n.press_amount;
-        fill = fill.map(|c| c.mix(c.darken(tokens::PRESS_DARKEN), p));
-        stroke = stroke.map(|c| c.mix(c.darken(tokens::PRESS_DARKEN), p));
+    if press > 0.0 {
+        fill = fill.map(|c| c.mix(c.darken(tokens::PRESS_DARKEN), press));
+        stroke = stroke.map(|c| c.mix(c.darken(tokens::PRESS_DARKEN), press));
     }
 
-    match n.state {
+    match state {
         InteractionState::Default
         | InteractionState::Focus
         | InteractionState::Hover
@@ -257,6 +268,7 @@ fn intersect_scissor(current: Option<Rect>, next: Rect) -> Option<Rect> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::UiState;
     use crate::{button, column, row};
 
     #[test]
@@ -267,9 +279,10 @@ mod tests {
         ])
         .clip()
         .width(Size::Fixed(120.0))]);
-        crate::layout::layout(&mut root, Rect::new(0.0, 0.0, 400.0, 100.0));
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 100.0));
 
-        let ops = draw_ops(&root);
+        let ops = draw_ops(&root, &state);
         let clipped = ops
             .iter()
             .find(|op| op.id().contains("outside"))
@@ -283,9 +296,10 @@ mod tests {
     #[test]
     fn text_align_center_emits_middle_anchor() {
         let mut root = crate::text("Centered").center_text();
-        crate::layout::layout(&mut root, Rect::new(0.0, 0.0, 200.0, 80.0));
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 80.0));
 
-        let ops = draw_ops(&root);
+        let ops = draw_ops(&root, &state);
         let DrawOp::GlyphRun { anchor, .. } = &ops[0] else {
             panic!("expected glyph run");
         };
@@ -296,9 +310,10 @@ mod tests {
     fn paragraph_emits_wrapped_glyph_run() {
         let mut root = crate::paragraph("This sentence should wrap in a narrow box.")
             .width(Size::Fixed(120.0));
-        crate::layout::layout(&mut root, Rect::new(0.0, 0.0, 120.0, 120.0));
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 120.0, 120.0));
 
-        let ops = draw_ops(&root);
+        let ops = draw_ops(&root, &state);
         let DrawOp::GlyphRun { wrap, .. } = &ops[0] else {
             panic!("expected glyph run");
         };
@@ -308,8 +323,9 @@ mod tests {
     #[test]
     fn opacity_multiplies_alpha_on_quad_uniforms() {
         let mut root = button("X").fill(Color::rgba(200, 100, 50, 200)).opacity(0.5);
-        crate::layout::layout(&mut root, Rect::new(0.0, 0.0, 200.0, 100.0));
-        let ops = draw_ops(&root);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let ops = draw_ops(&root, &state);
         let DrawOp::Quad { uniforms, .. } = &ops[0] else {
             panic!("expected quad op");
         };
@@ -325,10 +341,11 @@ mod tests {
         // Parent translate of (50, 30) should land child rects at
         // child.computed + (50, 30).
         let mut root = column([button("X").key("x")]).translate(50.0, 30.0);
-        crate::layout::layout(&mut root, Rect::new(0.0, 0.0, 400.0, 200.0));
-        let computed_x = ops_quad_for(&root, "x").expect("x quad rect");
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        let computed_x = ops_quad_for(&root, &state, "x").expect("x quad rect");
         // Find the same node's pre-translate computed rect.
-        let untranslated = find_computed(&root, "x").expect("x computed");
+        let untranslated = find_computed(&root, &state, "x").expect("x computed");
 
         assert!((computed_x.x - (untranslated.x + 50.0)).abs() < 0.5);
         assert!((computed_x.y - (untranslated.y + 30.0)).abs() < 0.5);
@@ -337,9 +354,10 @@ mod tests {
     #[test]
     fn scale_scales_rect_around_center() {
         let mut root = column([button("X").key("x").scale(2.0).width(Size::Fixed(40.0))]);
-        crate::layout::layout(&mut root, Rect::new(0.0, 0.0, 200.0, 100.0));
-        let pre = find_computed(&root, "x").expect("computed");
-        let post = ops_quad_for(&root, "x").expect("painted");
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let pre = find_computed(&root, &state, "x").expect("computed");
+        let post = ops_quad_for(&root, &state, "x").expect("painted");
 
         // 2x scale around centre: w doubles, x shifts left by w/2.
         assert!((post.w - pre.w * 2.0).abs() < 0.5);
@@ -352,8 +370,8 @@ mod tests {
         );
     }
 
-    fn ops_quad_for(root: &El, key: &str) -> Option<Rect> {
-        let ops = draw_ops(root);
+    fn ops_quad_for(root: &El, ui_state: &UiState, key: &str) -> Option<Rect> {
+        let ops = draw_ops(root, ui_state);
         for op in ops {
             if let DrawOp::Quad { id, rect, .. } = op {
                 if id.contains(key) {
@@ -363,10 +381,12 @@ mod tests {
         }
         None
     }
-    fn find_computed(node: &El, key: &str) -> Option<Rect> {
+    fn find_computed(node: &El, ui_state: &UiState, key: &str) -> Option<Rect> {
         if node.key.as_deref() == Some(key) {
-            return Some(node.computed);
+            return Some(ui_state.rect(&node.computed_id));
         }
-        node.children.iter().find_map(|c| find_computed(c, key))
+        node.children
+            .iter()
+            .find_map(|c| find_computed(c, ui_state, key))
     }
 }

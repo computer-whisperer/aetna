@@ -1,18 +1,18 @@
 //! Visual-state animation tick — drives state envelopes (hover / press /
-//! focus ring) and app-driven prop tracks (`fill`, `text_color`, etc.)
-//! on top of the per-`(node, prop)` [`Animation`] map owned by
-//! [`crate::state::UiState`].
+//! focus ring) and app-driven prop tracks (`fill`, `text_color`, etc.).
 //!
-//! Split out of `event.rs` so the integrator-adjacent code lives next to
-//! the rest of the animation primitives. The state module owns the map
-//! and the public entry point ([`UiState::tick_visual_animations`]); this
-//! module owns the per-node walker.
+//! The animation map (`(computed_id, AnimProp) → Animation`) lives in
+//! [`crate::state::UiState`]. So does the envelope side map. This module
+//! owns the per-node walker that retargets, steps, and writes back —
+//! state envelopes go to `UiState::envelopes` (read by `draw_ops`), app
+//! props mutate the `El`'s author fields directly so the next build
+//! reads the eased value.
 
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use crate::anim::{AnimProp, AnimValue, Animation, Timing};
-use crate::state::AnimationMode;
+use crate::state::{AnimationMode, EnvelopeKind};
 use crate::tree::{El, InteractionState};
 
 /// App-driven props, processed *first* on nodes with `n.animate` set.
@@ -31,18 +31,21 @@ const APP_PROPS: &[AnimProp] = &[
 ];
 
 /// State-driven envelopes, processed *after* app props. Always tracked
-/// on keyed interactive nodes — no author opt-in. Each is a 0..1 amount;
-/// `apply_state` in `draw_ops` mixes the build-time visual toward the
-/// state-modulated visual based on these.
+/// on keyed interactive nodes — no author opt-in. Each is a 0..1 amount
+/// written to `UiState::envelopes`; `apply_state` in `draw_ops` mixes
+/// the build-time visual toward the state-modulated visual based on it.
 const STATE_PROPS: &[AnimProp] = &[
     AnimProp::HoverAmount,
     AnimProp::PressAmount,
     AnimProp::FocusRingAlpha,
 ];
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn tick_node(
     node: &mut El,
     anims: &mut HashMap<(String, AnimProp), Animation>,
+    envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
+    node_states: &HashMap<String, InteractionState>,
     visited: &mut HashSet<(String, AnimProp)>,
     now: Instant,
     mode: AnimationMode,
@@ -52,7 +55,10 @@ pub(crate) fn tick_node(
         // App-driven props: only on nodes that opted in via .animate().
         if let Some(timing) = node.animate {
             for &prop in APP_PROPS {
-                process_prop(node, prop, timing, anims, visited, now, mode, needs_redraw);
+                process_prop(
+                    node, prop, timing, anims, envelopes, node_states, visited, now, mode,
+                    needs_redraw,
+                );
             }
         }
         // State-driven props: only on keyed interactive nodes; the
@@ -60,12 +66,17 @@ pub(crate) fn tick_node(
         if node.key.is_some() {
             for &prop in STATE_PROPS {
                 let timing = state_timing_for(prop);
-                process_prop(node, prop, timing, anims, visited, now, mode, needs_redraw);
+                process_prop(
+                    node, prop, timing, anims, envelopes, node_states, visited, now, mode,
+                    needs_redraw,
+                );
             }
         }
     }
     for child in &mut node.children {
-        tick_node(child, anims, visited, now, mode, needs_redraw);
+        tick_node(
+            child, anims, envelopes, node_states, visited, now, mode, needs_redraw,
+        );
     }
 }
 
@@ -75,12 +86,18 @@ fn process_prop(
     prop: AnimProp,
     timing: Timing,
     anims: &mut HashMap<(String, AnimProp), Animation>,
+    envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
+    node_states: &HashMap<String, InteractionState>,
     visited: &mut HashSet<(String, AnimProp)>,
     now: Instant,
     mode: AnimationMode,
     needs_redraw: &mut bool,
 ) {
-    let Some(target) = compute_target(node, prop) else {
+    let state = node_states
+        .get(&node.computed_id)
+        .copied()
+        .unwrap_or_default();
+    let Some(target) = compute_target(node, prop, state) else {
         return;
     };
     let key = (node.computed_id.clone(), prop);
@@ -96,7 +113,7 @@ fn process_prop(
             true
         }
     };
-    write_prop(node, prop, anim.current);
+    write_prop(node, prop, anim.current, envelopes);
     if !settled {
         *needs_redraw = true;
     }
@@ -105,17 +122,17 @@ fn process_prop(
 /// Compute the visual target for `prop` based on the node's current
 /// interaction state and its build-closure-supplied original value.
 /// Returns `None` if the prop doesn't apply (e.g., a node with no fill
-/// has no `StateFill` to animate).
-fn compute_target(n: &El, prop: AnimProp) -> Option<AnimValue> {
+/// has no `AppFill` to animate).
+fn compute_target(n: &El, prop: AnimProp, state: InteractionState) -> Option<AnimValue> {
     match prop {
         AnimProp::HoverAmount => Some(AnimValue::Float(
-            if matches!(n.state, InteractionState::Hover) { 1.0 } else { 0.0 },
+            if matches!(state, InteractionState::Hover) { 1.0 } else { 0.0 },
         )),
         AnimProp::PressAmount => Some(AnimValue::Float(
-            if matches!(n.state, InteractionState::Press) { 1.0 } else { 0.0 },
+            if matches!(state, InteractionState::Press) { 1.0 } else { 0.0 },
         )),
         AnimProp::FocusRingAlpha => Some(AnimValue::Float(
-            if matches!(n.state, InteractionState::Focus) { 1.0 } else { 0.0 },
+            if matches!(state, InteractionState::Focus) { 1.0 } else { 0.0 },
         )),
         AnimProp::AppFill => n.fill.map(AnimValue::Color),
         AnimProp::AppStroke => n.stroke.map(AnimValue::Color),
@@ -141,15 +158,33 @@ fn state_timing_for(prop: AnimProp) -> Timing {
     }
 }
 
-fn write_prop(n: &mut El, prop: AnimProp, value: AnimValue) {
+fn write_prop(
+    n: &mut El,
+    prop: AnimProp,
+    value: AnimValue,
+    envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
+) {
     match (prop, value) {
         (AnimProp::AppFill, AnimValue::Color(c)) => n.fill = Some(c),
         (AnimProp::AppStroke, AnimValue::Color(c)) => n.stroke = Some(c),
         (AnimProp::AppTextColor, AnimValue::Color(c)) => n.text_color = Some(c),
-        (AnimProp::HoverAmount, AnimValue::Float(v)) => n.hover_amount = v.clamp(0.0, 1.0),
-        (AnimProp::PressAmount, AnimValue::Float(v)) => n.press_amount = v.clamp(0.0, 1.0),
+        (AnimProp::HoverAmount, AnimValue::Float(v)) => {
+            envelopes.insert(
+                (n.computed_id.clone(), EnvelopeKind::Hover),
+                v.clamp(0.0, 1.0),
+            );
+        }
+        (AnimProp::PressAmount, AnimValue::Float(v)) => {
+            envelopes.insert(
+                (n.computed_id.clone(), EnvelopeKind::Press),
+                v.clamp(0.0, 1.0),
+            );
+        }
         (AnimProp::FocusRingAlpha, AnimValue::Float(v)) => {
-            n.focus_ring_alpha = v.clamp(0.0, 1.0);
+            envelopes.insert(
+                (n.computed_id.clone(), EnvelopeKind::FocusRing),
+                v.clamp(0.0, 1.0),
+            );
         }
         (AnimProp::AppOpacity, AnimValue::Float(v)) => n.opacity = v.clamp(0.0, 1.0),
         (AnimProp::AppScale, AnimValue::Float(v)) => n.scale = v.max(0.0),

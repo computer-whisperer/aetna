@@ -5,21 +5,24 @@
 //! its scroll viewport can't be clicked. Only nodes with `key.is_some()`
 //! are hit-test targets — author intent is "I tagged it with a key, it's
 //! interactive."
-
-use std::collections::HashMap;
+//!
+//! Reads computed rects from [`UiState::computed_rects`] (populated by
+//! the layout pass) — the tree carries identity (`computed_id`) but not
+//! geometry.
 
 use crate::event::UiTarget;
-use crate::tree::{El, InteractionState, Rect};
+use crate::state::UiState;
+use crate::tree::{El, Rect};
 
 /// Find the topmost keyed node whose laid-out rect contains `point`
 /// (logical pixels). Returns `None` if the point hits no keyed node.
-pub fn hit_test(root: &El, point: (f32, f32)) -> Option<String> {
-    hit_test_target(root, point).map(|target| target.key)
+pub fn hit_test(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<String> {
+    hit_test_target(root, ui_state, point).map(|target| target.key)
 }
 
 /// Find the topmost keyed node and return full target metadata.
-pub fn hit_test_target(root: &El, point: (f32, f32)) -> Option<UiTarget> {
-    match hit_test_rec(root, point, None) {
+pub fn hit_test_target(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<UiTarget> {
+    match hit_test_rec(root, ui_state, point, None) {
         Hit::Target(target) => Some(target),
         Hit::Blocked | Hit::Miss => None,
     }
@@ -31,29 +34,35 @@ enum Hit {
     Miss,
 }
 
-fn hit_test_rec(node: &El, point: (f32, f32), inherited_clip: Option<Rect>) -> Hit {
+fn hit_test_rec(
+    node: &El,
+    ui_state: &UiState,
+    point: (f32, f32),
+    inherited_clip: Option<Rect>,
+) -> Hit {
     if let Some(clip) = inherited_clip {
         if !clip.contains(point.0, point.1) {
             return Hit::Miss;
         }
     }
-    if !node.computed.contains(point.0, point.1) {
+    let computed = ui_state.rect(&node.computed_id);
+    if !computed.contains(point.0, point.1) {
         return Hit::Miss;
     }
     let child_clip = if node.clip {
         match inherited_clip {
             Some(clip) => Some(
-                clip.intersect(node.computed)
+                clip.intersect(computed)
                     .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
             ),
-            None => Some(node.computed),
+            None => Some(computed),
         }
     } else {
         inherited_clip
     };
     // Children paint last → are on top → check first.
     for child in node.children.iter().rev() {
-        match hit_test_rec(child, point, child_clip) {
+        match hit_test_rec(child, ui_state, point, child_clip) {
             Hit::Target(target) => return Hit::Target(target),
             Hit::Blocked => return Hit::Blocked,
             Hit::Miss => {}
@@ -64,7 +73,7 @@ fn hit_test_rec(node: &El, point: (f32, f32), inherited_clip: Option<Rect>) -> H
         return Hit::Target(UiTarget {
             key: key.clone(),
             node_id: node.computed_id.clone(),
-            rect: node.computed,
+            rect: computed,
         });
     }
     if node.block_pointer {
@@ -73,35 +82,18 @@ fn hit_test_rec(node: &El, point: (f32, f32), inherited_clip: Option<Rect>) -> H
     Hit::Miss
 }
 
-pub(crate) fn apply_scroll_rec(node: &mut El, offsets: &HashMap<String, f32>) {
-    if node.scrollable {
-        node.scroll_offset_y = offsets.get(&node.computed_id).copied().unwrap_or(0.0);
-    }
-    for c in &mut node.children {
-        apply_scroll_rec(c, offsets);
-    }
-}
-
-pub(crate) fn collect_scroll_rec(node: &El, out: &mut HashMap<String, f32>) {
-    if node.scrollable && node.scroll_offset_y != 0.0 {
-        out.insert(node.computed_id.clone(), node.scroll_offset_y);
-    }
-    for c in &node.children {
-        collect_scroll_rec(c, out);
-    }
-}
-
 /// Return the `computed_id` of the deepest scrollable container whose
-/// `computed` rect contains `point`, respecting clipping ancestors.
+/// laid-out rect contains `point`, respecting clipping ancestors.
 /// Used to route wheel events.
-pub(crate) fn scroll_target_at(root: &El, point: (f32, f32)) -> Option<String> {
+pub(crate) fn scroll_target_at(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<String> {
     let mut hit = None;
-    scroll_target_rec(root, point, None, &mut hit);
+    scroll_target_rec(root, ui_state, point, None, &mut hit);
     hit
 }
 
 fn scroll_target_rec(
     node: &El,
+    ui_state: &UiState,
     point: (f32, f32),
     inherited_clip: Option<Rect>,
     out: &mut Option<String>,
@@ -111,7 +103,8 @@ fn scroll_target_rec(
             return;
         }
     }
-    if !node.computed.contains(point.0, point.1) {
+    let computed = ui_state.rect(&node.computed_id);
+    if !computed.contains(point.0, point.1) {
         return;
     }
     if node.scrollable {
@@ -120,91 +113,80 @@ fn scroll_target_rec(
     let child_clip = if node.clip {
         match inherited_clip {
             Some(clip) => Some(
-                clip.intersect(node.computed)
+                clip.intersect(computed)
                     .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
             ),
-            None => Some(node.computed),
+            None => Some(computed),
         }
     } else {
         inherited_clip
     };
     for c in &node.children {
-        scroll_target_rec(c, point, child_clip, out);
+        scroll_target_rec(c, ui_state, point, child_clip, out);
     }
-}
-
-pub(crate) fn set_state_for_target(
-    node: &mut El,
-    target: &UiTarget,
-    state: InteractionState,
-) -> bool {
-    if node.computed_id == target.node_id {
-        node.state = state;
-        return true;
-    }
-    for child in &mut node.children {
-        if set_state_for_target(child, target, state) {
-            return true;
-        }
-    }
-    false
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::layout::layout;
+    use crate::state::UiState;
     use crate::tree::*;
     use crate::{button, column, row};
 
-    fn lay_out_counter() -> El {
+    fn lay_out_counter() -> (El, UiState) {
         let mut tree = column([
             crate::text("0"),
             row([button("-").key("dec"), button("+").key("inc")]),
         ])
         .padding(20.0);
-        layout(&mut tree, Rect::new(0.0, 0.0, 400.0, 200.0));
-        tree
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        (tree, state)
     }
 
-    fn find_rect(node: &El, key: &str) -> Option<Rect> {
+    fn find_rect(node: &El, state: &UiState, key: &str) -> Option<Rect> {
         if node.key.as_deref() == Some(key) {
-            return Some(node.computed);
+            return Some(state.rect(&node.computed_id));
         }
-        node.children.iter().find_map(|c| find_rect(c, key))
+        node.children
+            .iter()
+            .find_map(|c| find_rect(c, state, key))
     }
 
-    fn find_text_rect(node: &El) -> Option<Rect> {
+    fn find_text_rect(node: &El, state: &UiState) -> Option<Rect> {
         if matches!(node.kind, Kind::Text) {
-            return Some(node.computed);
+            return Some(state.rect(&node.computed_id));
         }
-        node.children.iter().find_map(find_text_rect)
+        node.children
+            .iter()
+            .find_map(|c| find_text_rect(c, state))
     }
 
     #[test]
     fn hit_test_finds_keyed_button() {
-        let tree = lay_out_counter();
+        let (tree, state) = lay_out_counter();
         for key in &["dec", "inc"] {
-            let r = find_rect(&tree, key).expect("button rect");
+            let r = find_rect(&tree, &state, key).expect("button rect");
             let center = (r.x + r.w * 0.5, r.y + r.h * 0.5);
-            let hit = hit_test(&tree, center);
+            let hit = hit_test(&tree, &state, center);
             assert_eq!(hit.as_deref(), Some(*key));
         }
     }
 
     #[test]
     fn hit_test_misses_unkeyed_text() {
-        let tree = lay_out_counter();
-        let r = find_text_rect(&tree).expect("text rect");
+        let (tree, state) = lay_out_counter();
+        let r = find_text_rect(&tree, &state).expect("text rect");
         let center = (r.x + r.w * 0.5, r.y + r.h * 0.5);
-        assert!(hit_test(&tree, center).is_none());
+        assert!(hit_test(&tree, &state, center).is_none());
     }
 
     #[test]
     fn hit_test_outside_returns_none() {
-        let tree = lay_out_counter();
-        assert!(hit_test(&tree, (-10.0, -10.0)).is_none());
-        assert!(hit_test(&tree, (9999.0, 9999.0)).is_none());
+        let (tree, state) = lay_out_counter();
+        assert!(hit_test(&tree, &state, (-10.0, -10.0)).is_none());
+        assert!(hit_test(&tree, &state, (9999.0, 9999.0)).is_none());
     }
 
     #[test]
@@ -215,10 +197,11 @@ mod tests {
         ])
         .clip()
         .width(Size::Fixed(80.0))]);
-        layout(&mut tree, Rect::new(0.0, 0.0, 400.0, 100.0));
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 100.0));
 
-        let clipped = find_rect(&tree, "clipped").expect("clipped button rect");
-        assert!(hit_test(&tree, (clipped.center_x(), clipped.center_y())).is_none());
+        let clipped = find_rect(&tree, &state, "clipped").expect("clipped button rect");
+        assert!(hit_test(&tree, &state, (clipped.center_x(), clipped.center_y())).is_none());
     }
 
     #[test]
@@ -235,9 +218,10 @@ mod tests {
         ])
         .align(Align::Center)
         .justify(Justify::Center);
-        layout(&mut tree, Rect::new(0.0, 0.0, 300.0, 300.0));
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 300.0, 300.0));
 
-        assert!(hit_test(&tree, (150.0, 150.0)).is_none());
-        assert_eq!(hit_test(&tree, (10.0, 10.0)).as_deref(), Some("dismiss"));
+        assert!(hit_test(&tree, &state, (150.0, 150.0)).is_none());
+        assert_eq!(hit_test(&tree, &state, (10.0, 10.0)).as_deref(), Some("dismiss"));
     }
 }
