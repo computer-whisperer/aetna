@@ -102,7 +102,6 @@ mod web_entry {
     use wasm_bindgen::JsCast;
     use wasm_bindgen::prelude::*;
     use winit::application::ApplicationHandler;
-    use winit::dpi::PhysicalSize;
     use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
     use winit::event_loop::{ActiveEventLoop, EventLoop};
     use winit::keyboard::{Key, NamedKey};
@@ -139,6 +138,32 @@ mod web_entry {
             .unwrap_or_else(|| panic!("missing #{CANVAS_ID} canvas element"))
             .dyn_into::<web_sys::HtmlCanvasElement>()
             .expect("#aetna_canvas is not a canvas")
+    }
+
+    /// Resize the canvas's drawing buffer to match its CSS-laid-out
+    /// box at the device pixel ratio, then forward the same physical
+    /// size to winit so `inner_size()` and the canvas attributes stay
+    /// in lockstep. Without this the canvas defaults to 300×150 device
+    /// pixels regardless of CSS — the swapchain ends up tiny + stretched
+    /// and Firefox's WebGPU backend fails the first present with
+    /// "Not enough memory left" because the surface texture and the
+    /// canvas drawing buffer disagree.
+    fn sync_canvas_to_css(canvas: &web_sys::HtmlCanvasElement, window: &Window) {
+        let dpr = web_sys::window()
+            .map(|w| w.device_pixel_ratio())
+            .unwrap_or(1.0)
+            .max(1.0);
+        let css_w = canvas.client_width().max(1) as f64;
+        let css_h = canvas.client_height().max(1) as f64;
+        let phys_w = (css_w * dpr).round() as u32;
+        let phys_h = (css_h * dpr).round() as u32;
+        canvas.set_width(phys_w);
+        canvas.set_height(phys_h);
+        // Tell winit too, so window.inner_size() agrees. The web
+        // backend treats request_inner_size as authoritative and
+        // updates the canvas drawing buffer / fires Resized; we
+        // already set the buffer above so the values match.
+        let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(phys_w, phys_h));
     }
 
     /// Mirrors `aetna_demo::run`'s `Host` — same shape, different
@@ -180,20 +205,27 @@ mod web_entry {
                 return;
             }
             let canvas = locate_canvas();
-            // Snapshot the canvas's current CSS pixel size so the
-            // initial swapchain matches what the layout will see.
-            // resized events later carry physical px, which we map
-            // back to logical via window.scale_factor().
-            let css_w = canvas.client_width().max(1) as u32;
-            let css_h = canvas.client_height().max(1) as u32;
 
-            let attrs = Window::default_attributes()
-                .with_canvas(Some(canvas.clone()))
-                .with_inner_size(PhysicalSize::new(
-                    self.viewport.w as u32,
-                    self.viewport.h as u32,
-                ));
+            // Build the window bound to the existing canvas. We do
+            // *not* call `with_inner_size` — on the web backend that
+            // forces canvas.width/height to the requested physical
+            // pixels, which then disagrees with the surface size if
+            // we read it from CSS. Letting winit pick from the canvas
+            // attributes (default 300×150 if unset, otherwise whatever
+            // the host page declared) keeps inner_size() and the
+            // canvas backing buffer in lockstep — and Resized events
+            // fire when CSS later resizes the canvas.
+            let attrs = Window::default_attributes().with_canvas(Some(canvas.clone()));
             let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+
+            // Force the canvas backing buffer to match the canvas's
+            // CSS-laid-out size at the device pixel ratio. Without
+            // this the canvas defaults to 300×150 device pixels, the
+            // swapchain ends up tiny and stretched, and Firefox's
+            // WebGPU backend fails the first present with "not enough
+            // memory left" because the surface texture and the canvas
+            // drawing buffer disagree.
+            sync_canvas_to_css(&canvas, &window);
 
             let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
             let surface = instance
@@ -216,11 +248,12 @@ mod web_entry {
                     .await
                     .expect("no compatible adapter");
 
-                // wgpu's WebGL backend has tighter limits than native;
-                // downscale to what the adapter actually exposes so
-                // device creation doesn't fail on integrated GPUs.
-                let limits =
-                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
+                // Use the adapter's actual limits as the upper bound;
+                // downlevel_webgl2_defaults is too tight for the
+                // WebGPU backend Firefox picks by default. Capping at
+                // adapter.limits() keeps device creation succeeding
+                // on integrated GPUs.
+                let limits = wgpu::Limits::default().using_resolution(adapter.limits());
 
                 let (device, queue) = adapter
                     .request_device(
@@ -242,11 +275,16 @@ mod web_entry {
                     .copied()
                     .find(|f| f.is_srgb())
                     .unwrap_or(surface_caps.formats[0]);
+                // Single source of truth for the swapchain size:
+                // winit's inner_size() in physical pixels. Same value
+                // that aetna-demo's native runner uses; matches what
+                // sync_canvas_to_css() set the canvas backing buffer to.
+                let inner = window_for_async.inner_size();
                 let config = wgpu::SurfaceConfiguration {
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                     format,
-                    width: css_w,
-                    height: css_h,
+                    width: inner.width.max(1),
+                    height: inner.height.max(1),
                     present_mode: surface_caps.present_modes[0],
                     alpha_mode: surface_caps.alpha_modes[0],
                     view_formats: vec![],
