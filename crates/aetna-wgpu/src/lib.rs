@@ -66,19 +66,15 @@ use web_time::Instant;
 
 use wgpu::util::DeviceExt;
 
-use aetna_core::draw_ops;
-use aetna_core::event::{KeyChord, KeyModifiers, UiEvent, UiEventKind, UiKey};
-use aetna_core::hit_test;
-use aetna_core::ir::DrawOp;
-use aetna_core::layout;
+use aetna_core::event::{KeyChord, KeyModifiers, UiEvent, UiKey};
+use aetna_core::paint::{PhysicalScissor, QuadInstance};
+use aetna_core::runtime::RunnerCore;
 use aetna_core::shader::{ShaderHandle, StockShader, stock_wgsl};
 use aetna_core::state::{AnimationMode, UiState};
 use aetna_core::tree::{El, Rect};
 
-use aetna_core::paint::{
-    InstanceRun, PaintItem, PhysicalScissor, QuadInstance, close_run, pack_instance,
-    physical_scissor,
-};
+pub use aetna_core::paint::PaintItem;
+pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
 
 use crate::instance::set_scissor;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
@@ -87,46 +83,12 @@ use crate::text::TextPaint;
 /// Initial size for the dynamic instance buffer (grows as needed).
 const INITIAL_INSTANCE_CAPACITY: usize = 256;
 
-/// Reported back from [`Runner::prepare`] each frame. The host uses
-/// `needs_redraw` to keep the redraw loop ticking only while there is
-/// in-flight motion (a hover spring still settling, a focus ring still
-/// fading out), then idles. This lets animation drive frames without a
-/// continuous tick when nothing is changing.
-///
-/// `timings` is a per-frame breakdown of the CPU work inside prepare,
-/// for diagnostic logging. Wall-clock per stage; sums to roughly the
-/// total prepare time minus per-stage Instant overhead.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PrepareResult {
-    pub needs_redraw: bool,
-    pub timings: PrepareTimings,
-}
-
-/// Per-stage CPU timing inside [`Runner::prepare`]. Cheap to compute
-/// (5–6 `Instant::now()` calls per frame) and useful for finding the
-/// dominant cost when frame budget is tight on wasm.
-///
-/// Stages:
-/// - `layout`: layout pass + focus order sync + state apply + animation tick.
-/// - `draw_ops`: tree → DrawOp[] resolution.
-/// - `paint`: paint-stream loop (quad packing + text shaping via cosmic-text).
-/// - `gpu_upload`: instance buffer write + text atlas flush + frame uniforms.
-/// - `snapshot`: cloning the laid-out tree for next-frame hit-testing.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PrepareTimings {
-    pub layout: std::time::Duration,
-    pub draw_ops: std::time::Duration,
-    pub paint: std::time::Duration,
-    pub gpu_upload: std::time::Duration,
-    pub snapshot: std::time::Duration,
-}
-
 /// Wgpu runtime owned by the host. One instance per surface/format.
 ///
-/// In v5.0 this is a single struct holding both GPU resources and
-/// interaction state. A follow-up commit splits the GPU half into a
-/// `WgpuPainter` value held inside the runner — same fields, cleaner
-/// boundary, and the same shape we'll want when `aetna-vulkano` lands.
+/// All backend-agnostic state — interaction state, paint-stream scratch,
+/// per-stage layout/animation hooks — lives in `core: RunnerCore` and
+/// is shared with the vulkano backend (v5.4 step 2). The fields below
+/// are wgpu-specific resources only.
 pub struct Runner {
     target_format: wgpu::TextureFormat,
 
@@ -137,8 +99,6 @@ pub struct Runner {
     quad_vbo: wgpu::Buffer,
     instance_buf: wgpu::Buffer,
     instance_capacity: usize,
-    quad_scratch: Vec<QuadInstance>,
-    runs: Vec<InstanceRun>,
 
     // One pipeline per registered shader (stock + custom).
     pipelines: HashMap<ShaderHandle, wgpu::RenderPipeline>,
@@ -146,24 +106,10 @@ pub struct Runner {
     // stock::text resources — atlas, page textures, glyph instances.
     text_paint: TextPaint,
 
-    // Replayed by draw() in exact paint order.
-    paint_items: Vec<PaintItem>,
-    viewport_px: (u32, u32),
-    /// If set, overrides the physical viewport size derived from
-    /// `viewport.w * scale_factor` in [`Self::prepare`]. The host
-    /// calls [`Self::set_surface_size`] after `surface.configure(...)`
-    /// to keep this in lockstep with the actual swapchain texture
-    /// size — without it, fractional `scale_factor` round-trips can
-    /// land `viewport_px` one pixel beyond the real render target
-    /// and trip wgpu's `set_scissor_rect` validation.
-    surface_size_override: Option<(u32, u32)>,
-
-    // Interaction state (v0.2).
-    ui_state: UiState,
-    /// Last laid-out tree, kept so events arriving between frames can
-    /// hit-test against the geometry the user is actually looking at.
-    /// Stored by clone (cheap at fixture sizes; revisit when trees grow).
-    last_tree: Option<El>,
+    // Backend-agnostic state shared with aetna-vulkano: interaction
+    // state, paint-stream scratch (quad_scratch / runs / paint_items),
+    // viewport_px, last_tree, the 13 input plumbing methods.
+    core: RunnerCore,
 }
 
 impl Runner {
@@ -249,6 +195,9 @@ impl Runner {
         // Text pipeline + atlas (replaces glyphon).
         let text_paint = TextPaint::new(device, target_format, &frame_bind_layout);
 
+        let mut core = RunnerCore::new();
+        core.quad_scratch = Vec::with_capacity(INITIAL_INSTANCE_CAPACITY);
+
         Self {
             target_format,
             pipeline_layout,
@@ -257,18 +206,9 @@ impl Runner {
             quad_vbo,
             instance_buf,
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
-            quad_scratch: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
-            runs: Vec::new(),
             pipelines,
-
             text_paint,
-
-            paint_items: Vec::new(),
-            viewport_px: (1, 1),
-            surface_size_override: None,
-
-            ui_state: UiState::new(),
-            last_tree: None,
+            core,
         }
     }
 
@@ -280,7 +220,7 @@ impl Runner {
     /// when `scale_factor` is fractional and trip wgpu's
     /// `set_scissor_rect` validation.
     pub fn set_surface_size(&mut self, width: u32, height: u32) {
-        self.surface_size_override = Some((width.max(1), height.max(1)));
+        self.core.set_surface_size(width, height);
     }
 
     /// Register a custom shader. `name` is the same string passed to
@@ -311,7 +251,7 @@ impl Runner {
     /// that want to look up a node's rect after `prepare` (e.g., to
     /// simulate a pointer at a specific button's center).
     pub fn ui_state(&self) -> &UiState {
-        &self.ui_state
+        self.core.ui_state()
     }
 
     /// One-line diagnostic snapshot of interactive state — passes through
@@ -319,7 +259,7 @@ impl Runner {
     /// (e.g., `console.log` from the wasm host while debugging hover /
     /// animation glitches).
     pub fn debug_summary(&self) -> String {
-        self.ui_state.debug_summary()
+        self.core.debug_summary()
     }
 
     /// Return the most recently laid-out rectangle for a keyed node.
@@ -329,9 +269,7 @@ impl Runner {
     /// here, then record host-owned rendering into that region using the
     /// same encoder / render flow that surrounds Aetna's pass.
     pub fn rect_of_key(&self, key: &str) -> Option<Rect> {
-        self.last_tree
-            .as_ref()
-            .and_then(|tree| self.ui_state.rect_of_key(tree, key))
+        self.core.rect_of_key(key)
     }
 
     /// Lay out the tree, resolve to draw ops, and upload per-frame
@@ -352,145 +290,34 @@ impl Runner {
         viewport: Rect,
         scale_factor: f32,
     ) -> PrepareResult {
-        let t0 = Instant::now();
-        // Layout writes computed_id on each El + writes the rect map +
-        // reads/clamps/writes scroll offsets, all on UiState's side maps.
-        layout::layout(root, &mut self.ui_state, viewport);
-        self.ui_state.sync_focus_order(root);
-        // Apply UI-state visual deltas after layout, so focus targets can
-        // survive rebuilds by node id and update their current rect.
-        self.ui_state.apply_to_state();
-        // Tick visual animations: retarget springs to the values implied
-        // by current state, sample at `now`, write eased values into the
-        // envelope side map (state envelopes) and the El's app-driven
-        // fields (fill/translate/etc.). Anything in flight forces another
-        // redraw next frame.
-        let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now());
-        let t_after_layout = Instant::now();
-        let ops = draw_ops::draw_ops(root, &self.ui_state);
-        let t_after_draw_ops = Instant::now();
+        let mut timings = PrepareTimings::default();
 
-        // Prefer the host-supplied physical size when present (keeps
-        // scissor math exactly matching the swapchain). Fall back to
-        // logical * scale only for headless callers that don't go
-        // through a wgpu::Surface.
-        self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
-            (
-                (viewport.w * scale_factor).ceil().max(1.0) as u32,
-                (viewport.h * scale_factor).ceil().max(1.0) as u32,
-            )
-        });
+        // Layout + state apply + animation tick + draw_ops resolution.
+        // Writes timings.layout + timings.draw_ops.
+        let (ops, needs_redraw) =
+            self.core
+                .prepare_layout(root, viewport, scale_factor, &mut timings);
 
-        // ---- Paint stream: pack quads, prepare text, preserve order ----
-        self.quad_scratch.clear();
-        self.runs.clear();
+        // Paint stream: pack quads, record text, preserve z-order. The
+        // closure is the wgpu-specific "is this shader registered?"
+        // query (different pipeline types per backend prevent moving the
+        // check itself into core).
         self.text_paint.frame_begin();
-        self.paint_items.clear();
-        let mut current: Option<(ShaderHandle, Option<PhysicalScissor>)> = None;
-        let mut run_first: u32 = 0;
-
-        for op in &ops {
-            match op {
-                DrawOp::Quad {
-                    rect,
-                    scissor,
-                    shader,
-                    uniforms,
-                    ..
-                } => {
-                    // Skip ops whose shader has no pipeline registered
-                    // (e.g. custom shaders the host forgot to register).
-                    // The lint pass surfaces this elsewhere.
-                    if !self.pipelines.contains_key(shader) {
-                        continue;
-                    }
-                    let physical_scissor =
-                        physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    if matches!(physical_scissor, Some(s) if s.w == 0 || s.h == 0) {
-                        continue;
-                    }
-                    let inst = pack_instance(*rect, *shader, uniforms);
-
-                    let run_key = (*shader, physical_scissor);
-                    if current != Some(run_key) {
-                        close_run(
-                            &mut self.runs,
-                            &mut self.paint_items,
-                            current,
-                            run_first,
-                            self.quad_scratch.len() as u32,
-                        );
-                        current = Some(run_key);
-                        run_first = self.quad_scratch.len() as u32;
-                    }
-                    self.quad_scratch.push(inst);
-                }
-                DrawOp::GlyphRun {
-                    rect,
-                    scissor,
-                    color,
-                    text,
-                    size,
-                    weight,
-                    mono: _,
-                    wrap,
-                    anchor,
-                    ..
-                } => {
-                    close_run(
-                        &mut self.runs,
-                        &mut self.paint_items,
-                        current,
-                        run_first,
-                        self.quad_scratch.len() as u32,
-                    );
-                    current = None;
-                    run_first = self.quad_scratch.len() as u32;
-
-                    let physical_scissor =
-                        physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    if matches!(physical_scissor, Some(s) if s.w == 0 || s.h == 0) {
-                        continue;
-                    }
-                    let runs = self.text_paint.record(
-                        *rect,
-                        physical_scissor,
-                        *color,
-                        text,
-                        *size,
-                        *weight,
-                        *wrap,
-                        *anchor,
-                        scale_factor,
-                    );
-                    for index in runs {
-                        self.paint_items.push(PaintItem::Text(index));
-                    }
-                }
-                DrawOp::BackdropSnapshot => {
-                    close_run(
-                        &mut self.runs,
-                        &mut self.paint_items,
-                        current,
-                        run_first,
-                        self.quad_scratch.len() as u32,
-                    );
-                    current = None;
-                    run_first = self.quad_scratch.len() as u32;
-                }
-            }
-        }
-        close_run(
-            &mut self.runs,
-            &mut self.paint_items,
-            current,
-            run_first,
-            self.quad_scratch.len() as u32,
+        let pipelines = &self.pipelines;
+        self.core.prepare_paint(
+            &ops,
+            |shader| pipelines.contains_key(shader),
+            &mut self.text_paint,
+            scale_factor,
+            &mut timings,
         );
-        let t_after_paint = Instant::now();
 
-        if self.quad_scratch.len() > self.instance_capacity {
-            let new_cap = self.quad_scratch.len().next_power_of_two();
+        // GPU upload — wgpu-specific. Resize the instance buffer if
+        // needed, then write quad_scratch + frame uniforms + flush text
+        // atlas dirty regions.
+        let t_paint_end = Instant::now();
+        if self.core.quad_scratch.len() > self.instance_capacity {
+            let new_cap = self.core.quad_scratch.len().next_power_of_two();
             self.instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("aetna_wgpu::instance_buf (resized)"),
                 size: (new_cap * std::mem::size_of::<QuadInstance>()) as u64,
@@ -499,39 +326,27 @@ impl Runner {
             });
             self.instance_capacity = new_cap;
         }
-
-        if !self.quad_scratch.is_empty() {
+        if !self.core.quad_scratch.is_empty() {
             queue.write_buffer(
                 &self.instance_buf,
                 0,
-                bytemuck::cast_slice(&self.quad_scratch),
+                bytemuck::cast_slice(&self.core.quad_scratch),
             );
         }
-
-        // Sync atlas pages to GPU + upload glyph instances.
         self.text_paint.flush(device, queue);
-
         let frame = FrameUniforms {
             viewport: [viewport.w, viewport.h],
             _pad: [0.0, 0.0],
         };
         queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
-        let t_after_gpu = Instant::now();
+        timings.gpu_upload = Instant::now() - t_paint_end;
 
-        // Snapshot the laid-out tree so pointer events arriving before
-        // the next prepare can hit-test against current geometry.
-        self.last_tree = Some(root.clone());
-        let t_after_snapshot = Instant::now();
+        // Snapshot the laid-out tree for next-frame hit-testing.
+        self.core.snapshot(root, &mut timings);
 
         PrepareResult {
             needs_redraw,
-            timings: PrepareTimings {
-                layout: t_after_layout - t0,
-                draw_ops: t_after_draw_ops - t_after_layout,
-                paint: t_after_paint - t_after_draw_ops,
-                gpu_upload: t_after_gpu - t_after_paint,
-                snapshot: t_after_snapshot - t_after_gpu,
-            },
+            timings,
         }
     }
 
@@ -545,56 +360,26 @@ impl Runner {
     /// Returns the new hovered key, if any (host can use it for cursor
     /// styling or to decide whether to call `request_redraw`).
     pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<&str> {
-        self.ui_state.pointer_pos = Some((x, y));
-        let hit = self
-            .last_tree
-            .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        self.ui_state.hovered = hit;
-        self.ui_state
-            .hovered
-            .as_ref()
-            .map(|target| target.key.as_str())
+        self.core.pointer_moved(x, y)
     }
 
     /// Pointer left the window — clear hover/press.
     pub fn pointer_left(&mut self) {
-        self.ui_state.pointer_pos = None;
-        self.ui_state.hovered = None;
-        self.ui_state.pressed = None;
+        self.core.pointer_left();
     }
 
     /// Primary mouse button down at `(x, y)` (logical px). Records the
     /// pressed key for press-visual feedback; the actual click event
     /// fires on the matching `pointer_up`.
     pub fn pointer_down(&mut self, x: f32, y: f32) {
-        let hit = self
-            .last_tree
-            .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        self.ui_state.set_focus(hit.clone());
-        self.ui_state.pressed = hit;
+        self.core.pointer_down(x, y);
     }
 
     /// Primary mouse button up at `(x, y)`. If the release lands on the
     /// same keyed node as the corresponding `pointer_down`, a `Click`
     /// event is returned for the host to dispatch via `App::on_event`.
     pub fn pointer_up(&mut self, x: f32, y: f32) -> Option<UiEvent> {
-        let hit = self
-            .last_tree
-            .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        let pressed = self.ui_state.pressed.take();
-        match (pressed, hit) {
-            (Some(p), Some(h)) if p.node_id == h.node_id => Some(UiEvent {
-                key: Some(p.key.clone()),
-                target: Some(p),
-                pointer: Some((x, y)),
-                key_press: None,
-                kind: UiEventKind::Click,
-            }),
-            _ => None,
-        }
+        self.core.pointer_up(x, y)
     }
 
     pub fn key_down(
@@ -603,13 +388,13 @@ impl Runner {
         modifiers: KeyModifiers,
         repeat: bool,
     ) -> Option<UiEvent> {
-        self.ui_state.key_down(key, modifiers, repeat)
+        self.core.key_down(key, modifiers, repeat)
     }
 
     /// Replace the hotkey registry. Call once per frame, after `app.build()`,
     /// passing `app.hotkeys()` so chords stay in sync with state.
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
-        self.ui_state.set_hotkeys(hotkeys);
+        self.core.set_hotkeys(hotkeys);
     }
 
     /// Switch animation pacing. Default is [`AnimationMode::Live`].
@@ -617,7 +402,7 @@ impl Runner {
     /// [`AnimationMode::Settled`] so a single-frame snapshot reflects
     /// the post-animation visual without depending on integrator timing.
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {
-        self.ui_state.set_animation_mode(mode);
+        self.core.set_animation_mode(mode);
     }
 
     /// Apply a wheel delta in **logical** pixels at `(x, y)`. Routes to
@@ -626,10 +411,7 @@ impl Runner {
     /// (host should `request_redraw` so the next frame applies the new
     /// offset).
     pub fn pointer_wheel(&mut self, x: f32, y: f32, dy: f32) -> bool {
-        let Some(tree) = self.last_tree.as_ref() else {
-            return false;
-        };
-        self.ui_state.pointer_wheel(tree, (x, y), dy)
+        self.core.pointer_wheel(x, y, dy)
     }
 
     /// Record draws into the host-managed render pass. Call after
@@ -638,13 +420,13 @@ impl Runner {
         let full = PhysicalScissor {
             x: 0,
             y: 0,
-            w: self.viewport_px.0,
-            h: self.viewport_px.1,
+            w: self.core.viewport_px.0,
+            h: self.core.viewport_px.1,
         };
-        for item in &self.paint_items {
+        for item in &self.core.paint_items {
             match *item {
                 PaintItem::QuadRun(index) => {
-                    let run = &self.runs[index];
+                    let run = &self.core.runs[index];
                     set_scissor(pass, run.scissor, full);
                     pass.set_bind_group(0, &self.quad_bind_group, &[]);
                     pass.set_vertex_buffer(0, self.quad_vbo.slice(..));

@@ -21,6 +21,7 @@ use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};
 use bytemuck::{Pod, Zeroable};
 
 use aetna_core::paint::{PhysicalScissor, rgba_f32};
+use aetna_core::runtime::TextRecorder;
 
 const INITIAL_INSTANCE_CAPACITY: usize = 256;
 
@@ -200,18 +201,8 @@ impl TextPaint {
         self.runs.clear();
     }
 
-    /// Shape `text` and append per-glyph instances for it. Returns the
-    /// half-open range of `run_index` values created (one per atlas page
-    /// the run touched, or zero if no glyphs were emitted).
-    ///
-    /// `scale_factor` is the HiDPI multiplier — atlas glyphs are
-    /// rasterized at `size * scale_factor` (physical pixels) and the
-    /// resulting bitmap dimensions are divided by the same factor when
-    /// placing the screen quad. This produces 1:1 atlas-pixel to
-    /// physical-pixel mapping at the host's render target resolution,
-    /// matching what glyphon did in v5.0.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn record(
+    fn record_inner(
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
@@ -404,6 +395,33 @@ impl TextPaint {
     }
     pub(crate) fn page_bind_group(&self, page: u32) -> &wgpu::BindGroup {
         &self.pages[page as usize].bind_group
+    }
+}
+
+impl TextRecorder for TextPaint {
+    fn record(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        color: Color,
+        text: &str,
+        size: f32,
+        weight: FontWeight,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.record_inner(
+            rect,
+            scissor,
+            color,
+            text,
+            size,
+            weight,
+            wrap,
+            anchor,
+            scale_factor,
+        )
     }
 }
 

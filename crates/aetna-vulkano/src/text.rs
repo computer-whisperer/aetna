@@ -64,6 +64,7 @@ use vulkano::{
 };
 
 use aetna_core::paint::{PhysicalScissor, rgba_f32};
+use aetna_core::runtime::TextRecorder;
 
 use crate::naga_compile::wgsl_to_spirv;
 
@@ -154,10 +155,10 @@ impl TextPaint {
     }
 
     /// Shape `text` and append per-glyph instances. Logic is identical
-    /// to `aetna_wgpu::text::TextPaint::record` — only the stored type
-    /// of `instances` and `runs` differs.
+    /// to `aetna_wgpu::text::TextPaint::record_inner` — only the stored
+    /// type of `instances` and `runs` differs.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn record(
+    fn record_inner(
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
@@ -407,6 +408,33 @@ impl TextPaint {
     }
     pub(crate) fn page_descriptor(&self, page: u32) -> &Arc<DescriptorSet> {
         &self.pages[page as usize].descriptor_set
+    }
+}
+
+impl TextRecorder for TextPaint {
+    fn record(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        color: Color,
+        text: &str,
+        size: f32,
+        weight: FontWeight,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        scale_factor: f32,
+    ) -> Range<usize> {
+        self.record_inner(
+            rect,
+            scissor,
+            color,
+            text,
+            size,
+            weight,
+            wrap,
+            anchor,
+            scale_factor,
+        )
     }
 }
 

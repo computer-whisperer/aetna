@@ -26,8 +26,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use aetna_core::{
-    AnimationMode, El, KeyChord, KeyModifiers, Rect, UiEvent, UiEventKind, UiKey, UiState,
-    draw_ops, hit_test, ir, layout,
+    AnimationMode, El, KeyChord, KeyModifiers, Rect, UiEvent, UiKey, UiState,
     shader::{ShaderHandle, StockShader, stock_wgsl},
 };
 use smallvec::smallvec;
@@ -47,10 +46,10 @@ use vulkano::{
     render_pass::{RenderPass, Subpass},
 };
 
-use aetna_core::paint::{
-    InstanceRun, PaintItem, PhysicalScissor, QuadInstance, close_run, pack_instance,
-    physical_scissor,
-};
+use aetna_core::paint::{PaintItem, PhysicalScissor, QuadInstance};
+use aetna_core::runtime::RunnerCore;
+
+pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
 
 use crate::instance::set_scissor;
 use crate::naga_compile::wgsl_to_spirv;
@@ -58,21 +57,6 @@ use crate::pipeline::{FrameUniforms, build_quad_pipeline};
 use crate::text::TextPaint;
 
 const INITIAL_INSTANCE_CAPACITY: u64 = 1024;
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PrepareResult {
-    pub needs_redraw: bool,
-    pub timings: PrepareTimings,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PrepareTimings {
-    pub layout: std::time::Duration,
-    pub draw_ops: std::time::Duration,
-    pub paint: std::time::Duration,
-    pub gpu_upload: std::time::Duration,
-    pub snapshot: std::time::Duration,
-}
 
 pub struct Runner {
     device: Arc<Device>,
@@ -101,19 +85,14 @@ pub struct Runner {
     instance_buf: Subbuffer<[QuadInstance]>,
     instance_capacity: u64,
 
-    quad_scratch: Vec<QuadInstance>,
-    runs: Vec<InstanceRun>,
-    paint_items: Vec<PaintItem>,
-
-    viewport_px: (u32, u32),
-    surface_size_override: Option<(u32, u32)>,
-
     /// SPIR-V words cached per registered custom shader name. The
     /// pipeline itself is built lazily on first use.
     registered_shaders: HashMap<&'static str, Vec<u32>>,
 
-    ui_state: UiState,
-    last_tree: Option<El>,
+    // Backend-agnostic state shared with aetna-wgpu: interaction state,
+    // paint-stream scratch (quad_scratch / runs / paint_items),
+    // viewport_px, last_tree, the 13 input plumbing methods.
+    core: RunnerCore,
 }
 
 impl Runner {
@@ -245,14 +224,12 @@ impl Runner {
             frame_descriptor_set,
             instance_buf,
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
-            quad_scratch: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
-            runs: Vec::new(),
-            paint_items: Vec::new(),
-            viewport_px: (1, 1),
-            surface_size_override: None,
             registered_shaders: HashMap::new(),
-            ui_state: UiState::new(),
-            last_tree: None,
+            core: {
+                let mut c = RunnerCore::new();
+                c.quad_scratch = Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize);
+                c
+            },
         }
     }
 
@@ -264,7 +241,7 @@ impl Runner {
     }
 
     pub fn set_surface_size(&mut self, width: u32, height: u32) {
-        self.surface_size_override = Some((width.max(1), height.max(1)));
+        self.core.set_surface_size(width, height);
     }
 
     /// Register a custom shader. WGSL → SPIR-V at register time; bad
@@ -284,17 +261,15 @@ impl Runner {
     }
 
     pub fn ui_state(&self) -> &UiState {
-        &self.ui_state
+        self.core.ui_state()
     }
 
     pub fn debug_summary(&self) -> String {
-        self.ui_state.debug_summary()
+        self.core.debug_summary()
     }
 
     pub fn rect_of_key(&self, key: &str) -> Option<Rect> {
-        self.last_tree
-            .as_ref()
-            .and_then(|tree| self.ui_state.rect_of_key(tree, key))
+        self.core.rect_of_key(key)
     }
 
     /// Lay out the tree, run animation tick, walk the draw-op stream,
@@ -302,152 +277,42 @@ impl Runner {
     /// Must be called before [`Self::draw`] and outside of any render
     /// pass.
     pub fn prepare(&mut self, root: &mut El, viewport: Rect, scale_factor: f32) -> PrepareResult {
-        layout::layout(root, &mut self.ui_state, viewport);
-        self.ui_state.sync_focus_order(root);
-        self.ui_state.apply_to_state();
-        let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now());
+        let mut timings = PrepareTimings::default();
 
-        self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
-            (
-                (viewport.w * scale_factor).ceil().max(1.0) as u32,
-                (viewport.h * scale_factor).ceil().max(1.0) as u32,
-            )
-        });
+        let (ops, needs_redraw) =
+            self.core
+                .prepare_layout(root, viewport, scale_factor, &mut timings);
 
-        // Walk DrawOps → instance buffer + paint stream.
-        let ops = draw_ops::draw_ops(root, &self.ui_state);
-        self.quad_scratch.clear();
-        self.runs.clear();
-        self.paint_items.clear();
         self.text_paint.frame_begin();
-
-        let mut current_run: Option<(ShaderHandle, Option<PhysicalScissor>)> = None;
-        let mut run_first: u32 = 0;
-
-        for op in &ops {
-            match op {
-                ir::DrawOp::Quad {
-                    rect,
-                    scissor,
-                    shader,
-                    uniforms,
-                    ..
-                } => {
-                    if !self.pipelines.contains_key(shader) {
-                        // Unknown shader handle — skip but break the run
-                        // so paint order is preserved across the gap.
-                        close_run(
-                            &mut self.runs,
-                            &mut self.paint_items,
-                            current_run,
-                            run_first,
-                            self.quad_scratch.len() as u32,
-                        );
-                        current_run = None;
-                        run_first = self.quad_scratch.len() as u32;
-                        continue;
-                    }
-                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    let key = (*shader, phys);
-                    if current_run != Some(key) {
-                        close_run(
-                            &mut self.runs,
-                            &mut self.paint_items,
-                            current_run,
-                            run_first,
-                            self.quad_scratch.len() as u32,
-                        );
-                        run_first = self.quad_scratch.len() as u32;
-                        current_run = Some(key);
-                    }
-                    self.quad_scratch
-                        .push(pack_instance(*rect, *shader, uniforms));
-                }
-                ir::DrawOp::GlyphRun {
-                    rect,
-                    scissor,
-                    color,
-                    text,
-                    size,
-                    weight,
-                    wrap,
-                    anchor,
-                    ..
-                } => {
-                    // Close the active quad run so paint order is preserved
-                    // across the text segment.
-                    close_run(
-                        &mut self.runs,
-                        &mut self.paint_items,
-                        current_run,
-                        run_first,
-                        self.quad_scratch.len() as u32,
-                    );
-                    current_run = None;
-                    run_first = self.quad_scratch.len() as u32;
-
-                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
-                        continue;
-                    }
-                    let text_runs = self.text_paint.record(
-                        *rect,
-                        phys,
-                        *color,
-                        text,
-                        *size,
-                        *weight,
-                        *wrap,
-                        *anchor,
-                        scale_factor,
-                    );
-                    for index in text_runs {
-                        self.paint_items.push(PaintItem::Text(index));
-                    }
-                }
-                ir::DrawOp::BackdropSnapshot => {
-                    close_run(
-                        &mut self.runs,
-                        &mut self.paint_items,
-                        current_run,
-                        run_first,
-                        self.quad_scratch.len() as u32,
-                    );
-                    current_run = None;
-                    run_first = self.quad_scratch.len() as u32;
-                }
-            }
-        }
-        close_run(
-            &mut self.runs,
-            &mut self.paint_items,
-            current_run,
-            run_first,
-            self.quad_scratch.len() as u32,
+        let pipelines = &self.pipelines;
+        self.core.prepare_paint(
+            &ops,
+            |shader| pipelines.contains_key(shader),
+            &mut self.text_paint,
+            scale_factor,
+            &mut timings,
         );
 
+        let t_paint_end = Instant::now();
         // Grow the instance buffer if needed. Power-of-two doubling
         // matches aetna-wgpu and keeps reallocation amortised O(1).
-        let needed = self.quad_scratch.len() as u64;
+        let needed = self.core.quad_scratch.len() as u64;
         if needed > self.instance_capacity {
             let new_cap = needed.next_power_of_two().max(self.instance_capacity * 2);
             self.instance_buf = create_instance_buffer(&self.memory_alloc, new_cap);
             self.instance_capacity = new_cap;
         }
-
-        if !self.quad_scratch.is_empty() {
+        if !self.core.quad_scratch.is_empty() {
             let mut write = self
                 .instance_buf
                 .write()
                 .expect("aetna-vulkano: instance buffer write");
-            write[..self.quad_scratch.len()].copy_from_slice(&self.quad_scratch);
+            write[..self.core.quad_scratch.len()].copy_from_slice(&self.core.quad_scratch);
         }
-
         // Sync atlas dirty regions to GPU images + upload glyph instances.
         // Text uploads run through their own one-shot command buffer
         // submitted+waited inside flush().
         self.text_paint.flush();
-
         {
             // FrameUniforms.viewport is the **logical** viewport — the
             // vertex shader divides per-instance positions (which layout
@@ -465,56 +330,30 @@ impl Runner {
                 _pad: [0.0, 0.0],
             };
         }
+        timings.gpu_upload = Instant::now() - t_paint_end;
 
-        self.last_tree = Some(root.clone());
+        self.core.snapshot(root, &mut timings);
 
         PrepareResult {
             needs_redraw,
-            timings: PrepareTimings::default(),
+            timings,
         }
     }
 
     pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<&str> {
-        self.ui_state.pointer_pos = Some((x, y));
-        let hit = self
-            .last_tree
-            .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        self.ui_state.hovered = hit;
-        self.ui_state.hovered.as_ref().map(|t| t.key.as_str())
+        self.core.pointer_moved(x, y)
     }
 
     pub fn pointer_left(&mut self) {
-        self.ui_state.pointer_pos = None;
-        self.ui_state.hovered = None;
-        self.ui_state.pressed = None;
+        self.core.pointer_left();
     }
 
     pub fn pointer_down(&mut self, x: f32, y: f32) {
-        let hit = self
-            .last_tree
-            .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        self.ui_state.set_focus(hit.clone());
-        self.ui_state.pressed = hit;
+        self.core.pointer_down(x, y);
     }
 
     pub fn pointer_up(&mut self, x: f32, y: f32) -> Option<UiEvent> {
-        let hit = self
-            .last_tree
-            .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        let pressed = self.ui_state.pressed.take();
-        match (pressed, hit) {
-            (Some(p), Some(h)) if p.node_id == h.node_id => Some(UiEvent {
-                key: Some(p.key.clone()),
-                target: Some(p),
-                pointer: Some((x, y)),
-                key_press: None,
-                kind: UiEventKind::Click,
-            }),
-            _ => None,
-        }
+        self.core.pointer_up(x, y)
     }
 
     pub fn key_down(
@@ -523,33 +362,30 @@ impl Runner {
         modifiers: KeyModifiers,
         repeat: bool,
     ) -> Option<UiEvent> {
-        self.ui_state.key_down(key, modifiers, repeat)
+        self.core.key_down(key, modifiers, repeat)
     }
 
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
-        self.ui_state.set_hotkeys(hotkeys);
+        self.core.set_hotkeys(hotkeys);
     }
 
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {
-        self.ui_state.set_animation_mode(mode);
+        self.core.set_animation_mode(mode);
     }
 
     pub fn pointer_wheel(&mut self, x: f32, y: f32, dy: f32) -> bool {
-        let Some(tree) = self.last_tree.as_ref() else {
-            return false;
-        };
-        self.ui_state.pointer_wheel(tree, (x, y), dy)
+        self.core.pointer_wheel(x, y, dy)
     }
 
     /// Record draws into the host-managed primary command-buffer
     /// builder. Call inside the host's `begin_render_pass` /
     /// `end_render_pass` scope, with the runner's `render_pass()`.
     pub fn draw(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) {
-        if self.paint_items.is_empty() {
+        if self.core.paint_items.is_empty() {
             return;
         }
 
-        let (px_w, px_h) = self.viewport_px;
+        let (px_w, px_h) = self.core.viewport_px;
         builder
             .set_viewport(
                 0,
@@ -568,10 +404,10 @@ impl Runner {
             h: px_h,
         };
 
-        for item in &self.paint_items {
+        for item in &self.core.paint_items {
             match *item {
                 PaintItem::QuadRun(idx) => {
-                    let run = &self.runs[idx];
+                    let run = &self.core.runs[idx];
                     set_scissor(builder, run.scissor, full);
                     let pipeline = self
                         .pipelines
