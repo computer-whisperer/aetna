@@ -59,7 +59,10 @@ mod pipeline;
 mod text;
 
 use std::collections::HashMap;
-use std::time::Instant;
+// `web_time::Instant` is API-identical to `std::time::Instant` on
+// native and uses `performance.now()` on wasm32 — std's `Instant::now()`
+// panics in the browser because there is no monotonic clock there.
+use web_time::Instant;
 
 use wgpu::util::DeviceExt;
 

@@ -50,8 +50,8 @@ echo
 echo "==> wasm bundle written to crates/aetna-web/pkg/"
 
 if [[ "$SERVE" -eq 1 ]]; then
-    echo "==> serving crates/aetna-web/ on http://127.0.0.1:8080/"
-    echo "    open http://127.0.0.1:8080/assets/index.html"
+    echo "==> serving crates/aetna-web/ on http://127.0.0.1:8083/"
+    echo "    open http://127.0.0.1:8083/assets/index.html"
     cd "$REPO_ROOT/crates/aetna-web"
-    exec python3 -m http.server 8080
+    exec python3 -m http.server 8083
 fi

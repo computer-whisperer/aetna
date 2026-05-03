@@ -194,14 +194,13 @@ impl GlyphAtlas {
                 TextWrap::Wrap => Wrap::WordOrGlyph,
             },
         );
-        buffer.set_size(
-            &mut self.font_system,
-            match wrap {
-                TextWrap::NoWrap => None,
-                TextWrap::Wrap => available_width,
-            },
-            None,
-        );
+        // cosmic-text uses the buffer width for both wrapping AND
+        // alignment. For Wrap mode it's the wrap width; for NoWrap with
+        // Middle/End anchors it's the box that line-alignment positions
+        // glyphs within. Passing None for NoWrap+Middle leaves the
+        // buffer unbounded and silently disables centering — single-
+        // glyph button labels show up flush-left.
+        buffer.set_size(&mut self.font_system, available_width, None);
         let attrs = Attrs::new()
             .family(Family::Name("Roboto"))
             .weight(cosmic_weight(weight));

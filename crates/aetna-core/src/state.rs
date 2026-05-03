@@ -13,7 +13,10 @@
 //! Focus is independent of both — the focus ring is its own envelope.
 
 use std::collections::{HashMap, HashSet};
-use std::time::Instant;
+// `web_time::Instant` is API-identical to `std::time::Instant` on
+// native and uses `performance.now()` on wasm32 — std's `Instant::now()`
+// panics in the browser because there is no monotonic clock there.
+use web_time::Instant;
 
 use crate::anim::tick::{is_in_flight, tick_node};
 use crate::anim::{AnimProp, Animation};

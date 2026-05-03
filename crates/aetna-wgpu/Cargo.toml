@@ -12,3 +12,5 @@ path = "src/lib.rs"
 aetna-core = { path = "../aetna-core" }
 wgpu = "23"
 bytemuck = { version = "1.21", features = ["derive"] }
+# Drop-in `Instant::now()` that works on wasm32; std's panics there.
+web-time = "1"

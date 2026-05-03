@@ -27,7 +27,9 @@
 //! animation before snapshotting, so SVG/PNG fixtures are byte-identical
 //! run-to-run regardless of how many frames were sampled.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+// web_time::Instant works on wasm32 (std::time::Instant::now() panics there).
+use web_time::Instant;
 
 use crate::tree::Color;
 

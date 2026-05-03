@@ -31,6 +31,7 @@ dependencies = [
  "cosmic-text",
  "swash",
  "ttf-parser 0.25.1",
+ "web-time",
 ]
 
 [[package]]
@@ -69,6 +70,7 @@ version = "0.1.0"
 dependencies = [
  "aetna-core",
  "bytemuck",
+ "web-time",
  "wgpu",
 ]
 

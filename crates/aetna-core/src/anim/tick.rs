@@ -9,7 +9,8 @@
 //! reads the eased value.
 
 use std::collections::{HashMap, HashSet};
-use std::time::Instant;
+// web_time::Instant works on wasm32 (std::time::Instant::now() panics there).
+use web_time::Instant;
 
 use crate::anim::{AnimProp, AnimValue, Animation, Timing};
 use crate::state::{AnimationMode, EnvelopeKind};
