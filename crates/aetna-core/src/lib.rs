@@ -89,7 +89,7 @@ pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
 pub use inspect::dump_tree;
 pub use ir::{DrawOp, TextAnchor};
-pub use layout::layout;
+pub use layout::{LayoutCtx, LayoutFn, layout};
 pub use lint::{Finding, FindingKind, LintReport, lint};
 pub use manifest::{draw_ops_text, shader_manifest};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};

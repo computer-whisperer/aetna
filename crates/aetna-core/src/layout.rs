@@ -23,9 +23,77 @@
 //! for now; this keeps layout/lint/SVG close enough to glyphon output
 //! without committing to the final text stack.
 
+use std::sync::Arc;
+
 use crate::state::UiState;
 use crate::text_metrics;
 use crate::tree::*;
+
+/// v0.5 — second escape hatch: author-supplied layout function.
+///
+/// When set on a node via [`El::layout`], the layout pass calls this
+/// function instead of running the column/row/overlay distribution for
+/// that node's direct children. The function returns one [`Rect`] per
+/// child (in source order), positioned anywhere inside the container.
+/// The library still recurses into each child (so descendants lay out
+/// normally) and still drives hit-test, focus, animation, scroll —
+/// those all read from [`UiState::computed_rects`], which receives the
+/// rects this function produces.
+///
+/// Authors typically write a free `fn(LayoutCtx) -> Vec<Rect>` and
+/// pass it directly: `column(children).layout(my_layout)`.
+///
+/// ## What you get
+///
+/// - [`LayoutCtx::container`] — the rect available for placement
+///   (parent rect minus this node's padding).
+/// - [`LayoutCtx::children`] — read-only slice of the node's children;
+///   index here matches the index in your returned `Vec<Rect>`.
+/// - [`LayoutCtx::measure`] — call to get a child's intrinsic
+///   `(width, height)` if you need it for sizing decisions.
+///
+/// ## v0.5 scope limits (will panic)
+///
+/// - The custom-layout node itself must size with [`Size::Fixed`] or
+///   [`Size::Fill`] on both axes. `Size::Hug` requires a separate
+///   intrinsic callback that's deferred.
+/// - The returned `Vec<Rect>` length must equal `children.len()`.
+#[derive(Clone)]
+pub struct LayoutFn(pub Arc<dyn Fn(LayoutCtx) -> Vec<Rect> + Send + Sync>);
+
+impl LayoutFn {
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn(LayoutCtx) -> Vec<Rect> + Send + Sync + 'static,
+    {
+        LayoutFn(Arc::new(f))
+    }
+}
+
+impl std::fmt::Debug for LayoutFn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("LayoutFn(<fn>)")
+    }
+}
+
+/// Context handed to a [`LayoutFn`]. Marked `#[non_exhaustive]` so
+/// future fields (intrinsic-at-width, scroll context, …) can be added
+/// without breaking author code that currently reads `container` /
+/// `children` / `measure`.
+#[non_exhaustive]
+pub struct LayoutCtx<'a> {
+    /// Inner rect of the parent (after padding) — the area available
+    /// for child placement. Children may be positioned anywhere; the
+    /// library does not clamp returned rects to this region.
+    pub container: Rect,
+    /// Direct children of the node, in source order. Read-only — return
+    /// positions through your `Vec<Rect>`.
+    pub children: &'a [El],
+    /// Intrinsic `(width, height)` for any child. Wrapped text returns
+    /// its unwrapped width here; if you need width-dependent wrapping
+    /// you'll need to size the child with `Fixed` / `Fill` instead.
+    pub measure: &'a dyn Fn(&El) -> (f32, f32),
+}
 
 /// Lay out the whole tree into the given viewport rect.
 pub fn layout(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
@@ -75,6 +143,13 @@ fn role_token(k: &Kind) -> &'static str {
 }
 
 fn layout_children(node: &mut El, node_rect: Rect, ui_state: &mut UiState) {
+    if let Some(layout_fn) = node.layout_override.clone() {
+        layout_custom(node, node_rect, layout_fn, ui_state);
+        if node.scrollable {
+            apply_scroll_offset(node, node_rect, ui_state);
+        }
+        return;
+    }
     match node.axis {
         Axis::Overlay => {
             let inner = node_rect.inset(node.padding);
@@ -91,6 +166,30 @@ fn layout_children(node: &mut El, node_rect: Rect, ui_state: &mut UiState) {
     }
     if node.scrollable {
         apply_scroll_offset(node, node_rect, ui_state);
+    }
+}
+
+fn layout_custom(node: &mut El, node_rect: Rect, layout_fn: LayoutFn, ui_state: &mut UiState) {
+    let inner = node_rect.inset(node.padding);
+    let measure = |c: &El| intrinsic(c);
+    let rects = (layout_fn.0)(LayoutCtx {
+        container: inner,
+        children: &node.children,
+        measure: &measure,
+    });
+    assert_eq!(
+        rects.len(),
+        node.children.len(),
+        "LayoutFn for {:?} returned {} rects for {} children",
+        node.computed_id,
+        rects.len(),
+        node.children.len(),
+    );
+    for (c, c_rect) in node.children.iter_mut().zip(rects) {
+        ui_state
+            .computed_rects
+            .insert(c.computed_id.clone(), c_rect);
+        layout_children(c, c_rect, ui_state);
     }
 }
 
@@ -292,6 +391,20 @@ pub fn intrinsic(c: &El) -> (f32, f32) {
 }
 
 fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
+    if c.layout_override.is_some() {
+        // v0.5: custom-layout nodes don't define an intrinsic. Authors
+        // must size them with `Fixed` or `Fill` on both axes; the
+        // returned (0.0, 0.0) is replaced by `apply_min` for `Fixed`
+        // and is unread for `Fill` (parent's distribution decides).
+        if matches!(c.width, Size::Hug) || matches!(c.height, Size::Hug) {
+            panic!(
+                "layout_override on {:?} requires Size::Fixed or Size::Fill on both axes; \
+                 Size::Hug is not supported for custom layouts in v0.5",
+                c.computed_id,
+            );
+        }
+        return apply_min(c, 0.0, 0.0);
+    }
     if let Some(text) = &c.text {
         let unwrapped = text_metrics::layout_text(
             text,
@@ -540,6 +653,90 @@ mod tests {
                 .unwrap_or(0.0),
             0.0
         );
+    }
+
+    #[test]
+    fn layout_override_places_children_at_returned_rects() {
+        // A custom layout that just stacks children diagonally inside the container.
+        let mut root = column((0..3).map(|i| {
+            crate::text::text(format!("dot {i}"))
+                .width(Size::Fixed(20.0))
+                .height(Size::Fixed(20.0))
+        }))
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(200.0))
+        .layout(|ctx| {
+            ctx.children
+                .iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    let off = i as f32 * 30.0;
+                    Rect::new(ctx.container.x + off, ctx.container.y + off, 20.0, 20.0)
+                })
+                .collect()
+        });
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        let r0 = state.rect(&root.children[0].computed_id);
+        let r1 = state.rect(&root.children[1].computed_id);
+        let r2 = state.rect(&root.children[2].computed_id);
+        assert_eq!((r0.x, r0.y), (0.0, 0.0));
+        assert_eq!((r1.x, r1.y), (30.0, 30.0));
+        assert_eq!((r2.x, r2.y), (60.0, 60.0));
+    }
+
+    #[test]
+    fn layout_override_measure_returns_intrinsic() {
+        // The custom layout reads `measure` to size each child.
+        let mut root = column([crate::text::text("hi")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))])
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(200.0))
+        .layout(|ctx| {
+            let (w, h) = (ctx.measure)(&ctx.children[0]);
+            assert!((w - 40.0).abs() < 0.01, "measured width {w}");
+            assert!((h - 20.0).abs() < 0.01, "measured height {h}");
+            vec![Rect::new(ctx.container.x, ctx.container.y, w, h)]
+        });
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        let r = state.rect(&root.children[0].computed_id);
+        assert_eq!((r.w, r.h), (40.0, 20.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "returned 1 rects for 2 children")]
+    fn layout_override_length_mismatch_panics() {
+        let mut root = column([
+            crate::text::text("a")
+                .width(Size::Fixed(10.0))
+                .height(Size::Fixed(10.0)),
+            crate::text::text("b")
+                .width(Size::Fixed(10.0))
+                .height(Size::Fixed(10.0)),
+        ])
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(200.0))
+        .layout(|ctx| vec![Rect::new(ctx.container.x, ctx.container.y, 10.0, 10.0)]);
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Size::Hug is not supported for custom layouts")]
+    fn layout_override_hug_panics() {
+        // Hug check fires when the parent's layout pass measures the
+        // custom-layout child for sizing — i.e. when a layout_override
+        // node is a child of a column/row, not when it's the root.
+        let mut root = column([column([crate::text::text("c")])
+            .width(Size::Hug)
+            .height(Size::Fixed(200.0))
+            .layout(|ctx| vec![Rect::new(ctx.container.x, ctx.container.y, 10.0, 10.0)])])
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(200.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
     }
 
     #[test]

@@ -32,6 +32,7 @@ The architectural decision v5.0 settled: `El` is the author's description of the
 | Wgpu rendering | working | `cargo run -p aetna-demo --bin settings` and `crates/aetna-demo/out/settings.wgpu.png` |
 | Stock shaders | `rounded_rect` + `text_sdf` + `focus_ring` | `solid_quad` / `divider_line` / `shadow` deferred to v0.7+ |
 | Custom-shader escape hatch | working | `crates/aetna-demo/out/custom_shader.wgpu.png` — gradient buttons rendered by user-authored `shaders/gradient.wgsl` |
+| Custom-layout escape hatch (v0.5) | working | `El::layout(f)` accepts a `LayoutFn(LayoutCtx) -> Vec<Rect>` that replaces the column/row/overlay distribution for a node's children. The library still recurses, still drives hit-test/focus/animation/scroll off the produced rects. `cargo run -p aetna-core --example circular_layout` → `crates/aetna-core/out/circular_layout.svg`; `cargo run -p aetna-demo --bin circular_layout` (interactive compass rose, click-routed through LayoutFn-produced rects) |
 | App trait + hit-test + automatic hover/press | working | `cargo run -p aetna-demo --bin counter` (interactive); `crates/aetna-demo/out/counter.wgpu.png` |
 | HiDPI text + shaped core layout + paragraph wrapping + text alignment | bundled Roboto, `cosmic-text` core layout + swash rasterization, core-owned glyph atlas | SVG fallback (`crates/aetna-core/out/settings.svg`) aligned with wgpu output |
 | Clip + modal/overlay (v0.3) | working | `cargo run -p aetna-core --example modal` → `crates/aetna-core/out/modal.svg` |
@@ -88,7 +89,7 @@ v0.x slices come from `LIBRARY_VISION.md`; the v5.x slices come from `V5.md` and
 | v5.2 | wasm target. | done — the consolidated `Showcase` (counter / list / palette / picker / settings) runs in the browser via `aetna-web`'s wasm-pack bundle, with a per-frame timing breakdown logged to the JS console |
 | v5.3 | Vulkano backend; naga WGSL→SPIRV. | done — counter App renders end-to-end through `aetna-vulkano` (rect + text + custom shaders); the v5.0 core/backend boundary holds across two GPU APIs. Native-only; one-fixture scope per `V5_3.md` |
 | v5.4 | Vulkano parity with wgpu. | done — (1) Showcase (sidebar + Counter / List / Palette / Picker / Settings) renders end-to-end through vulkano via `aetna-vulkano-demo --bin showcase`; (2) the cross-backend paint primitives (`QuadInstance` ABI, paint-stream batching, `pack_instance`, `physical_scissor`) live in `aetna_core::paint`; (3) the interaction half + paint-stream loop live in `aetna_core::runtime::RunnerCore` — both backend `Runner`s now hold a `core: RunnerCore` and forward 13 byte-for-byte-identical interaction methods. Each Runner owns only its GPU resources + a thin `prepare()` GPU-upload sequence + `draw()`. A `Painter` trait was considered and declined (see `runtime.rs` module doc): the residual `prepare()` tails + `draw()` walks need backend-typed encoder handles that a trait can't hide without re-fragmenting through generics; the duplication worth abstracting is one layer up (winit + swapchain harness), not at the paint surface. |
-| v0.5 | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | |
+| v0.5 | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | in progress — (1) custom-layout escape hatch landed: `El::layout(f)` takes a `LayoutFn(LayoutCtx) -> Vec<Rect>` that replaces the column/row distribution; hit-test, focus, animation, scroll all keep working off the rects the function produces. v0.5 scope-limit: custom-layout nodes must size with `Fixed`/`Fill` on both axes (`Hug` panics, deferred). Compass-rose fixture in `aetna-core/examples/circular_layout` + `aetna-demo --bin circular_layout`. (2) Virtualized lists + (3) `feed`/`chat_log` primitives queued. |
 | v0.6 | Rich text composition (markdown runs, inline highlighting, embedded elements). | paragraph wrapping + text alignment landed (partial) |
 | v0.7+ | Stock shader: shadow, focus_ring, divider_line. Backdrop sampling. Liquid glass as the architectural acceptance test. | `focus_ring` shared with `rounded_rect` pipeline |
 
@@ -109,7 +110,7 @@ crates/
         color.rs                     Color + arithmetic
       tokens.rs                    const tokens (colors, spacing, radii, font sizes)
       style.rs                     StyleProfile, .primary()/.secondary()/.ghost()/...
-      layout.rs                    column/row/stack/scroll pass; writes UiState side maps
+      layout.rs                    column/row/stack/scroll pass; writes UiState side maps. v0.5: LayoutFn / LayoutCtx — custom-layout escape hatch
       shader.rs                    ShaderHandle, UniformBlock, UniformValue, ShaderBinding
       ir.rs                        DrawOp::{Quad, GlyphRun}
       draw_ops.rs                  El + UiState → DrawOp[]; envelope-driven state visuals
@@ -130,7 +131,7 @@ crates/
       rounded_rect.wgsl              the load-bearing stock shader
       gradient.wgsl                  custom-shader fixture
     fonts/                         bundled Roboto (regular/medium/bold)
-    examples/                      headless artifact fixtures (settings, modal, scroll_list, custom_shader)
+    examples/                      headless artifact fixtures (settings, modal, scroll_list, custom_shader, circular_layout)
     out/                           rendered artifacts per example
   aetna-wgpu/                    wgpu backend
     src/
@@ -187,6 +188,8 @@ cargo run -p aetna-demo --bin scroll_list         # interactive — v0.3 wheel
 cargo run -p aetna-demo --bin hotkey_picker       # interactive — v0.4 keyboard
 cargo run -p aetna-demo --bin animated_palette    # interactive — v0.4 .animate()
 cargo run -p aetna-core --example scroll_list     # headless → crates/aetna-core/out/scroll_list.svg
+cargo run -p aetna-core --example circular_layout # v0.5 — headless → crates/aetna-core/out/circular_layout.svg
+cargo run -p aetna-demo --bin circular_layout     # v0.5 — interactive compass rose, custom LayoutFn
 cargo run -p aetna-demo --bin render_counter      # headless wgpu PNG snapshot
 cargo run -p aetna-vulkano-demo --bin counter     # v5.3 — same Counter, native vulkano (A/B vs aetna-demo's counter)
 cargo run -p aetna-vulkano-demo --bin custom      # v5.3 — gradient.wgsl through Runner::register_shader

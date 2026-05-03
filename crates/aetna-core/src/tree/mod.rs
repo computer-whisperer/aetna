@@ -36,6 +36,7 @@ pub use types::{
 };
 
 use crate::anim::Timing;
+use crate::layout::{LayoutCtx, LayoutFn};
 use crate::shader::ShaderBinding;
 use crate::style::StyleProfile;
 
@@ -88,6 +89,15 @@ pub struct El {
     /// hatch a user crate uses to bind a custom shader (e.g.
     /// `liquid_glass`).
     pub shader_override: Option<ShaderBinding>,
+
+    /// v0.5 — second escape hatch: author-supplied layout function that
+    /// positions this node's direct children. When set, the layout
+    /// pass calls the function instead of running its column/row/
+    /// overlay distribution. The library still recurses into each
+    /// child and still drives hit-test / focus / animation / scroll
+    /// off the rects the function returns. See [`LayoutFn`] for the
+    /// contract.
+    pub layout_override: Option<LayoutFn>,
 
     // Text
     pub text: Option<String>,
@@ -157,6 +167,7 @@ impl Default for El {
             clip: false,
             scrollable: false,
             shader_override: None,
+            layout_override: None,
             text: None,
             text_color: None,
             text_align: TextAlign::Start,
@@ -314,6 +325,20 @@ impl El {
     /// only the uniforms in the binding.
     pub fn shader(mut self, binding: ShaderBinding) -> Self {
         self.shader_override = Some(binding);
+        self
+    }
+
+    /// v0.5 — replace the column/row/overlay distribution for this
+    /// node with `f`. The function receives a [`LayoutCtx`] (container
+    /// rect, children, intrinsic-measure callback) and returns one
+    /// [`Rect`] per child in source order. The node itself must size
+    /// with `Fixed` or `Fill` on both axes — `Hug` is not supported
+    /// for custom-layout nodes in this slice.
+    pub fn layout<F>(mut self, f: F) -> Self
+    where
+        F: Fn(LayoutCtx) -> Vec<Rect> + Send + Sync + 'static,
+    {
+        self.layout_override = Some(LayoutFn::new(f));
         self
     }
 
