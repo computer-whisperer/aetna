@@ -136,4 +136,17 @@ impl ShaderBinding {
     pub fn set(&mut self, key: &'static str, value: UniformValue) {
         self.uniforms.insert(key, value);
     }
+
+    // Typed sugar for the common cases — saves the user from typing
+    // `UniformValue::Color(...)` at every call site.
+
+    pub fn color(self, key: &'static str, c: Color) -> Self {
+        self.with(key, UniformValue::Color(c))
+    }
+    pub fn f32(self, key: &'static str, v: f32) -> Self {
+        self.with(key, UniformValue::F32(v))
+    }
+    pub fn vec4(self, key: &'static str, v: [f32; 4]) -> Self {
+        self.with(key, UniformValue::Vec4(v))
+    }
 }

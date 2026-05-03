@@ -13,6 +13,10 @@ path = "src/bin/settings.rs"
 name = "render_png"
 path = "src/bin/render_png.rs"
 
+[[bin]]
+name = "render_custom"
+path = "src/bin/render_custom.rs"
+
 [dependencies]
 attempt_4 = { path = "../attempt_4" }
 wgpu = "23"

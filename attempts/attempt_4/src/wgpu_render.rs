@@ -1,9 +1,10 @@
 //! Wgpu renderer — the production paint path.
 //!
 //! v0.1 scope: paints `stock::rounded_rect` quads + `stock::text_sdf`
-//! glyph runs. Focus rings and shadow are reserved (focus_ring lights up
-//! easily via the same instance-buffer pattern; shadow needs SDF
-//! widening — both follow). Custom-shader registration also lands later.
+//! glyph runs, plus user-registered custom shaders that share the
+//! rounded_rect vertex layout. Focus rings and shadow are reserved
+//! (focus_ring lights up easily via the same instance-buffer pattern;
+//! shadow needs SDF widening — both follow).
 //!
 //! # Insert-into-pass integration
 //!
@@ -14,14 +15,32 @@
 //!
 //! ```ignore
 //! let mut ui = UiRenderer::new(&device, &queue, surface_format);
+//! ui.register_shader(&device, "gradient", include_str!("gradient.wgsl"));
 //! // per frame:
-//! ui.prepare(&device, &queue, &mut tree, viewport);
+//! ui.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 //! ui.draw(&mut pass);
 //! ```
 //!
 //! `prepare` is split from `draw` so all `queue.write_buffer` calls and
 //! glyphon atlas updates happen before the render pass begins, matching
 //! wgpu's expected order.
+//!
+//! # Custom shaders
+//!
+//! Call [`UiRenderer::register_shader`] with a name and WGSL source.
+//! The shader's vertex/fragment must use the shared instance layout —
+//! see `shaders/rounded_rect.wgsl` for the canonical example. Bind the
+//! shader at a node via `El::shader(ShaderBinding::custom(name).with(...))`.
+//! Per-instance uniforms map to three generic `vec4` slots:
+//!
+//! | Uniform key | Slot (`@location`) | Accepted types |
+//! |---|---|---|
+//! | `vec_a` | 2 | `Color` (rgba 0..1) or `Vec4` |
+//! | `vec_b` | 3 | `Color` or `Vec4` |
+//! | `vec_c` | 4 | `Vec4` (or fall back to scalar `f32` packed in `.x`) |
+//!
+//! Stock `rounded_rect` reuses the same layout but reads its own named
+//! uniforms (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`).
 //!
 //! # Text rendering
 //!
@@ -31,9 +50,11 @@
 //! [`DrawOp::GlyphRun`]s — fine for v0.1 (no caching), and matches our
 //! current "tree is rebuilt each frame" loop.
 //!
-//! Paint order: rounded_rect quads first, then text on top.
+//! Paint order: quads (stock + custom, interleaved by run) first, then
+//! text on top.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use bytemuck::{Pod, Zeroable};
 use glyphon::cosmic_text::Align;
@@ -57,16 +78,23 @@ struct FrameUniforms {
     _pad: [f32; 2],
 }
 
-/// One instance of `stock::rounded_rect`. Layout matches the wgsl
-/// `InstanceInput` struct in `shaders/rounded_rect.wgsl`.
+/// One instance of a rect-shaped shader. Layout is shared between
+/// `stock::rounded_rect` and any custom shader registered via
+/// [`UiRenderer::register_shader`]. The fragment shader interprets the
+/// three vec4 slots however it wants; the vertex shader needs `rect` to
+/// place the unit quad in pixel space.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 struct QuadInstance {
+    /// xy = top-left px, zw = size px.
     rect: [f32; 4],
-    fill: [f32; 4],
-    stroke: [f32; 4],
-    /// x = stroke_width, y = radius, z = shadow, w = _pad
-    params: [f32; 4],
+    /// `vec_a` slot — for stock::rounded_rect, this is `fill`.
+    slot_a: [f32; 4],
+    /// `vec_b` slot — for stock::rounded_rect, this is `stroke`.
+    slot_b: [f32; 4],
+    /// `vec_c` slot — for stock::rounded_rect, this is
+    /// `(stroke_width, radius, shadow, _)`.
+    slot_c: [f32; 4],
 }
 
 const ROUNDED_RECT_WGSL: &str = include_str!("../shaders/rounded_rect.wgsl");
@@ -74,17 +102,32 @@ const ROUNDED_RECT_WGSL: &str = include_str!("../shaders/rounded_rect.wgsl");
 /// Initial size for the dynamic instance buffer (grows as needed).
 const INITIAL_INSTANCE_CAPACITY: usize = 256;
 
+/// A contiguous run of instances drawn with the same pipeline. Built in
+/// tree order so a custom shader sandwiched between two stock surfaces
+/// is drawn at the right z-position.
+#[derive(Clone, Copy)]
+struct InstanceRun {
+    handle: ShaderHandle,
+    first: u32,
+    count: u32,
+}
+
 /// Renderer state owned by the host. One instance per surface/format.
 pub struct UiRenderer {
-    // Quad pipeline (stock::rounded_rect).
-    quad_pipeline: wgpu::RenderPipeline,
+    target_format: wgpu::TextureFormat,
+
+    // Shared resources.
+    pipeline_layout: wgpu::PipelineLayout,
     quad_bind_group: wgpu::BindGroup,
     frame_buf: wgpu::Buffer,
     quad_vbo: wgpu::Buffer,
     instance_buf: wgpu::Buffer,
     instance_capacity: usize,
-    quad_count: u32,
     quad_scratch: Vec<QuadInstance>,
+    runs: Vec<InstanceRun>,
+
+    // One pipeline per registered shader (stock + custom).
+    pipelines: HashMap<ShaderHandle, wgpu::RenderPipeline>,
 
     // Text pipeline (stock::text_sdf, via glyphon).
     font_system: FontSystem,
@@ -108,8 +151,12 @@ impl UiRenderer {
     /// Create a renderer for the given target color format. The host
     /// passes its swapchain/render-target format here so pipelines and
     /// the glyph atlas are built compatible.
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, target_format: wgpu::TextureFormat) -> Self {
-        // ---- Quad pipeline ----
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target_format: wgpu::TextureFormat,
+    ) -> Self {
+        // ---- Shared resources ----
         let frame_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("attempt_4::frame_uniforms"),
             size: std::mem::size_of::<FrameUniforms>() as u64,
@@ -159,67 +206,23 @@ impl UiRenderer {
             mapped_at_creation: false,
         });
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("stock::rounded_rect"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(ROUNDED_RECT_WGSL)),
-        });
-
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("attempt_4::quad_pipeline_layout"),
+            label: Some("attempt_4::pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let quad_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("attempt_4::quad_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[
-                    // vertex buffer 0: corner uv (4 verts of the unit quad)
-                    wgpu::VertexBufferLayout {
-                        array_stride: (2 * std::mem::size_of::<f32>()) as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[wgpu::VertexAttribute {
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x2,
-                            offset: 0,
-                        }],
-                    },
-                    // vertex buffer 1: per-instance QuadInstance
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<QuadInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &INSTANCE_ATTRS,
-                    },
-                ],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        // Build the rounded_rect pipeline up-front; custom shaders are
+        // added on demand by the host.
+        let mut pipelines = HashMap::new();
+        let rr_pipeline = build_quad_pipeline(
+            device,
+            &pipeline_layout,
+            target_format,
+            "stock::rounded_rect",
+            ROUNDED_RECT_WGSL,
+        );
+        pipelines.insert(ShaderHandle::Stock(StockShader::RoundedRect), rr_pipeline);
 
         // ---- Text pipeline (glyphon) ----
         let mut font_system = FontSystem::new();
@@ -243,14 +246,16 @@ impl UiRenderer {
         );
 
         Self {
-            quad_pipeline,
+            target_format,
+            pipeline_layout,
             quad_bind_group,
             frame_buf,
             quad_vbo,
             instance_buf,
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
-            quad_count: 0,
             quad_scratch: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
+            runs: Vec::new(),
+            pipelines,
 
             font_system,
             swash_cache,
@@ -260,6 +265,29 @@ impl UiRenderer {
             text_buffers: Vec::new(),
             text_metas: Vec::new(),
         }
+    }
+
+    /// Register a custom shader. `name` is the same string passed to
+    /// [`crate::shader::ShaderBinding::custom`]; nodes bound to it via
+    /// [`crate::tree::El::shader`] paint through this pipeline.
+    ///
+    /// The WGSL source must use the shared `(rect, vec_a, vec_b, vec_c)`
+    /// instance layout and the `FrameUniforms` bind group described in
+    /// the module docs. Compilation happens at register time — invalid
+    /// WGSL panics here, not mid-frame.
+    ///
+    /// Re-registering the same name replaces the previous pipeline
+    /// (useful for hot-reload during development).
+    pub fn register_shader(&mut self, device: &wgpu::Device, name: &'static str, wgsl: &str) {
+        let label = format!("custom::{name}");
+        let pipeline = build_quad_pipeline(
+            device,
+            &self.pipeline_layout,
+            self.target_format,
+            &label,
+            wgsl,
+        );
+        self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
     }
 
     /// Lay out the tree, resolve to draw ops, and upload per-frame
@@ -283,14 +311,30 @@ impl UiRenderer {
         layout::layout(root, viewport);
         let ops = draw_ops::draw_ops(root);
 
-        // ---- Quads ----
+        // ---- Quads: pack into one buffer, group into runs ----
         self.quad_scratch.clear();
+        self.runs.clear();
+        let mut current: Option<ShaderHandle> = None;
+        let mut run_first: u32 = 0;
+
         for op in &ops {
-            if let Some(inst) = quad_instance(op) {
-                self.quad_scratch.push(inst);
+            let DrawOp::Quad { rect, shader, uniforms, .. } = op else { continue };
+            // Skip ops whose shader has no pipeline registered (e.g.
+            // FocusRing in v0.1, custom shaders the host forgot to
+            // register). The lint pass surfaces this elsewhere.
+            if !self.pipelines.contains_key(shader) {
+                continue;
             }
+            let inst = pack_instance(*rect, *shader, uniforms);
+
+            if Some(*shader) != current {
+                close_run(&mut self.runs, current, run_first, self.quad_scratch.len() as u32);
+                current = Some(*shader);
+                run_first = self.quad_scratch.len() as u32;
+            }
+            self.quad_scratch.push(inst);
         }
-        self.quad_count = self.quad_scratch.len() as u32;
+        close_run(&mut self.runs, current, run_first, self.quad_scratch.len() as u32);
 
         if self.quad_scratch.len() > self.instance_capacity {
             let new_cap = self.quad_scratch.len().next_power_of_two();
@@ -330,7 +374,8 @@ impl UiRenderer {
         for op in &ops {
             if let DrawOp::GlyphRun {
                 rect, color, text, size, weight, mono, anchor, ..
-            } = op {
+            } = op
+            {
                 build_text_buffer(
                     &mut self.font_system,
                     *rect,
@@ -397,14 +442,21 @@ impl UiRenderer {
     }
 
     /// Record draws into the host-managed render pass. Call after
-    /// [`Self::prepare`]. Paint order: rounded_rect quads, then text.
+    /// [`Self::prepare`]. Paint order: quads (one draw call per shader
+    /// run, in tree order), then text on top.
     pub fn draw<'pass>(&'pass self, pass: &mut wgpu::RenderPass<'pass>) {
-        if self.quad_count > 0 {
-            pass.set_pipeline(&self.quad_pipeline);
+        if !self.runs.is_empty() {
             pass.set_bind_group(0, &self.quad_bind_group, &[]);
             pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            pass.draw(0..4, 0..self.quad_count);
+            for run in &self.runs {
+                let pipeline = self
+                    .pipelines
+                    .get(&run.handle)
+                    .expect("run handle has no pipeline (bug in prepare)");
+                pass.set_pipeline(pipeline);
+                pass.draw(0..4, run.first..run.first + run.count);
+            }
         }
         if !self.text_buffers.is_empty() {
             self.text_renderer
@@ -414,37 +466,124 @@ impl UiRenderer {
     }
 }
 
-/// Per-instance vertex attributes — must match
-/// `shaders/rounded_rect.wgsl`'s `InstanceInput`.
+/// Per-instance vertex attributes — must match the shared
+/// `InstanceInput` struct in `shaders/rounded_rect.wgsl` and any
+/// registered custom shader.
 const INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
-    1 => Float32x4,  // rect
-    2 => Float32x4,  // fill
-    3 => Float32x4,  // stroke
-    4 => Float32x4,  // params (stroke_width, radius, shadow, _pad)
+    1 => Float32x4,  // rect (xy=topleft px, zw=size px)
+    2 => Float32x4,  // vec_a (stock::rounded_rect: fill)
+    3 => Float32x4,  // vec_b (stock::rounded_rect: stroke)
+    4 => Float32x4,  // vec_c (stock::rounded_rect: stroke_width, radius, shadow, _)
 ];
 
-/// Resolve a single [`DrawOp::Quad`] into a `QuadInstance`. Returns
-/// `None` for ops the v0.1 renderer doesn't yet handle (text, custom
-/// shaders, focus rings). Those are emitted in subsequent slices.
-fn quad_instance(op: &DrawOp) -> Option<QuadInstance> {
-    let DrawOp::Quad { rect, shader, uniforms, .. } = op else { return None };
+fn build_quad_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    target_format: wgpu::TextureFormat,
+    label: &str,
+    wgsl: &str,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(label),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(wgsl)),
+    });
 
-    if !matches!(shader, ShaderHandle::Stock(StockShader::RoundedRect)) {
-        return None;
-    }
-
-    let fill = uniforms.get("fill").and_then(as_color).map(rgba_f32).unwrap_or([0.0; 4]);
-    let stroke = uniforms.get("stroke").and_then(as_color).map(rgba_f32).unwrap_or([0.0; 4]);
-    let stroke_width = uniforms.get("stroke_width").and_then(as_f32).unwrap_or(0.0);
-    let radius = uniforms.get("radius").and_then(as_f32).unwrap_or(0.0);
-    let shadow = uniforms.get("shadow").and_then(as_f32).unwrap_or(0.0);
-
-    Some(QuadInstance {
-        rect: [rect.x, rect.y, rect.w, rect.h],
-        fill,
-        stroke,
-        params: [stroke_width, radius, shadow, 0.0],
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[
+                wgpu::VertexBufferLayout {
+                    array_stride: (2 * std::mem::size_of::<f32>()) as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttribute {
+                        shader_location: 0,
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: 0,
+                    }],
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<QuadInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &INSTANCE_ATTRS,
+                },
+            ],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: target_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None,
     })
+}
+
+fn close_run(runs: &mut Vec<InstanceRun>, handle: Option<ShaderHandle>, first: u32, end: u32) {
+    if let Some(handle) = handle {
+        let count = end - first;
+        if count > 0 {
+            runs.push(InstanceRun { handle, first, count });
+        }
+    }
+}
+
+/// Pack a quad's uniforms into the shared `QuadInstance` layout. Stock
+/// `rounded_rect` reads its named uniforms; everything else reads the
+/// generic `vec_a`/`vec_b`/`vec_c` slots.
+fn pack_instance(
+    rect: Rect,
+    shader: ShaderHandle,
+    uniforms: &crate::shader::UniformBlock,
+) -> QuadInstance {
+    let rect_arr = [rect.x, rect.y, rect.w, rect.h];
+
+    match shader {
+        ShaderHandle::Stock(StockShader::RoundedRect) => QuadInstance {
+            rect: rect_arr,
+            slot_a: uniforms
+                .get("fill")
+                .and_then(as_color)
+                .map(rgba_f32)
+                .unwrap_or([0.0; 4]),
+            slot_b: uniforms
+                .get("stroke")
+                .and_then(as_color)
+                .map(rgba_f32)
+                .unwrap_or([0.0; 4]),
+            slot_c: [
+                uniforms.get("stroke_width").and_then(as_f32).unwrap_or(0.0),
+                uniforms.get("radius").and_then(as_f32).unwrap_or(0.0),
+                uniforms.get("shadow").and_then(as_f32).unwrap_or(0.0),
+                0.0,
+            ],
+        },
+        _ => QuadInstance {
+            rect: rect_arr,
+            slot_a: uniforms.get("vec_a").map(value_to_vec4).unwrap_or([0.0; 4]),
+            slot_b: uniforms.get("vec_b").map(value_to_vec4).unwrap_or([0.0; 4]),
+            slot_c: uniforms.get("vec_c").map(value_to_vec4).unwrap_or([0.0; 4]),
+        },
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -540,10 +679,30 @@ fn glyphon_color(c: Color) -> GlyphColor {
 }
 
 fn as_color(v: &UniformValue) -> Option<Color> {
-    match v { UniformValue::Color(c) => Some(*c), _ => None }
+    match v {
+        UniformValue::Color(c) => Some(*c),
+        _ => None,
+    }
 }
 fn as_f32(v: &UniformValue) -> Option<f32> {
-    match v { UniformValue::F32(f) => Some(*f), _ => None }
+    match v {
+        UniformValue::F32(f) => Some(*f),
+        _ => None,
+    }
+}
+
+/// Coerce any `UniformValue` into the four floats of a vec4 slot.
+/// Custom-shader authors typically pass `Color` (rgba) or `Vec4`
+/// (arbitrary semantics); `F32` packs into `.x` so a single scalar like
+/// `radius` doesn't need a Vec4 wrapper.
+fn value_to_vec4(v: &UniformValue) -> [f32; 4] {
+    match v {
+        UniformValue::Color(c) => rgba_f32(*c),
+        UniformValue::Vec4(a) => *a,
+        UniformValue::Vec2([x, y]) => [*x, *y, 0.0, 0.0],
+        UniformValue::F32(f) => [*f, 0.0, 0.0, 0.0],
+        UniformValue::Bool(b) => [if *b { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
+    }
 }
 
 fn rgba_f32(c: Color) -> [f32; 4] {
@@ -560,5 +719,9 @@ fn rgba_f32(c: Color) -> [f32; 4] {
 }
 
 fn srgb_to_linear(c: f32) -> f32 {
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
 }
