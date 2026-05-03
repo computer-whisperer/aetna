@@ -227,7 +227,17 @@ mod web_entry {
             // drawing buffer disagree.
             sync_canvas_to_css(&canvas, &window);
 
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+            // Restrict to the WebGL2 backend on the browser side.
+            // Firefox's WebGPU implementation currently wedges its
+            // compositor on pointer events with our atlas-uploading
+            // path (whole window goes black until the cursor leaves);
+            // WebGL2 sidesteps the bug and is the more battle-tested
+            // backend through wgpu 23 anyway. Revisit when wgpu /
+            // Firefox WebGPU shake out further.
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::GL,
+                ..Default::default()
+            });
             let surface = instance
                 .create_surface(window.clone())
                 .expect("create surface");
@@ -248,12 +258,12 @@ mod web_entry {
                     .await
                     .expect("no compatible adapter");
 
-                // Use the adapter's actual limits as the upper bound;
-                // downlevel_webgl2_defaults is too tight for the
-                // WebGPU backend Firefox picks by default. Capping at
-                // adapter.limits() keeps device creation succeeding
-                // on integrated GPUs.
-                let limits = wgpu::Limits::default().using_resolution(adapter.limits());
+                // WebGL2 has a tighter feature/limit envelope than
+                // native; downlevel_webgl2_defaults is the matching
+                // baseline. Cap at the adapter's actual limits so
+                // device creation succeeds on every integrated GPU.
+                let limits =
+                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
 
                 let (device, queue) = adapter
                     .request_device(
