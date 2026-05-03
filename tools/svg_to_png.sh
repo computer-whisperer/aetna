@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Render every SVG fixture under attempts/*/out/ to PNG for visual review.
+# Render every SVG fixture under crates/*/out/ and attempts/*/out/ to PNG
+# for visual review.
 #
 # Picks resvg (pure Rust) if available, falls back to rsvg-convert. Skips
 # regeneration when the PNG is already newer than its SVG. Prints each
@@ -25,7 +26,7 @@ fi
 
 shopt -s nullglob
 any=0
-for svg in attempts/*/out/*.svg; do
+for svg in crates/*/out/*.svg attempts/*/out/*.svg; do
     any=1
     png="${svg%.svg}.png"
     if [ -f "$png" ] && [ "$png" -nt "$svg" ]; then
@@ -39,5 +40,5 @@ for svg in attempts/*/out/*.svg; do
 done
 
 if [ "$any" = 0 ]; then
-    echo "no SVG fixtures found under attempts/*/out/" >&2
+    echo "no SVG fixtures found under crates/*/out/ or attempts/*/out/" >&2
 fi
