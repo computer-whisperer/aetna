@@ -72,10 +72,11 @@ fn emit_op(s: &mut String, op: &DrawOp) {
             size,
             weight,
             mono,
+            wrap,
             anchor,
             ..
         } => {
-            emit_glyph_run(s, id, *rect, *color, text, *size, *weight, *mono, *anchor);
+            emit_glyph_run(s, id, *rect, *color, text, *size, *weight, *mono, *wrap, *anchor);
         }
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
@@ -207,6 +208,7 @@ fn emit_glyph_run(
     size: f32,
     weight: FontWeight,
     mono: bool,
+    wrap: TextWrap,
     anchor: TextAnchor,
 ) {
     let (x, anchor_attr) = match anchor {
@@ -214,15 +216,15 @@ fn emit_glyph_run(
         TextAnchor::Middle => (rect.center_x(), "middle"),
         TextAnchor::End => (rect.right(), "end"),
     };
-    // Mirror the wgpu path's vertical-centering: cosmic-text places the
-    // line's top at rect.y + max(0, (rect.h - size*1.4)/2). The SVG
-    // baseline sits at line-top + ascent; 0.93 is Roboto's OS/2 ascent
-    // ratio (and a reasonable approximation for any sans rsvg falls
-    // back to). Both renderers now use the same formula, so the only
-    // remaining text offset between SVG and wgpu output is the font
-    // itself (rsvg's fallback vs the bundled Roboto wgpu sees).
-    let line_top = rect.y + ((rect.h - size * 1.4) * 0.5).max(0.0);
-    let y = line_top + size * 0.93;
+    let lines = match wrap {
+        TextWrap::NoWrap => vec![text.to_string()],
+        TextWrap::Wrap => wrap_lines(text, rect.w, size, mono),
+    };
+    let line_h = size * 1.4;
+    let line_top = match wrap {
+        TextWrap::NoWrap => rect.y + ((rect.h - line_h) * 0.5).max(0.0),
+        TextWrap::Wrap => rect.y,
+    };
     let family = if mono {
         "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
     } else {
@@ -234,19 +236,60 @@ fn emit_glyph_run(
         FontWeight::Semibold => "600",
         FontWeight::Bold => "700",
     };
-    let _ = writeln!(
-        s,
-        r#"<text data-node="{}" data-shader="stock::text_sdf" x="{:.2}" y="{:.2}" font-family="{}" font-size="{:.2}" font-weight="{}" fill="{}" text-anchor="{}">{}</text>"#,
-        esc(id),
-        x,
-        y,
-        family,
-        size,
-        weight_str,
-        color_svg(color),
-        anchor_attr,
-        esc(text)
-    );
+    for (i, line) in lines.iter().enumerate() {
+        // SVG uses a baseline; glyphon positions by line top. 0.93 is
+        // Roboto's ascent ratio and keeps the fallback artifact close to
+        // the wgpu text path.
+        let y = line_top + i as f32 * line_h + size * 0.93;
+        let _ = writeln!(
+            s,
+            r#"<text data-node="{}" data-shader="stock::text_sdf" x="{:.2}" y="{:.2}" font-family="{}" font-size="{:.2}" font-weight="{}" fill="{}" text-anchor="{}">{}</text>"#,
+            esc(id),
+            x,
+            y,
+            family,
+            size,
+            weight_str,
+            color_svg(color),
+            anchor_attr,
+            esc(line)
+        );
+    }
+}
+
+fn wrap_lines(text: &str, width: f32, size: f32, mono: bool) -> Vec<String> {
+    let char_w = size * if mono { 0.62 } else { 0.60 };
+    let max_chars = (width / char_w).floor().max(1.0) as usize;
+    let mut out = Vec::new();
+    for paragraph in text.split('\n') {
+        let mut line = String::new();
+        for word in paragraph.split_whitespace() {
+            let word_len = word.chars().count();
+            let next_len = if line.is_empty() {
+                word_len
+            } else {
+                line.chars().count() + 1 + word_len
+            };
+            if next_len > max_chars && !line.is_empty() {
+                out.push(std::mem::take(&mut line));
+            }
+            if word_len > max_chars {
+                for ch in word.chars() {
+                    if line.chars().count() >= max_chars {
+                        out.push(std::mem::take(&mut line));
+                    }
+                    line.push(ch);
+                }
+            } else {
+                if !line.is_empty() {
+                    line.push(' ');
+                }
+                line.push_str(word);
+            }
+        }
+        out.push(line);
+    }
+    out
 }
 
 fn as_color(v: &UniformValue) -> Option<Color> {

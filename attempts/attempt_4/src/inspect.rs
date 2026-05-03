@@ -45,6 +45,12 @@ fn dump_node(n: &El, depth: usize, s: &mut String) {
         let preview: String = text.chars().take(40).collect();
         let suffix = if text.chars().count() > 40 { "…" } else { "" };
         let _ = write!(s, " text=\"{preview}{suffix}\"");
+        if !matches!(n.text_wrap, TextWrap::NoWrap) {
+            let _ = write!(s, " wrap={:?}", n.text_wrap);
+        }
+        if !matches!(n.text_align, TextAlign::Start) {
+            let _ = write!(s, " text_align={:?}", n.text_align);
+        }
     }
     if let Some(fill) = n.fill {
         let _ = write!(s, " fill={}", color_label(fill));

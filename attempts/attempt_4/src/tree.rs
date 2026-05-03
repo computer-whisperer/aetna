@@ -159,6 +159,13 @@ pub enum TextAlign {
     End,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TextWrap {
+    #[default]
+    NoWrap,
+    Wrap,
+}
+
 /// A color (RGBA8) optionally tagged with the theme token it came from.
 ///
 /// Token name has no effect on rendering — it's metadata for inspection,
@@ -307,6 +314,7 @@ pub struct El {
     pub text: Option<String>,
     pub text_color: Option<Color>,
     pub text_align: TextAlign,
+    pub text_wrap: TextWrap,
     pub font_size: f32,
     pub font_weight: FontWeight,
     pub font_mono: bool,
@@ -346,6 +354,7 @@ impl Default for El {
             text: None,
             text_color: None,
             text_align: TextAlign::Start,
+            text_wrap: TextWrap::NoWrap,
             font_size: crate::tokens::FONT_BASE,
             font_weight: FontWeight::Regular,
             font_mono: false,
@@ -421,6 +430,9 @@ impl El {
     pub fn text_align(mut self, align: TextAlign) -> Self { self.text_align = align; self }
     pub fn center_text(self) -> Self { self.text_align(TextAlign::Center) }
     pub fn end_text(self) -> Self { self.text_align(TextAlign::End) }
+    pub fn text_wrap(mut self, wrap: TextWrap) -> Self { self.text_wrap = wrap; self }
+    pub fn wrap_text(self) -> Self { self.text_wrap(TextWrap::Wrap) }
+    pub fn nowrap_text(self) -> Self { self.text_wrap(TextWrap::NoWrap) }
     pub fn font_size(mut self, s: f32) -> Self { self.font_size = s; self }
     pub fn font_weight(mut self, w: FontWeight) -> Self { self.font_weight = w; self }
     pub fn mono(mut self) -> Self { self.font_mono = true; self }

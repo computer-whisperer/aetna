@@ -71,7 +71,7 @@ use crate::event::{self, KeyModifiers, UiEvent, UiEventKind, UiKey, UiState};
 use crate::ir::{DrawOp, TextAnchor};
 use crate::layout;
 use crate::shader::{ShaderHandle, StockShader, UniformValue};
-use crate::tree::{Color, El, FontWeight, Rect};
+use crate::tree::{Color, El, FontWeight, Rect, TextWrap};
 
 /// Per-frame globals bound at @group(0).
 #[repr(C)]
@@ -413,6 +413,7 @@ impl UiRenderer {
                     size,
                     weight,
                     mono,
+                    wrap,
                     anchor,
                     ..
                 } => {
@@ -439,6 +440,7 @@ impl UiRenderer {
                         *size,
                         *weight,
                         *mono,
+                        *wrap,
                         *anchor,
                         *color,
                         scale_factor,
@@ -821,6 +823,7 @@ fn build_text_buffer(
     size: f32,
     weight: FontWeight,
     mono: bool,
+    wrap: TextWrap,
     anchor: TextAnchor,
     color: Color,
     scale: f32,
@@ -837,9 +840,10 @@ fn build_text_buffer(
     // works. For Start anchors, constraining width to a too-tight
     // intrinsic rect causes silent wrapping ("Theme" → "Them" + "e"
     // on a hidden second line); leave width unbounded.
-    let buffer_width = match anchor {
-        TextAnchor::Start => None,
-        TextAnchor::Middle | TextAnchor::End => Some(rect.w * scale),
+    let buffer_width = match (wrap, anchor) {
+        (TextWrap::Wrap, _) => Some(rect.w * scale),
+        (TextWrap::NoWrap, TextAnchor::Start) => None,
+        (TextWrap::NoWrap, TextAnchor::Middle | TextAnchor::End) => Some(rect.w * scale),
     };
     buffer.set_size(
         font_system,
@@ -869,9 +873,12 @@ fn build_text_buffer(
         buffer.shape_until_scroll(font_system, false);
     }
 
-    // Vertically center one line of text inside the rect (in logical),
-    // then scale to physical.
-    let top_logical = rect.y + ((rect.h - size * 1.4) * 0.5).max(0.0);
+    // Single-line controls center text vertically. Wrapped text boxes
+    // are top-aligned so additional lines flow down from the box start.
+    let top_logical = match wrap {
+        TextWrap::NoWrap => rect.y + ((rect.h - size * 1.4) * 0.5).max(0.0),
+        TextWrap::Wrap => rect.y,
+    };
     let top = top_logical * scale;
     let left = rect.x * scale;
 

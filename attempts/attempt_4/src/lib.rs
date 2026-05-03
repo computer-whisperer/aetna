@@ -75,7 +75,7 @@ pub use wgpu_render::UiRenderer;
 // Prelude — for `use attempt_4::*;`.
 pub use tree::{
     El, Kind, Color, Size, Sides, Rect, Axis, Align, Justify, FontWeight,
-    InteractionState, Source, TextAlign,
+    InteractionState, Source, TextAlign, TextWrap,
     column, row, stack, spacer, divider,
 };
 pub use style::StyleProfile;
@@ -93,7 +93,7 @@ pub use lint::{LintReport, Finding, FindingKind, lint};
 pub use manifest::{shader_manifest, draw_ops_text};
 pub use bundle::{Bundle, render_bundle, write_bundle};
 
-pub use text::{text, h1, h2, h3, mono};
+pub use text::{text, paragraph, h1, h2, h3, mono};
 pub use button::button;
 pub use badge::badge;
 pub use card::card;

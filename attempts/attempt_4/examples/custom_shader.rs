@@ -34,7 +34,7 @@ fn gradient_button(label: &str, top: Color, bottom: Color, radius: f32) -> El {
 fn fixture() -> El {
     column([
         h1("Custom shader demo"),
-        text(
+        paragraph(
             "Three buttons below paint via a registered custom shader \
              (gradient.wgsl). The right-hand button is a stock rounded_rect \
              for contrast.",

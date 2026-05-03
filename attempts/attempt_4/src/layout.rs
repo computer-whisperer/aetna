@@ -86,7 +86,11 @@ fn layout_axis(node: &mut El, vertical: bool) {
     let main_extent = if vertical { inner.h } else { inner.w };
     let cross_extent = if vertical { inner.w } else { inner.h };
 
-    let intrinsics: Vec<(f32, f32)> = node.children.iter().map(intrinsic).collect();
+    let intrinsics: Vec<(f32, f32)> = node
+        .children
+        .iter()
+        .map(|c| child_intrinsic(c, vertical, cross_extent, node.align))
+        .collect();
 
     let mut consumed = 0.0;
     let mut fill_weight_total = 0.0;
@@ -160,6 +164,21 @@ fn main_size_of(c: &El, iw: f32, ih: f32, vertical: bool) -> MainSize {
     }
 }
 
+fn child_intrinsic(c: &El, vertical: bool, parent_cross_extent: f32, parent_align: Align) -> (f32, f32) {
+    if !vertical {
+        return intrinsic(c);
+    }
+    let available_width = match c.width {
+        Size::Fixed(v) => Some(v),
+        Size::Fill(_) => Some(parent_cross_extent),
+        Size::Hug => match parent_align {
+            Align::Stretch => Some(parent_cross_extent),
+            Align::Start | Align::Center | Align::End => Some(parent_cross_extent),
+        },
+    };
+    intrinsic_constrained(c, available_width)
+}
+
 fn overlay_rect(c: &El, parent: Rect, align: Align, justify: Justify) -> Rect {
     let (iw, ih) = intrinsic(c);
     let w = match c.width {
@@ -187,10 +206,33 @@ fn overlay_rect(c: &El, parent: Rect, align: Align, justify: Justify) -> Rect {
 
 /// Approximate intrinsic (width, height) for hugging layouts.
 pub fn intrinsic(c: &El) -> (f32, f32) {
+    intrinsic_constrained(c, None)
+}
+
+fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
     if let Some(text) = &c.text {
-        let chars = text.chars().count() as f32;
-        let w = chars * c.font_size * char_width_factor(c.font_mono) + c.padding.left + c.padding.right;
-        let h = c.font_size * 1.4 + c.padding.top + c.padding.bottom;
+        let char_w = c.font_size * char_width_factor(c.font_mono);
+        let line_h = c.font_size * 1.4;
+        let unwrapped_w = text
+            .split('\n')
+            .map(|line| line.chars().count() as f32 * char_w)
+            .fold(0.0, f32::max);
+        let content_available = match c.text_wrap {
+            TextWrap::NoWrap => None,
+            TextWrap::Wrap => available_width
+                .or(match c.width {
+                    Size::Fixed(v) => Some(v),
+                    Size::Fill(_) | Size::Hug => None,
+                })
+                .map(|w| (w - c.padding.left - c.padding.right).max(char_w)),
+        };
+        let line_count = content_available
+            .map(|w| wrapped_line_count(text, w, char_w))
+            .unwrap_or_else(|| text.split('\n').count().max(1));
+        let w = content_available
+            .map(|w| unwrapped_w.min(w) + c.padding.left + c.padding.right)
+            .unwrap_or(unwrapped_w + c.padding.left + c.padding.right);
+        let h = line_count as f32 * line_h + c.padding.top + c.padding.bottom;
         return apply_min(c, w, h);
     }
     match c.axis {
@@ -198,7 +240,8 @@ pub fn intrinsic(c: &El) -> (f32, f32) {
             let mut w: f32 = 0.0;
             let mut h: f32 = 0.0;
             for ch in &c.children {
-                let (cw, chh) = intrinsic(ch);
+                let child_available = available_width.map(|w| (w - c.padding.left - c.padding.right).max(0.0));
+                let (cw, chh) = intrinsic_constrained(ch, child_available);
                 w = w.max(cw);
                 h = h.max(chh);
             }
@@ -208,8 +251,9 @@ pub fn intrinsic(c: &El) -> (f32, f32) {
             let mut w: f32 = 0.0;
             let mut h: f32 = c.padding.top + c.padding.bottom;
             let n = c.children.len();
+            let child_available = available_width.map(|w| (w - c.padding.left - c.padding.right).max(0.0));
             for (i, ch) in c.children.iter().enumerate() {
-                let (cw, chh) = intrinsic(ch);
+                let (cw, chh) = intrinsic_constrained(ch, child_available);
                 w = w.max(cw);
                 h += chh;
                 if i + 1 < n { h += c.gap; }
@@ -231,6 +275,11 @@ pub fn intrinsic(c: &El) -> (f32, f32) {
     }
 }
 
+pub(crate) fn estimated_text_size(c: &El, available_width: Option<f32>) -> Option<(f32, f32)> {
+    c.text.as_ref()?;
+    Some(intrinsic_constrained(c, available_width))
+}
+
 fn apply_min(c: &El, mut w: f32, mut h: f32) -> (f32, f32) {
     if let Size::Fixed(v) = c.width { w = v; }
     if let Size::Fixed(v) = c.height { h = v; }
@@ -244,6 +293,40 @@ fn char_width_factor(mono: bool) -> f32 {
     // text that the wgpu glyph run won't overflow visibly. The SVG
     // fixture path also benefits — fewer false-positive overflow lints.
     if mono { 0.62 } else { 0.60 }
+}
+
+fn wrapped_line_count(text: &str, max_width: f32, char_width: f32) -> usize {
+    let max_chars = (max_width / char_width).floor().max(1.0) as usize;
+    let mut total = 0;
+    for paragraph in text.split('\n') {
+        let mut line_len = 0usize;
+        let mut saw_word = false;
+        for word in paragraph.split_whitespace() {
+            saw_word = true;
+            let word_len = word.chars().count();
+            if word_len > max_chars {
+                if line_len > 0 {
+                    total += 1;
+                    line_len = 0;
+                }
+                total += (word_len + max_chars - 1) / max_chars;
+                continue;
+            }
+            let next_len = if line_len == 0 { word_len } else { line_len + 1 + word_len };
+            if next_len > max_chars {
+                total += 1;
+                line_len = word_len;
+            } else {
+                line_len = next_len;
+            }
+        }
+        if saw_word {
+            total += 1;
+        } else {
+            total += 1;
+        }
+    }
+    total.max(1)
 }
 
 #[cfg(test)]
@@ -287,5 +370,24 @@ mod tests {
         let child = &root.children[0];
         assert!((child.computed.x - 200.0).abs() < 0.5, "expected x≈200, got {}", child.computed.x);
         assert!(child.computed.y > 100.0 && child.computed.y < 200.0, "expected centered y, got {}", child.computed.y);
+    }
+
+    #[test]
+    fn wrapped_text_hugs_multiline_height_from_available_width() {
+        let mut root = column([crate::paragraph(
+            "A longer sentence should wrap into multiple measured lines.",
+        )])
+        .width(Size::Fill(1.0))
+        .height(Size::Hug);
+
+        layout(&mut root, Rect::new(0.0, 0.0, 180.0, 200.0));
+
+        let child = &root.children[0];
+        assert_eq!(child.computed.w, 180.0);
+        assert!(
+            child.computed.h > crate::tokens::FONT_BASE * 1.4,
+            "expected multiline paragraph height, got {}",
+            child.computed.h
+        );
     }
 }

@@ -24,6 +24,15 @@ pub fn text(s: impl Into<String>) -> El {
 }
 
 #[track_caller]
+pub fn paragraph(s: impl Into<String>) -> El {
+    text(s)
+        .at_loc(Location::caller())
+        .wrap_text()
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+}
+
+#[track_caller]
 pub fn h1(s: impl Into<String>) -> El {
     El::new(Kind::Heading)
         .at_loc(Location::caller())

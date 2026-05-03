@@ -110,6 +110,7 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>, inherited_scissor: Option<Rect>) {
             size: n.font_size,
             weight,
             mono: n.font_mono,
+            wrap: n.text_wrap,
             anchor,
         });
     }
@@ -213,5 +214,18 @@ mod tests {
             panic!("expected glyph run");
         };
         assert_eq!(*anchor, TextAnchor::Middle);
+    }
+
+    #[test]
+    fn paragraph_emits_wrapped_glyph_run() {
+        let mut root = crate::paragraph("This sentence should wrap in a narrow box.")
+            .width(Size::Fixed(120.0));
+        crate::layout::layout(&mut root, Rect::new(0.0, 0.0, 120.0, 120.0));
+
+        let ops = draw_ops(&root);
+        let DrawOp::GlyphRun { wrap, .. } = &ops[0] else {
+            panic!("expected glyph run");
+        };
+        assert_eq!(*wrap, TextWrap::Wrap);
     }
 }

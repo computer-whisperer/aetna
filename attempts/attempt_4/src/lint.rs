@@ -18,6 +18,7 @@
 
 use std::fmt::Write as _;
 
+use crate::layout;
 use crate::tree::*;
 
 /// A single lint finding.
@@ -123,6 +124,26 @@ fn walk(
                 source: n.source,
                 message: format!("text_color is a raw rgba({},{},{},{}) — use a token", c.r, c.g, c.b, c.a),
             });
+        }
+        if n.text.is_some() {
+            let available_width = match n.text_wrap {
+                TextWrap::NoWrap => None,
+                TextWrap::Wrap => Some(n.computed.w),
+            };
+            if let Some((text_w, text_h)) = layout::estimated_text_size(n, available_width) {
+                let overflow_x = (text_w - n.computed.w).max(0.0);
+                let overflow_y = (text_h - n.computed.h).max(0.0);
+                if overflow_x > 0.5 || overflow_y > 0.5 {
+                    r.findings.push(Finding {
+                        kind: FindingKind::Overflow,
+                        node_id: n.computed_id.clone(),
+                        source: n.source,
+                        message: format!(
+                            "text content exceeds its box by X={overflow_x:.0} Y={overflow_y:.0}; use paragraph()/wrap_text(), a wider box, or explicit clipping"
+                        ),
+                    });
+                }
+            }
         }
     }
 

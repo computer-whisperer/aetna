@@ -47,6 +47,7 @@ pub fn shader_manifest(ops: &[DrawOp]) -> String {
                     size,
                     weight,
                     mono,
+                    wrap,
                     anchor,
                     ..
                 } => {
@@ -54,7 +55,7 @@ pub fn shader_manifest(ops: &[DrawOp]) -> String {
                     let suffix = if text.chars().count() > 28 { "…" } else { "" };
                     let _ = write!(
                         s,
-                        "  {id} text=\"{preview}{suffix}\" color={} size={size:.1} weight={weight:?} mono={mono} anchor={anchor:?}",
+                        "  {id} text=\"{preview}{suffix}\" color={} size={size:.1} weight={weight:?} mono={mono} wrap={wrap:?} anchor={anchor:?}",
                         color_label(*color),
                     );
                     s.push('\n');
@@ -107,13 +108,14 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 size,
                 weight,
                 mono,
+                wrap,
                 anchor,
             } => {
                 let preview: String = text.chars().take(40).collect();
                 let suffix = if text.chars().count() > 40 { "…" } else { "" };
                 let _ = write!(
                     s,
-                    "Glyph  shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} text=\"{preview}{suffix}\" color={} size={size:.1} weight={weight:?} mono={mono} anchor={anchor:?}",
+                    "Glyph  shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} text=\"{preview}{suffix}\" color={} size={size:.1} weight={weight:?} mono={mono} wrap={wrap:?} anchor={anchor:?}",
                     shader.name(),
                     rect.x,
                     rect.y,

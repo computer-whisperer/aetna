@@ -36,7 +36,7 @@ fn gradient_button(label: &str, top: Color, bottom: Color, radius: f32) -> El {
 fn fixture() -> El {
     column([
         h1("Custom shader demo"),
-        text(
+        paragraph(
             "Three buttons below paint via a registered custom shader \
              (gradient.wgsl). The right-hand button is a stock rounded_rect \
              for contrast — proving the renderer interleaves both kinds in \
@@ -67,7 +67,7 @@ fn fixture() -> El {
                 button("Stock").secondary(),
             ])
             .gap(tokens::SPACE_MD),
-            text("Same shader, three uniform sets. The fourth button \
+            paragraph("Same shader, three uniform sets. The fourth button \
                   (stock::rounded_rect) is unrelated and demonstrates that \
                   custom and stock pipelines coexist.")
                 .muted()

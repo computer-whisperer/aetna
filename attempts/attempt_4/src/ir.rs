@@ -21,7 +21,7 @@
 //! shaders or full custom shaders.
 
 use crate::shader::{ShaderHandle, UniformBlock};
-use crate::tree::{Color, FontWeight, Rect};
+use crate::tree::{Color, FontWeight, Rect, TextWrap};
 
 /// One paint operation in the laid-out frame.
 #[derive(Clone, Debug)]
@@ -50,6 +50,7 @@ pub enum DrawOp {
         size: f32,
         weight: FontWeight,
         mono: bool,
+        wrap: TextWrap,
         anchor: TextAnchor,
     },
     /// Mid-frame snapshot of the current target into a sampled texture,
