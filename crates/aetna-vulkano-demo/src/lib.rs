@@ -362,7 +362,20 @@ impl<A: App> ApplicationHandler for Host<A> {
                     .then_signal_fence_and_flush();
 
                 match future.map_err(|e| e.unwrap()) {
-                    Ok(future) => rcx.previous_frame_end = Some(future.boxed()),
+                    Ok(fence) => {
+                        // Wait for the GPU to finish this frame before
+                        // returning. v5.3 takes the simple-but-serial
+                        // path: a host-side Subbuffer::write() in the
+                        // *next* prepare() would otherwise hit
+                        // AccessConflict(DeviceRead) because the GPU is
+                        // still reading the instance buffer. wgpu hides
+                        // this with internal staging on `queue.write_*`;
+                        // vulkano makes us pick — wait now, or use a
+                        // per-frame SubbufferAllocator. v5.4 can adopt
+                        // the latter when perf matters.
+                        fence.wait(None).expect("frame fence wait");
+                        rcx.previous_frame_end = Some(sync::now(rcx.device.clone()).boxed());
+                    }
                     Err(e) => {
                         eprintln!("flush: {e}");
                         rcx.recreate_swapchain = true;

@@ -34,7 +34,10 @@ use aetna_core::{
 use smallvec::smallvec;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
-    command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer},
+    command_buffer::{
+        AutoCommandBufferBuilder, PrimaryAutoCommandBuffer,
+        allocator::StandardCommandBufferAllocator,
+    },
     descriptor_set::{
         DescriptorSet, WriteDescriptorSet, allocator::StandardDescriptorSetAllocator,
     },
@@ -54,6 +57,7 @@ use crate::instance::{
 };
 use crate::naga_compile::wgsl_to_spirv;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
+use crate::text::TextPaint;
 
 const INITIAL_INSTANCE_CAPACITY: u64 = 1024;
 
@@ -81,13 +85,16 @@ pub struct Runner {
     target_format: Format,
 
     memory_alloc: Arc<StandardMemoryAllocator>,
-    /// Step 6 will use this to allocate per-page text-atlas descriptor sets.
+    /// Used by `TextPaint` for per-page atlas image descriptor sets and
+    /// to allocate any future descriptor sets the runner introduces.
     #[allow(dead_code)]
     descriptor_alloc: Arc<StandardDescriptorSetAllocator>,
 
     render_pass: Arc<RenderPass>,
 
     pipelines: HashMap<ShaderHandle, Arc<GraphicsPipeline>>,
+
+    text_paint: TextPaint,
 
     quad_vbo: Subbuffer<[f32]>,
     frame_uniform_buf: Subbuffer<FrameUniforms>,
@@ -119,6 +126,11 @@ impl Runner {
     pub fn new(device: Arc<Device>, queue: Arc<Queue>, target_format: Format) -> Self {
         let memory_alloc = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         let descriptor_alloc = Arc::new(StandardDescriptorSetAllocator::new(
+            device.clone(),
+            Default::default(),
+        ));
+        // Used internally for text-atlas dirty-region uploads.
+        let cmd_alloc = Arc::new(StandardCommandBufferAllocator::new(
             device.clone(),
             Default::default(),
         ));
@@ -210,6 +222,17 @@ impl Runner {
 
         let instance_buf = create_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
 
+        let text_subpass = Subpass::from(render_pass.clone(), 0)
+            .expect("aetna-vulkano: text subpass 0");
+        let text_paint = TextPaint::new(
+            device.clone(),
+            queue.clone(),
+            memory_alloc.clone(),
+            descriptor_alloc.clone(),
+            cmd_alloc,
+            text_subpass,
+        );
+
         Self {
             device,
             _queue: queue,
@@ -218,6 +241,7 @@ impl Runner {
             descriptor_alloc,
             render_pass,
             pipelines,
+            text_paint,
             quad_vbo,
             frame_uniform_buf,
             frame_descriptor_set,
@@ -298,6 +322,7 @@ impl Runner {
         self.quad_scratch.clear();
         self.runs.clear();
         self.paint_items.clear();
+        self.text_paint.frame_begin();
 
         let mut current_run: Option<(ShaderHandle, Option<PhysicalScissor>)> = None;
         let mut run_first: u32 = 0;
@@ -341,10 +366,49 @@ impl Runner {
                     self.quad_scratch
                         .push(pack_instance(*rect, *shader, uniforms));
                 }
-                ir::DrawOp::GlyphRun { .. } | ir::DrawOp::BackdropSnapshot { .. } => {
-                    // Step 6 will record glyph runs into a Text PaintItem.
-                    // For now: close the current quad run so the absent
-                    // text doesn't disrupt batching of surrounding quads.
+                ir::DrawOp::GlyphRun {
+                    rect,
+                    scissor,
+                    color,
+                    text,
+                    size,
+                    weight,
+                    wrap,
+                    anchor,
+                    ..
+                } => {
+                    // Close the active quad run so paint order is preserved
+                    // across the text segment.
+                    close_run(
+                        &mut self.runs,
+                        &mut self.paint_items,
+                        current_run,
+                        run_first,
+                        self.quad_scratch.len() as u32,
+                    );
+                    current_run = None;
+                    run_first = self.quad_scratch.len() as u32;
+
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        continue;
+                    }
+                    let text_runs = self.text_paint.record(
+                        *rect,
+                        phys,
+                        *color,
+                        text,
+                        *size,
+                        *weight,
+                        *wrap,
+                        *anchor,
+                        scale_factor,
+                    );
+                    for index in text_runs {
+                        self.paint_items.push(PaintItem::Text(index));
+                    }
+                }
+                ir::DrawOp::BackdropSnapshot { .. } => {
                     close_run(
                         &mut self.runs,
                         &mut self.paint_items,
@@ -381,6 +445,11 @@ impl Runner {
                 .expect("aetna-vulkano: instance buffer write");
             write[..self.quad_scratch.len()].copy_from_slice(&self.quad_scratch);
         }
+
+        // Sync atlas dirty regions to GPU images + upload glyph instances.
+        // Text uploads run through their own one-shot command buffer
+        // submitted+waited inside flush().
+        self.text_paint.flush();
 
         {
             // FrameUniforms.viewport is the **logical** viewport — the
@@ -534,6 +603,41 @@ impl Runner {
                     // every packed instance in `prepare()`.
                     unsafe {
                         builder.draw(4, run.count, 0, run.first).expect("draw");
+                    }
+                }
+                PaintItem::Text(idx) => {
+                    let run = self.text_paint.run(idx);
+                    set_scissor(builder, run.scissor, full);
+                    let text_pipeline = self.text_paint.pipeline();
+                    builder
+                        .bind_pipeline_graphics(text_pipeline.clone())
+                        .expect("bind_pipeline_graphics text");
+                    // set 0 = FrameUniforms (shared with rect pipelines);
+                    // set 1 = the per-page atlas image + sampler. The
+                    // descriptor sets must be passed as a tuple (not a
+                    // single set) so vulkano binds both at once.
+                    builder
+                        .bind_descriptor_sets(
+                            PipelineBindPoint::Graphics,
+                            text_pipeline.layout().clone(),
+                            0,
+                            (
+                                self.frame_descriptor_set.clone(),
+                                self.text_paint.page_descriptor(run.page).clone(),
+                            ),
+                        )
+                        .expect("bind_descriptor_sets text");
+                    builder
+                        .bind_vertex_buffers(
+                            0,
+                            (
+                                self.quad_vbo.clone(),
+                                self.text_paint.instance_buf().clone(),
+                            ),
+                        )
+                        .expect("bind_vertex_buffers text");
+                    unsafe {
+                        builder.draw(4, run.count, 0, run.first).expect("draw text");
                     }
                 }
             }

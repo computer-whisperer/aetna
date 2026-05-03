@@ -52,7 +52,7 @@ pub(crate) struct PhysicalScissor {
 #[derive(Clone, Copy)]
 pub(crate) enum PaintItem {
     QuadRun(usize),
-    // Step 6 will add a `Text(usize)` arm.
+    Text(usize),
 }
 
 pub(crate) fn close_run(
