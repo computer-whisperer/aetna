@@ -128,11 +128,19 @@ fn emit_glyph_run(
     anchor: TextAnchor,
 ) {
     let (x, anchor_attr) = match anchor {
-        TextAnchor::Start => (rect.x + 2.0, "start"),
+        TextAnchor::Start => (rect.x, "start"),
         TextAnchor::Middle => (rect.center_x(), "middle"),
-        TextAnchor::End => (rect.right() - 2.0, "end"),
+        TextAnchor::End => (rect.right(), "end"),
     };
-    let y = rect.center_y() + size * 0.34;
+    // Mirror the wgpu path's vertical-centering: cosmic-text places the
+    // line's top at rect.y + max(0, (rect.h - size*1.4)/2). The SVG
+    // baseline sits at line-top + ascent; 0.93 is Roboto's OS/2 ascent
+    // ratio (and a reasonable approximation for any sans rsvg falls
+    // back to). Both renderers now use the same formula, so the only
+    // remaining text offset between SVG and wgpu output is the font
+    // itself (rsvg's fallback vs the bundled Roboto wgpu sees).
+    let line_top = rect.y + ((rect.h - size * 1.4) * 0.5).max(0.0);
+    let y = line_top + size * 0.93;
     let family = if mono {
         "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
     } else {
@@ -158,15 +166,32 @@ fn as_f32(v: &UniformValue) -> Option<f32> {
     match v { UniformValue::F32(f) => Some(*f), _ => None }
 }
 
+// Explicit feMerge form instead of the convenient `feDropShadow`. Both
+// render the same shadow visually, but rsvg-convert's feDropShadow
+// silently round-trips SourceGraphic through linearRGB even with
+// color-interpolation-filters="sRGB" on the filter, drifting the
+// shape's own interior by 1-2 channel codes (BG_CARD #171a21 → #161c22).
+// Routing SourceGraphic through feMergeNode untouched keeps the card
+// color exact while the shadow path (SourceAlpha → blur → offset →
+// alpha-scale) produces the same dark falloff.
 const SHADOW_DEFS: &str = r##"<defs>
-  <filter id="shadow-sm" x="-20%" y="-20%" width="140%" height="140%">
-    <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.20"/>
+  <filter id="shadow-sm" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+    <feOffset dx="0" dy="2"/>
+    <feComponentTransfer><feFuncA type="linear" slope="0.20"/></feComponentTransfer>
+    <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
   </filter>
-  <filter id="shadow-md" x="-20%" y="-20%" width="140%" height="140%">
-    <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity="0.28"/>
+  <filter id="shadow-md" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+    <feOffset dx="0" dy="6"/>
+    <feComponentTransfer><feFuncA type="linear" slope="0.28"/></feComponentTransfer>
+    <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
   </filter>
-  <filter id="shadow-lg" x="-20%" y="-20%" width="140%" height="140%">
-    <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.32"/>
+  <filter id="shadow-lg" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+    <feOffset dx="0" dy="12"/>
+    <feComponentTransfer><feFuncA type="linear" slope="0.32"/></feComponentTransfer>
+    <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
   </filter>
 </defs>
 "##;
