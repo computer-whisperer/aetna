@@ -23,6 +23,7 @@ use vulkano::{
         Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
         physical::PhysicalDeviceType,
     },
+    format::NumericFormat,
     image::{Image, ImageUsage, view::ImageView},
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     pipeline::graphics::viewport::Viewport,
@@ -142,11 +143,21 @@ impl ApplicationHandler for Host {
                 .physical_device()
                 .surface_capabilities(&surface, Default::default())
                 .expect("surface caps");
-            let image_format = device
+            let formats = device
                 .physical_device()
                 .surface_formats(&surface, Default::default())
-                .expect("surface formats")[0]
+                .expect("surface formats");
+            // Match aetna-demo: prefer an sRGB swapchain format so the
+            // `clear_color()` linear-space values land correctly. Without
+            // this, the first available format is often a UNORM one and
+            // `srgb_to_linear` double-darkens BG_APP to near-zero.
+            let image_format = formats
+                .iter()
+                .copied()
+                .find(|(f, _)| f.numeric_format_color() == Some(NumericFormat::SRGB))
+                .unwrap_or(formats[0])
                 .0;
+            eprintln!("aetna-vulkano hello: swapchain format = {image_format:?}");
             Swapchain::new(
                 device.clone(),
                 surface,
