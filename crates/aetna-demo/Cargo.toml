@@ -1,0 +1,9 @@
+[package]
+name = "aetna-demo"
+version = "0.1.0"
+edition = "2024"
+description = "Aetna — winit harness and demo binaries"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
