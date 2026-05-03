@@ -67,7 +67,7 @@ use glyphon::{
 use wgpu::util::DeviceExt;
 
 use crate::draw_ops;
-use crate::event::{self, KeyModifiers, UiEvent, UiEventKind, UiKey, UiState};
+use crate::event::{self, KeyChord, KeyModifiers, UiEvent, UiEventKind, UiKey, UiState};
 use crate::ir::{DrawOp, TextAnchor};
 use crate::layout;
 use crate::shader::{ShaderHandle, StockShader, UniformValue};
@@ -609,6 +609,12 @@ impl UiRenderer {
         repeat: bool,
     ) -> Option<UiEvent> {
         self.ui_state.key_down(key, modifiers, repeat)
+    }
+
+    /// Replace the hotkey registry. Call once per frame, after `app.build()`,
+    /// passing `app.hotkeys()` so chords stay in sync with state.
+    pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
+        self.ui_state.set_hotkeys(hotkeys);
     }
 
     /// Apply a wheel delta in **logical** pixels at `(x, y)`. Routes to

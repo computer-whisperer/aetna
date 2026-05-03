@@ -84,8 +84,8 @@ pub use shader::{ShaderHandle, StockShader, ShaderBinding, UniformBlock, Uniform
 pub use ir::{DrawOp, TextAnchor};
 pub use draw_ops::draw_ops;
 pub use event::{
-    App, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget, focus_order, hit_test,
-    hit_test_target,
+    App, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget, focus_order,
+    hit_test, hit_test_target,
 };
 pub use svg::svg_from_ops;
 pub use inspect::dump_tree;

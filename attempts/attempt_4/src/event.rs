@@ -104,6 +104,81 @@ pub struct KeyPress {
     pub repeat: bool,
 }
 
+/// A keyboard chord for app-level hotkey registration. Match a key with
+/// an exact modifier mask: `KeyChord::ctrl('f')` does not also match
+/// `Ctrl+Shift+F`, and `KeyChord::vim('j')` does not match if any
+/// modifier is held.
+///
+/// Register chords from [`App::hotkeys`]; the library matches them
+/// against incoming key presses ahead of focus activation routing and
+/// emits a [`UiEvent`] with `kind = UiEventKind::Hotkey` and `key`
+/// equal to the registered name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyChord {
+    pub key: UiKey,
+    pub modifiers: KeyModifiers,
+}
+
+impl KeyChord {
+    /// A bare key with no modifiers (vim-style). `KeyChord::vim('j')`
+    /// matches the `j` key with no Ctrl/Shift/Alt/Logo held.
+    pub fn vim(c: char) -> Self {
+        Self {
+            key: UiKey::Character(c.to_string()),
+            modifiers: KeyModifiers::default(),
+        }
+    }
+
+    /// `Ctrl+<char>`.
+    pub fn ctrl(c: char) -> Self {
+        Self {
+            key: UiKey::Character(c.to_string()),
+            modifiers: KeyModifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// `Ctrl+Shift+<char>`.
+    pub fn ctrl_shift(c: char) -> Self {
+        Self {
+            key: UiKey::Character(c.to_string()),
+            modifiers: KeyModifiers {
+                ctrl: true,
+                shift: true,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// A named key with no modifiers (e.g. `KeyChord::named(UiKey::Escape)`).
+    pub fn named(key: UiKey) -> Self {
+        Self {
+            key,
+            modifiers: KeyModifiers::default(),
+        }
+    }
+
+    pub fn with_modifiers(mut self, modifiers: KeyModifiers) -> Self {
+        self.modifiers = modifiers;
+        self
+    }
+
+    /// Strict match: keys equal AND modifier mask is identical. Holding
+    /// extra modifiers does not match a chord that didn't request them.
+    pub fn matches(&self, key: &UiKey, modifiers: KeyModifiers) -> bool {
+        key_eq(&self.key, key) && self.modifiers == modifiers
+    }
+}
+
+fn key_eq(a: &UiKey, b: &UiKey) -> bool {
+    match (a, b) {
+        (UiKey::Character(x), UiKey::Character(y)) => x.eq_ignore_ascii_case(y),
+        _ => a == b,
+    }
+}
+
 /// User-facing event. The host's [`App::on_event`] receives one of these
 /// per discrete user action (click, key press, scroll wheel tick, …).
 #[derive(Clone, Debug)]
@@ -132,6 +207,9 @@ pub enum UiEventKind {
     /// Escape was pressed. Routed to the focused element when present,
     /// otherwise emitted as a window-level event.
     Escape,
+    /// A registered hotkey chord matched. `event.key` is the registered
+    /// name (the second element of the `(KeyChord, String)` pair).
+    Hotkey,
     /// Other keyboard input.
     KeyDown,
 }
@@ -145,6 +223,18 @@ pub trait App {
 
     /// Update state in response to a routed event. Default: no-op.
     fn on_event(&mut self, _event: UiEvent) {}
+
+    /// App-level hotkey registry. The library matches incoming key
+    /// presses against this list before its own focus-activation
+    /// routing; a match emits a [`UiEvent`] with `kind =
+    /// UiEventKind::Hotkey` and `key = Some(name)`.
+    ///
+    /// Called once per build cycle; the host runner snapshots the list
+    /// alongside `build()` so the chords stay in sync with state.
+    /// Default: no hotkeys.
+    fn hotkeys(&self) -> Vec<(KeyChord, String)> {
+        Vec::new()
+    }
 }
 
 /// Internal UI state — pointer position, hovered key, pressed key.
@@ -170,6 +260,10 @@ pub struct UiState {
     /// layout; the layout pass clamps them to the available range and
     /// the renderer writes the clamped values back here.
     scroll_offsets: HashMap<String, f32>,
+    /// App-level hotkey registry; the host snapshots `App::hotkeys()`
+    /// each frame and stores it here. Matched in `key_down` ahead of
+    /// focus activation.
+    hotkeys: Vec<(KeyChord, String)>,
 }
 
 impl UiState {
@@ -257,6 +351,12 @@ impl UiState {
         }
     }
 
+    /// Replace the hotkey registry. Called by the host runner from
+    /// `App::hotkeys()` once per build cycle.
+    pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
+        self.hotkeys = hotkeys;
+    }
+
     pub fn key_down(
         &mut self,
         key: UiKey,
@@ -270,6 +370,28 @@ impl UiState {
                 self.focus_next();
             }
             return None;
+        }
+
+        // Hotkeys win over focused-Enter activation: a focused button
+        // with no hotkey on Enter still activates, but Ctrl+Enter (if
+        // registered) routes to its hotkey instead. Registration order
+        // is precedence — first match wins.
+        if let Some((_, name)) = self
+            .hotkeys
+            .iter()
+            .find(|(chord, _)| chord.matches(&key, modifiers))
+        {
+            return Some(UiEvent {
+                key: Some(name.clone()),
+                target: None,
+                pointer: None,
+                key_press: Some(KeyPress {
+                    key,
+                    modifiers,
+                    repeat,
+                }),
+                kind: UiEventKind::Hotkey,
+            });
         }
 
         let target = self.focused.clone();
@@ -548,6 +670,7 @@ mod tests {
             focused: None,
             focus_order: Vec::new(),
             scroll_offsets: HashMap::new(),
+            hotkeys: Vec::new(),
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Hover));
@@ -564,6 +687,7 @@ mod tests {
             focused: None,
             focus_order: Vec::new(),
             scroll_offsets: HashMap::new(),
+            hotkeys: Vec::new(),
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Press));
@@ -708,6 +832,129 @@ mod tests {
         // would now sit (above y=0) misses it.
         let r0 = find_rect(&tree, "b0").expect("b0 rect");
         assert!(r0.bottom() <= 0.0, "b0 should be above the viewport, was {:?}", r0);
+    }
+
+    #[test]
+    fn hotkey_match_emits_hotkey_event() {
+        let mut state = UiState::new();
+        state.set_hotkeys(vec![
+            (KeyChord::ctrl('f'), "search".to_string()),
+            (KeyChord::vim('j'), "down".to_string()),
+        ]);
+
+        let event = state
+            .key_down(
+                UiKey::Character("f".to_string()),
+                KeyModifiers {
+                    ctrl: true,
+                    ..Default::default()
+                },
+                false,
+            )
+            .expect("hotkey event");
+        assert_eq!(event.kind, UiEventKind::Hotkey);
+        assert_eq!(event.key.as_deref(), Some("search"));
+
+        let down = state
+            .key_down(
+                UiKey::Character("j".to_string()),
+                KeyModifiers::default(),
+                false,
+            )
+            .expect("vim event");
+        assert_eq!(down.key.as_deref(), Some("down"));
+    }
+
+    #[test]
+    fn hotkey_misses_when_modifiers_differ() {
+        let mut state = UiState::new();
+        state.set_hotkeys(vec![(KeyChord::ctrl('f'), "search".to_string())]);
+
+        // Plain `f` (no modifiers) must not match Ctrl+F.
+        let plain = state
+            .key_down(
+                UiKey::Character("f".to_string()),
+                KeyModifiers::default(),
+                false,
+            )
+            .expect("event for unhandled key");
+        assert_eq!(plain.kind, UiEventKind::KeyDown);
+        assert_eq!(plain.key, None);
+
+        // Ctrl+Shift+F also differs from Ctrl+F (strict modifier match).
+        let extra = state
+            .key_down(
+                UiKey::Character("f".to_string()),
+                KeyModifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..Default::default()
+                },
+                false,
+            )
+            .expect("event");
+        assert_eq!(extra.kind, UiEventKind::KeyDown);
+    }
+
+    #[test]
+    fn hotkey_wins_over_focused_activate() {
+        // A hotkey on Ctrl+Enter should not be intercepted by the
+        // focused-Enter activation routing.
+        let tree = lay_out_counter();
+        let mut state = UiState::new();
+        state.sync_focus_order(&tree);
+        state.focus_next();
+        state.set_hotkeys(vec![(
+            KeyChord {
+                key: UiKey::Enter,
+                modifiers: KeyModifiers {
+                    ctrl: true,
+                    ..Default::default()
+                },
+            },
+            "submit".to_string(),
+        )]);
+
+        let event = state
+            .key_down(
+                UiKey::Enter,
+                KeyModifiers {
+                    ctrl: true,
+                    ..Default::default()
+                },
+                false,
+            )
+            .expect("event");
+        assert_eq!(event.kind, UiEventKind::Hotkey);
+        assert_eq!(event.key.as_deref(), Some("submit"));
+
+        // Plain Enter still activates the focused button.
+        let activate = state
+            .key_down(UiKey::Enter, KeyModifiers::default(), false)
+            .expect("event");
+        assert_eq!(activate.kind, UiEventKind::Activate);
+    }
+
+    #[test]
+    fn hotkey_character_match_is_case_insensitive() {
+        // Winit reports Shift+a as Character("A"). A `KeyChord::ctrl('a')`
+        // with Shift held should still not match (modifier mask differs),
+        // but `KeyChord::ctrl_shift('a')` should.
+        let mut state = UiState::new();
+        state.set_hotkeys(vec![(KeyChord::ctrl_shift('a'), "select-all".to_string())]);
+
+        let event = state
+            .key_down(
+                UiKey::Character("A".to_string()),
+                KeyModifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..Default::default()
+                },
+                false,
+            )
+            .expect("event");
+        assert_eq!(event.key.as_deref(), Some("select-all"));
     }
 
     #[test]

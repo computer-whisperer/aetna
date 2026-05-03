@@ -217,6 +217,10 @@ impl<A: App> ApplicationHandler for Host<A> {
                 let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
                 let mut tree = self.app.build();
+                // Snapshot hotkeys alongside build() so the chord list
+                // reflects current state (apps can return different
+                // hotkeys per mode, e.g. `j/k` only in list view).
+                gfx.renderer.set_hotkeys(self.app.hotkeys());
                 // Window is configured at physical size; layout works
                 // in logical pixels so divide by the OS-reported scale.
                 let scale_factor = gfx.window.scale_factor() as f32;
