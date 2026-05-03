@@ -22,7 +22,7 @@ v5.0 is in. Aetna lives under `crates/`:
 | `aetna-demo` | Winit harness + interactive bins + headless render fixtures (`render_counter`, `render_png`, `render_custom`). |
 | `aetna-web` | wasm browser entry point. `crate-type = ["cdylib", "rlib"]`; re-exports `aetna_demo::Showcase` and ships a `#[wasm_bindgen(start)] start_web()` that opens a wgpu surface against an `<canvas id="aetna_canvas">` and drives the same App impl `aetna-demo` runs natively. Same shape as `whisper-agent-webui` at `../../whisper-agent`. |
 | `aetna-vulkano` | Vulkan backend, peer to `aetna-wgpu`. WGSL → SPIR-V via `naga`; `Runner` mirrors `aetna_wgpu::Runner`'s public surface with `Arc<Device>`/`Queue`/`Format` constructor args. v5.3 lands the rect + text + custom-shader paths native-only. |
-| `aetna-vulkano-demo` | winit + vulkano harness sibling of `aetna-demo`. v5.3 ships `bin/counter` (the v5.0 boundary A/B fixture) and `bin/custom` (the gradient WGSL fixture). |
+| `aetna-vulkano-demo` | winit + vulkano harness sibling of `aetna-demo`. v5.3 ships `bin/counter` (the v5.0 boundary A/B fixture) and `bin/custom` (the gradient WGSL fixture); v5.4 adds `bin/showcase` (broader-coverage A/B against `aetna-demo`'s Showcase). |
 
 The architectural decision v5.0 settled: `El` is the author's description of the scene; everything the library writes during a frame — computed rects, hover/press/focus state, envelope amounts, scroll offsets, animation tracker entries — lives in `UiState` side maps keyed by `El::computed_id`. The build closure produces a fresh `El` carrying zero library state; the runtime layer holds the state across rebuilds.
 
@@ -87,7 +87,7 @@ v0.x slices come from `LIBRARY_VISION.md`; the v5.x slices come from `V5.md` and
 | v5.1 | Decouple text from glyphon (cosmic-text + swash + own atlas). | done |
 | v5.2 | wasm target. | done — the consolidated `Showcase` (counter / list / palette / picker / settings) runs in the browser via `aetna-web`'s wasm-pack bundle, with a per-frame timing breakdown logged to the JS console |
 | v5.3 | Vulkano backend; naga WGSL→SPIRV. | done — counter App renders end-to-end through `aetna-vulkano` (rect + text + custom shaders); the v5.0 core/backend boundary holds across two GPU APIs. Native-only; one-fixture scope per `V5_3.md` |
-| v5.4 | Vulkano parity with wgpu. | broader v0.4 demo coverage (scroll_list, hotkey_picker, animated_palette, settings) through vulkano + Painter-trait extraction decision |
+| v5.4 | Vulkano parity with wgpu. | in progress — Showcase (sidebar + Counter / List / Palette / Picker / Settings) renders end-to-end through vulkano via `aetna-vulkano-demo --bin showcase`; Painter-trait extraction decision still open |
 | v0.5 | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | |
 | v0.6 | Rich text composition (markdown runs, inline highlighting, embedded elements). | paragraph wrapping + text alignment landed (partial) |
 | v0.7+ | Stock shader: shadow, focus_ring, divider_line. Backdrop sampling. Liquid glass as the architectural acceptance test. | `focus_ring` shared with `rounded_rect` pipeline |
@@ -170,6 +170,7 @@ crates/
         counter.rs                   interactive counter — v0.2 proof point through vulkano
         custom.rs                    custom-shader fixture (gradient.wgsl) — register_shader contract
         hello.rs                     minimal clear-color smoke test (vulkano + winit bring-up)
+        showcase.rs                  v5.4 — Showcase (sidebar nav + 5 sections) routed through vulkano
 attempts/
   attempt_1..4/                  archive — read each directory's top-level docs for lineage
 tools/                           agent-loop scripts (rendering helpers, etc.)
@@ -187,6 +188,7 @@ cargo run -p aetna-core --example scroll_list     # headless → crates/aetna-co
 cargo run -p aetna-demo --bin render_counter      # headless wgpu PNG snapshot
 cargo run -p aetna-vulkano-demo --bin counter     # v5.3 — same Counter, native vulkano (A/B vs aetna-demo's counter)
 cargo run -p aetna-vulkano-demo --bin custom      # v5.3 — gradient.wgsl through Runner::register_shader
+cargo run -p aetna-vulkano-demo --bin showcase    # v5.4 — same Showcase, native vulkano (A/B vs aetna-demo's showcase)
 cargo test --workspace --lib                      # 60+ unit tests across aetna-core + aetna-{wgpu,vulkano}
 ```
 
