@@ -37,7 +37,7 @@ The architectural decision v5.0 settled: `El` is the author's description of the
 | Focus traversal + keyboard routing (v0.4) | working | Tab / Shift+Tab / Enter / Space / Escape in any interactive demo |
 | Hotkey system (v0.4) | working | `cargo run -p aetna-demo --bin hotkey_picker` — `j`/`k` movement, Ctrl+L, `/`, etc., zero per-key matching in the app |
 | Animation primitives (v0.4) | spring + tween + per-(node, prop) tracker; library-owned hover / press / focus envelopes auto-ease on every keyed interactive node; author-facing `.animate(timing)` + `.opacity` / `.translate` / `.scale` for app-driven prop interpolation; `prepare()` returns `needs_redraw` so frames tick only while motion is in flight | `cargo run -p aetna-demo --bin animated_palette` — selection scales, fades, slides; counter & hotkey_picker get hover/press easing for free |
-| Bundle pipeline | `tree.txt` + `draw_ops.txt` + `shader_manifest.txt` + `lint.txt` + `.svg` + `.png` per fixture | `crates/aetna-{core,demo}/out/*` (PNGs gitignored, regenerated from SVG by `tools/svg_to_png.sh`) |
+| Bundle pipeline | `tree.txt` + `draw_ops.txt` + `shader_manifest.txt` + `lint.txt` + `.svg` + `.png` per fixture | `crates/aetna-{core,demo}/out/*` (gitignored under `crates/*/out/`; regenerate by re-running the example, then `tools/svg_to_png.sh` for PNGs) |
 
 Author surface today — the entire interactive contract:
 
