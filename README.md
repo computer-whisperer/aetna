@@ -20,6 +20,7 @@ v5.0 is in. Aetna lives under `crates/`:
 | `aetna-core` | Backend-agnostic core. Tree (`El`), layout, draw-op IR, stock shaders + custom-shader binding, animation primitives, hit-test, focus, hotkeys, lint + bundle artifacts. No backend deps. |
 | `aetna-wgpu` | wgpu paint + interaction state. Owns the GPU pipelines, the per-page atlas textures + sampler for stock::text, `UiState` (the side store), and the `Runner` the host calls into. |
 | `aetna-demo` | Winit harness + interactive bins + headless render fixtures (`render_counter`, `render_png`, `render_custom`). |
+| `aetna-web` | The "one UI crate, two backends" split — `crate-type = ["cdylib", "rlib"]`. Holds a portable `App` impl plus dual entry points: a `launch_native()` that re-uses `aetna-demo::run`, and a `#[wasm_bindgen(start)] start_web()` that opens a wgpu surface against an `<canvas id="aetna_canvas">`. Same shape as `whisper-agent-webui`. |
 
 The architectural decision v5.0 settled: `El` is the author's description of the scene; everything the library writes during a frame — computed rects, hover/press/focus state, envelope amounts, scroll offsets, animation tracker entries — lives in `UiState` side maps keyed by `El::computed_id`. The build closure produces a fresh `El` carrying zero library state; the runtime layer holds the state across rebuilds.
 
@@ -82,7 +83,7 @@ v0.x slices come from `LIBRARY_VISION.md`; the v5.x slices come from `V5.md` and
 | v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. | done |
 | v5.0 | Crate split into `aetna-{core,wgpu,demo}`; module split inside core; `El` side-map refactor. | done |
 | v5.1 | Decouple text from glyphon (cosmic-text + swash + own atlas). | done |
-| v5.2 | wasm target. | |
+| v5.2 | wasm target. | counter demo runs in the browser via `aetna-web`'s wasm-pack bundle (partial — first slice; broader demo coverage queued) |
 | v5.3 | Vulkano backend; naga WGSL→SPIRV. | |
 | v5.4 | Vulkano parity with wgpu. | |
 | v0.5 | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | |
@@ -145,6 +146,13 @@ crates/
         render_png.rs              │ headless artifact generators
         render_custom.rs           ┘
     out/                           rendered PNGs
+  aetna-web/                     v5.2 wasm slice — cdylib + rlib
+    src/
+      lib.rs                       Counter App + launch_native + #[wasm_bindgen(start)] start_web
+      bin/
+        aetna-counter-native.rs    thin native shell (calls launch_native)
+    assets/
+      index.html                   browser harness: <canvas id="aetna_canvas"> + import init from /pkg/aetna_web.js
 attempts/
   attempt_1..4/                  archive — read each directory's top-level docs for lineage
 tools/                           agent-loop scripts (rendering helpers, etc.)
@@ -159,8 +167,18 @@ cargo run -p aetna-demo --bin hotkey_picker       # interactive — v0.4 keyboar
 cargo run -p aetna-demo --bin animated_palette    # interactive — v0.4 .animate()
 cargo run -p aetna-core --example scroll_list     # headless → crates/aetna-core/out/scroll_list.svg
 cargo run -p aetna-demo --bin render_counter      # headless wgpu PNG snapshot
-cargo test --workspace --lib                      # 50 unit tests across aetna-core + aetna-wgpu
+cargo run -p aetna-web --bin aetna-counter-native # native shell of the shared aetna-web counter — v5.2 parity proof
+cargo test --workspace --lib                      # 50+ unit tests across aetna-core + aetna-wgpu
 ```
+
+For the browser:
+
+```bash
+tools/build_web.sh --serve                        # wasm-pack build + python static server
+# open http://127.0.0.1:8080/assets/index.html
+```
+
+Same `Counter` `App` impl runs through `aetna-demo::run` natively and through the wasm-bindgen + canvas-bound winit event loop in `aetna-web::start_web` in the browser.
 
 ## Reviewing this
 

@@ -1,0 +1,44 @@
+[package]
+name = "aetna-web"
+version = "0.1.0"
+edition = "2024"
+description = "Aetna — wasm browser entry point + shared App impl, with a native binary for parity"
+license = "MIT OR Apache-2.0"
+
+[lib]
+# `cdylib` is what `wasm-pack build --target web` ships to the browser;
+# `rlib` lets the sibling native binary import the same `App` impl.
+# This is the standard "one UI crate, two backends" split — same shape
+# as whisper-agent-webui at ../../whisper-agent.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+aetna-core = { path = "../aetna-core" }
+aetna-wgpu = { path = "../aetna-wgpu" }
+wgpu = "23"
+winit = "0.30"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Native window runner from aetna-demo. The native bin re-uses
+# `aetna_demo::run` so we don't duplicate the winit event-loop
+# plumbing — only the wasm path forks (different surface init,
+# spawn_app vs run_app, no pollster).
+aetna-demo = { path = "../aetna-demo" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# wasm-bindgen is the FFI bridge wasm-pack consumes.
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+console_log = "1"
+log = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "Window",
+] }
+# Browser wgpu backends — workspace's plain `wgpu = "23"` only enables
+# native backends.
+wgpu = { version = "23", features = ["webgl"] }
