@@ -29,6 +29,24 @@
 //!   responsibility — `prepare()` orchestrates the full sequence.
 //! - **`draw()`.** Both backends walk `core.paint_items` + `core.runs`
 //!   themselves because the encoder type (and lifetime) diverges.
+//!
+//! ## Why no `Painter` trait
+//!
+//! A v5.4 review considered extracting a `trait Painter { fn
+//! prepare(...); fn draw(...); fn set_scissor(...); }` so backends
+//! would share *one* abstraction surface. We declined: the only call
+//! sites left after this module + [`crate::paint`] are the two
+//! `prepare()` GPU-upload tails and the two `draw()` walks, and both
+//! need backend-typed handles (`wgpu::RenderPass<'_>` /
+//! `AutoCommandBufferBuilder<...>`) that no trait can hide without
+//! generics that re-fragment the surface. A `Painter` trait would
+//! reduce to a 1-method `set_scissor` indirection plus host-side
+//! ceremony — dead weight. The duplication that *is* worth abstracting
+//! is the host harness (winit init, swapchain management,
+//! `aetna-{wgpu,vulkano}-demo::run`) — and that lives a layer above
+//! the paint surface, not inside it. Revisit if a third backend lands
+//! or if the GPU-upload sequences diverge enough to make a typed-state
+//! interface earn its keep.
 
 use std::ops::Range;
 use std::time::Duration;
