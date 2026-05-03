@@ -82,10 +82,10 @@ pub fn layout_text(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> TextLayout {
-    if !mono {
-        if let Some(layout) = layout_text_cosmic(text, size, weight, wrap, available_width) {
-            return layout;
-        }
+    if !mono
+        && let Some(layout) = layout_text_cosmic(text, size, weight, wrap, available_width)
+    {
+        return layout;
     }
 
     let raw_lines = match (wrap, available_width) {
@@ -105,12 +105,11 @@ pub fn wrap_lines(
     weight: FontWeight,
     mono: bool,
 ) -> Vec<String> {
-    if !mono {
-        if let Some(layout) =
+    if !mono
+        && let Some(layout) =
             layout_text_cosmic(text, size, weight, TextWrap::Wrap, Some(max_width))
-        {
-            return layout.lines.into_iter().map(|line| line.text).collect();
-        }
+    {
+        return layout.lines.into_iter().map(|line| line.text).collect();
     }
     wrap_lines_by_width(text, max_width, size, weight, mono)
 }
@@ -163,10 +162,10 @@ fn wrap_lines_by_width(
 /// Measure one single-line string. Newline characters are ignored; use
 /// [`measure_text`] for multi-line text.
 pub fn line_width(text: &str, size: f32, weight: FontWeight, mono: bool) -> f32 {
-    if !mono {
-        if let Some(layout) = layout_text_cosmic(text, size, weight, TextWrap::NoWrap, None) {
-            return layout.width;
-        }
+    if !mono
+        && let Some(layout) = layout_text_cosmic(text, size, weight, TextWrap::NoWrap, None)
+    {
+        return layout.width;
     }
     line_width_by_ttf(text, size, weight, mono)
 }

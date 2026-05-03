@@ -36,19 +36,17 @@ fn collect_focus(
     } else {
         inherited_clip
     };
-    if node.focusable {
-        if let Some(key) = &node.key {
-            if clip
-                .map(|c| c.intersect(computed).is_some())
-                .unwrap_or(true)
-            {
-                out.push(UiTarget {
-                    key: key.clone(),
-                    node_id: node.computed_id.clone(),
-                    rect: computed,
-                });
-            }
-        }
+    if node.focusable
+        && let Some(key) = &node.key
+        && clip
+            .map(|c| c.intersect(computed).is_some())
+            .unwrap_or(true)
+    {
+        out.push(UiTarget {
+            key: key.clone(),
+            node_id: node.computed_id.clone(),
+            rect: computed,
+        });
     }
     for child in &node.children {
         collect_focus(child, ui_state, clip, out);

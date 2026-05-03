@@ -58,12 +58,10 @@ impl App for Picker {
     fn on_event(&mut self, event: UiEvent) {
         if let (UiEventKind::Click | UiEventKind::Activate, Some(k)) =
             (event.kind, event.key.as_deref())
+            && let Some(rest) = k.strip_prefix("row-")
+            && let Ok(i) = rest.parse::<usize>()
         {
-            if let Some(rest) = k.strip_prefix("row-") {
-                if let Ok(i) = rest.parse::<usize>() {
-                    self.selected = Some(i);
-                }
-            }
+            self.selected = Some(i);
         }
     }
 }

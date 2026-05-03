@@ -387,10 +387,10 @@ mod tests {
     fn ops_quad_for(root: &El, ui_state: &UiState, key: &str) -> Option<Rect> {
         let ops = draw_ops(root, ui_state);
         for op in ops {
-            if let DrawOp::Quad { id, rect, .. } = op {
-                if id.contains(key) {
-                    return Some(rect);
-                }
+            if let DrawOp::Quad { id, rect, .. } = op
+                && id.contains(key)
+            {
+                return Some(rect);
             }
         }
         None

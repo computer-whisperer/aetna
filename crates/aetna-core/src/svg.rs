@@ -202,6 +202,7 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_glyph_run(
     s: &mut String,
     id: &str,

@@ -216,15 +216,13 @@ impl<A: App> ApplicationHandler for Host<A> {
                 is_synthetic: false,
                 ..
             } => {
-                if event.state == ElementState::Pressed {
-                    if let Some(key) = map_key(&event.logical_key) {
-                        if let Some(event) =
-                            gfx.renderer.key_down(key, self.modifiers, event.repeat)
-                        {
-                            self.app.on_event(event);
-                        }
-                        gfx.window.request_redraw();
+                if event.state == ElementState::Pressed
+                    && let Some(key) = map_key(&event.logical_key)
+                {
+                    if let Some(event) = gfx.renderer.key_down(key, self.modifiers, event.repeat) {
+                        self.app.on_event(event);
                     }
+                    gfx.window.request_redraw();
                 }
             }
 

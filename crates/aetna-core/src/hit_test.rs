@@ -40,10 +40,10 @@ fn hit_test_rec(
     point: (f32, f32),
     inherited_clip: Option<Rect>,
 ) -> Hit {
-    if let Some(clip) = inherited_clip {
-        if !clip.contains(point.0, point.1) {
-            return Hit::Miss;
-        }
+    if let Some(clip) = inherited_clip
+        && !clip.contains(point.0, point.1)
+    {
+        return Hit::Miss;
     }
     let computed = ui_state.rect(&node.computed_id);
     if !computed.contains(point.0, point.1) {
@@ -98,10 +98,10 @@ fn scroll_target_rec(
     inherited_clip: Option<Rect>,
     out: &mut Option<String>,
 ) {
-    if let Some(clip) = inherited_clip {
-        if !clip.contains(point.0, point.1) {
-            return;
-        }
+    if let Some(clip) = inherited_clip
+        && !clip.contains(point.0, point.1)
+    {
+        return;
     }
     let computed = ui_state.rect(&node.computed_id);
     if !computed.contains(point.0, point.1) {

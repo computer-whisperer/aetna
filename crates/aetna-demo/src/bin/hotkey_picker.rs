@@ -122,10 +122,8 @@ impl App for Picker {
 
     fn on_event(&mut self, event: UiEvent) {
         match (event.kind, event.key.as_deref()) {
-            (UiEventKind::Hotkey, Some("move-down")) => {
-                if self.selected + 1 < ITEMS.len() {
-                    self.selected += 1;
-                }
+            (UiEventKind::Hotkey, Some("move-down")) if self.selected + 1 < ITEMS.len() => {
+                self.selected += 1;
             }
             (UiEventKind::Hotkey, Some("move-up")) => {
                 self.selected = self.selected.saturating_sub(1);
@@ -146,11 +144,11 @@ impl App for Picker {
                 }
             }
             (UiEventKind::Click | UiEventKind::Activate, Some(k)) => {
-                if let Some(rest) = k.strip_prefix("row-") {
-                    if let Ok(i) = rest.parse::<usize>() {
-                        self.selected = i;
-                        self.opened = Some(i);
-                    }
+                if let Some(rest) = k.strip_prefix("row-")
+                    && let Ok(i) = rest.parse::<usize>()
+                {
+                    self.selected = i;
+                    self.opened = Some(i);
                 }
             }
             _ => {}
