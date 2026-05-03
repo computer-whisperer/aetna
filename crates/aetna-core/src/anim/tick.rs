@@ -56,7 +56,15 @@ pub(crate) fn tick_node(
         if let Some(timing) = node.animate {
             for &prop in APP_PROPS {
                 process_prop(
-                    node, prop, timing, anims, envelopes, node_states, visited, now, mode,
+                    node,
+                    prop,
+                    timing,
+                    anims,
+                    envelopes,
+                    node_states,
+                    visited,
+                    now,
+                    mode,
                     needs_redraw,
                 );
             }
@@ -67,7 +75,15 @@ pub(crate) fn tick_node(
             for &prop in STATE_PROPS {
                 let timing = state_timing_for(prop);
                 process_prop(
-                    node, prop, timing, anims, envelopes, node_states, visited, now, mode,
+                    node,
+                    prop,
+                    timing,
+                    anims,
+                    envelopes,
+                    node_states,
+                    visited,
+                    now,
+                    mode,
                     needs_redraw,
                 );
             }
@@ -75,7 +91,14 @@ pub(crate) fn tick_node(
     }
     for child in &mut node.children {
         tick_node(
-            child, anims, envelopes, node_states, visited, now, mode, needs_redraw,
+            child,
+            anims,
+            envelopes,
+            node_states,
+            visited,
+            now,
+            mode,
+            needs_redraw,
         );
     }
 }
@@ -126,13 +149,25 @@ fn process_prop(
 fn compute_target(n: &El, prop: AnimProp, state: InteractionState) -> Option<AnimValue> {
     match prop {
         AnimProp::HoverAmount => Some(AnimValue::Float(
-            if matches!(state, InteractionState::Hover) { 1.0 } else { 0.0 },
+            if matches!(state, InteractionState::Hover) {
+                1.0
+            } else {
+                0.0
+            },
         )),
         AnimProp::PressAmount => Some(AnimValue::Float(
-            if matches!(state, InteractionState::Press) { 1.0 } else { 0.0 },
+            if matches!(state, InteractionState::Press) {
+                1.0
+            } else {
+                0.0
+            },
         )),
         AnimProp::FocusRingAlpha => Some(AnimValue::Float(
-            if matches!(state, InteractionState::Focus) { 1.0 } else { 0.0 },
+            if matches!(state, InteractionState::Focus) {
+                1.0
+            } else {
+                0.0
+            },
         )),
         AnimProp::AppFill => n.fill.map(AnimValue::Color),
         AnimProp::AppStroke => n.stroke.map(AnimValue::Color),
@@ -149,9 +184,9 @@ fn compute_target(n: &El, prop: AnimProp, state: InteractionState) -> Option<Ani
 /// envelope reads as jitter, so we stick to a near-critical preset.
 fn state_timing_for(prop: AnimProp) -> Timing {
     match prop {
-        AnimProp::HoverAmount
-        | AnimProp::PressAmount
-        | AnimProp::FocusRingAlpha => Timing::SPRING_QUICK,
+        AnimProp::HoverAmount | AnimProp::PressAmount | AnimProp::FocusRingAlpha => {
+            Timing::SPRING_QUICK
+        }
         // App props don't reach this function — they pull timing from
         // the per-node `animate` setting in `tick_node`.
         _ => Timing::SPRING_QUICK,

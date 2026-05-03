@@ -130,10 +130,16 @@ pub struct ShaderBinding {
 
 impl ShaderBinding {
     pub fn stock(shader: StockShader) -> Self {
-        Self { handle: ShaderHandle::Stock(shader), uniforms: UniformBlock::new() }
+        Self {
+            handle: ShaderHandle::Stock(shader),
+            uniforms: UniformBlock::new(),
+        }
     }
     pub fn custom(name: &'static str) -> Self {
-        Self { handle: ShaderHandle::Custom(name), uniforms: UniformBlock::new() }
+        Self {
+            handle: ShaderHandle::Custom(name),
+            uniforms: UniformBlock::new(),
+        }
     }
     pub fn with(mut self, key: &'static str, value: UniformValue) -> Self {
         self.uniforms.insert(key, value);

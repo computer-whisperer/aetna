@@ -330,9 +330,7 @@ impl Runner {
         // envelope side map (state envelopes) and the El's app-driven
         // fields (fill/translate/etc.). Anything in flight forces another
         // redraw next frame.
-        let needs_redraw = self
-            .ui_state
-            .tick_visual_animations(root, Instant::now());
+        let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now());
         let ops = draw_ops::draw_ops(root, &self.ui_state);
 
         self.viewport_px = (

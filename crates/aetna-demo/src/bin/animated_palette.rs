@@ -27,9 +27,18 @@ struct Swatch {
 }
 
 const SWATCHES: &[Swatch] = &[
-    Swatch { name: "warm", fill: Color::rgb(255, 138, 76) },
-    Swatch { name: "cool", fill: Color::rgb(76, 158, 255) },
-    Swatch { name: "lime", fill: Color::rgb(140, 220, 110) },
+    Swatch {
+        name: "warm",
+        fill: Color::rgb(255, 138, 76),
+    },
+    Swatch {
+        name: "cool",
+        fill: Color::rgb(76, 158, 255),
+    },
+    Swatch {
+        name: "lime",
+        fill: Color::rgb(140, 220, 110),
+    },
 ];
 
 struct Palette {
@@ -54,16 +63,19 @@ impl App for Palette {
                 let scale = if is_selected { 1.15 } else { 1.0 };
                 let lift = if is_selected { -8.0 } else { 0.0 };
 
-                card(s.name, [text(if is_selected { "picked" } else { "tap" })
-                    .center_text()
-                    .muted()])
-                    .key(format!("swatch-{i}"))
-                    .fill(fill)
-                    .width(Size::Fixed(120.0))
-                    .height(Size::Fixed(120.0))
-                    .scale(scale)
-                    .translate(0.0, lift)
-                    .animate(Timing::SPRING_BOUNCY)
+                card(
+                    s.name,
+                    [text(if is_selected { "picked" } else { "tap" })
+                        .center_text()
+                        .muted()],
+                )
+                .key(format!("swatch-{i}"))
+                .fill(fill)
+                .width(Size::Fixed(120.0))
+                .height(Size::Fixed(120.0))
+                .scale(scale)
+                .translate(0.0, lift)
+                .animate(Timing::SPRING_BOUNCY)
             })
             .collect();
 
@@ -96,7 +108,11 @@ impl App for Palette {
             if let Some(k) = event.key.as_deref() {
                 if let Some(rest) = k.strip_prefix("swatch-") {
                     if let Ok(i) = rest.parse::<usize>() {
-                        self.selected = if Some(i) == self.selected { None } else { Some(i) };
+                        self.selected = if Some(i) == self.selected {
+                            None
+                        } else {
+                            Some(i)
+                        };
                     }
                 }
             }

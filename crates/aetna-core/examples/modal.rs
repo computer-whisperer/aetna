@@ -10,35 +10,45 @@ fn modal_fixture() -> El {
     stack([
         column([
             h1("Account"),
-            card("Profile", [
-                row([text("Email"), spacer(), text("user@example.com").muted()]),
-                row([text("Plan"), spacer(), badge("Pro").info()]),
-            ]),
-            card("Danger zone", [
-                row([
+            card(
+                "Profile",
+                [
+                    row([text("Email"), spacer(), text("user@example.com").muted()]),
+                    row([text("Plan"), spacer(), badge("Pro").info()]),
+                ],
+            ),
+            card(
+                "Danger zone",
+                [row([
                     column([
                         text("Delete account").bold(),
-                        text("Remove this account and all associated data.").muted().small(),
+                        text("Remove this account and all associated data.")
+                            .muted()
+                            .small(),
                     ])
                     .gap(tokens::SPACE_XS)
                     .align(Align::Start)
                     .width(Size::Hug),
                     spacer(),
                     button("Delete").destructive().key("open-delete"),
-                ]),
-            ]),
+                ])],
+            ),
         ])
         .gap(tokens::SPACE_LG)
         .padding(tokens::SPACE_XL),
-        modal("delete-account", "Delete account?", [
-            text("Permanent action. Export data first.").muted(),
-            row([
-                spacer(),
-                button("Cancel").ghost().key("cancel-delete"),
-                button("Delete").destructive().key("confirm-delete"),
-            ])
-            .gap(tokens::SPACE_SM),
-        ]),
+        modal(
+            "delete-account",
+            "Delete account?",
+            [
+                text("Permanent action. Export data first.").muted(),
+                row([
+                    spacer(),
+                    button("Cancel").ghost().key("cancel-delete"),
+                    button("Delete").destructive().key("confirm-delete"),
+                ])
+                .gap(tokens::SPACE_SM),
+            ],
+        ),
     ])
 }
 

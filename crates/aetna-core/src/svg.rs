@@ -77,7 +77,9 @@ fn emit_op(s: &mut String, op: &DrawOp) {
             layout,
             ..
         } => {
-            emit_glyph_run(s, id, *rect, *color, *size, *weight, *mono, *wrap, *anchor, layout);
+            emit_glyph_run(
+                s, id, *rect, *color, *size, *weight, *mono, *wrap, *anchor, layout,
+            );
         }
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }

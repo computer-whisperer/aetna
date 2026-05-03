@@ -24,14 +24,12 @@ const GRADIENT_WGSL: &str = include_str!("../../../aetna-core/shaders/gradient.w
 /// `gradient` shader instead of `stock::rounded_rect`. This is what a
 /// user crate would write to ship its own component variant.
 fn gradient_button(label: &str, top: Color, bottom: Color, radius: f32) -> El {
-    button(label)
-        .text_color(tokens::TEXT_ON_SOLID_DARK)
-        .shader(
-            ShaderBinding::custom("gradient")
-                .color("vec_a", top)
-                .color("vec_b", bottom)
-                .f32("vec_c", radius),
-        )
+    button(label).text_color(tokens::TEXT_ON_SOLID_DARK).shader(
+        ShaderBinding::custom("gradient")
+            .color("vec_a", top)
+            .color("vec_b", bottom)
+            .f32("vec_c", radius),
+    )
 }
 
 fn fixture() -> El {
@@ -44,36 +42,41 @@ fn fixture() -> El {
              paint order.",
         )
         .muted(),
-        card("gradient.wgsl — vertical linear gradient", [
-            row([
-                gradient_button(
-                    "Sunrise",
-                    Color::rgb(255, 200, 90),
-                    Color::rgb(245, 95, 110),
-                    tokens::RADIUS_MD,
-                ),
-                gradient_button(
-                    "Ocean",
-                    Color::rgb(120, 200, 255),
-                    Color::rgb(40, 90, 200),
-                    tokens::RADIUS_MD,
-                ),
-                gradient_button(
-                    "Forest",
-                    Color::rgb(180, 230, 140),
-                    Color::rgb(40, 110, 80),
-                    tokens::RADIUS_MD,
-                ),
-                spacer(),
-                button("Stock").secondary(),
-            ])
-            .gap(tokens::SPACE_MD),
-            paragraph("Same shader, three uniform sets. The fourth button \
+        card(
+            "gradient.wgsl — vertical linear gradient",
+            [
+                row([
+                    gradient_button(
+                        "Sunrise",
+                        Color::rgb(255, 200, 90),
+                        Color::rgb(245, 95, 110),
+                        tokens::RADIUS_MD,
+                    ),
+                    gradient_button(
+                        "Ocean",
+                        Color::rgb(120, 200, 255),
+                        Color::rgb(40, 90, 200),
+                        tokens::RADIUS_MD,
+                    ),
+                    gradient_button(
+                        "Forest",
+                        Color::rgb(180, 230, 140),
+                        Color::rgb(40, 110, 80),
+                        tokens::RADIUS_MD,
+                    ),
+                    spacer(),
+                    button("Stock").secondary(),
+                ])
+                .gap(tokens::SPACE_MD),
+                paragraph(
+                    "Same shader, three uniform sets. The fourth button \
                   (stock::rounded_rect) is unrelated and demonstrates that \
-                  custom and stock pipelines coexist.")
+                  custom and stock pipelines coexist.",
+                )
                 .muted()
                 .small(),
-        ]),
+            ],
+        ),
     ])
     .gap(tokens::SPACE_LG)
     .padding(tokens::SPACE_XL)
@@ -95,7 +98,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }))
     .ok_or("no compatible adapter (try installing vulkan / mesa drivers)")?;
 
-    println!("adapter: {:?} ({:?})", adapter.get_info().name, adapter.get_info().backend);
+    println!(
+        "adapter: {:?} ({:?})",
+        adapter.get_info().name,
+        adapter.get_info().backend
+    );
 
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
@@ -110,7 +117,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("aetna_demo::custom::target"),
-        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -176,7 +187,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rows_per_image: Some(height),
             },
         },
-        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
 
@@ -198,8 +213,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(padded);
     readback_buf.unmap();
 
-    let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("out");
+    let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     std::fs::create_dir_all(&out_dir)?;
     let out = out_dir.join("custom_shader.wgpu.png");
     let file = std::fs::File::create(&out)?;
@@ -224,5 +238,9 @@ fn bg_color() -> wgpu::Color {
 }
 
 fn srgb_to_linear(c: f64) -> f64 {
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
 }

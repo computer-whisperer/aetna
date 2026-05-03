@@ -175,12 +175,26 @@ impl Default for El {
 }
 
 impl El {
-    pub fn new(kind: Kind) -> Self { Self { kind, ..Default::default() } }
+    pub fn new(kind: Kind) -> Self {
+        Self {
+            kind,
+            ..Default::default()
+        }
+    }
 
     // ---- Identity / source ----
-    pub fn key(mut self, k: impl Into<String>) -> Self { self.key = Some(k.into()); self }
-    pub fn block_pointer(mut self) -> Self { self.block_pointer = true; self }
-    pub fn focusable(mut self) -> Self { self.focusable = true; self }
+    pub fn key(mut self, k: impl Into<String>) -> Self {
+        self.key = Some(k.into());
+        self
+    }
+    pub fn block_pointer(mut self) -> Self {
+        self.block_pointer = true;
+        self
+    }
+    pub fn focusable(mut self) -> Self {
+        self.focusable = true;
+        self
+    }
     pub fn at(mut self, file: &'static str, line: u32) -> Self {
         self.source = Source { file, line };
         self
@@ -192,42 +206,97 @@ impl El {
     }
 
     // ---- Sizing ----
-    pub fn width(mut self, w: Size) -> Self { self.width = w; self }
-    pub fn height(mut self, h: Size) -> Self { self.height = h; self }
-    pub fn hug(mut self) -> Self { self.width = Size::Hug; self.height = Size::Hug; self }
-    pub fn fill_size(mut self) -> Self { self.width = Size::Fill(1.0); self.height = Size::Fill(1.0); self }
-
-    // ---- Layout (container) ----
-    pub fn padding(mut self, p: impl Into<Sides>) -> Self { self.padding = p.into(); self }
-    pub fn gap(mut self, g: f32) -> Self { self.gap = g; self }
-    pub fn align(mut self, a: Align) -> Self { self.align = a; self }
-    pub fn justify(mut self, j: Justify) -> Self { self.justify = j; self }
-
-    // ---- Visual ----
-    pub fn fill(mut self, c: Color) -> Self { self.fill = Some(c); self }
-    pub fn stroke(mut self, c: Color) -> Self {
-        self.stroke = Some(c);
-        if self.stroke_width == 0.0 { self.stroke_width = 1.0; }
+    pub fn width(mut self, w: Size) -> Self {
+        self.width = w;
         self
     }
-    pub fn stroke_width(mut self, w: f32) -> Self { self.stroke_width = w; self }
-    pub fn radius(mut self, r: f32) -> Self { self.radius = r; self }
-    pub fn shadow(mut self, s: f32) -> Self { self.shadow = s; self }
-    pub fn clip(mut self) -> Self { self.clip = true; self }
-    pub fn scrollable(mut self) -> Self { self.scrollable = true; self }
+    pub fn height(mut self, h: Size) -> Self {
+        self.height = h;
+        self
+    }
+    pub fn hug(mut self) -> Self {
+        self.width = Size::Hug;
+        self.height = Size::Hug;
+        self
+    }
+    pub fn fill_size(mut self) -> Self {
+        self.width = Size::Fill(1.0);
+        self.height = Size::Fill(1.0);
+        self
+    }
+
+    // ---- Layout (container) ----
+    pub fn padding(mut self, p: impl Into<Sides>) -> Self {
+        self.padding = p.into();
+        self
+    }
+    pub fn gap(mut self, g: f32) -> Self {
+        self.gap = g;
+        self
+    }
+    pub fn align(mut self, a: Align) -> Self {
+        self.align = a;
+        self
+    }
+    pub fn justify(mut self, j: Justify) -> Self {
+        self.justify = j;
+        self
+    }
+
+    // ---- Visual ----
+    pub fn fill(mut self, c: Color) -> Self {
+        self.fill = Some(c);
+        self
+    }
+    pub fn stroke(mut self, c: Color) -> Self {
+        self.stroke = Some(c);
+        if self.stroke_width == 0.0 {
+            self.stroke_width = 1.0;
+        }
+        self
+    }
+    pub fn stroke_width(mut self, w: f32) -> Self {
+        self.stroke_width = w;
+        self
+    }
+    pub fn radius(mut self, r: f32) -> Self {
+        self.radius = r;
+        self
+    }
+    pub fn shadow(mut self, s: f32) -> Self {
+        self.shadow = s;
+        self
+    }
+    pub fn clip(mut self) -> Self {
+        self.clip = true;
+        self
+    }
+    pub fn scrollable(mut self) -> Self {
+        self.scrollable = true;
+        self
+    }
 
     // ---- Paint-time transforms (animatable via `.animate()`) ----
     /// Multiply this element's paint alpha by `v` (clamped to `[0, 1]`).
     /// Layout-neutral. Multiplies onto `fill`, `stroke`, and text colour
     /// at paint time.
-    pub fn opacity(mut self, v: f32) -> Self { self.opacity = v.clamp(0.0, 1.0); self }
+    pub fn opacity(mut self, v: f32) -> Self {
+        self.opacity = v.clamp(0.0, 1.0);
+        self
+    }
     /// Offset this element's paint and its descendants by `(x, y)` in
     /// logical pixels. Layout-neutral; descendants inherit the offset.
-    pub fn translate(mut self, x: f32, y: f32) -> Self { self.translate = (x, y); self }
+    pub fn translate(mut self, x: f32, y: f32) -> Self {
+        self.translate = (x, y);
+        self
+    }
     /// Uniformly scale this element's paint around its rect centre.
     /// Affects the surface quad and (if it carries text) the glyph
     /// run together. Not subtree-inheriting.
-    pub fn scale(mut self, v: f32) -> Self { self.scale = v.max(0.0); self }
+    pub fn scale(mut self, v: f32) -> Self {
+        self.scale = v.max(0.0);
+        self
+    }
     /// Opt this element into app-driven prop interpolation. When the
     /// build closure produces a different value for `fill` /
     /// `text_color` / `stroke` / `opacity` / `translate` / `scale`
@@ -249,20 +318,52 @@ impl El {
     }
 
     // ---- Text-bearing ----
-    pub fn text(mut self, t: impl Into<String>) -> Self { self.text = Some(t.into()); self }
-    pub fn text_color(mut self, c: Color) -> Self { self.text_color = Some(c); self }
-    pub fn text_align(mut self, align: TextAlign) -> Self { self.text_align = align; self }
-    pub fn center_text(self) -> Self { self.text_align(TextAlign::Center) }
-    pub fn end_text(self) -> Self { self.text_align(TextAlign::End) }
-    pub fn text_wrap(mut self, wrap: TextWrap) -> Self { self.text_wrap = wrap; self }
-    pub fn wrap_text(self) -> Self { self.text_wrap(TextWrap::Wrap) }
-    pub fn nowrap_text(self) -> Self { self.text_wrap(TextWrap::NoWrap) }
-    pub fn font_size(mut self, s: f32) -> Self { self.font_size = s; self }
-    pub fn font_weight(mut self, w: FontWeight) -> Self { self.font_weight = w; self }
-    pub fn mono(mut self) -> Self { self.font_mono = true; self }
+    pub fn text(mut self, t: impl Into<String>) -> Self {
+        self.text = Some(t.into());
+        self
+    }
+    pub fn text_color(mut self, c: Color) -> Self {
+        self.text_color = Some(c);
+        self
+    }
+    pub fn text_align(mut self, align: TextAlign) -> Self {
+        self.text_align = align;
+        self
+    }
+    pub fn center_text(self) -> Self {
+        self.text_align(TextAlign::Center)
+    }
+    pub fn end_text(self) -> Self {
+        self.text_align(TextAlign::End)
+    }
+    pub fn text_wrap(mut self, wrap: TextWrap) -> Self {
+        self.text_wrap = wrap;
+        self
+    }
+    pub fn wrap_text(self) -> Self {
+        self.text_wrap(TextWrap::Wrap)
+    }
+    pub fn nowrap_text(self) -> Self {
+        self.text_wrap(TextWrap::NoWrap)
+    }
+    pub fn font_size(mut self, s: f32) -> Self {
+        self.font_size = s;
+        self
+    }
+    pub fn font_weight(mut self, w: FontWeight) -> Self {
+        self.font_weight = w;
+        self
+    }
+    pub fn mono(mut self) -> Self {
+        self.font_mono = true;
+        self
+    }
 
     // ---- Children ----
-    pub fn child(mut self, c: impl Into<El>) -> Self { self.children.push(c.into()); self }
+    pub fn child(mut self, c: impl Into<El>) -> Self {
+        self.children.push(c.into());
+        self
+    }
     pub fn children<I, E>(mut self, cs: I) -> Self
     where
         I: IntoIterator<Item = E>,
@@ -273,10 +374,16 @@ impl El {
     }
 
     // ---- Internal: style profile ----
-    pub fn style_profile(mut self, p: StyleProfile) -> Self { self.style_profile = p; self }
+    pub fn style_profile(mut self, p: StyleProfile) -> Self {
+        self.style_profile = p;
+        self
+    }
 
     // ---- Internal: axis (used by layout primitives below) ----
-    pub(crate) fn axis(mut self, a: Axis) -> Self { self.axis = a; self }
+    pub(crate) fn axis(mut self, a: Axis) -> Self {
+        self.axis = a;
+        self
+    }
 }
 
 // ---------- Layout primitives (plain functions) ----------
@@ -375,11 +482,17 @@ pub fn divider() -> El {
 // Lets `card("Title", ["a body line"])` work without `text(...)`.
 
 impl From<&str> for El {
-    fn from(s: &str) -> Self { crate::text::text(s) }
+    fn from(s: &str) -> Self {
+        crate::text::text(s)
+    }
 }
 impl From<String> for El {
-    fn from(s: String) -> Self { crate::text::text(s) }
+    fn from(s: String) -> Self {
+        crate::text::text(s)
+    }
 }
 impl From<&String> for El {
-    fn from(s: &String) -> Self { crate::text::text(s.as_str()) }
+    fn from(s: &String) -> Self {
+        crate::text::text(s.as_str())
+    }
 }

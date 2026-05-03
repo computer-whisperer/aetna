@@ -104,28 +104,46 @@ fn walk(
     };
 
     if from_user {
-        if let Some(c) = n.fill && c.token.is_none() && c.a > 0 {
+        if let Some(c) = n.fill
+            && c.token.is_none()
+            && c.a > 0
+        {
             r.findings.push(Finding {
                 kind: FindingKind::RawColor,
                 node_id: n.computed_id.clone(),
                 source: n.source,
-                message: format!("fill is a raw rgba({},{},{},{}) — use a token", c.r, c.g, c.b, c.a),
+                message: format!(
+                    "fill is a raw rgba({},{},{},{}) — use a token",
+                    c.r, c.g, c.b, c.a
+                ),
             });
         }
-        if let Some(c) = n.stroke && c.token.is_none() && c.a > 0 {
+        if let Some(c) = n.stroke
+            && c.token.is_none()
+            && c.a > 0
+        {
             r.findings.push(Finding {
                 kind: FindingKind::RawColor,
                 node_id: n.computed_id.clone(),
                 source: n.source,
-                message: format!("stroke is a raw rgba({},{},{},{}) — use a token", c.r, c.g, c.b, c.a),
+                message: format!(
+                    "stroke is a raw rgba({},{},{},{}) — use a token",
+                    c.r, c.g, c.b, c.a
+                ),
             });
         }
-        if let Some(c) = n.text_color && c.token.is_none() && c.a > 0 {
+        if let Some(c) = n.text_color
+            && c.token.is_none()
+            && c.a > 0
+        {
             r.findings.push(Finding {
                 kind: FindingKind::RawColor,
                 node_id: n.computed_id.clone(),
                 source: n.source,
-                message: format!("text_color is a raw rgba({},{},{},{}) — use a token", c.r, c.g, c.b, c.a),
+                message: format!(
+                    "text_color is a raw rgba({},{},{},{}) — use a token",
+                    c.r, c.g, c.b, c.a
+                ),
             });
         }
         if n.text.is_some() {

@@ -74,7 +74,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         force_fallback_adapter: false,
     }))
     .ok_or("no compatible adapter")?;
-    println!("adapter: {:?} ({:?})", adapter.get_info().name, adapter.get_info().backend);
+    println!(
+        "adapter: {:?} ({:?})",
+        adapter.get_info().name,
+        adapter.get_info().backend
+    );
 
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
@@ -89,7 +93,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("aetna_demo::counter::target"),
-        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -128,7 +136,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Find the "+" button's center from the laid-out tree, then move
     // the simulated pointer there. The renderer hit-tests against its
     // stored last_tree and updates its hover key.
-    let plus = find_rect(&tree1, renderer.ui_state(), "inc").ok_or("missing 'inc' button in tree")?;
+    let plus =
+        find_rect(&tree1, renderer.ui_state(), "inc").ok_or("missing 'inc' button in tree")?;
     let cx = plus.x + plus.w * 0.5;
     let cy = plus.y + plus.h * 0.5;
     let hovered = renderer.pointer_moved(cx, cy);
@@ -176,13 +185,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rows_per_image: Some(height),
             },
         },
-        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
 
     let buffer_slice = readback_buf.slice(..);
     let (sender, receiver) = std::sync::mpsc::channel::<Result<(), wgpu::BufferAsyncError>>();
-    buffer_slice.map_async(wgpu::MapMode::Read, move |r| { sender.send(r).ok(); });
+    buffer_slice.map_async(wgpu::MapMode::Read, move |r| {
+        sender.send(r).ok();
+    });
     device.poll(wgpu::Maintain::Wait);
     receiver.recv()??;
 
@@ -196,8 +211,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(padded);
     readback_buf.unmap();
 
-    let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("out");
+    let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     std::fs::create_dir_all(&out_dir)?;
     let out = out_dir.join("counter.wgpu.png");
     let file = std::fs::File::create(&out)?;
@@ -222,5 +236,9 @@ fn bg_color() -> wgpu::Color {
 }
 
 fn srgb_to_linear(c: f64) -> f64 {
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
 }

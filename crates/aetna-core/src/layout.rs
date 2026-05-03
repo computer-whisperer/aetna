@@ -80,7 +80,9 @@ fn layout_children(node: &mut El, node_rect: Rect, ui_state: &mut UiState) {
             let inner = node_rect.inset(node.padding);
             for c in &mut node.children {
                 let c_rect = overlay_rect(c, inner, node.align, node.justify);
-                ui_state.computed_rects.insert(c.computed_id.clone(), c_rect);
+                ui_state
+                    .computed_rects
+                    .insert(c.computed_id.clone(), c_rect);
                 layout_children(c, c_rect, ui_state);
             }
         }
@@ -169,18 +171,23 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
     // Free space after children + gaps. When there are Fill children they
     // claim it all, so justify is moot; otherwise this is what center/end
     // distribute around.
-    let free_after_used = if fill_weight_total == 0.0 { remaining } else { 0.0 };
+    let free_after_used = if fill_weight_total == 0.0 {
+        remaining
+    } else {
+        0.0
+    };
     let mut cursor = match node.justify {
         Justify::Start => 0.0,
         Justify::Center => free_after_used * 0.5,
         Justify::End => free_after_used,
         Justify::SpaceBetween => 0.0,
     };
-    let between_extra = if matches!(node.justify, Justify::SpaceBetween) && n > 1 && fill_weight_total == 0.0 {
-        remaining / (n - 1) as f32
-    } else {
-        0.0
-    };
+    let between_extra =
+        if matches!(node.justify, Justify::SpaceBetween) && n > 1 && fill_weight_total == 0.0 {
+            remaining / (n - 1) as f32
+        } else {
+            0.0
+        };
 
     for (i, (c, (iw, ih))) in node.children.iter_mut().zip(intrinsics).enumerate() {
         let main_size = match main_size_of(c, iw, ih, vertical) {
@@ -210,14 +217,19 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
         } else {
             Rect::new(inner.x + cursor, inner.y + cross_off, main_size, cross_size)
         };
-        ui_state.computed_rects.insert(c.computed_id.clone(), c_rect);
+        ui_state
+            .computed_rects
+            .insert(c.computed_id.clone(), c_rect);
         layout_children(c, c_rect, ui_state);
 
         cursor += main_size + node.gap + if i + 1 < n { between_extra } else { 0.0 };
     }
 }
 
-enum MainSize { Resolved(f32), Fill(f32) }
+enum MainSize {
+    Resolved(f32),
+    Fill(f32),
+}
 
 fn main_size_of(c: &El, iw: f32, ih: f32, vertical: bool) -> MainSize {
     let s = if vertical { c.height } else { c.width };
@@ -229,7 +241,12 @@ fn main_size_of(c: &El, iw: f32, ih: f32, vertical: bool) -> MainSize {
     }
 }
 
-fn child_intrinsic(c: &El, vertical: bool, parent_cross_extent: f32, parent_align: Align) -> (f32, f32) {
+fn child_intrinsic(
+    c: &El,
+    vertical: bool,
+    parent_cross_extent: f32,
+    parent_align: Align,
+) -> (f32, f32) {
     if !vertical {
         return intrinsic(c);
     }
@@ -312,23 +329,31 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
             let mut w: f32 = 0.0;
             let mut h: f32 = 0.0;
             for ch in &c.children {
-                let child_available = available_width.map(|w| (w - c.padding.left - c.padding.right).max(0.0));
+                let child_available =
+                    available_width.map(|w| (w - c.padding.left - c.padding.right).max(0.0));
                 let (cw, chh) = intrinsic_constrained(ch, child_available);
                 w = w.max(cw);
                 h = h.max(chh);
             }
-            apply_min(c, w + c.padding.left + c.padding.right, h + c.padding.top + c.padding.bottom)
+            apply_min(
+                c,
+                w + c.padding.left + c.padding.right,
+                h + c.padding.top + c.padding.bottom,
+            )
         }
         Axis::Column => {
             let mut w: f32 = 0.0;
             let mut h: f32 = c.padding.top + c.padding.bottom;
             let n = c.children.len();
-            let child_available = available_width.map(|w| (w - c.padding.left - c.padding.right).max(0.0));
+            let child_available =
+                available_width.map(|w| (w - c.padding.left - c.padding.right).max(0.0));
             for (i, ch) in c.children.iter().enumerate() {
                 let (cw, chh) = intrinsic_constrained(ch, child_available);
                 w = w.max(cw);
                 h += chh;
-                if i + 1 < n { h += c.gap; }
+                if i + 1 < n {
+                    h += c.gap;
+                }
             }
             apply_min(c, w + c.padding.left + c.padding.right, h)
         }
@@ -339,7 +364,9 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
             for (i, ch) in c.children.iter().enumerate() {
                 let (cw, chh) = intrinsic(ch);
                 w += cw;
-                if i + 1 < n { w += c.gap; }
+                if i + 1 < n {
+                    w += c.gap;
+                }
                 h = h.max(chh);
             }
             apply_min(c, w, h + c.padding.top + c.padding.bottom)
@@ -347,7 +374,10 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
     }
 }
 
-pub(crate) fn text_layout(c: &El, available_width: Option<f32>) -> Option<text_metrics::TextLayout> {
+pub(crate) fn text_layout(
+    c: &El,
+    available_width: Option<f32>,
+) -> Option<text_metrics::TextLayout> {
     let text = c.text.as_ref()?;
     let content_available = match c.text_wrap {
         TextWrap::NoWrap => None,
@@ -369,8 +399,12 @@ pub(crate) fn text_layout(c: &El, available_width: Option<f32>) -> Option<text_m
 }
 
 fn apply_min(c: &El, mut w: f32, mut h: f32) -> (f32, f32) {
-    if let Size::Fixed(v) = c.width { w = v; }
-    if let Size::Fixed(v) = c.height { h = v; }
+    if let Size::Fixed(v) = c.width {
+        w = v;
+    }
+    if let Size::Fixed(v) = c.height {
+        h = v;
+    }
     (w, h)
 }
 
@@ -384,27 +418,37 @@ mod tests {
     /// Hug-sized, Justify::Center should split the leftover space.
     #[test]
     fn justify_center_centers_hug_children() {
-        let mut root = column([crate::text::text("hi").width(Size::Fixed(40.0)).height(Size::Fixed(20.0))])
-            .justify(Justify::Center)
-            .height(Size::Fill(1.0));
+        let mut root = column([crate::text::text("hi")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))])
+        .justify(Justify::Center)
+        .height(Size::Fill(1.0));
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 100.0));
         let child_rect = state.rect(&root.children[0].computed_id);
         // Expected: 100 - 20 = 80 leftover; centered → starts at y=40.
-        assert!((child_rect.y - 40.0).abs() < 0.5,
-            "expected y≈40, got {}", child_rect.y);
+        assert!(
+            (child_rect.y - 40.0).abs() < 0.5,
+            "expected y≈40, got {}",
+            child_rect.y
+        );
     }
 
     #[test]
     fn justify_end_pushes_to_bottom() {
-        let mut root = column([crate::text::text("hi").width(Size::Fixed(40.0)).height(Size::Fixed(20.0))])
-            .justify(Justify::End)
-            .height(Size::Fill(1.0));
+        let mut root = column([crate::text::text("hi")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))])
+        .justify(Justify::End)
+        .height(Size::Fill(1.0));
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 100.0));
         let child_rect = state.rect(&root.children[0].computed_id);
-        assert!((child_rect.y - 80.0).abs() < 0.5,
-            "expected y≈80, got {}", child_rect.y);
+        assert!(
+            (child_rect.y - 80.0).abs() < 0.5,
+            "expected y≈80, got {}",
+            child_rect.y
+        );
     }
 
     #[test]
@@ -417,8 +461,16 @@ mod tests {
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 600.0, 400.0));
         let child_rect = state.rect(&root.children[0].computed_id);
-        assert!((child_rect.x - 200.0).abs() < 0.5, "expected x≈200, got {}", child_rect.x);
-        assert!(child_rect.y > 100.0 && child_rect.y < 200.0, "expected centered y, got {}", child_rect.y);
+        assert!(
+            (child_rect.x - 200.0).abs() < 0.5,
+            "expected x≈200, got {}",
+            child_rect.x
+        );
+        assert!(
+            child_rect.y > 100.0 && child_rect.y < 200.0,
+            "expected centered y, got {}",
+            child_rect.y
+        );
     }
 
     #[test]
@@ -426,11 +478,10 @@ mod tests {
         // Six 50px-tall rows in a 200px-tall scroll viewport.
         // Content height = 6*50 + 5*gap_default = 300 + 5*12 = 360 px.
         // Visible viewport (no padding) = 200 px → max_offset = 160.
-        let mut root = scroll((0..6).map(|i| {
-            crate::text::text(format!("row {i}")).height(Size::Fixed(50.0))
-        }))
-        .key("list")
-        .height(Size::Fixed(200.0));
+        let mut root =
+            scroll((0..6).map(|i| crate::text::text(format!("row {i}")).height(Size::Fixed(50.0))))
+                .key("list")
+                .height(Size::Fixed(200.0));
         let mut state = UiState::new();
         assign_ids(&mut root);
         state.scroll_offsets.insert(root.computed_id.clone(), 80.0);
@@ -455,7 +506,9 @@ mod tests {
             c0.y
         );
         // Now overshoot — should clamp to max_offset=160.
-        state.scroll_offsets.insert(root.computed_id.clone(), 9999.0);
+        state
+            .scroll_offsets
+            .insert(root.computed_id.clone(), 9999.0);
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
         let stored = state
             .scroll_offsets
@@ -471,8 +524,14 @@ mod tests {
             .height(Size::Fixed(200.0));
         let mut tiny_state = UiState::new();
         assign_ids(&mut tiny);
-        tiny_state.scroll_offsets.insert(tiny.computed_id.clone(), 50.0);
-        layout(&mut tiny, &mut tiny_state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        tiny_state
+            .scroll_offsets
+            .insert(tiny.computed_id.clone(), 50.0);
+        layout(
+            &mut tiny,
+            &mut tiny_state,
+            Rect::new(0.0, 0.0, 300.0, 200.0),
+        );
         assert_eq!(
             tiny_state
                 .scroll_offsets

@@ -144,8 +144,7 @@ fn push_node(
                 TextAlign::End => TextAnchor::End,
             },
         };
-        let text_color =
-            opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
+        let text_color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
         let layout = text_metrics::layout_text(
             &display,
             painted_font_size,
@@ -335,7 +334,9 @@ mod tests {
 
     #[test]
     fn opacity_multiplies_alpha_on_quad_uniforms() {
-        let mut root = button("X").fill(Color::rgba(200, 100, 50, 200)).opacity(0.5);
+        let mut root = button("X")
+            .fill(Color::rgba(200, 100, 50, 200))
+            .opacity(0.5);
         let mut state = UiState::new();
         crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
         let ops = draw_ops(&root, &state);

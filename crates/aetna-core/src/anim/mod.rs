@@ -44,7 +44,10 @@ pub enum AnimValue {
 impl AnimValue {
     pub fn channels(self) -> AnimChannels {
         match self {
-            AnimValue::Float(v) => AnimChannels { n: 1, v: [v, 0.0, 0.0, 0.0] },
+            AnimValue::Float(v) => AnimChannels {
+                n: 1,
+                v: [v, 0.0, 0.0, 0.0],
+            },
             AnimValue::Color(c) => AnimChannels {
                 n: 4,
                 v: [c.r as f32, c.g as f32, c.b as f32, c.a as f32],
@@ -97,13 +100,29 @@ pub struct SpringConfig {
 impl SpringConfig {
     /// High stiffness, near-critical damping. ~150 ms settle, no
     /// overshoot. Use for hover / focus where overshoot reads as jitter.
-    pub const QUICK: Self = Self { mass: 1.0, stiffness: 380.0, damping: 30.0 };
+    pub const QUICK: Self = Self {
+        mass: 1.0,
+        stiffness: 380.0,
+        damping: 30.0,
+    };
     /// Balanced. ~250 ms settle, mild overshoot. Default state changes.
-    pub const STANDARD: Self = Self { mass: 1.0, stiffness: 200.0, damping: 22.0 };
+    pub const STANDARD: Self = Self {
+        mass: 1.0,
+        stiffness: 200.0,
+        damping: 22.0,
+    };
     /// Visible overshoot. Press-release rebound, playful interactions.
-    pub const BOUNCY: Self = Self { mass: 1.0, stiffness: 240.0, damping: 14.0 };
+    pub const BOUNCY: Self = Self {
+        mass: 1.0,
+        stiffness: 240.0,
+        damping: 14.0,
+    };
     /// Soft, large displacements. Modal appearance, panel transitions.
-    pub const GENTLE: Self = Self { mass: 1.0, stiffness: 80.0, damping: 18.0 };
+    pub const GENTLE: Self = Self {
+        mass: 1.0,
+        stiffness: 80.0,
+        damping: 18.0,
+    };
 }
 
 /// Cubic-bezier tween: P0=(0,0), P3=(1,1), with two control points.
@@ -322,7 +341,10 @@ impl Animation {
         let tgt = self.target.channels();
         let t = elapsed.as_secs_f32() / cfg.duration.as_secs_f32();
         let eased = cubic_bezier_y_at_x(t, cfg.p1, cfg.p2);
-        let mut next = AnimChannels { n: from.n, v: [0.0; 4] };
+        let mut next = AnimChannels {
+            n: from.n,
+            v: [0.0; 4],
+        };
         for i in 0..from.n {
             next.v[i] = from.v[i] + (tgt.v[i] - from.v[i]) * eased;
         }
@@ -382,7 +404,9 @@ fn bezier_axis(t: f32, c1: f32, c2: f32) -> f32 {
 
 fn bezier_axis_derivative(t: f32, c1: f32, c2: f32) -> f32 {
     let one_minus_t = 1.0 - t;
-    3.0 * one_minus_t * one_minus_t * c1 + 6.0 * one_minus_t * t * (c2 - c1) + 3.0 * t * t * (1.0 - c2)
+    3.0 * one_minus_t * one_minus_t * c1
+        + 6.0 * one_minus_t * t * (c2 - c1)
+        + 3.0 * t * t * (1.0 - c2)
 }
 
 #[cfg(test)]
@@ -409,7 +433,9 @@ mod tests {
                 break;
             }
         }
-        let AnimValue::Float(v) = a.current else { panic!("expected float") };
+        let AnimValue::Float(v) = a.current else {
+            panic!("expected float")
+        };
         assert!((v - 1.0).abs() < 1e-3, "spring did not settle: v={v}");
     }
 
@@ -452,12 +478,22 @@ mod tests {
             start,
         );
         a.step(start);
-        let AnimValue::Float(v0) = a.current else { panic!() };
-        assert!((v0 - 10.0).abs() < 1e-3, "tween at t=0 should equal `from`, got {v0}");
+        let AnimValue::Float(v0) = a.current else {
+            panic!()
+        };
+        assert!(
+            (v0 - 10.0).abs() < 1e-3,
+            "tween at t=0 should equal `from`, got {v0}"
+        );
 
         a.step(now_plus(start, 1000));
-        let AnimValue::Float(vend) = a.current else { panic!() };
-        assert!((vend - 20.0).abs() < 1e-3, "tween past duration should equal target, got {vend}");
+        let AnimValue::Float(vend) = a.current else {
+            panic!()
+        };
+        assert!(
+            (vend - 20.0).abs() < 1e-3,
+            "tween past duration should equal target, got {vend}"
+        );
     }
 
     #[test]
@@ -470,7 +506,9 @@ mod tests {
             start,
         );
         a.step(now_plus(start, 100));
-        let AnimValue::Float(mid) = a.current else { panic!() };
+        let AnimValue::Float(mid) = a.current else {
+            panic!()
+        };
         a.retarget(AnimValue::Float(0.0), now_plus(start, 100));
         assert_eq!(a.from, Some(AnimValue::Float(mid)));
     }

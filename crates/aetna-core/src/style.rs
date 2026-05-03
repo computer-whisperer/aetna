@@ -43,11 +43,21 @@ pub enum StyleProfile {
 impl El {
     // ===== Color / status (profile-aware) =====
 
-    pub fn primary(self) -> Self { tint(self, tokens::PRIMARY) }
-    pub fn success(self) -> Self { tint(self, tokens::SUCCESS) }
-    pub fn warning(self) -> Self { tint(self, tokens::WARNING) }
-    pub fn destructive(self) -> Self { tint(self, tokens::DESTRUCTIVE) }
-    pub fn info(self) -> Self { tint(self, tokens::INFO) }
+    pub fn primary(self) -> Self {
+        tint(self, tokens::PRIMARY)
+    }
+    pub fn success(self) -> Self {
+        tint(self, tokens::SUCCESS)
+    }
+    pub fn warning(self) -> Self {
+        tint(self, tokens::WARNING)
+    }
+    pub fn destructive(self) -> Self {
+        tint(self, tokens::DESTRUCTIVE)
+    }
+    pub fn info(self) -> Self {
+        tint(self, tokens::INFO)
+    }
 
     // ===== Surface variants =====
 
@@ -101,12 +111,27 @@ impl El {
 
     // ===== Text shape =====
 
-    pub fn bold(mut self) -> Self { self.font_weight = FontWeight::Bold; self }
-    pub fn semibold(mut self) -> Self { self.font_weight = FontWeight::Semibold; self }
-    pub fn small(mut self) -> Self { self.font_size = tokens::FONT_SM; self }
-    pub fn xsmall(mut self) -> Self { self.font_size = tokens::FONT_XS; self }
+    pub fn bold(mut self) -> Self {
+        self.font_weight = FontWeight::Bold;
+        self
+    }
+    pub fn semibold(mut self) -> Self {
+        self.font_weight = FontWeight::Semibold;
+        self
+    }
+    pub fn small(mut self) -> Self {
+        self.font_size = tokens::FONT_SM;
+        self
+    }
+    pub fn xsmall(mut self) -> Self {
+        self.font_size = tokens::FONT_XS;
+        self
+    }
     /// Set an explicit text color.
-    pub fn color(mut self, c: Color) -> Self { self.text_color = Some(c); self }
+    pub fn color(mut self, c: Color) -> Self {
+        self.text_color = Some(c);
+        self
+    }
 }
 
 fn tint(mut el: El, c: Color) -> El {

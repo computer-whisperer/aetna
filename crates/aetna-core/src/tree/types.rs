@@ -16,11 +16,21 @@ pub struct Rect {
 }
 
 impl Rect {
-    pub const fn new(x: f32, y: f32, w: f32, h: f32) -> Self { Self { x, y, w, h } }
-    pub fn right(self) -> f32 { self.x + self.w }
-    pub fn bottom(self) -> f32 { self.y + self.h }
-    pub fn center_x(self) -> f32 { self.x + self.w * 0.5 }
-    pub fn center_y(self) -> f32 { self.y + self.h * 0.5 }
+    pub const fn new(x: f32, y: f32, w: f32, h: f32) -> Self {
+        Self { x, y, w, h }
+    }
+    pub fn right(self) -> f32 {
+        self.x + self.w
+    }
+    pub fn bottom(self) -> f32 {
+        self.y + self.h
+    }
+    pub fn center_x(self) -> f32 {
+        self.x + self.w * 0.5
+    }
+    pub fn center_y(self) -> f32 {
+        self.y + self.h * 0.5
+    }
     pub fn contains(self, x: f32, y: f32) -> bool {
         x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
     }
@@ -57,13 +67,31 @@ pub struct Sides {
 }
 
 impl Sides {
-    pub const fn all(v: f32) -> Self { Self { left: v, right: v, top: v, bottom: v } }
-    pub const fn xy(x: f32, y: f32) -> Self { Self { left: x, right: x, top: y, bottom: y } }
-    pub const fn zero() -> Self { Self::all(0.0) }
+    pub const fn all(v: f32) -> Self {
+        Self {
+            left: v,
+            right: v,
+            top: v,
+            bottom: v,
+        }
+    }
+    pub const fn xy(x: f32, y: f32) -> Self {
+        Self {
+            left: x,
+            right: x,
+            top: y,
+            bottom: y,
+        }
+    }
+    pub const fn zero() -> Self {
+        Self::all(0.0)
+    }
 }
 
 impl From<f32> for Sides {
-    fn from(v: f32) -> Self { Sides::all(v) }
+    fn from(v: f32) -> Self {
+        Sides::all(v)
+    }
 }
 
 /// Sizing intent along one axis. Layout uses these to allocate space
@@ -80,7 +108,9 @@ pub enum Size {
 }
 
 impl Default for Size {
-    fn default() -> Self { Size::Fill(1.0) }
+    fn default() -> Self {
+        Size::Fill(1.0)
+    }
 }
 
 /// Layout direction for a container's children.
@@ -192,6 +222,9 @@ pub struct Source {
 
 impl Source {
     pub fn from_caller(loc: &'static Location<'static>) -> Self {
-        Self { file: loc.file(), line: loc.line() }
+        Self {
+            file: loc.file(),
+            line: loc.line(),
+        }
     }
 }

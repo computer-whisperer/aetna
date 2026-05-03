@@ -21,14 +21,12 @@ use aetna_core::*;
 /// slot is read as the top color, vec_b as the bottom, vec_c.x as the
 /// corner radius (see `attempts/attempt_4/shaders/gradient.wgsl`).
 fn gradient_button(label: &str, top: Color, bottom: Color, radius: f32) -> El {
-    button(label)
-        .text_color(tokens::TEXT_ON_SOLID_DARK)
-        .shader(
-            ShaderBinding::custom("gradient")
-                .color("vec_a", top)
-                .color("vec_b", bottom)
-                .f32("vec_c", radius),
-        )
+    button(label).text_color(tokens::TEXT_ON_SOLID_DARK).shader(
+        ShaderBinding::custom("gradient")
+            .color("vec_a", top)
+            .color("vec_b", bottom)
+            .f32("vec_c", radius),
+    )
 }
 
 fn fixture() -> El {
@@ -40,8 +38,9 @@ fn fixture() -> El {
              for contrast.",
         )
         .muted(),
-        card("gradient.wgsl — vertical linear gradient", [
-            row([
+        card(
+            "gradient.wgsl — vertical linear gradient",
+            [row([
                 gradient_button(
                     "Sunrise",
                     Color::rgb(255, 200, 90),
@@ -63,8 +62,8 @@ fn fixture() -> El {
                 spacer(),
                 button("Stock").secondary(),
             ])
-            .gap(tokens::SPACE_MD),
-        ]),
+            .gap(tokens::SPACE_MD)],
+        ),
     ])
     .gap(tokens::SPACE_LG)
     .padding(tokens::SPACE_XL)

@@ -149,18 +149,14 @@ mod tests {
         if node.key.as_deref() == Some(key) {
             return Some(state.rect(&node.computed_id));
         }
-        node.children
-            .iter()
-            .find_map(|c| find_rect(c, state, key))
+        node.children.iter().find_map(|c| find_rect(c, state, key))
     }
 
     fn find_text_rect(node: &El, state: &UiState) -> Option<Rect> {
         if matches!(node.kind, Kind::Text) {
             return Some(state.rect(&node.computed_id));
         }
-        node.children
-            .iter()
-            .find_map(|c| find_text_rect(c, state))
+        node.children.iter().find_map(|c| find_text_rect(c, state))
     }
 
     #[test]
@@ -222,6 +218,9 @@ mod tests {
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 300.0, 300.0));
 
         assert!(hit_test(&tree, &state, (150.0, 150.0)).is_none());
-        assert_eq!(hit_test(&tree, &state, (10.0, 10.0)).as_deref(), Some("dismiss"));
+        assert_eq!(
+            hit_test(&tree, &state, (10.0, 10.0)).as_deref(),
+            Some("dismiss")
+        );
     }
 }

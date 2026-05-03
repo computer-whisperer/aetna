@@ -16,13 +16,29 @@ pub struct Color {
 
 impl Color {
     pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
-        Self { r, g, b, a, token: None }
+        Self {
+            r,
+            g,
+            b,
+            a,
+            token: None,
+        }
     }
-    pub const fn rgb(r: u8, g: u8, b: u8) -> Self { Self::rgba(r, g, b, 255) }
+    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
+        Self::rgba(r, g, b, 255)
+    }
     pub const fn token(name: &'static str, r: u8, g: u8, b: u8, a: u8) -> Self {
-        Self { r, g, b, a, token: Some(name) }
+        Self {
+            r,
+            g,
+            b,
+            a,
+            token: Some(name),
+        }
     }
-    pub fn with_alpha(self, a: u8) -> Self { Self { a, ..self } }
+    pub fn with_alpha(self, a: u8) -> Self {
+        Self { a, ..self }
+    }
 
     /// Lighten by a 0..1 factor (mix toward white).
     pub fn lighten(self, t: f32) -> Self {
@@ -61,5 +77,7 @@ impl Color {
 }
 
 fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
-    (a as f32 + (b as f32 - a as f32) * t).round().clamp(0.0, 255.0) as u8
+    (a as f32 + (b as f32 - a as f32) * t)
+        .round()
+        .clamp(0.0, 255.0) as u8
 }

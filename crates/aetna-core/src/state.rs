@@ -15,8 +15,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use crate::anim::{AnimProp, Animation};
 use crate::anim::tick::{is_in_flight, tick_node};
+use crate::anim::{AnimProp, Animation};
 use crate::event::{KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget};
 use crate::focus::focus_order;
 use crate::hit_test::scroll_target_at;
@@ -255,9 +255,8 @@ impl UiState {
         // GC: drop animations whose node left the tree this frame.
         self.animations.retain(|key, _| visited.contains(key));
         // GC envelopes: drop entries for nodes that left the tree.
-        self.envelopes.retain(|(id, _), _| {
-            visited.iter().any(|(visited_id, _)| visited_id == id)
-        });
+        self.envelopes
+            .retain(|(id, _), _| visited.iter().any(|(visited_id, _)| visited_id == id));
         needs_redraw
     }
 
@@ -399,7 +398,10 @@ mod tests {
         let target = state.target_of_key(&tree, "dec").expect("dec target");
         assert_eq!(target.key, "dec");
         assert_eq!(target.node_id, find_id(&tree, "dec").expect("dec id"));
-        assert_eq!(target.rect, find_rect(&tree, &state, "dec").expect("dec rect"));
+        assert_eq!(
+            target.rect,
+            find_rect(&tree, &state, "dec").expect("dec rect")
+        );
     }
 
     #[test]
@@ -515,7 +517,11 @@ mod tests {
         // b0 has been scrolled above the viewport — clicking where it
         // would now sit (above y=0) misses it.
         let r0 = find_rect(&tree, &state, "b0").expect("b0 rect");
-        assert!(r0.bottom() <= 0.0, "b0 should be above the viewport, was {:?}", r0);
+        assert!(
+            r0.bottom() <= 0.0,
+            "b0 should be above the viewport, was {:?}",
+            r0
+        );
     }
 
     #[test]
@@ -646,9 +652,11 @@ mod tests {
         // inner's center should target the inner.
         let mut tree = scroll([
             button("above").key("above").height(Size::Fixed(40.0)),
-            scroll([button("inner-row").key("inner-row").height(Size::Fixed(60.0))])
-                .key("inner")
-                .height(Size::Fixed(100.0)),
+            scroll([button("inner-row")
+                .key("inner-row")
+                .height(Size::Fixed(60.0))])
+            .key("inner")
+            .height(Size::Fixed(100.0)),
         ])
         .key("outer")
         .height(Size::Fixed(300.0));
@@ -717,8 +725,14 @@ mod tests {
         let needs_redraw = state.tick_visual_animations(&mut tree, Instant::now());
 
         assert!(!needs_redraw, "Settled mode should never report in flight");
-        assert_eq!(envelope_for(&tree, &state, "inc", EnvelopeKind::Hover), Some(1.0));
-        assert_eq!(envelope_for(&tree, &state, "inc", EnvelopeKind::Press), Some(0.0));
+        assert_eq!(
+            envelope_for(&tree, &state, "inc", EnvelopeKind::Hover),
+            Some(1.0)
+        );
+        assert_eq!(
+            envelope_for(&tree, &state, "inc", EnvelopeKind::Press),
+            Some(0.0)
+        );
         // The build fill stays untouched — the lightening happens in
         // apply_state at draw time, mixing by hover_amount.
     }
@@ -733,13 +747,14 @@ mod tests {
 
         state.hovered = Some(target(&tree, &state, "inc"));
         state.apply_to_state();
-        let needs_redraw = state.tick_visual_animations(
-            &mut tree,
-            t0 + std::time::Duration::from_millis(8),
-        );
+        let needs_redraw =
+            state.tick_visual_animations(&mut tree, t0 + std::time::Duration::from_millis(8));
         let mid = envelope_for(&tree, &state, "inc", EnvelopeKind::Hover).expect("hover envelope");
 
-        assert!(needs_redraw, "spring should still be in flight after one 8 ms tick");
+        assert!(
+            needs_redraw,
+            "spring should still be in flight after one 8 ms tick"
+        );
         assert!(
             mid > 0.0 && mid < 1.0,
             "expected envelope mid-flight, got {mid}",
@@ -752,23 +767,22 @@ mod tests {
         // mid-hover, n.fill must reflect the new build value
         // immediately. The envelope keeps easing independently. This is
         // what avoids the AppFill / StateFill fight of an earlier draft.
-        let mut tree_a = column([row([button("X")
-            .key("x")
-            .fill(Color::rgb(255, 0, 0))])])
-        .padding(20.0);
+        let mut tree_a =
+            column([row([button("X").key("x").fill(Color::rgb(255, 0, 0))])]).padding(20.0);
         let mut state = UiState::new();
         layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.set_animation_mode(AnimationMode::Settled);
         state.hovered = Some(target(&tree_a, &state, "x"));
         state.apply_to_state();
         state.tick_visual_animations(&mut tree_a, Instant::now());
-        assert_eq!(envelope_for(&tree_a, &state, "x", EnvelopeKind::Hover), Some(1.0));
+        assert_eq!(
+            envelope_for(&tree_a, &state, "x", EnvelopeKind::Hover),
+            Some(1.0)
+        );
 
         // Rebuild: same button, fill swapped to blue.
-        let mut tree_b = column([row([button("X")
-            .key("x")
-            .fill(Color::rgb(0, 0, 255))])])
-        .padding(20.0);
+        let mut tree_b =
+            column([row([button("X").key("x").fill(Color::rgb(0, 0, 255))])]).padding(20.0);
         layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.apply_to_state();
         state.tick_visual_animations(&mut tree_b, Instant::now());
@@ -779,7 +793,10 @@ mod tests {
             (0, 0, 255),
             "build fill should pass through unchanged — envelope handles state delta separately",
         );
-        assert_eq!(envelope_for(&tree_b, &state, "x", EnvelopeKind::Hover), Some(1.0));
+        assert_eq!(
+            envelope_for(&tree_b, &state, "x", EnvelopeKind::Hover),
+            Some(1.0)
+        );
     }
 
     #[test]
@@ -837,7 +854,10 @@ mod tests {
 
         state.set_animation_mode(AnimationMode::Settled);
         state.tick_visual_animations(&mut tree_a, Instant::now());
-        assert_eq!(find_fill(&tree_a, "x").map(|c| (c.r, c.g, c.b)), Some((255, 0, 0)));
+        assert_eq!(
+            find_fill(&tree_a, "x").map(|c| (c.r, c.g, c.b)),
+            Some((255, 0, 0))
+        );
 
         // Rebuild with a different fill; tracker eases through.
         let mut tree_b = column([
@@ -880,21 +900,19 @@ mod tests {
             .animate(Timing::SPRING_STANDARD)])])
         .padding(20.0);
         layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-        let needs_redraw = state.tick_visual_animations(
-            &mut tree_b,
-            t0 + std::time::Duration::from_millis(8),
-        );
+        let needs_redraw =
+            state.tick_visual_animations(&mut tree_b, t0 + std::time::Duration::from_millis(8));
         let mid = find_fill(&tree_b, "x").expect("mid fill");
 
-        assert!(needs_redraw, "spring should still be in flight after one tick");
+        assert!(
+            needs_redraw,
+            "spring should still be in flight after one tick"
+        );
         assert!(
             mid.r < 255 && mid.b < 255,
             "expected mid-flight, got {mid:?}",
         );
-        assert!(
-            mid.r > 0 || mid.b > 0,
-            "should have moved off the start",
-        );
+        assert!(mid.r > 0 || mid.b > 0, "should have moved off the start",);
     }
 
     #[test]
@@ -949,25 +967,24 @@ mod tests {
         // Build fill survives untouched (envelope handles the delta).
         let n_fill = find_fill(&tree, "x").expect("x fill");
         assert_eq!((n_fill.r, n_fill.g, n_fill.b), (100, 100, 100));
-        assert_eq!(envelope_for(&tree, &state, "x", EnvelopeKind::Hover), Some(1.0));
+        assert_eq!(
+            envelope_for(&tree, &state, "x", EnvelopeKind::Hover),
+            Some(1.0)
+        );
     }
 
     #[test]
     fn app_animation_skipped_when_animate_not_set() {
         // Without .animate(), app props are not tracked — the node's
         // fill snaps to whatever the build produces, no easing.
-        let mut tree_a = column([row([button("X")
-            .key("x")
-            .fill(Color::rgb(255, 0, 0))])]) // no .animate()
-        .padding(20.0);
+        let mut tree_a = column([row([button("X").key("x").fill(Color::rgb(255, 0, 0))])]) // no .animate()
+            .padding(20.0);
         let mut state = UiState::new();
         layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.tick_visual_animations(&mut tree_a, Instant::now());
 
-        let mut tree_b = column([row([button("X")
-            .key("x")
-            .fill(Color::rgb(0, 0, 255))])])
-        .padding(20.0);
+        let mut tree_b =
+            column([row([button("X").key("x").fill(Color::rgb(0, 0, 255))])]).padding(20.0);
         layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.tick_visual_animations(&mut tree_b, Instant::now());
 
@@ -997,28 +1014,18 @@ mod tests {
         state.tick_visual_animations(&mut tree_a, Instant::now());
         let inc_id_a = find_id(&tree_a, "inc").expect("inc id");
         assert!(
-            state
-                .animations
-                .keys()
-                .any(|(id, _)| id == &inc_id_a),
+            state.animations.keys().any(|(id, _)| id == &inc_id_a),
             "expected at least one entry for inc"
         );
 
         // Rebuild with only the dec button. inc entries should be gone.
-        let mut tree_b = column([
-            crate::text("0"),
-            row([button("-").key("dec")]),
-        ])
-        .padding(20.0);
+        let mut tree_b = column([crate::text("0"), row([button("-").key("dec")])]).padding(20.0);
         layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.hovered = None;
         state.apply_to_state();
         state.tick_visual_animations(&mut tree_b, Instant::now());
         assert!(
-            !state
-                .animations
-                .keys()
-                .any(|(id, _)| id == &inc_id_a),
+            !state.animations.keys().any(|(id, _)| id == &inc_id_a),
             "stale entries for inc were not GC'd"
         );
     }
@@ -1027,21 +1034,14 @@ mod tests {
         if node.key.as_deref() == Some(key) {
             return Some(state.rect(&node.computed_id));
         }
-        node.children
-            .iter()
-            .find_map(|c| find_rect(c, state, key))
+        node.children.iter().find_map(|c| find_rect(c, state, key))
     }
     fn node_state(node: &El, state: &UiState, key: &str) -> InteractionState {
         let mut found = None;
         find_node_state(node, state, key, &mut found);
         found.unwrap_or_default()
     }
-    fn find_node_state(
-        node: &El,
-        state: &UiState,
-        key: &str,
-        out: &mut Option<InteractionState>,
-    ) {
+    fn find_node_state(node: &El, state: &UiState, key: &str, out: &mut Option<InteractionState>) {
         if node.key.as_deref() == Some(key) {
             *out = Some(state.node_state(&node.computed_id));
             return;

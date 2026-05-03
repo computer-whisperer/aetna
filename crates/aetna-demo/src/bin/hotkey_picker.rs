@@ -36,8 +36,12 @@ struct Picker {
 impl App for Picker {
     fn build(&self) -> El {
         let header = row([
-            badge(if self.search_active { "/ active" } else { "/ search" })
-                .info(),
+            badge(if self.search_active {
+                "/ active"
+            } else {
+                "/ search"
+            })
+            .info(),
             text(if self.search.is_empty() {
                 "(press / to type, Ctrl+L to clear)".to_string()
             } else {
@@ -57,8 +61,7 @@ impl App for Picker {
                     badge(format!("{}", i + 1)).muted(),
                     text(*label),
                     spacer(),
-                    text(if Some(i) == self.opened { "opened" } else { "" })
-                        .muted(),
+                    text(if Some(i) == self.opened { "opened" } else { "" }).muted(),
                 ])
                 .gap(tokens::SPACE_SM)
                 .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))

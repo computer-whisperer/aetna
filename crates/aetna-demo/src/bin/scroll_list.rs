@@ -23,8 +23,12 @@ impl App for Picker {
                     badge(format!("#{i}")).info(),
                     text(format!("Item {i}")).bold(),
                     spacer(),
-                    text(if Some(i) == self.selected { "selected" } else { "" })
-                        .muted(),
+                    text(if Some(i) == self.selected {
+                        "selected"
+                    } else {
+                        ""
+                    })
+                    .muted(),
                 ])
                 .gap(tokens::SPACE_SM)
                 .height(Size::Fixed(44.0))

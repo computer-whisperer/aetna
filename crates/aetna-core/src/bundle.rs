@@ -55,11 +55,7 @@ pub struct Bundle {
 /// snapshot of the tree at rest, with no hover/press/focus state. For
 /// fixtures that need to demonstrate non-trivial state (a scroll
 /// position, a hovered button), see [`render_bundle_with`].
-pub fn render_bundle(
-    root: &mut El,
-    viewport: Rect,
-    library_marker: Option<&str>,
-) -> Bundle {
+pub fn render_bundle(root: &mut El, viewport: Rect, library_marker: Option<&str>) -> Bundle {
     render_bundle_with(root, &mut UiState::new(), viewport, library_marker)
 }
 
@@ -83,7 +79,13 @@ pub fn render_bundle_with(
     let tree_dump = inspect::dump_tree(root, ui_state);
     let shader_manifest = manifest::shader_manifest(&draw_ops);
     let lint = lint(root, ui_state, library_marker);
-    Bundle { svg, tree_dump, draw_ops, shader_manifest, lint }
+    Bundle {
+        svg,
+        tree_dump,
+        draw_ops,
+        shader_manifest,
+        lint,
+    }
 }
 
 /// Write a bundle to disk under `dir`, naming files `{name}.{ext}`.
@@ -94,7 +96,11 @@ pub fn render_bundle_with(
 /// - `{name}.draw_ops.txt`
 /// - `{name}.shader_manifest.txt`
 /// - `{name}.lint.txt`
-pub fn write_bundle(bundle: &Bundle, dir: &Path, name: &str) -> std::io::Result<Vec<std::path::PathBuf>> {
+pub fn write_bundle(
+    bundle: &Bundle,
+    dir: &Path,
+    name: &str,
+) -> std::io::Result<Vec<std::path::PathBuf>> {
     std::fs::create_dir_all(dir)?;
     let mut written = Vec::new();
 

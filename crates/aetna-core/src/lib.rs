@@ -52,61 +52,58 @@
 //!                          └─ svg         (approximate fallback)
 //! ```
 
-pub mod tokens;
-pub mod tree;
-pub mod style;
-pub mod layout;
-pub mod shader;
-pub mod ir;
-pub mod draw_ops;
 pub mod anim;
+pub mod bundle;
+pub mod draw_ops;
 pub mod event;
-pub mod state;
-pub mod hit_test;
 pub mod focus;
-pub mod text_metrics;
-pub mod svg;
+pub mod hit_test;
 pub mod inspect;
+pub mod ir;
+pub mod layout;
 pub mod lint;
 pub mod manifest;
-pub mod bundle;
+pub mod shader;
+pub mod state;
+pub mod style;
+pub mod svg;
+pub mod text_metrics;
+pub mod tokens;
+pub mod tree;
 
-pub mod text;
-pub mod button;
 pub mod badge;
+pub mod button;
 pub mod card;
 pub mod overlay;
+pub mod text;
 
 // Prelude — for `use aetna_core::*;`.
-pub use tree::{
-    El, Kind, Color, Size, Sides, Rect, Axis, Align, Justify, FontWeight,
-    InteractionState, Source, TextAlign, TextWrap,
-    column, row, scroll, stack, spacer, divider,
-};
-pub use style::StyleProfile;
-pub use layout::layout;
-pub use shader::{ShaderHandle, StockShader, ShaderBinding, UniformBlock, UniformValue};
-pub use ir::{DrawOp, TextAnchor};
-pub use draw_ops::draw_ops;
 pub use anim::{AnimProp, AnimValue, Animation, SpringConfig, Timing, TweenConfig};
-pub use event::{
-    App, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget,
-};
-pub use state::{AnimationMode, UiState};
-pub use hit_test::{hit_test, hit_test_target};
-pub use focus::focus_order;
-pub use text_metrics::{
-    line_height, line_width, layout_text, measure_text, wrap_lines, MeasuredText, TextLayout,
-    TextLine,
-};
-pub use svg::svg_from_ops;
-pub use inspect::dump_tree;
-pub use lint::{LintReport, Finding, FindingKind, lint};
-pub use manifest::{shader_manifest, draw_ops_text};
 pub use bundle::{Bundle, render_bundle, render_bundle_with, write_bundle};
+pub use draw_ops::draw_ops;
+pub use event::{App, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget};
+pub use focus::focus_order;
+pub use hit_test::{hit_test, hit_test_target};
+pub use inspect::dump_tree;
+pub use ir::{DrawOp, TextAnchor};
+pub use layout::layout;
+pub use lint::{Finding, FindingKind, LintReport, lint};
+pub use manifest::{draw_ops_text, shader_manifest};
+pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
+pub use state::{AnimationMode, UiState};
+pub use style::StyleProfile;
+pub use svg::svg_from_ops;
+pub use text_metrics::{
+    MeasuredText, TextLayout, TextLine, layout_text, line_height, line_width, measure_text,
+    wrap_lines,
+};
+pub use tree::{
+    Align, Axis, Color, El, FontWeight, InteractionState, Justify, Kind, Rect, Sides, Size, Source,
+    TextAlign, TextWrap, column, divider, row, scroll, spacer, stack,
+};
 
-pub use text::{text, paragraph, h1, h2, h3, mono};
-pub use button::button;
 pub use badge::badge;
+pub use button::button;
 pub use card::card;
 pub use overlay::{modal, modal_panel, overlay, scrim};
+pub use text::{h1, h2, h3, mono, paragraph, text};

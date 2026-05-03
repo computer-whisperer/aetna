@@ -17,29 +17,46 @@ use aetna_wgpu::Runner;
 fn settings() -> El {
     column([
         h1("Settings"),
-        card("Account", [
-            row([text("Email"), spacer(), text("user@example.com").muted()]),
-            row([text("Two-factor authentication"), spacer(), badge("Enabled").success()]),
-            row([text("Recovery codes"), spacer(), button("Generate").secondary()]),
-        ]),
-        card("Appearance", [
-            row([text("Theme"), spacer(), button("Dark").secondary()]),
-            row([text("Compact mode"), spacer(), badge("Off").muted()]),
-            row([text("Font size"), spacer(), text("14")]),
-        ]),
-        card("Danger zone", [
-            row([
+        card(
+            "Account",
+            [
+                row([text("Email"), spacer(), text("user@example.com").muted()]),
+                row([
+                    text("Two-factor authentication"),
+                    spacer(),
+                    badge("Enabled").success(),
+                ]),
+                row([
+                    text("Recovery codes"),
+                    spacer(),
+                    button("Generate").secondary(),
+                ]),
+            ],
+        ),
+        card(
+            "Appearance",
+            [
+                row([text("Theme"), spacer(), button("Dark").secondary()]),
+                row([text("Compact mode"), spacer(), badge("Off").muted()]),
+                row([text("Font size"), spacer(), text("14")]),
+            ],
+        ),
+        card(
+            "Danger zone",
+            [row([
                 column([
                     text("Delete account").bold(),
-                    text("Permanently remove your account and all data.").muted().small(),
+                    text("Permanently remove your account and all data.")
+                        .muted()
+                        .small(),
                 ])
                 .gap(tokens::SPACE_XS)
                 .align(Align::Start)
                 .width(Size::Hug),
                 spacer(),
                 button("Delete").destructive(),
-            ]),
-        ]),
+            ])],
+        ),
         row([spacer(), button("Cancel").ghost(), button("Save").primary()]),
     ])
     .gap(tokens::SPACE_LG)
@@ -62,7 +79,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }))
     .ok_or("no compatible adapter (try installing vulkan / mesa drivers)")?;
 
-    println!("adapter: {:?} ({:?})", adapter.get_info().name, adapter.get_info().backend);
+    println!(
+        "adapter: {:?} ({:?})",
+        adapter.get_info().name,
+        adapter.get_info().backend
+    );
 
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
@@ -77,7 +98,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("aetna_demo::headless::target"),
-        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -140,7 +165,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rows_per_image: Some(height),
             },
         },
-        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
 
@@ -164,8 +193,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     readback_buf.unmap();
 
     // Write the PNG.
-    let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("out");
+    let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     std::fs::create_dir_all(&out_dir)?;
     let out = out_dir.join("settings.wgpu.png");
     let file = std::fs::File::create(&out)?;
@@ -190,5 +218,9 @@ fn bg_color() -> wgpu::Color {
 }
 
 fn srgb_to_linear(c: f64) -> f64 {
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
 }

@@ -79,7 +79,10 @@ impl<A: App> ApplicationHandler for Host<A> {
         }
         let attrs = Window::default_attributes()
             .with_title(self.title)
-            .with_inner_size(PhysicalSize::new(self.viewport.w as u32, self.viewport.h as u32));
+            .with_inner_size(PhysicalSize::new(
+                self.viewport.w as u32,
+                self.viewport.h as u32,
+            ));
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
@@ -127,7 +130,14 @@ impl<A: App> ApplicationHandler for Host<A> {
 
         let renderer = Runner::new(&device, &queue, format);
 
-        self.gfx = Some(Gfx { window, surface, device, queue, config, renderer });
+        self.gfx = Some(Gfx {
+            window,
+            surface,
+            device,
+            queue,
+            config,
+            renderer,
+        });
         self.gfx.as_ref().unwrap().window.request_redraw();
     }
 
@@ -159,8 +169,14 @@ impl<A: App> ApplicationHandler for Host<A> {
                 gfx.window.request_redraw();
             }
 
-            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
-                let Some((lx, ly)) = self.last_pointer else { return };
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let Some((lx, ly)) = self.last_pointer else {
+                    return;
+                };
                 match state {
                     ElementState::Pressed => {
                         gfx.renderer.pointer_down(lx, ly);
@@ -176,7 +192,9 @@ impl<A: App> ApplicationHandler for Host<A> {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let Some((lx, ly)) = self.last_pointer else { return };
+                let Some((lx, ly)) = self.last_pointer else {
+                    return;
+                };
                 // Convert wheel ticks to logical pixels. Line-based
                 // deltas come from notched mouse wheels; pixel-based
                 // from trackpads. ~50 px/line matches typical OS feel.
@@ -193,10 +211,16 @@ impl<A: App> ApplicationHandler for Host<A> {
                 self.modifiers = key_modifiers(modifiers.state());
             }
 
-            WindowEvent::KeyboardInput { event, is_synthetic: false, .. } => {
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic: false,
+                ..
+            } => {
                 if event.state == ElementState::Pressed {
                     if let Some(key) = map_key(&event.logical_key) {
-                        if let Some(event) = gfx.renderer.key_down(key, self.modifiers, event.repeat) {
+                        if let Some(event) =
+                            gfx.renderer.key_down(key, self.modifiers, event.repeat)
+                        {
                             self.app.on_event(event);
                         }
                         gfx.window.request_redraw();
@@ -216,7 +240,9 @@ impl<A: App> ApplicationHandler for Host<A> {
                         return;
                     }
                 };
-                let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let view = frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
 
                 let mut tree = self.app.build();
                 // Snapshot hotkeys alongside build() so the chord list
@@ -240,9 +266,11 @@ impl<A: App> ApplicationHandler for Host<A> {
                     scale_factor,
                 );
 
-                let mut encoder = gfx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("aetna_demo::encoder"),
-                });
+                let mut encoder =
+                    gfx.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("aetna_demo::encoder"),
+                        });
                 {
                     let bg = bg_color();
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
