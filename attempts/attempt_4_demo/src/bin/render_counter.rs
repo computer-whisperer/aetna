@@ -34,6 +34,7 @@ impl App for Counter {
             } else {
                 format!("You have clicked +/− a net {} times.", self.value)
             })
+            .center_text()
             .muted(),
         ])
         .gap(tokens::SPACE_LG)

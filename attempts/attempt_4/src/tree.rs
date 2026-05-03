@@ -151,6 +151,14 @@ pub enum FontWeight {
     Bold,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TextAlign {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
 /// A color (RGBA8) optionally tagged with the theme token it came from.
 ///
 /// Token name has no effect on rendering — it's metadata for inspection,
@@ -298,6 +306,7 @@ pub struct El {
     // Text
     pub text: Option<String>,
     pub text_color: Option<Color>,
+    pub text_align: TextAlign,
     pub font_size: f32,
     pub font_weight: FontWeight,
     pub font_mono: bool,
@@ -336,6 +345,7 @@ impl Default for El {
             shader_override: None,
             text: None,
             text_color: None,
+            text_align: TextAlign::Start,
             font_size: crate::tokens::FONT_BASE,
             font_weight: FontWeight::Regular,
             font_mono: false,
@@ -408,6 +418,9 @@ impl El {
     // ---- Text-bearing ----
     pub fn text(mut self, t: impl Into<String>) -> Self { self.text = Some(t.into()); self }
     pub fn text_color(mut self, c: Color) -> Self { self.text_color = Some(c); self }
+    pub fn text_align(mut self, align: TextAlign) -> Self { self.text_align = align; self }
+    pub fn center_text(self) -> Self { self.text_align(TextAlign::Center) }
+    pub fn end_text(self) -> Self { self.text_align(TextAlign::End) }
     pub fn font_size(mut self, s: f32) -> Self { self.font_size = s; self }
     pub fn font_weight(mut self, w: FontWeight) -> Self { self.font_weight = w; self }
     pub fn mono(mut self) -> Self { self.font_mono = true; self }

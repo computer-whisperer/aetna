@@ -94,7 +94,11 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>, inherited_scissor: Option<Rect>) {
         };
         let anchor = match n.kind {
             Kind::Button | Kind::Badge => TextAnchor::Middle,
-            _ => TextAnchor::Start,
+            _ => match n.text_align {
+                TextAlign::Start => TextAnchor::Start,
+                TextAlign::Center => TextAnchor::Middle,
+                TextAlign::End => TextAnchor::End,
+            },
         };
         out.push(DrawOp::GlyphRun {
             id: n.computed_id.clone(),
@@ -197,5 +201,17 @@ mod tests {
             panic!("expected button surface quad");
         };
         assert_eq!(*scissor, Some(Rect::new(0.0, 0.0, 120.0, 36.0)));
+    }
+
+    #[test]
+    fn text_align_center_emits_middle_anchor() {
+        let mut root = crate::text("Centered").center_text();
+        crate::layout::layout(&mut root, Rect::new(0.0, 0.0, 200.0, 80.0));
+
+        let ops = draw_ops(&root);
+        let DrawOp::GlyphRun { anchor, .. } = &ops[0] else {
+            panic!("expected glyph run");
+        };
+        assert_eq!(*anchor, TextAnchor::Middle);
     }
 }
