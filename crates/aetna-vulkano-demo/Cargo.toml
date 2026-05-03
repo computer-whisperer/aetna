@@ -1,0 +1,15 @@
+[package]
+name = "aetna-vulkano-demo"
+version = "0.1.0"
+edition = "2024"
+description = "Aetna — vulkano native winit harness + demo binaries"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+# Binaries auto-discovered from `src/bin/*.rs`.
+
+[dependencies]
+aetna-core = { path = "../aetna-core" }
+aetna-vulkano = { path = "../aetna-vulkano" }
