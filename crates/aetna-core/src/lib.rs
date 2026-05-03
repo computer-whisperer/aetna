@@ -98,7 +98,7 @@ pub use svg::svg_from_ops;
 pub use inspect::dump_tree;
 pub use lint::{LintReport, Finding, FindingKind, lint};
 pub use manifest::{shader_manifest, draw_ops_text};
-pub use bundle::{Bundle, render_bundle, write_bundle};
+pub use bundle::{Bundle, render_bundle, render_bundle_with, write_bundle};
 
 pub use text::{text, paragraph, h1, h2, h3, mono};
 pub use button::button;

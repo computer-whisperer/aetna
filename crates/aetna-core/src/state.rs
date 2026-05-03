@@ -117,6 +117,19 @@ impl UiState {
             .unwrap_or(0.0)
     }
 
+    /// Seed or read the persistent scroll offset for `id`. Use this to
+    /// pre-position a scroll viewport before [`crate::layout::layout`]
+    /// runs (call [`crate::layout::assign_ids`] first to populate the
+    /// node's `computed_id`).
+    pub fn set_scroll_offset(&mut self, id: impl Into<String>, value: f32) {
+        self.scroll_offsets.insert(id.into(), value);
+    }
+
+    /// Read the current scroll offset for `id`. Defaults to `0.0`.
+    pub fn scroll_offset(&self, id: &str) -> f32 {
+        self.scroll_offsets.get(id).copied().unwrap_or(0.0)
+    }
+
     /// Rebuild [`Self::node_states`] from the current focused/pressed/
     /// hovered trackers. Press wins over Focus on a same-node match;
     /// Hover only applies when the node isn't already pressed or focused.

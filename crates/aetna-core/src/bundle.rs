@@ -52,19 +52,37 @@ pub struct Bundle {
 /// inside library defaults. Pass `None` to see everything.
 ///
 /// Constructs a fresh [`UiState`] internally — bundle artifacts are a
-/// snapshot of the tree at rest, with no hover/press/focus state.
+/// snapshot of the tree at rest, with no hover/press/focus state. For
+/// fixtures that need to demonstrate non-trivial state (a scroll
+/// position, a hovered button), see [`render_bundle_with`].
 pub fn render_bundle(
     root: &mut El,
     viewport: Rect,
     library_marker: Option<&str>,
 ) -> Bundle {
-    let mut ui_state = UiState::new();
-    layout::layout(root, &mut ui_state, viewport);
-    let draw_ops = draw_ops::draw_ops(root, &ui_state);
+    render_bundle_with(root, &mut UiState::new(), viewport, library_marker)
+}
+
+/// Same as [`render_bundle`], but threads a caller-built [`UiState`]
+/// through the pipeline. Use this when the fixture wants to seed
+/// runtime state (scroll offsets, hovered/focused trackers) before
+/// snapshotting — the layout pass reads it, and the resulting bundle
+/// reflects the seeded state.
+///
+/// Seed scroll offsets by calling [`crate::layout::assign_ids`] first
+/// to populate `computed_id`, then inserting into `ui_state.scroll_offsets`.
+pub fn render_bundle_with(
+    root: &mut El,
+    ui_state: &mut UiState,
+    viewport: Rect,
+    library_marker: Option<&str>,
+) -> Bundle {
+    layout::layout(root, ui_state, viewport);
+    let draw_ops = draw_ops::draw_ops(root, ui_state);
     let svg = svg_from_ops(viewport.w, viewport.h, &draw_ops, tokens::BG_APP);
-    let tree_dump = inspect::dump_tree(root, &ui_state);
+    let tree_dump = inspect::dump_tree(root, ui_state);
     let shader_manifest = manifest::shader_manifest(&draw_ops);
-    let lint = lint(root, &ui_state, library_marker);
+    let lint = lint(root, ui_state, library_marker);
     Bundle { svg, tree_dump, draw_ops, shader_manifest, lint }
 }
 
