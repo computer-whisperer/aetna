@@ -7,3 +7,13 @@ license = "MIT OR Apache-2.0"
 
 [lib]
 path = "src/lib.rs"
+
+# Binaries auto-discovered from `src/bin/*.rs`.
+
+[dependencies]
+aetna-core = { path = "../aetna-core" }
+aetna-wgpu = { path = "../aetna-wgpu" }
+wgpu = "23"
+winit = "0.30"
+pollster = "0.4"
+png = "0.17"
