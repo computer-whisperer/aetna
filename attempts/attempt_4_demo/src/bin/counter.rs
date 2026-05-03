@@ -6,8 +6,9 @@
 //! applied automatically by the library; the author never writes
 //! `.hovered()` or `.pressed()`.
 //!
-//! Mouse over a button — it lightens. Press it — it darkens. Release —
-//! the count updates. That's the entire round-trip:
+//! Mouse over a button — it lightens. Press it — it darkens. Release or
+//! press Enter/Space while focused — the count updates. That's the
+//! entire round-trip:
 //!
 //! ```text
 //! pointer event ─▶ winit ─▶ host runner ─▶ ui.pointer_*()
@@ -58,9 +59,9 @@ impl App for Counter {
 
     fn on_event(&mut self, event: UiEvent) {
         match (event.kind, event.key.as_deref()) {
-            (UiEventKind::Click, Some("inc")) => self.value += 1,
-            (UiEventKind::Click, Some("dec")) => self.value -= 1,
-            (UiEventKind::Click, Some("reset")) => self.value = 0,
+            (UiEventKind::Click | UiEventKind::Activate, Some("inc")) => self.value += 1,
+            (UiEventKind::Click | UiEventKind::Activate, Some("dec")) => self.value -= 1,
+            (UiEventKind::Click | UiEventKind::Activate, Some("reset")) => self.value = 0,
             _ => {}
         }
     }

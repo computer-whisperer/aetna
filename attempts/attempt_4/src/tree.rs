@@ -262,6 +262,7 @@ pub struct El {
     pub state: InteractionState,
     pub key: Option<String>,
     pub block_pointer: bool,
+    pub focusable: bool,
     pub source: Source,
 
     // Layout
@@ -317,6 +318,7 @@ impl Default for El {
             state: InteractionState::Default,
             key: None,
             block_pointer: false,
+            focusable: false,
             source: Source::default(),
             axis: Axis::Overlay,
             gap: 0.0,
@@ -350,6 +352,7 @@ impl El {
     // ---- Identity / source ----
     pub fn key(mut self, k: impl Into<String>) -> Self { self.key = Some(k.into()); self }
     pub fn block_pointer(mut self) -> Self { self.block_pointer = true; self }
+    pub fn focusable(mut self) -> Self { self.focusable = true; self }
     pub fn at(mut self, file: &'static str, line: u32) -> Self {
         self.source = Source { file, line };
         self

@@ -24,6 +24,7 @@ pub fn button(label: impl Into<String>) -> El {
     El::new(Kind::Button)
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Solid)
+        .focusable()
         .text(label)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)

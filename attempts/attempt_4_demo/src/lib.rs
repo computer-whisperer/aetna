@@ -12,20 +12,19 @@
 //!   visuals automatically before paint.
 //! - Routes `winit` pointer events through the renderer's hit-tester
 //!   and dispatches `Click` events back via `App::on_event`.
+//! - Routes Tab/Shift-Tab through focus traversal and Enter/Space/Escape
+//!   through keyboard events.
 //! - Requests a redraw whenever interaction state changes (mouse move,
 //!   button down/up) so hover/press visuals are immediate.
-//!
-//! Keyboard events, scrolling, and focus traversal are not yet wired —
-//! they're the next slice. The architecture is intentionally
-//! event-pump-shaped so adding them is non-breaking.
 
 use std::sync::Arc;
 
-use attempt_4::{App, Rect, UiRenderer};
+use attempt_4::{App, KeyModifiers, Rect, UiKey, UiRenderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 /// Run a windowed app. Blocks until the user closes the window.
@@ -45,6 +44,7 @@ pub fn run<A: App + 'static>(
         app,
         gfx: None,
         last_pointer: None,
+        modifiers: KeyModifiers::default(),
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -58,6 +58,7 @@ struct Host<A: App> {
     /// Last pointer position in logical pixels (winit reports physical;
     /// we divide by the window's scale factor before storing).
     last_pointer: Option<(f32, f32)>,
+    modifiers: KeyModifiers,
 }
 
 struct Gfx {
@@ -172,6 +173,21 @@ impl<A: App> ApplicationHandler for Host<A> {
                 }
             }
 
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = key_modifiers(modifiers.state());
+            }
+
+            WindowEvent::KeyboardInput { event, is_synthetic: false, .. } => {
+                if event.state == ElementState::Pressed {
+                    if let Some(key) = map_key(&event.logical_key) {
+                        if let Some(event) = gfx.renderer.key_down(key, self.modifiers, event.repeat) {
+                            self.app.on_event(event);
+                        }
+                        gfx.window.request_redraw();
+                    }
+                }
+            }
+
             WindowEvent::RedrawRequested => {
                 let frame = match gfx.surface.get_current_texture() {
                     Ok(f) => f,
@@ -224,6 +240,31 @@ impl<A: App> ApplicationHandler for Host<A> {
             }
             _ => {}
         }
+    }
+}
+
+fn map_key(key: &Key) -> Option<UiKey> {
+    match key {
+        Key::Named(NamedKey::Enter) => Some(UiKey::Enter),
+        Key::Named(NamedKey::Escape) => Some(UiKey::Escape),
+        Key::Named(NamedKey::Tab) => Some(UiKey::Tab),
+        Key::Named(NamedKey::Space) => Some(UiKey::Space),
+        Key::Named(NamedKey::ArrowUp) => Some(UiKey::ArrowUp),
+        Key::Named(NamedKey::ArrowDown) => Some(UiKey::ArrowDown),
+        Key::Named(NamedKey::ArrowLeft) => Some(UiKey::ArrowLeft),
+        Key::Named(NamedKey::ArrowRight) => Some(UiKey::ArrowRight),
+        Key::Character(s) => Some(UiKey::Character(s.to_string())),
+        Key::Named(named) => Some(UiKey::Other(format!("{named:?}"))),
+        _ => None,
+    }
+}
+
+fn key_modifiers(mods: winit::keyboard::ModifiersState) -> KeyModifiers {
+    KeyModifiers {
+        shift: mods.shift_key(),
+        ctrl: mods.control_key(),
+        alt: mods.alt_key(),
+        logo: mods.super_key(),
     }
 }
 

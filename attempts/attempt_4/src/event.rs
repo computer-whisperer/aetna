@@ -49,14 +49,15 @@
 //! darken on press) flow through the existing `draw_ops::apply_state`
 //! path.
 //!
-//! # Limits in v0.2
+//! # Limits in v0.4
 //!
-//! - Click only — no double-click, drag, scroll, key events. `UiEventKind`
-//!   is an enum so adding more variants is non-breaking.
+//! - Click, focus traversal, activation, and key-down routing only — no
+//!   double-click, drag, or scroll events yet. `UiEventKind` is an enum
+//!   so adding more variants is non-breaking.
 //! - Hit-testing returns the topmost keyed node. Nodes without a key
 //!   are transparent to events.
-//! - No focus traversal yet (Tab/Shift-Tab). Click can become a focus
-//!   source later.
+//! - Focus traversal is linear through focusable keyed nodes. Rich
+//!   composites can layer roving focus on top later.
 
 use crate::tree::{El, InteractionState, Rect};
 
@@ -67,6 +68,38 @@ pub struct UiTarget {
     pub key: String,
     pub node_id: String,
     pub rect: Rect,
+}
+
+/// Keyboard key values normalized by the core library. This keeps
+/// `attempt_4` independent from host/windowing crates while covering the
+/// navigation and activation keys the library owns.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UiKey {
+    Enter,
+    Escape,
+    Tab,
+    Space,
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    Character(String),
+    Other(String),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KeyModifiers {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub logo: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyPress {
+    pub key: UiKey,
+    pub modifiers: KeyModifiers,
+    pub repeat: bool,
 }
 
 /// User-facing event. The host's [`App::on_event`] receives one of these
@@ -81,6 +114,8 @@ pub struct UiEvent {
     pub target: Option<UiTarget>,
     /// Pointer position in logical pixels when the event was emitted.
     pub pointer: Option<(f32, f32)>,
+    /// Keyboard payload for key events.
+    pub key_press: Option<KeyPress>,
     pub kind: UiEventKind,
 }
 
@@ -90,6 +125,13 @@ pub struct UiEvent {
 pub enum UiEventKind {
     /// Pointer down + up landed on the same node.
     Click,
+    /// Focused element was activated by keyboard (Enter/Space).
+    Activate,
+    /// Escape was pressed. Routed to the focused element when present,
+    /// otherwise emitted as a window-level event.
+    Escape,
+    /// Other keyboard input.
+    KeyDown,
 }
 
 /// The application contract. Implement this on your state struct and
@@ -119,6 +161,8 @@ pub struct UiState {
     pub pointer_pos: Option<(f32, f32)>,
     pub hovered: Option<UiTarget>,
     pub pressed: Option<UiTarget>,
+    pub focused: Option<UiTarget>,
+    focus_order: Vec<UiTarget>,
 }
 
 impl UiState {
@@ -129,15 +173,106 @@ impl UiState {
     /// Walk the tree and set `state` on nodes whose keys match the
     /// current hovered/pressed trackers. Press wins over hover.
     pub fn apply_to_tree(&self, root: &mut El) {
+        if let Some(target) = &self.focused {
+            set_state_for_target(root, target, InteractionState::Focus);
+        }
         if let Some(target) = &self.pressed {
             set_state_for_target(root, target, InteractionState::Press);
         }
         if let Some(target) = &self.hovered {
             // Don't overwrite a press visual if both happen to match.
-            if self.pressed.as_ref().map(|p| p.node_id.as_str()) != Some(target.node_id.as_str()) {
+            if self.pressed.as_ref().map(|p| p.node_id.as_str()) != Some(target.node_id.as_str())
+                && self.focused.as_ref().map(|p| p.node_id.as_str())
+                    != Some(target.node_id.as_str())
+            {
                 set_state_for_target(root, target, InteractionState::Hover);
             }
         }
+    }
+
+    pub fn sync_focus_order(&mut self, root: &El) {
+        self.focus_order = focus_order(root);
+        if let Some(focused) = &self.focused {
+            if let Some(current) = self
+                .focus_order
+                .iter()
+                .find(|t| t.node_id == focused.node_id)
+            {
+                self.focused = Some(current.clone());
+                return;
+            }
+            self.focused = None;
+        }
+    }
+
+    pub fn set_focus(&mut self, target: Option<UiTarget>) {
+        if let Some(target) =
+            target.filter(|t| self.focus_order.iter().any(|f| f.node_id == t.node_id))
+        {
+            self.focused = Some(target);
+        }
+    }
+
+    pub fn focus_next(&mut self) -> Option<&UiTarget> {
+        self.move_focus(1)
+    }
+
+    pub fn focus_prev(&mut self) -> Option<&UiTarget> {
+        self.move_focus(-1)
+    }
+
+    pub fn key_down(
+        &mut self,
+        key: UiKey,
+        modifiers: KeyModifiers,
+        repeat: bool,
+    ) -> Option<UiEvent> {
+        if matches!(key, UiKey::Tab) {
+            if modifiers.shift {
+                self.focus_prev();
+            } else {
+                self.focus_next();
+            }
+            return None;
+        }
+
+        let target = self.focused.clone();
+        let kind = match (&key, target.is_some()) {
+            (UiKey::Enter | UiKey::Space, true) => UiEventKind::Activate,
+            (UiKey::Escape, _) => UiEventKind::Escape,
+            _ => UiEventKind::KeyDown,
+        };
+        Some(UiEvent {
+            key: target.as_ref().map(|t| t.key.clone()),
+            target,
+            pointer: None,
+            key_press: Some(KeyPress {
+                key,
+                modifiers,
+                repeat,
+            }),
+            kind,
+        })
+    }
+
+    fn move_focus(&mut self, delta: isize) -> Option<&UiTarget> {
+        if self.focus_order.is_empty() {
+            self.focused = None;
+            return None;
+        }
+        let current = self.focused.as_ref().and_then(|target| {
+            self.focus_order
+                .iter()
+                .position(|t| t.node_id == target.node_id)
+        });
+        let len = self.focus_order.len() as isize;
+        let next = match current {
+            Some(current) => (current as isize + delta).rem_euclid(len) as usize,
+            None if delta < 0 => self.focus_order.len() - 1,
+            None => 0,
+        };
+        self.focused = Some(self.focus_order[next].clone());
+        self.focused.as_ref()
     }
 }
 
@@ -160,6 +295,43 @@ pub fn hit_test_target(root: &El, point: (f32, f32)) -> Option<UiTarget> {
     }
 }
 
+pub fn focus_order(root: &El) -> Vec<UiTarget> {
+    let mut out = Vec::new();
+    collect_focus(root, None, &mut out);
+    out
+}
+
+fn collect_focus(node: &El, inherited_clip: Option<Rect>, out: &mut Vec<UiTarget>) {
+    let clip = if node.clip {
+        match inherited_clip {
+            Some(clip) => Some(
+                clip.intersect(node.computed)
+                    .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+            ),
+            None => Some(node.computed),
+        }
+    } else {
+        inherited_clip
+    };
+    if node.focusable {
+        if let Some(key) = &node.key {
+            if clip
+                .map(|c| c.intersect(node.computed).is_some())
+                .unwrap_or(true)
+            {
+                out.push(UiTarget {
+                    key: key.clone(),
+                    node_id: node.computed_id.clone(),
+                    rect: node.computed,
+                });
+            }
+        }
+    }
+    for child in &node.children {
+        collect_focus(child, clip, out);
+    }
+}
+
 enum Hit {
     Target(UiTarget),
     Blocked,
@@ -167,10 +339,10 @@ enum Hit {
 }
 
 fn hit_test_rec(node: &El, point: (f32, f32), inherited_clip: Option<Rect>) -> Hit {
-    if let Some(clip) = inherited_clip
-        && !clip.contains(point.0, point.1)
-    {
-        return Hit::Miss;
+    if let Some(clip) = inherited_clip {
+        if !clip.contains(point.0, point.1) {
+            return Hit::Miss;
+        }
     }
     if !node.computed.contains(point.0, point.1) {
         return Hit::Miss;
@@ -277,6 +449,8 @@ mod tests {
             pointer_pos: None,
             hovered: Some(target(&tree, "inc")),
             pressed: None,
+            focused: None,
+            focus_order: Vec::new(),
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Hover));
@@ -290,6 +464,8 @@ mod tests {
             pointer_pos: None,
             hovered: Some(target(&tree, "inc")),
             pressed: Some(target(&tree, "inc")),
+            focused: None,
+            focus_order: Vec::new(),
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Press));
@@ -312,7 +488,9 @@ mod tests {
     #[test]
     fn unkeyed_blocking_node_stops_fallthrough() {
         let mut tree = stack([
-            El::new(Kind::Scrim).key("dismiss").fill(crate::tokens::OVERLAY_SCRIM),
+            El::new(Kind::Scrim)
+                .key("dismiss")
+                .fill(crate::tokens::OVERLAY_SCRIM),
             El::new(Kind::Modal)
                 .block_pointer()
                 .width(Size::Fixed(100.0))
@@ -324,6 +502,102 @@ mod tests {
 
         assert!(hit_test(&tree, (150.0, 150.0)).is_none());
         assert_eq!(hit_test(&tree, (10.0, 10.0)).as_deref(), Some("dismiss"));
+    }
+
+    #[test]
+    fn focus_order_collects_keyed_focusable_nodes() {
+        let tree = lay_out_counter();
+        let order = focus_order(&tree);
+        let keys: Vec<&str> = order.iter().map(|t| t.key.as_str()).collect();
+        assert_eq!(keys, vec!["dec", "inc"]);
+    }
+
+    #[test]
+    fn sync_focus_order_preserves_existing_focus_by_node_id() {
+        let tree = lay_out_counter();
+        let mut state = UiState::new();
+        state.sync_focus_order(&tree);
+        assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), None);
+        state.focus_next();
+        assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("dec"));
+        state.focus_next();
+        assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("inc"));
+
+        let rebuilt = lay_out_counter();
+        state.sync_focus_order(&rebuilt);
+        assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("inc"));
+    }
+
+    #[test]
+    fn shift_tab_moves_focus_backward() {
+        let tree = lay_out_counter();
+        let mut state = UiState::new();
+        state.sync_focus_order(&tree);
+        state.focus_prev();
+        assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("inc"));
+    }
+
+    #[test]
+    fn enter_key_activates_focused_target() {
+        let tree = lay_out_counter();
+        let mut state = UiState::new();
+        state.sync_focus_order(&tree);
+        state.focus_next();
+        state.focus_next();
+
+        let event = state
+            .key_down(UiKey::Enter, KeyModifiers::default(), false)
+            .expect("activation event");
+
+        assert_eq!(event.kind, UiEventKind::Activate);
+        assert_eq!(event.key.as_deref(), Some("inc"));
+        assert!(matches!(
+            event.key_press.as_ref().map(|p| &p.key),
+            Some(UiKey::Enter)
+        ));
+    }
+
+    #[test]
+    fn enter_without_focus_is_key_down() {
+        let tree = lay_out_counter();
+        let mut state = UiState::new();
+        state.sync_focus_order(&tree);
+
+        let event = state
+            .key_down(UiKey::Enter, KeyModifiers::default(), false)
+            .expect("key event");
+
+        assert_eq!(event.kind, UiEventKind::KeyDown);
+        assert_eq!(event.key, None);
+    }
+
+    #[test]
+    fn tab_changes_focus_without_app_event() {
+        let tree = lay_out_counter();
+        let mut state = UiState::new();
+        state.sync_focus_order(&tree);
+
+        assert!(
+            state
+                .key_down(UiKey::Tab, KeyModifiers::default(), false)
+                .is_none()
+        );
+        assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("dec"));
+    }
+
+    #[test]
+    fn stale_focus_clears_on_rebuild() {
+        let tree = lay_out_counter();
+        let mut state = UiState::new();
+        state.focused = Some(UiTarget {
+            key: "gone".into(),
+            node_id: "root.missing".into(),
+            rect: Rect::default(),
+        });
+
+        state.sync_focus_order(&tree);
+
+        assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), None);
     }
 
     fn find_rect(node: &El, key: &str) -> Option<Rect> {

@@ -67,7 +67,7 @@ use glyphon::{
 use wgpu::util::DeviceExt;
 
 use crate::draw_ops;
-use crate::event::{self, UiEvent, UiEventKind, UiState};
+use crate::event::{self, KeyModifiers, UiEvent, UiEventKind, UiKey, UiState};
 use crate::ir::{DrawOp, TextAnchor};
 use crate::layout;
 use crate::shader::{ShaderHandle, StockShader, UniformValue};
@@ -341,12 +341,11 @@ impl UiRenderer {
         viewport: Rect,
         scale_factor: f32,
     ) {
-        // Apply UI-state visual deltas (hover/press) before layout, so
-        // they're visible this frame. Layout doesn't depend on state;
-        // draw_ops does (via apply_state) and reads the modified `state`.
-        self.ui_state.apply_to_tree(root);
-
         layout::layout(root, viewport);
+        self.ui_state.sync_focus_order(root);
+        // Apply UI-state visual deltas after layout, so focus targets can
+        // survive rebuilds by node id and update their current rect.
+        self.ui_state.apply_to_tree(root);
         let ops = draw_ops::draw_ops(root);
 
         self.viewport_px = (
@@ -567,6 +566,7 @@ impl UiRenderer {
             .last_tree
             .as_ref()
             .and_then(|t| event::hit_test_target(t, (x, y)));
+        self.ui_state.set_focus(hit.clone());
         self.ui_state.pressed = hit;
     }
 
@@ -584,10 +584,20 @@ impl UiRenderer {
                 key: Some(p.key.clone()),
                 target: Some(p),
                 pointer: Some((x, y)),
+                key_press: None,
                 kind: UiEventKind::Click,
             }),
             _ => None,
         }
+    }
+
+    pub fn key_down(
+        &mut self,
+        key: UiKey,
+        modifiers: KeyModifiers,
+        repeat: bool,
+    ) -> Option<UiEvent> {
+        self.ui_state.key_down(key, modifiers, repeat)
     }
 
     /// Record draws into the host-managed render pass. Call after
