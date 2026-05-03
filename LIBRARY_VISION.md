@@ -52,7 +52,7 @@ The library does not own the device, queue, swapchain, or the larger render flow
 
 No DSL surface is required. No "library opens a hole; host paints into it" inversion is required. The library inserts into the host's render pass; the host can record any other draws into the same encoder. This is what polychora does to bake egui meshes into its own pass, and what volumetric does via egui's `PaintCallback`. We just have to not stand in the way.
 
-If a future need surfaces (e.g., a stable accessor for "give me the rect of node `key`"), it lands as a small public method on `UiRenderer`, not as a designed escape hatch.
+The public surface is intentionally small: after layout, hosts can ask for a keyed region via `UiState::rect_of_key(root, key)` or `Runner::rect_of_key(key)`. That gives the host the rectangle without creating a third escape hatch.
 
 ## What the library owns vs. doesn't
 

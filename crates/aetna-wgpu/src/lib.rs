@@ -288,6 +288,18 @@ impl Runner {
         &self.ui_state
     }
 
+    /// Return the most recently laid-out rectangle for a keyed node.
+    ///
+    /// Call after [`Self::prepare`]. This is the host-composition hook:
+    /// reserve a keyed Aetna element in the UI tree, ask for its rect
+    /// here, then record host-owned rendering into that region using the
+    /// same encoder / render flow that surrounds Aetna's pass.
+    pub fn rect_of_key(&self, key: &str) -> Option<Rect> {
+        self.last_tree
+            .as_ref()
+            .and_then(|tree| self.ui_state.rect_of_key(tree, key))
+    }
+
     /// Lay out the tree, resolve to draw ops, and upload per-frame
     /// buffers (quad instances + glyph atlas). Must be called before
     /// [`Self::draw`] and outside of any render pass.

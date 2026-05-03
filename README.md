@@ -33,6 +33,7 @@ The architectural decision v5.0 settled: `El` is the author's description of the
 | HiDPI text + paragraph wrapping + text alignment | bundled Roboto, physical-pixel rasterization | SVG fallback (`crates/aetna-core/out/settings.svg`) aligned with wgpu output |
 | Clip + modal/overlay (v0.3) | working | `cargo run -p aetna-core --example modal` → `crates/aetna-core/out/modal.svg` |
 | Scroll viewport (v0.3) | working | `cargo run -p aetna-core --example scroll_list` → `crates/aetna-core/out/scroll_list.svg`; `cargo run -p aetna-demo --bin scroll_list` (interactive, wheel) |
+| Host-painted regions | working | reserve a keyed node in the tree, call `Runner::rect_of_key("viewport")` after `prepare()`, and let the host renderer paint into that rect |
 | Focus traversal + keyboard routing (v0.4) | working | Tab / Shift+Tab / Enter / Space / Escape in any interactive demo |
 | Hotkey system (v0.4) | working | `cargo run -p aetna-demo --bin hotkey_picker` — `j`/`k` movement, Ctrl+L, `/`, etc., zero per-key matching in the app |
 | Animation primitives (v0.4) | spring + tween + per-(node, prop) tracker; library-owned hover / press / focus envelopes auto-ease on every keyed interactive node; author-facing `.animate(timing)` + `.opacity` / `.translate` / `.scale` for app-driven prop interpolation; `prepare()` returns `needs_redraw` so frames tick only while motion is in flight | `cargo run -p aetna-demo --bin animated_palette` — selection scales, fades, slides; counter & hotkey_picker get hover/press easing for free |

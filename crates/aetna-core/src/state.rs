@@ -102,6 +102,23 @@ impl UiState {
         self.computed_rects.get(id).copied().unwrap_or_default()
     }
 
+    /// Look up the layout-assigned rect for an app-supplied element
+    /// key. Returns `None` when the key is absent from `root` or layout
+    /// has not written a rect for that node yet.
+    pub fn rect_of_key(&self, root: &El, key: &str) -> Option<Rect> {
+        find_target_by_key(root, key)
+            .and_then(|target| self.computed_rects.get(&target.node_id).copied())
+    }
+
+    /// Build a [`UiTarget`] for an app-supplied element key using the
+    /// current layout rect. Useful for hosts that need to anchor native
+    /// overlays or forward events into externally painted regions.
+    pub fn target_of_key(&self, root: &El, key: &str) -> Option<UiTarget> {
+        let target = find_target_by_key(root, key)?;
+        let rect = self.computed_rects.get(&target.node_id).copied()?;
+        Some(UiTarget { rect, ..target })
+    }
+
     /// Resolved interaction state for `id`. Returns
     /// [`InteractionState::Default`] when no tracker matches.
     pub fn node_state(&self, id: &str) -> InteractionState {
@@ -336,6 +353,19 @@ impl UiState {
     }
 }
 
+fn find_target_by_key(root: &El, key: &str) -> Option<UiTarget> {
+    if root.key.as_deref() == Some(key) {
+        return Some(UiTarget {
+            key: key.to_string(),
+            node_id: root.computed_id.clone(),
+            rect: Rect::default(),
+        });
+    }
+    root.children
+        .iter()
+        .find_map(|child| find_target_by_key(child, key))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,6 +383,23 @@ mod tests {
         let mut state = UiState::new();
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         (tree, state)
+    }
+
+    #[test]
+    fn rect_of_key_finds_laid_out_node_rect() {
+        let (tree, state) = lay_out_counter();
+        let inc_by_helper = find_rect(&tree, &state, "inc").expect("inc rect");
+        assert_eq!(state.rect_of_key(&tree, "inc"), Some(inc_by_helper));
+        assert_eq!(state.rect_of_key(&tree, "missing"), None);
+    }
+
+    #[test]
+    fn target_of_key_carries_key_id_and_rect() {
+        let (tree, state) = lay_out_counter();
+        let target = state.target_of_key(&tree, "dec").expect("dec target");
+        assert_eq!(target.key, "dec");
+        assert_eq!(target.node_id, find_id(&tree, "dec").expect("dec id"));
+        assert_eq!(target.rect, find_rect(&tree, &state, "dec").expect("dec rect"));
     }
 
     #[test]
