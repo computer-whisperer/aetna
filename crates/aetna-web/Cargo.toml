@@ -32,6 +32,10 @@ console_error_panic_hook = "0.1"
 console_log = "1"
 log = "0.4"
 js-sys = "0.3"
+# `web_time::Instant` is a wasm-safe shim for `std::time::Instant`
+# (the std one panics on wasm32). Used here for the per-frame
+# timing breakdown.
+web-time = "1"
 web-sys = { version = "0.3", features = [
     "Document",
     "Element",

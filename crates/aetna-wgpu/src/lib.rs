@@ -90,9 +90,33 @@ const INITIAL_INSTANCE_CAPACITY: usize = 256;
 /// in-flight motion (a hover spring still settling, a focus ring still
 /// fading out), then idles. This lets animation drive frames without a
 /// continuous tick when nothing is changing.
+///
+/// `timings` is a per-frame breakdown of the CPU work inside prepare,
+/// for diagnostic logging. Wall-clock per stage; sums to roughly the
+/// total prepare time minus per-stage Instant overhead.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PrepareResult {
     pub needs_redraw: bool,
+    pub timings: PrepareTimings,
+}
+
+/// Per-stage CPU timing inside [`Runner::prepare`]. Cheap to compute
+/// (5–6 `Instant::now()` calls per frame) and useful for finding the
+/// dominant cost when frame budget is tight on wasm.
+///
+/// Stages:
+/// - `layout`: layout pass + focus order sync + state apply + animation tick.
+/// - `draw_ops`: tree → DrawOp[] resolution.
+/// - `paint`: paint-stream loop (quad packing + text shaping via cosmic-text).
+/// - `gpu_upload`: instance buffer write + text atlas flush + frame uniforms.
+/// - `snapshot`: cloning the laid-out tree for next-frame hit-testing.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PrepareTimings {
+    pub layout: std::time::Duration,
+    pub draw_ops: std::time::Duration,
+    pub paint: std::time::Duration,
+    pub gpu_upload: std::time::Duration,
+    pub snapshot: std::time::Duration,
 }
 
 /// Wgpu runtime owned by the host. One instance per surface/format.
@@ -326,6 +350,7 @@ impl Runner {
         viewport: Rect,
         scale_factor: f32,
     ) -> PrepareResult {
+        let t0 = Instant::now();
         // Layout writes computed_id on each El + writes the rect map +
         // reads/clamps/writes scroll offsets, all on UiState's side maps.
         layout::layout(root, &mut self.ui_state, viewport);
@@ -339,7 +364,9 @@ impl Runner {
         // fields (fill/translate/etc.). Anything in flight forces another
         // redraw next frame.
         let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now());
+        let t_after_layout = Instant::now();
         let ops = draw_ops::draw_ops(root, &self.ui_state);
+        let t_after_draw_ops = Instant::now();
 
         // Prefer the host-supplied physical size when present (keeps
         // scissor math exactly matching the swapchain). Fall back to
@@ -458,6 +485,7 @@ impl Runner {
             run_first,
             self.quad_scratch.len() as u32,
         );
+        let t_after_paint = Instant::now();
 
         if self.quad_scratch.len() > self.instance_capacity {
             let new_cap = self.quad_scratch.len().next_power_of_two();
@@ -486,12 +514,23 @@ impl Runner {
             _pad: [0.0, 0.0],
         };
         queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
+        let t_after_gpu = Instant::now();
 
         // Snapshot the laid-out tree so pointer events arriving before
         // the next prepare can hit-test against current geometry.
         self.last_tree = Some(root.clone());
+        let t_after_snapshot = Instant::now();
 
-        PrepareResult { needs_redraw }
+        PrepareResult {
+            needs_redraw,
+            timings: PrepareTimings {
+                layout: t_after_layout - t0,
+                draw_ops: t_after_draw_ops - t_after_layout,
+                paint: t_after_paint - t_after_draw_ops,
+                gpu_upload: t_after_gpu - t_after_paint,
+                snapshot: t_after_snapshot - t_after_gpu,
+            },
+        }
     }
 
     // ---- v0.2 input plumbing ----

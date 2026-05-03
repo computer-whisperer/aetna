@@ -51,9 +51,10 @@ mod web_entry {
     use std::sync::Arc;
 
     use aetna_core::{App, KeyModifiers, Rect, UiKey};
-    use aetna_wgpu::Runner;
+    use aetna_wgpu::{PrepareTimings, Runner};
     use wasm_bindgen::JsCast;
     use wasm_bindgen::prelude::*;
+    use web_time::Instant;
     use winit::application::ApplicationHandler;
     use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
     use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -62,6 +63,109 @@ mod web_entry {
     use winit::window::{Window, WindowId};
 
     use super::{Showcase, VIEWPORT};
+
+    /// Number of redraws to accumulate before logging an averaged
+    /// frame-timing line. 60 → roughly once per second at 60fps when
+    /// animations are in flight; for idle UI (no redraws) the log
+    /// just stops, which is the right behavior.
+    const FRAME_LOG_INTERVAL: u32 = 60;
+
+    /// Rolling per-frame timing bucket. Three top-level CPU stages
+    /// (`build`, `prepare`, `submit`) plus a per-stage breakdown of
+    /// what's inside `prepare` (layout / draw_ops / paint / gpu_upload
+    /// / snapshot — see [`PrepareTimings`]). `inter` is the wall-clock
+    /// interval between consecutive RedrawRequested calls; comparing
+    /// `build + prepare + submit` against `inter` shows how much frame
+    /// budget the CPU is burning vs. how much the browser's rAF throttle
+    /// gives us.
+    #[derive(Default)]
+    struct FrameStats {
+        build_us: u64,
+        prepare_us: u64,
+        submit_us: u64,
+        inter_us: u64,
+        // Sub-buckets inside prepare. Sum is ~prepare_us minus a few
+        // microseconds of Instant::now() overhead.
+        layout_us: u64,
+        draw_ops_us: u64,
+        paint_us: u64,
+        gpu_upload_us: u64,
+        snapshot_us: u64,
+        samples: u32,
+        last_frame_start: Option<Instant>,
+    }
+
+    impl FrameStats {
+        fn record(
+            &mut self,
+            frame_start: Instant,
+            t1: Instant,
+            t2: Instant,
+            t3: Instant,
+            prep: PrepareTimings,
+        ) {
+            self.build_us += (t1 - frame_start).as_micros() as u64;
+            self.prepare_us += (t2 - t1).as_micros() as u64;
+            self.submit_us += (t3 - t2).as_micros() as u64;
+            self.layout_us += prep.layout.as_micros() as u64;
+            self.draw_ops_us += prep.draw_ops.as_micros() as u64;
+            self.paint_us += prep.paint.as_micros() as u64;
+            self.gpu_upload_us += prep.gpu_upload.as_micros() as u64;
+            self.snapshot_us += prep.snapshot.as_micros() as u64;
+            if let Some(prev) = self.last_frame_start {
+                self.inter_us += (frame_start - prev).as_micros() as u64;
+            }
+            self.last_frame_start = Some(frame_start);
+            self.samples += 1;
+            if self.samples >= FRAME_LOG_INTERVAL {
+                self.flush();
+            }
+        }
+
+        fn flush(&mut self) {
+            // `inter` averages over `samples - 1` because the first
+            // frame in each window has no prior frame to diff against.
+            let n = self.samples as u64;
+            let inter_n = (self.samples.saturating_sub(1)) as u64;
+            let build = self.build_us / n;
+            let prepare = self.prepare_us / n;
+            let submit = self.submit_us / n;
+            let layout = self.layout_us / n;
+            let draw_ops = self.draw_ops_us / n;
+            let paint = self.paint_us / n;
+            let gpu_upload = self.gpu_upload_us / n;
+            let snapshot = self.snapshot_us / n;
+            let cpu = build + prepare + submit;
+            let inter = self.inter_us.checked_div(inter_n).unwrap_or(0);
+            let util = (cpu * 100).checked_div(inter).unwrap_or(0);
+            log::info!(
+                "frame[{n}] inter={:.2}ms cpu={:.2}ms util={util}% | build={:.2} prepare={:.2} (layout={:.2} draw_ops={:.2} paint={:.2} gpu={:.2} snapshot={:.2}) submit={:.2}",
+                inter as f64 / 1000.0,
+                cpu as f64 / 1000.0,
+                build as f64 / 1000.0,
+                prepare as f64 / 1000.0,
+                layout as f64 / 1000.0,
+                draw_ops as f64 / 1000.0,
+                paint as f64 / 1000.0,
+                gpu_upload as f64 / 1000.0,
+                snapshot as f64 / 1000.0,
+                submit as f64 / 1000.0,
+            );
+            self.build_us = 0;
+            self.prepare_us = 0;
+            self.submit_us = 0;
+            self.inter_us = 0;
+            self.layout_us = 0;
+            self.draw_ops_us = 0;
+            self.paint_us = 0;
+            self.gpu_upload_us = 0;
+            self.snapshot_us = 0;
+            self.samples = 0;
+            // Keep last_frame_start so `inter` in the next window
+            // includes the gap from the last logged frame to the
+            // first frame of the new window.
+        }
+    }
 
     const CANVAS_ID: &str = "aetna_canvas";
 
@@ -129,6 +233,7 @@ mod web_entry {
         gfx: Rc<RefCell<Option<Gfx>>>,
         last_pointer: Option<(f32, f32)>,
         modifiers: KeyModifiers,
+        stats: FrameStats,
     }
 
     struct Gfx {
@@ -148,6 +253,7 @@ mod web_entry {
                 gfx: Rc::new(RefCell::new(None)),
                 last_pointer: None,
                 modifiers: KeyModifiers::default(),
+                stats: FrameStats::default(),
             }
         }
     }
@@ -369,6 +475,7 @@ mod web_entry {
                 }
 
                 WindowEvent::RedrawRequested => {
+                    let frame_start = Instant::now();
                     let frame = match gfx.surface.get_current_texture() {
                         Ok(f) => f,
                         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -386,6 +493,8 @@ mod web_entry {
 
                     let mut tree = self.app.build();
                     gfx.renderer.set_hotkeys(self.app.hotkeys());
+                    let t_after_build = Instant::now();
+
                     let scale_factor = gfx.window.scale_factor() as f32;
                     let viewport_rect = Rect::new(
                         0.0,
@@ -400,6 +509,7 @@ mod web_entry {
                         viewport_rect,
                         scale_factor,
                     );
+                    let t_after_prepare = Instant::now();
 
                     let mut encoder =
                         gfx.device
@@ -426,6 +536,15 @@ mod web_entry {
                     }
                     gfx.queue.submit(Some(encoder.finish()));
                     frame.present();
+                    let t_after_submit = Instant::now();
+
+                    self.stats.record(
+                        frame_start,
+                        t_after_build,
+                        t_after_prepare,
+                        t_after_submit,
+                        prepare.timings,
+                    );
 
                     if prepare.needs_redraw {
                         gfx.window.request_redraw();
