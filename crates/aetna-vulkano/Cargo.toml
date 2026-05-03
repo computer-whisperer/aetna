@@ -14,3 +14,5 @@ aetna-core = { path = "../aetna-core" }
 # WGSL identically and a shader that compiles for one compiles for both.
 naga = { version = "23.1", features = ["wgsl-in", "spv-out"] }
 vulkano = "0.35"
+bytemuck = { version = "1.21", features = ["derive"] }
+smallvec = "1"

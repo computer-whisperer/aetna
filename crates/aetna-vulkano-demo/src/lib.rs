@@ -1,9 +1,479 @@
-//! aetna-vulkano-demo — winit harness + demo binaries for the
-//! `aetna-vulkano` backend. Sibling of `aetna-demo`, which serves the
-//! same role for `aetna-wgpu`.
+//! aetna-vulkano-demo — winit + vulkano harness for the
+//! [`aetna-vulkano`] backend. Sibling of [`aetna-demo`], which serves
+//! the same role for [`aetna-wgpu`].
 //!
-//! v5.3 ships one fixture (the counter, in `bin/counter.rs`) for the
-//! side-by-side wgpu↔vulkano A/B test. v5.4 expands to full v0.4 demo
-//! coverage and decides whether to consolidate the two harnesses.
+//! The host owns the event loop, the Vulkan instance/device/queue, the
+//! swapchain, the framebuffers, and the per-frame command buffer. The
+//! library — `aetna-core` + `aetna-vulkano` — owns layout, paint,
+//! hit-test, and visual state. The user owns the [`App`] impl.
 //!
-//! Empty for v5.3 step 1 — see V5_3.md for the migration order.
+//! [`run`] mirrors `aetna_demo::run`'s contract method-for-method so a
+//! Counter App written for the wgpu side runs unchanged here.
+
+use std::sync::Arc;
+
+use aetna_core::{App, KeyModifiers, Rect, UiKey};
+use aetna_vulkano::Runner;
+use vulkano::{
+    VulkanLibrary,
+    command_buffer::{
+        AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassBeginInfo,
+        SubpassContents, SubpassEndInfo, allocator::StandardCommandBufferAllocator,
+    },
+    device::{
+        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
+        physical::PhysicalDeviceType,
+    },
+    format::{Format, NumericFormat},
+    image::{Image, ImageUsage, view::ImageView},
+    instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
+    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass},
+    swapchain::{
+        Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo, acquire_next_image,
+    },
+    sync::{self, GpuFuture},
+};
+use winit::{
+    application::ApplicationHandler,
+    dpi::PhysicalSize,
+    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
+    event_loop::{ActiveEventLoop, EventLoop},
+    keyboard::{Key, NamedKey},
+    window::{Window, WindowId},
+};
+
+/// Run a windowed app on the vulkano backend. Blocks until the user
+/// closes the window. Mirrors `aetna_demo::run`.
+pub fn run<A: App + 'static>(
+    title: &'static str,
+    viewport: Rect,
+    app: A,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let event_loop = EventLoop::new()?;
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+
+    let library = VulkanLibrary::new()?;
+    let required_extensions = Surface::required_extensions(&event_loop)?;
+    let instance = Instance::new(
+        library,
+        InstanceCreateInfo {
+            flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,
+            enabled_extensions: required_extensions,
+            ..Default::default()
+        },
+    )?;
+
+    let mut host = Host {
+        title,
+        viewport,
+        app,
+        instance,
+        modifiers: KeyModifiers::default(),
+        last_pointer: None,
+        rcx: None,
+    };
+    event_loop.run_app(&mut host)?;
+    Ok(())
+}
+
+struct Host<A: App> {
+    title: &'static str,
+    viewport: Rect,
+    app: A,
+    instance: Arc<Instance>,
+    modifiers: KeyModifiers,
+    last_pointer: Option<(f32, f32)>,
+    rcx: Option<RenderContext>,
+}
+
+struct RenderContext {
+    window: Arc<Window>,
+    device: Arc<Device>,
+    queue: Arc<Queue>,
+    swapchain: Arc<Swapchain>,
+    framebuffers: Vec<Arc<Framebuffer>>,
+    cmd_alloc: Arc<StandardCommandBufferAllocator>,
+    runner: Runner,
+    previous_frame_end: Option<Box<dyn GpuFuture>>,
+    recreate_swapchain: bool,
+}
+
+impl<A: App> ApplicationHandler for Host<A> {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.rcx.is_some() {
+            return;
+        }
+        let attrs = Window::default_attributes()
+            .with_title(self.title)
+            .with_inner_size(PhysicalSize::new(
+                self.viewport.w as u32,
+                self.viewport.h as u32,
+            ));
+        let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+
+        let surface = Surface::from_window(self.instance.clone(), window.clone())
+            .expect("create surface");
+
+        let device_extensions = DeviceExtensions {
+            khr_swapchain: true,
+            ..DeviceExtensions::empty()
+        };
+
+        let (physical_device, queue_family_index) = self
+            .instance
+            .enumerate_physical_devices()
+            .expect("enumerate physical devices")
+            .filter(|p| p.supported_extensions().contains(&device_extensions))
+            .filter_map(|p| {
+                p.queue_family_properties()
+                    .iter()
+                    .enumerate()
+                    .position(|(i, q)| {
+                        q.queue_flags.intersects(QueueFlags::GRAPHICS)
+                            && p.surface_support(i as u32, &surface).unwrap_or(false)
+                    })
+                    .map(|i| (p, i as u32))
+            })
+            .min_by_key(|(p, _)| match p.properties().device_type {
+                PhysicalDeviceType::DiscreteGpu => 0,
+                PhysicalDeviceType::IntegratedGpu => 1,
+                PhysicalDeviceType::VirtualGpu => 2,
+                PhysicalDeviceType::Cpu => 3,
+                _ => 4,
+            })
+            .expect("no compatible Vulkan physical device");
+
+        let (device, mut queues) = Device::new(
+            physical_device.clone(),
+            DeviceCreateInfo {
+                enabled_extensions: device_extensions,
+                queue_create_infos: vec![QueueCreateInfo {
+                    queue_family_index,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("create device");
+        let queue = queues.next().unwrap();
+
+        let (swapchain, images, image_format) = create_swapchain(&device, surface, &window);
+
+        let mut runner = Runner::new(device.clone(), queue.clone(), image_format);
+        let extent: [u32; 2] = window.inner_size().into();
+        runner.set_surface_size(extent[0], extent[1]);
+
+        let framebuffers = build_framebuffers(&images, runner.render_pass());
+
+        let cmd_alloc = Arc::new(StandardCommandBufferAllocator::new(
+            device.clone(),
+            Default::default(),
+        ));
+
+        let previous_frame_end = Some(sync::now(device.clone()).boxed());
+
+        self.rcx = Some(RenderContext {
+            window,
+            device,
+            queue,
+            swapchain,
+            framebuffers,
+            cmd_alloc,
+            runner,
+            previous_frame_end,
+            recreate_swapchain: false,
+        });
+        self.rcx.as_ref().unwrap().window.request_redraw();
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let Some(rcx) = self.rcx.as_mut() else {
+            return;
+        };
+        let scale = rcx.window.scale_factor() as f32;
+
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+
+            WindowEvent::Resized(_) => {
+                rcx.recreate_swapchain = true;
+                rcx.window.request_redraw();
+            }
+
+            WindowEvent::CursorMoved { position, .. } => {
+                let lx = position.x as f32 / scale;
+                let ly = position.y as f32 / scale;
+                self.last_pointer = Some((lx, ly));
+                rcx.runner.pointer_moved(lx, ly);
+                rcx.window.request_redraw();
+            }
+
+            WindowEvent::CursorLeft { .. } => {
+                self.last_pointer = None;
+                rcx.runner.pointer_left();
+                rcx.window.request_redraw();
+            }
+
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let Some((lx, ly)) = self.last_pointer else {
+                    return;
+                };
+                match state {
+                    ElementState::Pressed => {
+                        rcx.runner.pointer_down(lx, ly);
+                        rcx.window.request_redraw();
+                    }
+                    ElementState::Released => {
+                        if let Some(event) = rcx.runner.pointer_up(lx, ly) {
+                            self.app.on_event(event);
+                        }
+                        rcx.window.request_redraw();
+                    }
+                }
+            }
+
+            WindowEvent::MouseWheel { delta, .. } => {
+                let Some((lx, ly)) = self.last_pointer else {
+                    return;
+                };
+                let dy = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => -y * 50.0,
+                    MouseScrollDelta::PixelDelta(p) => -(p.y as f32) / scale,
+                };
+                if rcx.runner.pointer_wheel(lx, ly, dy) {
+                    rcx.window.request_redraw();
+                }
+            }
+
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = key_modifiers(modifiers.state());
+            }
+
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic: false,
+                ..
+            } => {
+                if event.state == ElementState::Pressed
+                    && let Some(key) = map_key(&event.logical_key)
+                {
+                    if let Some(ev) = rcx.runner.key_down(key, self.modifiers, event.repeat) {
+                        self.app.on_event(ev);
+                    }
+                    rcx.window.request_redraw();
+                }
+            }
+
+            WindowEvent::RedrawRequested => {
+                let extent: [u32; 2] = rcx.window.inner_size().into();
+                if extent[0] == 0 || extent[1] == 0 {
+                    return;
+                }
+
+                rcx.previous_frame_end.as_mut().unwrap().cleanup_finished();
+
+                if rcx.recreate_swapchain {
+                    let (new_swapchain, new_images) = rcx
+                        .swapchain
+                        .recreate(SwapchainCreateInfo {
+                            image_extent: extent,
+                            ..rcx.swapchain.create_info()
+                        })
+                        .expect("recreate swapchain");
+                    rcx.swapchain = new_swapchain;
+                    rcx.framebuffers =
+                        build_framebuffers(&new_images, rcx.runner.render_pass());
+                    rcx.runner.set_surface_size(extent[0], extent[1]);
+                    rcx.recreate_swapchain = false;
+                }
+
+                let mut tree = self.app.build();
+                rcx.runner.set_hotkeys(self.app.hotkeys());
+                let scale_factor = rcx.window.scale_factor() as f32;
+                let viewport = Rect::new(
+                    0.0,
+                    0.0,
+                    extent[0] as f32 / scale_factor,
+                    extent[1] as f32 / scale_factor,
+                );
+                let prepare = rcx.runner.prepare(&mut tree, viewport, scale_factor);
+
+                let (image_index, suboptimal, acquire_future) =
+                    match acquire_next_image(rcx.swapchain.clone(), None) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            eprintln!("acquire_next_image: {e}");
+                            rcx.recreate_swapchain = true;
+                            return;
+                        }
+                    };
+                if suboptimal {
+                    rcx.recreate_swapchain = true;
+                }
+
+                let mut builder = AutoCommandBufferBuilder::primary(
+                    rcx.cmd_alloc.clone(),
+                    rcx.queue.queue_family_index(),
+                    CommandBufferUsage::OneTimeSubmit,
+                )
+                .expect("command builder");
+
+                let bg = clear_color();
+                builder
+                    .begin_render_pass(
+                        RenderPassBeginInfo {
+                            clear_values: vec![Some(bg.into())],
+                            ..RenderPassBeginInfo::framebuffer(
+                                rcx.framebuffers[image_index as usize].clone(),
+                            )
+                        },
+                        SubpassBeginInfo {
+                            contents: SubpassContents::Inline,
+                            ..Default::default()
+                        },
+                    )
+                    .expect("begin render pass");
+
+                rcx.runner.draw(&mut builder);
+
+                builder
+                    .end_render_pass(SubpassEndInfo::default())
+                    .expect("end render pass");
+                let command_buffer = builder.build().expect("build cmd");
+
+                let future = rcx
+                    .previous_frame_end
+                    .take()
+                    .unwrap()
+                    .join(acquire_future)
+                    .then_execute(rcx.queue.clone(), command_buffer)
+                    .expect("submit")
+                    .then_swapchain_present(
+                        rcx.queue.clone(),
+                        SwapchainPresentInfo::swapchain_image_index(
+                            rcx.swapchain.clone(),
+                            image_index,
+                        ),
+                    )
+                    .then_signal_fence_and_flush();
+
+                match future.map_err(|e| e.unwrap()) {
+                    Ok(future) => rcx.previous_frame_end = Some(future.boxed()),
+                    Err(e) => {
+                        eprintln!("flush: {e}");
+                        rcx.recreate_swapchain = true;
+                        rcx.previous_frame_end = Some(sync::now(rcx.device.clone()).boxed());
+                    }
+                }
+
+                if prepare.needs_redraw {
+                    rcx.window.request_redraw();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn create_swapchain(
+    device: &Arc<Device>,
+    surface: Arc<Surface>,
+    window: &Window,
+) -> (Arc<Swapchain>, Vec<Arc<Image>>, Format) {
+    let surface_caps = device
+        .physical_device()
+        .surface_capabilities(&surface, Default::default())
+        .expect("surface caps");
+    let formats = device
+        .physical_device()
+        .surface_formats(&surface, Default::default())
+        .expect("surface formats");
+    let image_format = formats
+        .iter()
+        .copied()
+        .find(|(f, _)| f.numeric_format_color() == Some(NumericFormat::SRGB))
+        .unwrap_or(formats[0])
+        .0;
+    let (swapchain, images) = Swapchain::new(
+        device.clone(),
+        surface,
+        SwapchainCreateInfo {
+            min_image_count: surface_caps.min_image_count.max(2),
+            image_format,
+            image_extent: window.inner_size().into(),
+            image_usage: ImageUsage::COLOR_ATTACHMENT,
+            composite_alpha: surface_caps
+                .supported_composite_alpha
+                .into_iter()
+                .next()
+                .unwrap(),
+            ..Default::default()
+        },
+    )
+    .expect("create swapchain");
+    (swapchain, images, image_format)
+}
+
+fn build_framebuffers(images: &[Arc<Image>], render_pass: &Arc<RenderPass>) -> Vec<Arc<Framebuffer>> {
+    images
+        .iter()
+        .map(|image| {
+            let view = ImageView::new_default(image.clone()).expect("image view");
+            Framebuffer::new(
+                render_pass.clone(),
+                FramebufferCreateInfo {
+                    attachments: vec![view],
+                    ..Default::default()
+                },
+            )
+            .expect("framebuffer")
+        })
+        .collect()
+}
+
+fn map_key(key: &Key) -> Option<UiKey> {
+    match key {
+        Key::Named(NamedKey::Enter) => Some(UiKey::Enter),
+        Key::Named(NamedKey::Escape) => Some(UiKey::Escape),
+        Key::Named(NamedKey::Tab) => Some(UiKey::Tab),
+        Key::Named(NamedKey::Space) => Some(UiKey::Space),
+        Key::Named(NamedKey::ArrowUp) => Some(UiKey::ArrowUp),
+        Key::Named(NamedKey::ArrowDown) => Some(UiKey::ArrowDown),
+        Key::Named(NamedKey::ArrowLeft) => Some(UiKey::ArrowLeft),
+        Key::Named(NamedKey::ArrowRight) => Some(UiKey::ArrowRight),
+        Key::Character(s) => Some(UiKey::Character(s.to_string())),
+        Key::Named(named) => Some(UiKey::Other(format!("{named:?}"))),
+        _ => None,
+    }
+}
+
+fn key_modifiers(mods: winit::keyboard::ModifiersState) -> KeyModifiers {
+    KeyModifiers {
+        shift: mods.shift_key(),
+        ctrl: mods.control_key(),
+        alt: mods.alt_key(),
+        logo: mods.super_key(),
+    }
+}
+
+fn clear_color() -> [f32; 4] {
+    let c = aetna_core::tokens::BG_APP;
+    [
+        srgb_to_linear(c.r as f32 / 255.0),
+        srgb_to_linear(c.g as f32 / 255.0),
+        srgb_to_linear(c.b as f32 / 255.0),
+        c.a as f32 / 255.0,
+    ]
+}
+
+fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.040_45 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
