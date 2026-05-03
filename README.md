@@ -18,16 +18,23 @@ Two manifesto documents stand under attempt_4 — read these before reviewing. T
 
 ## Where we are at
 
-attempt_4 has reached **v0.2**. Concrete state:
+attempt_4 has v0.3 and v0.4 partially landed — v0.2's interactive
+contract holds; clip + modal/overlay (v0.3), scroll (v0.3 backfill),
+focus traversal + keyboard event routing (v0.4), and hotkey system
+(v0.4 backfill) are in. Concrete state:
 
 | Capability | Status | Proof point |
 |---|---|---|
 | Grammar | carried from attempt_3 | `column`/`row`/`card`/`button`/`badge`/`text`/`spacer`, intrinsic + `Fill`/`Hug`/`Fixed` sizing, `pub const` tokens |
 | Wgpu rendering | working | `attempts/attempt_4_demo --bin settings` and `out/settings.wgpu.png` |
-| Stock shaders | `rounded_rect` + `text_sdf` | `focus_ring` / `solid_quad` / `divider_line` deferred to v0.7+ |
+| Stock shaders | `rounded_rect` + `text_sdf` + `focus_ring` | `solid_quad` / `divider_line` / `shadow` deferred to v0.7+ |
 | Custom-shader escape hatch | working | `out/custom_shader.wgpu.png` — gradient buttons rendered by user-authored `shaders/gradient.wgsl` |
-| App trait + hit-test + automatic hover/press | working | `attempt_4_demo --bin counter` (interactive); `out/counter.wgpu.png` (headless render with simulated hover) |
-| HiDPI text | bundled Roboto, physical-pixel rasterization | SVG fallback (`out/settings.svg`) aligned with wgpu output |
+| App trait + hit-test + automatic hover/press | working | `attempt_4_demo --bin counter` (interactive); `out/counter.wgpu.png` |
+| HiDPI text + paragraph wrapping + text alignment | bundled Roboto, physical-pixel rasterization | SVG fallback (`out/settings.svg`) aligned with wgpu output |
+| Clip + modal/overlay (v0.3) | working | `attempt_4 --example modal` → `out/modal.svg` |
+| Scroll viewport (v0.3) | working | `attempt_4 --example scroll_list` → `out/scroll_list.svg`; `attempt_4_demo --bin scroll_list` (interactive, wheel) |
+| Focus traversal + keyboard routing (v0.4) | working | Tab / Shift+Tab / Enter / Space / Escape in any interactive demo |
+| Hotkey system (v0.4) | working | `attempt_4_demo --bin hotkey_picker` — `j`/`k` movement, Ctrl+L, `/`, etc., zero per-key matching in the app |
 | Bundle pipeline | `tree.txt` + `draw_ops.txt` + `shader_manifest.txt` + `lint.txt` + `.svg` + `.png` per fixture | `out/*` (PNGs gitignored, regenerated from SVG by `tools/svg_to_png.sh`) |
 
 Author surface today — the entire interactive contract:
@@ -67,11 +74,11 @@ No JSX, no signals, no `useState`, no retained-mode component identity. Hover an
 |---|---|---|
 | v0.1 | Layout, stock surface, glyphon text, custom shader. | done |
 | v0.2 | Hit-testing, click events, automatic hover/press, App trait, state-driven rebuild. | done |
-| v0.3 | Scroll/clip, embedded viewport (third escape hatch), modal/overlay primitive. | next |
-| v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. | |
+| v0.3 | Scroll/clip, embedded viewport (third escape hatch), modal/overlay primitive. | clip + modal/overlay + scroll done; **embedded viewport DSL pending** |
+| v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. | focus + keyboard + hotkeys done; **animation primitives pending** |
 | v0.5 | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | |
-| v0.6 | Rich text composition (markdown runs, inline highlighting, embedded elements). | |
-| v0.7+ | Stock shader: shadow, focus_ring, divider_line. Backdrop sampling. wgpu-wasm + vulkano backends. Liquid glass as the architectural acceptance test. | |
+| v0.6 | Rich text composition (markdown runs, inline highlighting, embedded elements). | paragraph wrapping + text alignment landed (partial) |
+| v0.7+ | Stock shader: shadow, focus_ring, divider_line. Backdrop sampling. wgpu-wasm + vulkano backends. Liquid glass as the architectural acceptance test. | `focus_ring` shared with `rounded_rect` pipeline |
 
 ## Repository tour
 
@@ -85,18 +92,20 @@ attempts/
       tree.rs                     El, Kind, Sides, Size, Axis, Align, Justify, InteractionState
       tokens.rs                   const tokens (colors, spacing, radii, font sizes)
       style.rs                    StyleProfile, .primary()/.secondary()/.ghost()/...
-      layout.rs                   column/row/stack pass, Fill/Hug/Fixed sizing
+      layout.rs                   column/row/stack/scroll pass, Fill/Hug/Fixed sizing
       shader.rs                   ShaderHandle, UniformBlock, UniformValue, ShaderBinding
       ir.rs                       DrawOp::{Quad, GlyphRun, BackdropSnapshot}
       draw_ops.rs                 El tree → DrawOp[], applies state visual deltas
-      event.rs                    App trait, UiEvent, UiState, hit_test (v0.2)
-      wgpu_render.rs              UiRenderer: pipelines, glyphon text, pointer plumbing
+      event.rs                    App trait, UiEvent, UiState, hit_test, focus, hotkeys
+      overlay.rs                  modal / scrim / overlay primitives (v0.3)
+      wgpu_render.rs              UiRenderer: pipelines, glyphon text, pointer + key plumbing
       svg.rs                      approximate SVG fallback for the agent loop
       bundle.rs / lint.rs / inspect.rs / manifest.rs   artifact emission
       button.rs / badge.rs / card.rs / text.rs          component files
     shaders/
       rounded_rect.wgsl           the load-bearing stock shader
       gradient.wgsl               custom-shader-escape-hatch fixture
+    examples/                     headless artifact fixtures (settings, modal, scroll_list, custom_shader)
     fonts/                        bundled Roboto (regular/medium/bold)
     out/                          rendered artifacts per fixture
   attempt_4_demo/               standalone winit + wgpu harness
@@ -104,6 +113,8 @@ attempts/
     src/bin/
       settings.rs                   static settings screen (windowed)
       counter.rs                    interactive counter — v0.2 proof point
+      scroll_list.rs                interactive scroll list — v0.3 proof point
+      hotkey_picker.rs              keyboard-only picker — v0.4 proof point
       render_settings.rs            \
       render_counter.rs              | headless artifact generators
       render_custom.rs              /
@@ -114,9 +125,11 @@ tools/                          agent-loop scripts (rendering helpers, etc.)
 Try it locally:
 
 ```bash
-cargo run -p attempt_4_demo --bin counter         # interactive
-cargo run -p attempt_4_demo --bin render_counter  # headless → out/counter.wgpu.png
-cargo test -p attempt_4                           # 7 unit tests + 1 doctest
+cargo run -p attempt_4_demo --bin counter         # interactive — v0.2
+cargo run -p attempt_4_demo --bin scroll_list     # interactive — v0.3 wheel
+cargo run -p attempt_4_demo --bin hotkey_picker   # interactive — v0.4 keyboard
+cargo run -p attempt_4 --example scroll_list      # headless → out/scroll_list.svg
+cargo test -p attempt_4                           # 30 unit tests + 1 doctest
 ```
 
 ## Reviewing this
