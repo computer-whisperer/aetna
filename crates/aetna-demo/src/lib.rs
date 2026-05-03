@@ -128,7 +128,8 @@ impl<A: App> ApplicationHandler for Host<A> {
         };
         surface.configure(&device, &config);
 
-        let renderer = Runner::new(&device, &queue, format);
+        let mut renderer = Runner::new(&device, &queue, format);
+        renderer.set_surface_size(config.width, config.height);
 
         self.gfx = Some(Gfx {
             window,
@@ -152,6 +153,8 @@ impl<A: App> ApplicationHandler for Host<A> {
                 gfx.config.width = size.width.max(1);
                 gfx.config.height = size.height.max(1);
                 gfx.surface.configure(&gfx.device, &gfx.config);
+                gfx.renderer
+                    .set_surface_size(gfx.config.width, gfx.config.height);
                 gfx.window.request_redraw();
             }
 

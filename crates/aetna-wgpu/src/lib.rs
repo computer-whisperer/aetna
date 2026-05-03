@@ -123,6 +123,14 @@ pub struct Runner {
     // Replayed by draw() in exact paint order.
     paint_items: Vec<PaintItem>,
     viewport_px: (u32, u32),
+    /// If set, overrides the physical viewport size derived from
+    /// `viewport.w * scale_factor` in [`Self::prepare`]. The host
+    /// calls [`Self::set_surface_size`] after `surface.configure(...)`
+    /// to keep this in lockstep with the actual swapchain texture
+    /// size — without it, fractional `scale_factor` round-trips can
+    /// land `viewport_px` one pixel beyond the real render target
+    /// and trip wgpu's `set_scissor_rect` validation.
+    surface_size_override: Option<(u32, u32)>,
 
     // Interaction state (v0.2).
     ui_state: UiState,
@@ -231,10 +239,22 @@ impl Runner {
 
             paint_items: Vec::new(),
             viewport_px: (1, 1),
+            surface_size_override: None,
 
             ui_state: UiState::new(),
             last_tree: None,
         }
+    }
+
+    /// Tell the runner the swapchain texture size in physical pixels.
+    /// Call this once after `surface.configure(...)` and again on every
+    /// `WindowEvent::Resized`. The runner uses this as the canonical
+    /// `viewport_px` for scissor math; without it, the value is derived
+    /// from `viewport.w * scale_factor`, which can drift by one pixel
+    /// when `scale_factor` is fractional and trip wgpu's
+    /// `set_scissor_rect` validation.
+    pub fn set_surface_size(&mut self, width: u32, height: u32) {
+        self.surface_size_override = Some((width.max(1), height.max(1)));
     }
 
     /// Register a custom shader. `name` is the same string passed to
@@ -313,10 +333,16 @@ impl Runner {
         let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now());
         let ops = draw_ops::draw_ops(root, &self.ui_state);
 
-        self.viewport_px = (
-            (viewport.w * scale_factor).ceil().max(1.0) as u32,
-            (viewport.h * scale_factor).ceil().max(1.0) as u32,
-        );
+        // Prefer the host-supplied physical size when present (keeps
+        // scissor math exactly matching the swapchain). Fall back to
+        // logical * scale only for headless callers that don't go
+        // through a wgpu::Surface.
+        self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
+            (
+                (viewport.w * scale_factor).ceil().max(1.0) as u32,
+                (viewport.h * scale_factor).ceil().max(1.0) as u32,
+            )
+        });
 
         // ---- Paint stream: pack quads, prepare text, preserve order ----
         self.quad_scratch.clear();

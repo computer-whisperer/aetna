@@ -302,7 +302,8 @@ mod web_entry {
                 };
                 surface.configure(&device, &config);
 
-                let renderer = Runner::new(&device, &queue, format);
+                let mut renderer = Runner::new(&device, &queue, format);
+                renderer.set_surface_size(config.width, config.height);
 
                 *gfx_slot.borrow_mut() = Some(Gfx {
                     window: window_for_async.clone(),
@@ -339,6 +340,8 @@ mod web_entry {
                     gfx.config.width = size.width.max(1);
                     gfx.config.height = size.height.max(1);
                     gfx.surface.configure(&gfx.device, &gfx.config);
+                    gfx.renderer
+                        .set_surface_size(gfx.config.width, gfx.config.height);
                     gfx.window.request_redraw();
                 }
 
