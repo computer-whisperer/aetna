@@ -18,7 +18,7 @@ v5.0 is in. Aetna lives under `crates/`:
 | Crate | Role |
 |---|---|
 | `aetna-core` | Backend-agnostic core. Tree (`El`), layout, draw-op IR, stock shaders + custom-shader binding, animation primitives, hit-test, focus, hotkeys, lint + bundle artifacts. No backend deps. |
-| `aetna-wgpu` | wgpu paint + interaction state. Owns the GPU pipelines, glyphon text atlas, `UiState` (the side store), and the `Runner` the host calls into. |
+| `aetna-wgpu` | wgpu paint + interaction state. Owns the GPU pipelines, the per-page atlas textures + sampler for stock::text, `UiState` (the side store), and the `Runner` the host calls into. |
 | `aetna-demo` | Winit harness + interactive bins + headless render fixtures (`render_counter`, `render_png`, `render_custom`). |
 
 The architectural decision v5.0 settled: `El` is the author's description of the scene; everything the library writes during a frame — computed rects, hover/press/focus state, envelope amounts, scroll offsets, animation tracker entries — lives in `UiState` side maps keyed by `El::computed_id`. The build closure produces a fresh `El` carrying zero library state; the runtime layer holds the state across rebuilds.
@@ -30,7 +30,7 @@ The architectural decision v5.0 settled: `El` is the author's description of the
 | Stock shaders | `rounded_rect` + `text_sdf` + `focus_ring` | `solid_quad` / `divider_line` / `shadow` deferred to v0.7+ |
 | Custom-shader escape hatch | working | `crates/aetna-demo/out/custom_shader.wgpu.png` — gradient buttons rendered by user-authored `shaders/gradient.wgsl` |
 | App trait + hit-test + automatic hover/press | working | `cargo run -p aetna-demo --bin counter` (interactive); `crates/aetna-demo/out/counter.wgpu.png` |
-| HiDPI text + shaped core layout + paragraph wrapping + text alignment | bundled Roboto, `cosmic-text` core layout, glyphon physical-pixel rasterization | SVG fallback (`crates/aetna-core/out/settings.svg`) aligned with wgpu output |
+| HiDPI text + shaped core layout + paragraph wrapping + text alignment | bundled Roboto, `cosmic-text` core layout + swash rasterization, core-owned glyph atlas | SVG fallback (`crates/aetna-core/out/settings.svg`) aligned with wgpu output |
 | Clip + modal/overlay (v0.3) | working | `cargo run -p aetna-core --example modal` → `crates/aetna-core/out/modal.svg` |
 | Scroll viewport (v0.3) | working | `cargo run -p aetna-core --example scroll_list` → `crates/aetna-core/out/scroll_list.svg`; `cargo run -p aetna-demo --bin scroll_list` (interactive, wheel) |
 | Host-painted regions | working | reserve a keyed node in the tree, call `Runner::rect_of_key("viewport")` after `prepare()`, and let the host renderer paint into that rect |
@@ -81,7 +81,7 @@ v0.x slices come from `LIBRARY_VISION.md`; the v5.x slices come from `V5.md` and
 | v0.3 | Scroll/clip, modal/overlay primitive. | done |
 | v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. | done |
 | v5.0 | Crate split into `aetna-{core,wgpu,demo}`; module split inside core; `El` side-map refactor. | done |
-| v5.1 | Decouple text from glyphon (cosmic-text + swash + own atlas). | core-owned `TextLayout` + cosmic-text shaping landed (partial) |
+| v5.1 | Decouple text from glyphon (cosmic-text + swash + own atlas). | done |
 | v5.2 | wasm target. | |
 | v5.3 | Vulkano backend; naga WGSL→SPIRV. | |
 | v5.4 | Vulkano parity with wgpu. | |
@@ -128,10 +128,10 @@ crates/
     out/                           rendered artifacts per example
   aetna-wgpu/                    wgpu backend
     src/
-      lib.rs                       Runner — pipelines, glyphon text, pointer + key plumbing
+      lib.rs                       Runner — pipelines, text atlas, pointer + key plumbing
       pipeline.rs                  shared quad pipeline factory
       instance.rs                  QuadInstance, uniform packing, scissor handling
-      text.rs                      glyphon TextLayer construction
+      text.rs                      stock::text pipeline + page texture mirror of GlyphAtlas
   aetna-demo/                    winit harness + bins
     src/
       lib.rs                       run<A: App>(title, viewport, app)

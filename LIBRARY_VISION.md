@@ -59,7 +59,7 @@ The public surface is intentionally small: after layout, hosts can ask for a key
 **Owns** (the library is responsible for these — host should not need to invent any of them):
 
 - Layout. `Hug` / `Fill` / `Fixed`, `column`/`row`/`stack`, `gap`/`padding`/`align`/`justify`.
-- Paint. Stock + custom shaders, glyphon-backed text, hi-DPI, sRGB.
+- Paint. Stock + custom shaders, atlas-backed text (cosmic-text + swash), hi-DPI, sRGB.
 - Hit-testing. Given a point, tell us which interactive node was hit.
 - Event routing. Pointer + keyboard events flow through hit-test → focus tree → handlers.
 - Visual lifecycle. Hover, press, focus, disabled, loading — applied automatically based on internal trackers.

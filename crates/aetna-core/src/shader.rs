@@ -32,10 +32,10 @@
 //! a per-shader layout descriptor; in v0.1 the SVG fallback consumes
 //! the typed map directly.
 //!
-//! # v0.1 status
+//! # v5.1 status
 //!
-//! Only [`StockShader::RoundedRect`], [`StockShader::TextSdf`], and
-//! [`StockShader::FocusRing`] are emitted by the renderer in v0.1.
+//! Only [`StockShader::RoundedRect`], [`StockShader::Text`], and
+//! [`StockShader::FocusRing`] are emitted by the renderer.
 //! [`StockShader::SolidQuad`] and [`StockShader::DividerLine`] are
 //! reserved for when something can't be expressed as uniforms on
 //! `rounded_rect`.
@@ -70,8 +70,11 @@ pub enum StockShader {
     /// Fill + stroke + radius + shadow (+ optional gradient). The
     /// workhorse — handles ~80% of UI surfaces.
     RoundedRect,
-    /// SDF glyph rendering. v0.1 will back this with glyphon.
-    TextSdf,
+    /// Alpha-mask glyph rendering. Backends sample per-glyph bitmaps
+    /// from a [`crate::text_atlas::GlyphAtlas`] page texture and tint
+    /// by per-glyph color. The historical `TextSdf` name was aspirational;
+    /// the actual rasterization is alpha-coverage via swash.
+    Text,
     /// Animated focus indicator (`InteractionState::Focus`).
     FocusRing,
     /// Antialiased 1px line.
@@ -83,7 +86,7 @@ impl StockShader {
         match self {
             StockShader::SolidQuad => "stock::solid_quad",
             StockShader::RoundedRect => "stock::rounded_rect",
-            StockShader::TextSdf => "stock::text_sdf",
+            StockShader::Text => "stock::text",
             StockShader::FocusRing => "stock::focus_ring",
             StockShader::DividerLine => "stock::divider_line",
         }
@@ -167,4 +170,5 @@ impl ShaderBinding {
 /// pipelines; the source lives here so the asset shipping is centralised.
 pub mod stock_wgsl {
     pub const ROUNDED_RECT: &str = include_str!("../shaders/rounded_rect.wgsl");
+    pub const TEXT: &str = include_str!("../shaders/text.wgsl");
 }

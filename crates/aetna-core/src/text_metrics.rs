@@ -1,10 +1,11 @@
 //! Font-backed text measurement and simple word wrapping.
 //!
-//! The production wgpu path still uses glyphon/cosmic-text for rasterization
-//! in v5.1, but layout, lint, SVG artifacts, and draw-op IR now share this
-//! core layout artifact. Proportional text is shaped through `cosmic-text`
-//! using bundled Roboto; the older TTF-advance path remains as a fallback
-//! and for monospace until Aetna has a bundled mono font.
+//! The production wgpu path uses [`crate::text_atlas::GlyphAtlas`] for
+//! shaping + rasterization; layout, lint, SVG artifacts, and draw-op IR
+//! all share this core layout artifact for measurement. Proportional
+//! text is shaped through `cosmic-text` using bundled Roboto; the older
+//! TTF-advance path remains as a fallback and for monospace until Aetna
+//! has a bundled mono font.
 
 use crate::tree::{FontWeight, TextWrap};
 use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Weight, Wrap, fontdb};

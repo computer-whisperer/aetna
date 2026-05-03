@@ -177,8 +177,8 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
                 color_svg(fill)
             );
         }
-        ShaderHandle::Stock(StockShader::TextSdf) => {
-            // text_sdf shouldn't appear as a Quad — skip silently.
+        ShaderHandle::Stock(StockShader::Text) => {
+            // text shouldn't appear as a Quad — skip silently.
         }
         ShaderHandle::Custom(name) => {
             // Placeholder rect so layout is visible. Real paint requires
@@ -242,7 +242,7 @@ fn emit_glyph_run(
         let y = line_top + line.baseline;
         let _ = writeln!(
             s,
-            r#"<text data-node="{}" data-shader="stock::text_sdf" x="{:.2}" y="{:.2}" font-family="{}" font-size="{:.2}" font-weight="{}" fill="{}" text-anchor="{}">{}</text>"#,
+            r#"<text data-node="{}" data-shader="stock::text" x="{:.2}" y="{:.2}" font-family="{}" font-size="{:.2}" font-weight="{}" fill="{}" text-anchor="{}">{}</text>"#,
             esc(id),
             x,
             y,

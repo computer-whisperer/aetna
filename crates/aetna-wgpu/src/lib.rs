@@ -33,8 +33,8 @@
 //! ```
 //!
 //! `prepare` is split from `draw` so all `queue.write_buffer` calls and
-//! glyphon atlas updates happen before the render pass begins, matching
-//! wgpu's expected order.
+//! glyph atlas page uploads happen before the render pass begins,
+//! matching wgpu's expected order.
 //!
 //! # Custom shaders
 //!
@@ -61,9 +61,6 @@ mod text;
 use std::collections::HashMap;
 use std::time::Instant;
 
-use glyphon::{
-    Cache, FontSystem, Resolution, SwashCache, TextArea, TextAtlas, TextRenderer, Viewport,
-};
 use wgpu::util::DeviceExt;
 
 use aetna_core::draw_ops;
@@ -80,7 +77,7 @@ use crate::instance::{
     physical_scissor, set_scissor,
 };
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
-use crate::text::{TextLayer, build_text_buffer};
+use crate::text::TextPaint;
 
 /// Initial size for the dynamic instance buffer (grows as needed).
 const INITIAL_INSTANCE_CAPACITY: usize = 256;
@@ -117,12 +114,8 @@ pub struct Runner {
     // One pipeline per registered shader (stock + custom).
     pipelines: HashMap<ShaderHandle, wgpu::RenderPipeline>,
 
-    // Text pipeline resources (stock::text_sdf, via glyphon).
-    font_system: FontSystem,
-    swash_cache: SwashCache,
-    glyph_atlas: TextAtlas,
-    glyph_viewport: Viewport,
-    text_layers: Vec<TextLayer>,
+    // stock::text resources — atlas, page textures, glyph instances.
+    text_paint: TextPaint,
 
     // Replayed by draw() in exact paint order.
     paint_items: Vec<PaintItem>,
@@ -142,7 +135,7 @@ impl Runner {
     /// the glyph atlas are built compatible.
     pub fn new(
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
         target_format: wgpu::TextureFormat,
     ) -> Self {
         // ---- Shared resources ----
@@ -153,8 +146,8 @@ impl Runner {
             mapped_at_creation: false,
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("aetna_wgpu::bind_layout"),
+        let frame_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("aetna_wgpu::frame_bind_layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -168,8 +161,8 @@ impl Runner {
         });
 
         let quad_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("aetna_wgpu::bind_group"),
-            layout: &bind_group_layout,
+            label: Some("aetna_wgpu::frame_bind_group"),
+            layout: &frame_bind_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: frame_buf.as_entire_binding(),
@@ -192,7 +185,7 @@ impl Runner {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("aetna_wgpu::pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[&frame_bind_layout],
             push_constant_ranges: &[],
         });
 
@@ -216,20 +209,8 @@ impl Runner {
         );
         pipelines.insert(ShaderHandle::Stock(StockShader::FocusRing), focus_pipeline);
 
-        // ---- Text pipeline (glyphon) ----
-        let mut font_system = FontSystem::new();
-        // Bundle Roboto with the crate so typography is consistent
-        // across machines (no fontconfig surprises). FontSystem still
-        // sees system fonts as a fallback, but our explicit Family::Name
-        // request below picks the bundled face.
-        let db = font_system.db_mut();
-        db.load_font_data(include_bytes!("../../aetna-core/fonts/Roboto-Regular.ttf").to_vec());
-        db.load_font_data(include_bytes!("../../aetna-core/fonts/Roboto-Medium.ttf").to_vec());
-        db.load_font_data(include_bytes!("../../aetna-core/fonts/Roboto-Bold.ttf").to_vec());
-        let swash_cache = SwashCache::new();
-        let glyph_cache = Cache::new(device);
-        let glyph_viewport = Viewport::new(device, &glyph_cache);
-        let glyph_atlas = TextAtlas::new(device, queue, &glyph_cache, target_format);
+        // Text pipeline + atlas (replaces glyphon).
+        let text_paint = TextPaint::new(device, target_format, &frame_bind_layout);
 
         Self {
             target_format,
@@ -243,11 +224,7 @@ impl Runner {
             runs: Vec::new(),
             pipelines,
 
-            font_system,
-            swash_cache,
-            glyph_atlas,
-            glyph_viewport,
-            text_layers: Vec::new(),
+            text_paint,
 
             paint_items: Vec::new(),
             viewport_px: (1, 1),
@@ -337,18 +314,11 @@ impl Runner {
             (viewport.w * scale_factor).ceil().max(1.0) as u32,
             (viewport.h * scale_factor).ceil().max(1.0) as u32,
         );
-        self.glyph_viewport.update(
-            queue,
-            Resolution {
-                width: self.viewport_px.0,
-                height: self.viewport_px.1,
-            },
-        );
 
         // ---- Paint stream: pack quads, prepare text, preserve order ----
         self.quad_scratch.clear();
         self.runs.clear();
-        self.text_layers.clear();
+        self.text_paint.frame_begin();
         self.paint_items.clear();
         let mut current: Option<(ShaderHandle, Option<PhysicalScissor>)> = None;
         let mut run_first: u32 = 0;
@@ -396,7 +366,7 @@ impl Runner {
                     text,
                     size,
                     weight,
-                    mono,
+                    mono: _,
                     wrap,
                     anchor,
                     ..
@@ -416,53 +386,20 @@ impl Runner {
                     if matches!(physical_scissor, Some(s) if s.w == 0 || s.h == 0) {
                         continue;
                     }
-                    let (buffer, meta) = build_text_buffer(
-                        &mut self.font_system,
+                    let runs = self.text_paint.record(
                         *rect,
-                        *scissor,
+                        physical_scissor,
+                        *color,
                         text,
                         *size,
                         *weight,
-                        *mono,
                         *wrap,
                         *anchor,
-                        *color,
                         scale_factor,
                     );
-                    let mut renderer = TextRenderer::new(
-                        &mut self.glyph_atlas,
-                        device,
-                        wgpu::MultisampleState::default(),
-                        None,
-                    );
-                    let text_area = TextArea {
-                        buffer: &buffer,
-                        left: meta.left,
-                        top: meta.top,
-                        // Positions/sizes are pre-multiplied to physical
-                        // pixels already; tell glyphon not to scale further.
-                        scale: 1.0,
-                        bounds: meta.bounds,
-                        default_color: meta.color,
-                        custom_glyphs: &[],
-                    };
-                    renderer
-                        .prepare(
-                            device,
-                            queue,
-                            &mut self.font_system,
-                            &mut self.glyph_atlas,
-                            &self.glyph_viewport,
-                            [text_area],
-                            &mut self.swash_cache,
-                        )
-                        .expect("glyphon prepare");
-                    let index = self.text_layers.len();
-                    self.text_layers.push(TextLayer {
-                        renderer,
-                        scissor: physical_scissor,
-                    });
-                    self.paint_items.push(PaintItem::Text(index));
+                    for index in runs {
+                        self.paint_items.push(PaintItem::Text(index));
+                    }
                 }
                 DrawOp::BackdropSnapshot => {
                     close_run(
@@ -503,6 +440,9 @@ impl Runner {
                 bytemuck::cast_slice(&self.quad_scratch),
             );
         }
+
+        // Sync atlas pages to GPU + upload glyph instances.
+        self.text_paint.flush(device, queue);
 
         let frame = FrameUniforms {
             viewport: [viewport.w, viewport.h],
@@ -639,12 +579,14 @@ impl Runner {
                     pass.draw(0..4, run.first..run.first + run.count);
                 }
                 PaintItem::Text(index) => {
-                    let layer = &self.text_layers[index];
-                    set_scissor(pass, layer.scissor, full);
-                    layer
-                        .renderer
-                        .render(&self.glyph_atlas, &self.glyph_viewport, pass)
-                        .expect("glyphon render");
+                    let run = self.text_paint.run(index);
+                    set_scissor(pass, run.scissor, full);
+                    pass.set_pipeline(self.text_paint.pipeline());
+                    pass.set_bind_group(0, &self.quad_bind_group, &[]);
+                    pass.set_bind_group(1, self.text_paint.page_bind_group(run.page), &[]);
+                    pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
+                    pass.set_vertex_buffer(1, self.text_paint.instance_buf().slice(..));
+                    pass.draw(0..4, run.first..run.first + run.count);
                 }
             }
         }

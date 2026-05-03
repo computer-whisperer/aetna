@@ -12,4 +12,3 @@ path = "src/lib.rs"
 aetna-core = { path = "../aetna-core" }
 wgpu = "23"
 bytemuck = { version = "1.21", features = ["derive"] }
-glyphon = "0.7"

@@ -160,7 +160,7 @@ fn push_node(
             id: n.computed_id.clone(),
             rect: painted_rect,
             scissor: own_scissor,
-            shader: ShaderHandle::Stock(StockShader::TextSdf),
+            shader: ShaderHandle::Stock(StockShader::Text),
             color: text_color,
             text: display,
             size: painted_font_size,

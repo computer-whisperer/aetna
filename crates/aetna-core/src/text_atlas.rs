@@ -8,10 +8,9 @@
 //! texture and draw textured quads at the positions returned in
 //! [`ShapedRun`].
 //!
-//! v5.1 ships this alongside the live glyphon path; the wgpu backend
-//! switches over in the next commit. SVG and layout/measurement keep
-//! using [`crate::text_metrics`] — its line-level layout is what they
-//! consume; the per-glyph artifact here is for paint only.
+//! SVG and layout/measurement keep using [`crate::text_metrics`] — its
+//! line-level layout is what they consume; the per-glyph artifact here
+//! is for paint only.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -159,13 +158,6 @@ impl GlyphAtlas {
 
     pub fn slot(&self, key: GlyphKey) -> Option<GlyphSlot> {
         self.map.get(&key).copied()
-    }
-
-    /// Borrow the atlas's `FontSystem`. Backends that still need to
-    /// drive cosmic-text directly (the v5.1 transitional glyphon path)
-    /// can route through here so font registration stays consistent.
-    pub fn font_system(&mut self) -> &mut FontSystem {
-        &mut self.font_system
     }
 
     /// Drain and return one dirty rect per page that has writes since

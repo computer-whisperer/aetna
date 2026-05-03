@@ -12,7 +12,7 @@
 //!   on `El` for the user-facing modifier API, but at render time they
 //!   resolve into [`crate::ir::DrawOp`]s bound to a stock shader
 //!   ([`crate::shader::StockShader::RoundedRect`] for surfaces,
-//!   [`crate::shader::StockShader::TextSdf`] for text).
+//!   [`crate::shader::StockShader::Text`] for text).
 //! - [`El::shader_override`] lets a custom component bind its own shader
 //!   instead of `rounded_rect` for the surface paint. v0.1 ships no
 //!   custom shaders — this is the escape hatch the substrate must support.
