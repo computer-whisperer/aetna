@@ -59,9 +59,12 @@
 //! - Focus traversal is linear through focusable keyed nodes. Rich
 //!   composites can layer roving focus on top later.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
-use crate::tree::{El, InteractionState, Rect};
+use crate::anim::{AnimProp, AnimValue, Animation, Timing};
+use crate::tokens;
+use crate::tree::{Color, El, InteractionState, Rect};
 
 /// Hit-test target metadata. `key` is the author-facing route, while
 /// `node_id` is the stable laid-out tree path used by artifacts.
@@ -264,6 +267,26 @@ pub struct UiState {
     /// each frame and stores it here. Matched in `key_down` ahead of
     /// focus activation.
     hotkeys: Vec<(KeyChord, String)>,
+    /// In-flight animations keyed by `(computed_id, prop)`. Created
+    /// lazily as state transitions happen; trimmed by
+    /// [`Self::tick_visual_animations`] when their nodes leave the tree.
+    animations: HashMap<(String, AnimProp), Animation>,
+    /// Animation pacing mode. Default is `Live`; headless render
+    /// binaries switch to `Settled` so single-frame snapshots reflect
+    /// the post-animation visual.
+    animation_mode: AnimationMode,
+}
+
+/// Animation pacing.
+///
+/// `Live` steps springs by wall-clock time, used by the windowed runner.
+/// `Settled` snaps every in-flight animation to its target each tick,
+/// used by headless paths so single-frame snapshots are deterministic.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnimationMode {
+    #[default]
+    Live,
+    Settled,
 }
 
 impl UiState {
@@ -355,6 +378,43 @@ impl UiState {
     /// `App::hotkeys()` once per build cycle.
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
         self.hotkeys = hotkeys;
+    }
+
+    /// Walk the laid-out tree, retarget per-(node, prop) animations to
+    /// the values implied by each node's current `state`, step them
+    /// forward to `now`, and write the eased values back into the El's
+    /// `fill` / `text_color` / `stroke` / `focus_ring_alpha`.
+    ///
+    /// The build closure regenerates `n.fill` etc. from the author's
+    /// intent each frame, so writing eased values back into the same
+    /// fields is safe — the next rebuild restores the originals before
+    /// this method runs again.
+    ///
+    /// Returns `true` if any animation is still in flight; the host
+    /// should request another redraw next frame.
+    pub fn tick_visual_animations(&mut self, root: &mut El, now: Instant) -> bool {
+        let mut visited: HashSet<(String, AnimProp)> = HashSet::new();
+        let mut needs_redraw = false;
+        let mode = self.animation_mode;
+        tick_node(root, &mut self.animations, &mut visited, now, mode, &mut needs_redraw);
+        // GC: drop animations whose node left the tree this frame.
+        self.animations.retain(|key, _| visited.contains(key));
+        needs_redraw
+    }
+
+    /// Switch animation pacing. The default is [`AnimationMode::Live`];
+    /// headless render binaries flip to [`AnimationMode::Settled`] so
+    /// a single-frame snapshot reflects the post-animation visual
+    /// without depending on integrator timing.
+    pub fn set_animation_mode(&mut self, mode: AnimationMode) {
+        self.animation_mode = mode;
+    }
+
+    /// Whether any visual animation is still moving. The host's runner
+    /// uses this (via [`crate::wgpu_render::PrepareResult`]) to keep
+    /// the redraw loop ticking only while there's motion.
+    pub fn has_animations_in_flight(&self) -> bool {
+        self.animations.values().any(is_in_flight)
     }
 
     pub fn key_down(
@@ -611,6 +671,136 @@ fn set_state_for_target(node: &mut El, target: &UiTarget, state: InteractionStat
     false
 }
 
+// ---------------------------------------------------------------------------
+// Visual-state animation helpers.
+// ---------------------------------------------------------------------------
+
+/// All four animatable visual props. The walker iterates over this list
+/// per node so adding a prop is a one-line extension.
+const ANIMATED_PROPS: &[AnimProp] = &[
+    AnimProp::StateFill,
+    AnimProp::StateStroke,
+    AnimProp::StateTextColor,
+    AnimProp::FocusRingAlpha,
+];
+
+fn tick_node(
+    node: &mut El,
+    anims: &mut HashMap<(String, AnimProp), Animation>,
+    visited: &mut HashSet<(String, AnimProp)>,
+    now: Instant,
+    mode: AnimationMode,
+    needs_redraw: &mut bool,
+) {
+    if !node.computed_id.is_empty() && node.key.is_some() {
+        for &prop in ANIMATED_PROPS {
+            if let Some(target) = compute_target(node, prop) {
+                let key = (node.computed_id.clone(), prop);
+                visited.insert(key.clone());
+                let anim = anims.entry(key).or_insert_with(|| {
+                    // Seed at the target so a node enters the tree
+                    // already-settled. The first state change will
+                    // retarget and the spring will begin moving.
+                    Animation::new(target, target, timing_for(prop), now)
+                });
+                anim.retarget(target, now);
+                let settled = match mode {
+                    AnimationMode::Live => anim.step(now),
+                    AnimationMode::Settled => {
+                        anim.settle();
+                        true
+                    }
+                };
+                write_prop(node, prop, anim.current);
+                if !settled {
+                    *needs_redraw = true;
+                }
+            }
+        }
+    }
+    for child in &mut node.children {
+        tick_node(child, anims, visited, now, mode, needs_redraw);
+    }
+}
+
+/// Compute the visual target for `prop` based on the node's current
+/// interaction state and its build-closure-supplied original value.
+/// Returns `None` if the prop doesn't apply (e.g., a node with no fill
+/// has no `StateFill` to animate).
+fn compute_target(n: &El, prop: AnimProp) -> Option<AnimValue> {
+    match prop {
+        AnimProp::StateFill => n.fill.map(|fill| AnimValue::Color(state_color(fill, n.state))),
+        AnimProp::StateStroke => n.stroke.map(|stroke| AnimValue::Color(state_color(stroke, n.state))),
+        AnimProp::StateTextColor => n
+            .text_color
+            .map(|c| AnimValue::Color(state_text_color(c, n.state))),
+        AnimProp::FocusRingAlpha => {
+            let target = if matches!(n.state, InteractionState::Focus) {
+                1.0
+            } else {
+                0.0
+            };
+            Some(AnimValue::Float(target))
+        }
+    }
+}
+
+fn state_color(base: Color, state: InteractionState) -> Color {
+    match state {
+        InteractionState::Hover => base.lighten(tokens::HOVER_LIGHTEN),
+        InteractionState::Press => base.darken(tokens::PRESS_DARKEN),
+        _ => base,
+    }
+}
+
+fn state_text_color(base: Color, state: InteractionState) -> Color {
+    match state {
+        InteractionState::Hover => base.lighten(tokens::HOVER_LIGHTEN * 0.5),
+        _ => base,
+    }
+}
+
+/// Per-prop timing. Hover/focus settle quickly (overshoot reads as
+/// jitter on tiny color deltas); press uses a slightly springier curve
+/// so the rebound on release feels responsive.
+fn timing_for(prop: AnimProp) -> Timing {
+    match prop {
+        AnimProp::StateFill | AnimProp::StateStroke | AnimProp::StateTextColor => {
+            Timing::SPRING_QUICK
+        }
+        AnimProp::FocusRingAlpha => Timing::SPRING_QUICK,
+    }
+}
+
+fn write_prop(n: &mut El, prop: AnimProp, value: AnimValue) {
+    match (prop, value) {
+        (AnimProp::StateFill, AnimValue::Color(c)) => n.fill = Some(c),
+        (AnimProp::StateStroke, AnimValue::Color(c)) => n.stroke = Some(c),
+        (AnimProp::StateTextColor, AnimValue::Color(c)) => n.text_color = Some(c),
+        (AnimProp::FocusRingAlpha, AnimValue::Float(v)) => {
+            n.focus_ring_alpha = v.clamp(0.0, 1.0);
+        }
+        _ => {}
+    }
+}
+
+fn is_in_flight(anim: &Animation) -> bool {
+    let cur = anim.current.channels();
+    let tgt = anim.target.channels();
+    if cur.n != tgt.n {
+        return true;
+    }
+    for i in 0..cur.n {
+        if (cur.v[i] - tgt.v[i]).abs() > f32::EPSILON {
+            return true;
+        }
+        if anim.velocity.n == cur.n && anim.velocity.v[i].abs() > f32::EPSILON {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -671,6 +861,8 @@ mod tests {
             focus_order: Vec::new(),
             scroll_offsets: HashMap::new(),
             hotkeys: Vec::new(),
+            animations: HashMap::new(),
+            animation_mode: AnimationMode::default(),
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Hover));
@@ -688,6 +880,8 @@ mod tests {
             focus_order: Vec::new(),
             scroll_offsets: HashMap::new(),
             hotkeys: Vec::new(),
+            animations: HashMap::new(),
+            animation_mode: AnimationMode::default(),
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Press));
@@ -1004,6 +1198,142 @@ mod tests {
         state.sync_focus_order(&tree);
 
         assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), None);
+    }
+
+    fn find_fill(node: &El, key: &str) -> Option<Color> {
+        if node.key.as_deref() == Some(key) {
+            return node.fill;
+        }
+        node.children.iter().find_map(|c| find_fill(c, key))
+    }
+    fn find_focus_ring_alpha(node: &El, key: &str) -> Option<f32> {
+        if node.key.as_deref() == Some(key) {
+            return Some(node.focus_ring_alpha);
+        }
+        node.children.iter().find_map(|c| find_focus_ring_alpha(c, key))
+    }
+
+    #[test]
+    fn settled_mode_snaps_hover_to_lightened_fill() {
+        // Headless contract: Settled mode must produce the post-hover
+        // visual on a single prepare. A windowed runner (Live mode)
+        // would ease over many frames; the fixture path can't wait.
+        let mut tree = lay_out_counter();
+        let mut state = UiState::new();
+        state.set_animation_mode(AnimationMode::Settled);
+        state.hovered = Some(target(&tree, "inc"));
+        state.apply_to_tree(&mut tree);
+        let original = find_fill(&tree, "inc").expect("inc fill");
+
+        let needs_redraw = state.tick_visual_animations(&mut tree, Instant::now());
+        let after = find_fill(&tree, "inc").expect("inc fill");
+
+        assert!(!needs_redraw, "Settled mode should never report in flight");
+        let expected = original.lighten(tokens::HOVER_LIGHTEN);
+        assert_eq!(
+            (after.r, after.g, after.b),
+            (expected.r, expected.g, expected.b),
+            "expected lightened fill, got {after:?} (original {original:?})",
+        );
+    }
+
+    #[test]
+    fn live_mode_eases_hover_over_multiple_ticks() {
+        // First tick after a state change should be partway between the
+        // original and the lightened target — neither snapped to either
+        // endpoint. With SPRING_QUICK over an 8 ms tick the spring has
+        // moved a small amount.
+        let mut tree = lay_out_counter();
+        let mut state = UiState::new();
+        // Bootstrap: tick once with no hover so the tracker seeds the
+        // (button, StateFill) entry at the original fill.
+        let t0 = Instant::now();
+        state.tick_visual_animations(&mut tree, t0);
+        let original = find_fill(&tree, "inc").expect("seed fill");
+
+        // Now hover and tick a single 8 ms step.
+        state.hovered = Some(target(&tree, "inc"));
+        state.apply_to_tree(&mut tree);
+        let needs_redraw = state.tick_visual_animations(
+            &mut tree,
+            t0 + std::time::Duration::from_millis(8),
+        );
+        let mid = find_fill(&tree, "inc").expect("mid fill");
+        let target_color = original.lighten(tokens::HOVER_LIGHTEN);
+
+        assert!(needs_redraw, "spring should still be in flight after one 8 ms tick");
+        // mid is somewhere between original and target — strictly not
+        // equal to either, given a non-zero stiffness and a non-zero dt.
+        let between = |a: u8, b: u8, c: u8| (a.min(b)..=a.max(b)).contains(&c);
+        assert!(
+            between(original.r, target_color.r, mid.r)
+                && between(original.g, target_color.g, mid.g)
+                && between(original.b, target_color.b, mid.b),
+            "mid {mid:?} should be between {original:?} and {target_color:?}",
+        );
+    }
+
+    #[test]
+    fn focus_ring_alpha_eases_in_and_out() {
+        let mut tree = lay_out_counter();
+        let mut state = UiState::new();
+        state.set_animation_mode(AnimationMode::Settled);
+
+        // No focus → alpha settled at 0.
+        state.tick_visual_animations(&mut tree, Instant::now());
+        assert_eq!(find_focus_ring_alpha(&tree, "inc"), Some(0.0));
+
+        // Focus on inc → alpha settles at 1.0.
+        let mut tree = lay_out_counter();
+        state.focused = Some(target(&tree, "inc"));
+        state.apply_to_tree(&mut tree);
+        state.tick_visual_animations(&mut tree, Instant::now());
+        assert_eq!(find_focus_ring_alpha(&tree, "inc"), Some(1.0));
+
+        // Lose focus → alpha settles back to 0.
+        let mut tree = lay_out_counter();
+        state.focused = None;
+        state.apply_to_tree(&mut tree);
+        state.tick_visual_animations(&mut tree, Instant::now());
+        assert_eq!(find_focus_ring_alpha(&tree, "inc"), Some(0.0));
+    }
+
+    #[test]
+    fn animation_entries_gc_when_node_leaves_tree() {
+        // Build a tree with two buttons; hover one to seed an entry.
+        // Then build a different tree with only one button. The orphan's
+        // animation entries should be trimmed.
+        let mut tree_a = lay_out_counter();
+        let mut state = UiState::new();
+        state.hovered = Some(target(&tree_a, "inc"));
+        state.apply_to_tree(&mut tree_a);
+        state.tick_visual_animations(&mut tree_a, Instant::now());
+        let inc_id_a = find_id(&tree_a, "inc").expect("inc id");
+        assert!(
+            state
+                .animations
+                .keys()
+                .any(|(id, _)| id == &inc_id_a),
+            "expected at least one entry for inc"
+        );
+
+        // Rebuild with only the dec button. inc entries should be gone.
+        let mut tree_b = column([
+            crate::text("0"),
+            row([button("-").key("dec")]),
+        ])
+        .padding(20.0);
+        layout(&mut tree_b, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.hovered = None;
+        state.apply_to_tree(&mut tree_b);
+        state.tick_visual_animations(&mut tree_b, Instant::now());
+        assert!(
+            !state
+                .animations
+                .keys()
+                .any(|(id, _)| id == &inc_id_a),
+            "stale entries for inc were not GC'd"
+        );
     }
 
     fn find_rect(node: &El, key: &str) -> Option<Rect> {

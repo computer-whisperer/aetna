@@ -4,11 +4,12 @@
 //! paint order. Each visual fact resolves to a `Quad` (bound to a stock
 //! or custom shader, with uniforms packed) or a `GlyphRun`.
 //!
-//! State styling is applied here on the CPU side: hover lightens fills,
-//! press darkens, focus emits an extra ring quad, disabled multiplies
-//! alpha, loading appends " ⋯". When v0.2 lands, state will likely
-//! become a uniform that shaders interpret directly — but for v0.1 the
-//! state delta still happens here so stock shaders can stay stateless.
+//! State styling lands here on the CPU side. Hover lightens / press
+//! darkens / focus-ring fade are pre-eased into `n.fill`, `n.text_color`,
+//! `n.stroke`, and `n.focus_ring_alpha` by
+//! [`crate::event::UiState::tick_visual_animations`] *before* this
+//! pass runs. What remains here are the deltas that don't ease — alpha
+//! multiplication for `Disabled`, and the `Loading` text suffix.
 
 use crate::ir::*;
 use crate::shader::*;
@@ -62,9 +63,11 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>, inherited_scissor: Option<Rect>) {
         });
     }
 
-    // Focus ring: an extra inset quad on focus-state nodes, painted by
-    // `stock::focus_ring`.
-    if matches!(n.state, InteractionState::Focus)
+    // Focus ring: emit while the per-node alpha (eased by the
+    // animation tracker on focus enter / leave) is non-zero. The ring
+    // colour multiplies `tokens::FOCUS_RING.a` by the alpha so the ring
+    // fades in on focus and fades out after focus moves elsewhere.
+    if n.focus_ring_alpha > 0.0
         && (matches!(
             n.kind,
             Kind::Button | Kind::Card | Kind::Badge | Kind::Custom(_)
@@ -72,7 +75,11 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>, inherited_scissor: Option<Rect>) {
     {
         let ring_rect = inset_rect(n.computed, -tokens::FOCUS_RING_WIDTH * 0.5);
         let mut uniforms = UniformBlock::new();
-        uniforms.insert("color", UniformValue::Color(tokens::FOCUS_RING));
+        let base = tokens::FOCUS_RING;
+        let eased_alpha = (base.a as f32 * n.focus_ring_alpha)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+        uniforms.insert("color", UniformValue::Color(base.with_alpha(eased_alpha)));
         uniforms.insert("width", UniformValue::F32(tokens::FOCUS_RING_WIDTH));
         uniforms.insert(
             "radius",
@@ -120,12 +127,13 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>, inherited_scissor: Option<Rect>) {
     }
 }
 
-/// Apply state-specific visual deltas, returning the effective
-/// (fill, stroke, text_color, font_weight, optional text suffix).
+/// Apply the residual non-eased state deltas, returning the effective
+/// `(fill, stroke, text_color, font_weight, optional text suffix)`.
 ///
-/// In v0.2 this likely moves into the shader via a `state` uniform; for
-/// v0.1 the CPU-side delta is simpler and lets stock shaders stay
-/// stateless.
+/// Hover/press/focus-ring transitions are pre-eased into `n.fill`,
+/// `n.text_color`, `n.stroke`, and `n.focus_ring_alpha` by the
+/// animation tracker before draw_ops runs. Disabled (alpha multiply)
+/// and Loading (text suffix) don't ease and are still applied here.
 fn apply_state(
     n: &El,
 ) -> (
@@ -142,16 +150,10 @@ fn apply_state(
     let mut suffix = None;
 
     match n.state {
-        InteractionState::Default | InteractionState::Focus => {}
-        InteractionState::Hover => {
-            fill = fill.map(|c| c.lighten(tokens::HOVER_LIGHTEN));
-            stroke = stroke.map(|c| c.lighten(tokens::HOVER_LIGHTEN));
-            text_color = text_color.map(|c| c.lighten(tokens::HOVER_LIGHTEN * 0.5));
-        }
-        InteractionState::Press => {
-            fill = fill.map(|c| c.darken(tokens::PRESS_DARKEN));
-            stroke = stroke.map(|c| c.darken(tokens::PRESS_DARKEN));
-        }
+        InteractionState::Default
+        | InteractionState::Focus
+        | InteractionState::Hover
+        | InteractionState::Press => {}
         InteractionState::Disabled => {
             let alpha = (255.0 * tokens::DISABLED_ALPHA) as u8;
             fill = fill.map(|c| c.with_alpha(((c.a as u32 * alpha as u32) / 255) as u8));

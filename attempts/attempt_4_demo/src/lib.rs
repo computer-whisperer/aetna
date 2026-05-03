@@ -230,7 +230,13 @@ impl<A: App> ApplicationHandler for Host<A> {
                     gfx.config.width as f32 / scale_factor,
                     gfx.config.height as f32 / scale_factor,
                 );
-                gfx.renderer.prepare(&gfx.device, &gfx.queue, &mut tree, viewport, scale_factor);
+                let prepare = gfx.renderer.prepare(
+                    &gfx.device,
+                    &gfx.queue,
+                    &mut tree,
+                    viewport,
+                    scale_factor,
+                );
 
                 let mut encoder = gfx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("attempt_4_demo::encoder"),
@@ -255,6 +261,13 @@ impl<A: App> ApplicationHandler for Host<A> {
                 }
                 gfx.queue.submit(Some(encoder.finish()));
                 frame.present();
+
+                // Animation in flight → request another frame so springs
+                // keep stepping. When everything settles, the loop idles
+                // again until the next input event.
+                if prepare.needs_redraw {
+                    gfx.window.request_redraw();
+                }
             }
             _ => {}
         }

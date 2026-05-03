@@ -341,6 +341,13 @@ pub struct El {
     pub computed: Rect,
     /// Stable path-based ID, filled by the layout pass for inspection.
     pub computed_id: String,
+
+    /// Focus-ring alpha for this node, in `[0, 1]`. Written by
+    /// [`crate::event::UiState::tick_visual_animations`]; eases 0→1 on
+    /// focus enter and 1→0 on focus leave. The renderer emits a focus
+    /// ring quad iff this is > 0 and scales the ring's color alpha
+    /// by it. Lets the ring fade out after focus moves elsewhere.
+    pub focus_ring_alpha: f32,
 }
 
 impl Default for El {
@@ -379,6 +386,7 @@ impl Default for El {
             children: Vec::new(),
             computed: Rect::default(),
             computed_id: String::new(),
+            focus_ring_alpha: 0.0,
         }
     }
 }

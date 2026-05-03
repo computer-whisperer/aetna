@@ -131,6 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut renderer = UiRenderer::new(&device, &queue, format);
+    renderer.set_animation_mode(attempt_4::AnimationMode::Settled);
     // The whole point — register a shader by name; nodes referring to
     // ShaderHandle::Custom("gradient") now paint through it.
     renderer.register_shader(&device, "gradient", GRADIENT_WGSL);

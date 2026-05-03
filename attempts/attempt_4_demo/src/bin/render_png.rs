@@ -99,6 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut renderer = UiRenderer::new(&device, &queue, format);
+    renderer.set_animation_mode(attempt_4::AnimationMode::Settled);
     let mut tree = settings();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 

@@ -110,6 +110,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut renderer = UiRenderer::new(&device, &queue, format);
+    // Headless single-frame snapshot: settle every animation each tick
+    // so the lightened-on-hover output doesn't depend on integrator
+    // timing between the simulated pointer move and prepare.
+    renderer.set_animation_mode(attempt_4::AnimationMode::Settled);
 
     // ---- v0.2 round-trip ----
     //

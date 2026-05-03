@@ -57,6 +57,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
 use glyphon::cosmic_text::Align;
@@ -67,7 +68,9 @@ use glyphon::{
 use wgpu::util::DeviceExt;
 
 use crate::draw_ops;
-use crate::event::{self, KeyChord, KeyModifiers, UiEvent, UiEventKind, UiKey, UiState};
+use crate::event::{
+    self, AnimationMode, KeyChord, KeyModifiers, UiEvent, UiEventKind, UiKey, UiState,
+};
 use crate::ir::{DrawOp, TextAnchor};
 use crate::layout;
 use crate::shader::{ShaderHandle, StockShader, UniformValue};
@@ -114,6 +117,16 @@ struct InstanceRun {
     scissor: Option<PhysicalScissor>,
     first: u32,
     count: u32,
+}
+
+/// Reported back from [`UiRenderer::prepare`] each frame. The host
+/// uses `needs_redraw` to keep the redraw loop ticking only while there
+/// is in-flight motion (a hover spring still settling, a focus ring
+/// still fading out), then idles. This lets animation drive frames
+/// without a continuous tick when nothing is changing.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PrepareResult {
+    pub needs_redraw: bool,
 }
 
 /// Renderer state owned by the host. One instance per surface/format.
@@ -340,7 +353,7 @@ impl UiRenderer {
         root: &mut El,
         viewport: Rect,
         scale_factor: f32,
-    ) {
+    ) -> PrepareResult {
         // Pre-pass: assign IDs so scroll offsets (keyed by id) can be
         // applied before layout positions anything.
         layout::assign_ids(root);
@@ -355,6 +368,12 @@ impl UiRenderer {
         // Apply UI-state visual deltas after layout, so focus targets can
         // survive rebuilds by node id and update their current rect.
         self.ui_state.apply_to_tree(root);
+        // Tick visual animations: retarget springs to the values implied
+        // by current state, sample at `now`, write eased values into the
+        // tree. Anything in flight forces another redraw next frame.
+        let needs_redraw = self
+            .ui_state
+            .tick_visual_animations(root, Instant::now());
         let ops = draw_ops::draw_ops(root);
 
         self.viewport_px = (
@@ -538,6 +557,8 @@ impl UiRenderer {
         // Snapshot the laid-out tree so pointer events arriving before
         // the next prepare can hit-test against current geometry.
         self.last_tree = Some(root.clone());
+
+        PrepareResult { needs_redraw }
     }
 
     // ---- v0.2 input plumbing ----
@@ -615,6 +636,14 @@ impl UiRenderer {
     /// passing `app.hotkeys()` so chords stay in sync with state.
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
         self.ui_state.set_hotkeys(hotkeys);
+    }
+
+    /// Switch animation pacing. Default is [`AnimationMode::Live`].
+    /// Headless render binaries should call this with
+    /// [`AnimationMode::Settled`] so a single-frame snapshot reflects
+    /// the post-animation visual without depending on integrator timing.
+    pub fn set_animation_mode(&mut self, mode: AnimationMode) {
+        self.ui_state.set_animation_mode(mode);
     }
 
     /// Apply a wheel delta in **logical** pixels at `(x, y)`. Routes to

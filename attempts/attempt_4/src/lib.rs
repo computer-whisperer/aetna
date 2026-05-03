@@ -56,6 +56,7 @@ pub mod layout;
 pub mod shader;
 pub mod ir;
 pub mod draw_ops;
+pub mod anim;
 pub mod event;
 pub mod svg;
 pub mod inspect;
@@ -70,7 +71,7 @@ pub mod card;
 pub mod overlay;
 
 pub mod wgpu_render;
-pub use wgpu_render::UiRenderer;
+pub use wgpu_render::{PrepareResult, UiRenderer};
 
 // Prelude — for `use attempt_4::*;`.
 pub use tree::{
@@ -83,9 +84,10 @@ pub use layout::layout;
 pub use shader::{ShaderHandle, StockShader, ShaderBinding, UniformBlock, UniformValue};
 pub use ir::{DrawOp, TextAnchor};
 pub use draw_ops::draw_ops;
+pub use anim::{AnimProp, AnimValue, Animation, SpringConfig, Timing, TweenConfig};
 pub use event::{
-    App, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget, focus_order,
-    hit_test, hit_test_target,
+    AnimationMode, App, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget,
+    focus_order, hit_test, hit_test_target,
 };
 pub use svg::svg_from_ops;
 pub use inspect::dump_tree;
