@@ -147,9 +147,12 @@ fn walk(
         }
     }
 
-    // Overflow: child rect extends past parent.
+    // Overflow: child rect extends past parent. Scrollable parents
+    // overflow their content on the main axis by design — that's the
+    // whole point — so don't flag children of a scroll viewport.
+    let suppress_overflow = n.scrollable;
     for c in &n.children {
-        if !rect_contains(n.computed, c.computed, 0.5) {
+        if !suppress_overflow && !rect_contains(n.computed, c.computed, 0.5) {
             let dx_left = (n.computed.x - c.computed.x).max(0.0);
             let dx_right = (c.computed.right() - n.computed.right()).max(0.0);
             let dy_top = (n.computed.y - c.computed.y).max(0.0);

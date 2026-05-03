@@ -341,7 +341,16 @@ impl UiRenderer {
         viewport: Rect,
         scale_factor: f32,
     ) {
+        // Pre-pass: assign IDs so scroll offsets (keyed by id) can be
+        // applied before layout positions anything.
+        layout::assign_ids(root);
+        self.ui_state.apply_scroll_to_tree(root);
+
         layout::layout(root, viewport);
+        // Layout has clamped any out-of-range scroll offsets; persist
+        // the clamped values so the next frame starts from a valid state.
+        self.ui_state.read_scroll_from_tree(root);
+
         self.ui_state.sync_focus_order(root);
         // Apply UI-state visual deltas after layout, so focus targets can
         // survive rebuilds by node id and update their current rect.
@@ -600,6 +609,18 @@ impl UiRenderer {
         repeat: bool,
     ) -> Option<UiEvent> {
         self.ui_state.key_down(key, modifiers, repeat)
+    }
+
+    /// Apply a wheel delta in **logical** pixels at `(x, y)`. Routes to
+    /// the deepest scrollable container under the cursor in the last
+    /// laid-out tree. Returns `true` if the event landed on a scrollable
+    /// (host should `request_redraw` so the next frame applies the new
+    /// offset).
+    pub fn pointer_wheel(&mut self, x: f32, y: f32, dy: f32) -> bool {
+        let Some(tree) = self.last_tree.as_ref() else {
+            return false;
+        };
+        self.ui_state.pointer_wheel(tree, (x, y), dy)
     }
 
     /// Record draws into the host-managed render pass. Call after

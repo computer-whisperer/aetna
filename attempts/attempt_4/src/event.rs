@@ -59,6 +59,8 @@
 //! - Focus traversal is linear through focusable keyed nodes. Rich
 //!   composites can layer roving focus on top later.
 
+use std::collections::HashMap;
+
 use crate::tree::{El, InteractionState, Rect};
 
 /// Hit-test target metadata. `key` is the author-facing route, while
@@ -163,6 +165,11 @@ pub struct UiState {
     pub pressed: Option<UiTarget>,
     pub focused: Option<UiTarget>,
     focus_order: Vec<UiTarget>,
+    /// Scroll offset (logical pixels) per scrollable node, keyed by
+    /// `El::computed_id`. The library applies these to the tree before
+    /// layout; the layout pass clamps them to the available range and
+    /// the renderer writes the clamped values back here.
+    scroll_offsets: HashMap<String, f32>,
 }
 
 impl UiState {
@@ -219,6 +226,35 @@ impl UiState {
 
     pub fn focus_prev(&mut self) -> Option<&UiTarget> {
         self.move_focus(-1)
+    }
+
+    /// Copy stored scroll offsets onto the matching scrollable nodes so
+    /// the layout pass can use them. Call after `assign_ids` and before
+    /// `layout`. Nodes without a stored offset get `0.0`.
+    pub fn apply_scroll_to_tree(&self, root: &mut El) {
+        apply_scroll_rec(root, &self.scroll_offsets);
+    }
+
+    /// Walk the laid-out tree and read the (now-clamped) `scroll_offset_y`
+    /// values back. Call after `layout`. Removes entries for ids that no
+    /// longer exist in the tree so stale offsets don't pile up across
+    /// rebuilds.
+    pub fn read_scroll_from_tree(&mut self, root: &El) {
+        let mut next = HashMap::new();
+        collect_scroll_rec(root, &mut next);
+        self.scroll_offsets = next;
+    }
+
+    /// Increment the scroll offset for the deepest scrollable container
+    /// containing `point`. Returns `true` if any scrollable was hit and
+    /// updated (host can use this to decide whether to request a redraw).
+    pub fn pointer_wheel(&mut self, root: &El, point: (f32, f32), dy: f32) -> bool {
+        if let Some(id) = scroll_target_at(root, point) {
+            *self.scroll_offsets.entry(id).or_insert(0.0) += dy;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn key_down(
@@ -380,6 +416,66 @@ fn hit_test_rec(node: &El, point: (f32, f32), inherited_clip: Option<Rect>) -> H
     Hit::Miss
 }
 
+fn apply_scroll_rec(node: &mut El, offsets: &HashMap<String, f32>) {
+    if node.scrollable {
+        node.scroll_offset_y = offsets.get(&node.computed_id).copied().unwrap_or(0.0);
+    }
+    for c in &mut node.children {
+        apply_scroll_rec(c, offsets);
+    }
+}
+
+fn collect_scroll_rec(node: &El, out: &mut HashMap<String, f32>) {
+    if node.scrollable && node.scroll_offset_y != 0.0 {
+        out.insert(node.computed_id.clone(), node.scroll_offset_y);
+    }
+    for c in &node.children {
+        collect_scroll_rec(c, out);
+    }
+}
+
+/// Return the `computed_id` of the deepest scrollable container whose
+/// `computed` rect contains `point`, respecting clipping ancestors.
+/// Used to route wheel events.
+fn scroll_target_at(root: &El, point: (f32, f32)) -> Option<String> {
+    let mut hit = None;
+    scroll_target_rec(root, point, None, &mut hit);
+    hit
+}
+
+fn scroll_target_rec(
+    node: &El,
+    point: (f32, f32),
+    inherited_clip: Option<Rect>,
+    out: &mut Option<String>,
+) {
+    if let Some(clip) = inherited_clip {
+        if !clip.contains(point.0, point.1) {
+            return;
+        }
+    }
+    if !node.computed.contains(point.0, point.1) {
+        return;
+    }
+    if node.scrollable {
+        *out = Some(node.computed_id.clone());
+    }
+    let child_clip = if node.clip {
+        match inherited_clip {
+            Some(clip) => Some(
+                clip.intersect(node.computed)
+                    .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+            ),
+            None => Some(node.computed),
+        }
+    } else {
+        inherited_clip
+    };
+    for c in &node.children {
+        scroll_target_rec(c, point, child_clip, out);
+    }
+}
+
 fn set_state_for_target(node: &mut El, target: &UiTarget, state: InteractionState) -> bool {
     if node.computed_id == target.node_id {
         node.state = state;
@@ -398,7 +494,7 @@ mod tests {
     use super::*;
     use crate::layout::layout;
     use crate::tree::*;
-    use crate::{button, column, row};
+    use crate::{button, column, row, scroll};
 
     fn lay_out_counter() -> El {
         let mut tree = column([
@@ -451,6 +547,7 @@ mod tests {
             pressed: None,
             focused: None,
             focus_order: Vec::new(),
+            scroll_offsets: HashMap::new(),
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Hover));
@@ -466,6 +563,7 @@ mod tests {
             pressed: Some(target(&tree, "inc")),
             focused: None,
             focus_order: Vec::new(),
+            scroll_offsets: HashMap::new(),
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Press));
@@ -583,6 +681,67 @@ mod tests {
                 .is_none()
         );
         assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("dec"));
+    }
+
+    #[test]
+    fn hit_test_through_scrolled_content() {
+        // Three 60px buttons in a 100px-tall scroll viewport. The
+        // second button is initially below the visible area.
+        // After scrolling 60px, button[1] is now at the top.
+        let mut tree = scroll([
+            button("zero").key("b0").height(Size::Fixed(60.0)),
+            button("one").key("b1").height(Size::Fixed(60.0)),
+            button("two").key("b2").height(Size::Fixed(60.0)),
+        ])
+        .key("list")
+        .height(Size::Fixed(100.0));
+        tree.scroll_offset_y = 60.0;
+        layout(&mut tree, Rect::new(0.0, 0.0, 200.0, 100.0));
+
+        // Buttons hug their text width — click at b1's center after the
+        // scroll shift to land inside its actual rect.
+        let r1 = find_rect(&tree, "b1").expect("b1 rect");
+        let hit = hit_test(&tree, (r1.center_x(), r1.center_y()));
+        assert_eq!(hit.as_deref(), Some("b1"));
+
+        // b0 has been scrolled above the viewport — clicking where it
+        // would now sit (above y=0) misses it.
+        let r0 = find_rect(&tree, "b0").expect("b0 rect");
+        assert!(r0.bottom() <= 0.0, "b0 should be above the viewport, was {:?}", r0);
+    }
+
+    #[test]
+    fn pointer_wheel_routes_to_deepest_scrollable() {
+        // Outer scroll containing an inner scroll. Wheel events at the
+        // inner's center should target the inner.
+        let mut tree = scroll([
+            button("above").key("above").height(Size::Fixed(40.0)),
+            scroll([button("inner-row").key("inner-row").height(Size::Fixed(60.0))])
+                .key("inner")
+                .height(Size::Fixed(100.0)),
+        ])
+        .key("outer")
+        .height(Size::Fixed(300.0));
+        layout(&mut tree, Rect::new(0.0, 0.0, 200.0, 300.0));
+
+        let inner_rect = find_rect(&tree, "inner-row").expect("inner row rect");
+        let mut state = UiState::new();
+        let routed = state.pointer_wheel(&tree, (inner_rect.center_x(), inner_rect.center_y()), 30.0);
+        assert!(routed, "wheel should route to a scrollable");
+        // Inner's id includes its key.
+        let inner_id = find_id_for_kind(&tree, "inner").expect("inner id");
+        assert!(
+            state.scroll_offsets.contains_key(&inner_id),
+            "expected inner offset, got {:?}",
+            state.scroll_offsets.keys().collect::<Vec<_>>()
+        );
+    }
+
+    fn find_id_for_kind(node: &El, key: &str) -> Option<String> {
+        if matches!(node.kind, Kind::Scroll) && node.key.as_deref() == Some(key) {
+            return Some(node.computed_id.clone());
+        }
+        node.children.iter().find_map(|c| find_id_for_kind(c, key))
     }
 
     #[test]

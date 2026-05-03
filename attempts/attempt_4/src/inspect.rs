@@ -41,6 +41,9 @@ fn dump_node(n: &El, depth: usize, s: &mut String) {
     if n.clip {
         s.push_str(" clip=true");
     }
+    if n.scrollable {
+        let _ = write!(s, " scroll_y={:.0}", n.scroll_offset_y);
+    }
     if let Some(text) = &n.text {
         let preview: String = text.chars().take(40).collect();
         let suffix = if text.chars().count() > 40 { "…" } else { "" };
@@ -84,6 +87,7 @@ fn kind_str(k: &Kind) -> &str {
         Kind::Overlay => "Overlay",
         Kind::Scrim => "Scrim",
         Kind::Modal => "Modal",
+        Kind::Scroll => "Scroll",
         Kind::Custom(name) => name,
     }
 }

@@ -1,0 +1,265 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="600" viewBox="0 0 720 600">
+<defs>
+  <filter id="shadow-sm" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+    <feOffset dx="0" dy="2"/>
+    <feComponentTransfer><feFuncA type="linear" slope="0.20"/></feComponentTransfer>
+    <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="shadow-md" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+    <feOffset dx="0" dy="6"/>
+    <feComponentTransfer><feFuncA type="linear" slope="0.28"/></feComponentTransfer>
+    <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="shadow-lg" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+    <feOffset dx="0" dy="12"/>
+    <feComponentTransfer><feFuncA type="linear" slope="0.32"/></feComponentTransfer>
+    <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+<rect width="100%" height="100%" fill="#0e1016"/>
+<text data-node="root.heading.0" data-shader="stock::text_sdf" x="28.00" y="46.60" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="20.00" font-weight="600" fill="#e8eef6" text-anchor="start">Notifications</text>
+<text data-node="root.text.1" data-shader="stock::text_sdf" x="28.00" y="87.02" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">Roll the wheel inside the panel to scroll. The content is taller than the viewport.</text>
+<clipPath id="clip-2"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-2)">
+<rect data-node="root.scroll[notifications].group.0.badge.0" data-shader="stock::rounded_rect" x="48.00" y="-89.40" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-3"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-3)">
+<text data-node="root.scroll[notifications].group.0.badge.0" data-shader="stock::text_sdf" x="63.20" y="-75.64" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#0</text>
+</g>
+<clipPath id="clip-4"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-4)">
+<text data-node="root.scroll[notifications].group.0.text.1" data-shader="stock::text_sdf" x="86.40" y="-75.18" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 0</text>
+</g>
+<clipPath id="clip-5"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-5)">
+<text data-node="root.scroll[notifications].group.0.text.3" data-shader="stock::text_sdf" x="621.60" y="-75.18" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">1m ago</text>
+</g>
+<clipPath id="clip-6"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-6)">
+<rect data-node="root.scroll[notifications].group.1.badge.0" data-shader="stock::rounded_rect" x="48.00" y="-33.40" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-7"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-7)">
+<text data-node="root.scroll[notifications].group.1.badge.0" data-shader="stock::text_sdf" x="63.20" y="-19.64" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#1</text>
+</g>
+<clipPath id="clip-8"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-8)">
+<text data-node="root.scroll[notifications].group.1.text.1" data-shader="stock::text_sdf" x="86.40" y="-19.18" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 1</text>
+</g>
+<clipPath id="clip-9"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-9)">
+<text data-node="root.scroll[notifications].group.1.text.3" data-shader="stock::text_sdf" x="621.60" y="-19.18" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">2m ago</text>
+</g>
+<clipPath id="clip-10"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-10)">
+<rect data-node="root.scroll[notifications].group.2.badge.0" data-shader="stock::rounded_rect" x="48.00" y="22.60" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-11"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-11)">
+<text data-node="root.scroll[notifications].group.2.badge.0" data-shader="stock::text_sdf" x="63.20" y="36.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#2</text>
+</g>
+<clipPath id="clip-12"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-12)">
+<text data-node="root.scroll[notifications].group.2.text.1" data-shader="stock::text_sdf" x="86.40" y="36.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 2</text>
+</g>
+<clipPath id="clip-13"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-13)">
+<text data-node="root.scroll[notifications].group.2.text.3" data-shader="stock::text_sdf" x="621.60" y="36.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">3m ago</text>
+</g>
+<clipPath id="clip-14"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-14)">
+<rect data-node="root.scroll[notifications].group.3.badge.0" data-shader="stock::rounded_rect" x="48.00" y="78.60" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-15"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-15)">
+<text data-node="root.scroll[notifications].group.3.badge.0" data-shader="stock::text_sdf" x="63.20" y="92.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#3</text>
+</g>
+<clipPath id="clip-16"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-16)">
+<text data-node="root.scroll[notifications].group.3.text.1" data-shader="stock::text_sdf" x="86.40" y="92.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 3</text>
+</g>
+<clipPath id="clip-17"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-17)">
+<text data-node="root.scroll[notifications].group.3.text.3" data-shader="stock::text_sdf" x="621.60" y="92.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">4m ago</text>
+</g>
+<clipPath id="clip-18"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-18)">
+<rect data-node="root.scroll[notifications].group.4.badge.0" data-shader="stock::rounded_rect" x="48.00" y="134.60" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-19"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-19)">
+<text data-node="root.scroll[notifications].group.4.badge.0" data-shader="stock::text_sdf" x="63.20" y="148.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#4</text>
+</g>
+<clipPath id="clip-20"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-20)">
+<text data-node="root.scroll[notifications].group.4.text.1" data-shader="stock::text_sdf" x="86.40" y="148.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 4</text>
+</g>
+<clipPath id="clip-21"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-21)">
+<text data-node="root.scroll[notifications].group.4.text.3" data-shader="stock::text_sdf" x="621.60" y="148.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">5m ago</text>
+</g>
+<clipPath id="clip-22"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-22)">
+<rect data-node="root.scroll[notifications].group.5.badge.0" data-shader="stock::rounded_rect" x="48.00" y="190.60" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-23"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-23)">
+<text data-node="root.scroll[notifications].group.5.badge.0" data-shader="stock::text_sdf" x="63.20" y="204.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#5</text>
+</g>
+<clipPath id="clip-24"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-24)">
+<text data-node="root.scroll[notifications].group.5.text.1" data-shader="stock::text_sdf" x="86.40" y="204.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 5</text>
+</g>
+<clipPath id="clip-25"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-25)">
+<text data-node="root.scroll[notifications].group.5.text.3" data-shader="stock::text_sdf" x="621.60" y="204.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">6m ago</text>
+</g>
+<clipPath id="clip-26"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-26)">
+<rect data-node="root.scroll[notifications].group.6.badge.0" data-shader="stock::rounded_rect" x="48.00" y="246.60" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-27"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-27)">
+<text data-node="root.scroll[notifications].group.6.badge.0" data-shader="stock::text_sdf" x="63.20" y="260.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#6</text>
+</g>
+<clipPath id="clip-28"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-28)">
+<text data-node="root.scroll[notifications].group.6.text.1" data-shader="stock::text_sdf" x="86.40" y="260.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 6</text>
+</g>
+<clipPath id="clip-29"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-29)">
+<text data-node="root.scroll[notifications].group.6.text.3" data-shader="stock::text_sdf" x="621.60" y="260.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">7m ago</text>
+</g>
+<clipPath id="clip-30"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-30)">
+<rect data-node="root.scroll[notifications].group.7.badge.0" data-shader="stock::rounded_rect" x="48.00" y="302.60" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-31"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-31)">
+<text data-node="root.scroll[notifications].group.7.badge.0" data-shader="stock::text_sdf" x="63.20" y="316.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#7</text>
+</g>
+<clipPath id="clip-32"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-32)">
+<text data-node="root.scroll[notifications].group.7.text.1" data-shader="stock::text_sdf" x="86.40" y="316.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 7</text>
+</g>
+<clipPath id="clip-33"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-33)">
+<text data-node="root.scroll[notifications].group.7.text.3" data-shader="stock::text_sdf" x="621.60" y="316.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">8m ago</text>
+</g>
+<clipPath id="clip-34"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-34)">
+<rect data-node="root.scroll[notifications].group.8.badge.0" data-shader="stock::rounded_rect" x="48.00" y="358.60" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-35"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-35)">
+<text data-node="root.scroll[notifications].group.8.badge.0" data-shader="stock::text_sdf" x="63.20" y="372.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#8</text>
+</g>
+<clipPath id="clip-36"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-36)">
+<text data-node="root.scroll[notifications].group.8.text.1" data-shader="stock::text_sdf" x="86.40" y="372.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 8</text>
+</g>
+<clipPath id="clip-37"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-37)">
+<text data-node="root.scroll[notifications].group.8.text.3" data-shader="stock::text_sdf" x="621.60" y="372.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">9m ago</text>
+</g>
+<clipPath id="clip-38"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-38)">
+<rect data-node="root.scroll[notifications].group.9.badge.0" data-shader="stock::rounded_rect" x="48.00" y="414.60" width="30.40" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-39"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-39)">
+<text data-node="root.scroll[notifications].group.9.badge.0" data-shader="stock::text_sdf" x="63.20" y="428.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#9</text>
+</g>
+<clipPath id="clip-40"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-40)">
+<text data-node="root.scroll[notifications].group.9.text.1" data-shader="stock::text_sdf" x="86.40" y="428.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 9</text>
+</g>
+<clipPath id="clip-41"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-41)">
+<text data-node="root.scroll[notifications].group.9.text.3" data-shader="stock::text_sdf" x="613.20" y="428.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">10m ago</text>
+</g>
+<clipPath id="clip-42"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-42)">
+<rect data-node="root.scroll[notifications].group.10.badge.0" data-shader="stock::rounded_rect" x="48.00" y="470.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-43"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-43)">
+<text data-node="root.scroll[notifications].group.10.badge.0" data-shader="stock::text_sdf" x="66.80" y="484.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#10</text>
+</g>
+<clipPath id="clip-44"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-44)">
+<text data-node="root.scroll[notifications].group.10.text.1" data-shader="stock::text_sdf" x="93.60" y="484.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 10</text>
+</g>
+<clipPath id="clip-45"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-45)">
+<text data-node="root.scroll[notifications].group.10.text.3" data-shader="stock::text_sdf" x="613.20" y="484.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">11m ago</text>
+</g>
+<clipPath id="clip-46"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-46)">
+<rect data-node="root.scroll[notifications].group.11.badge.0" data-shader="stock::rounded_rect" x="48.00" y="526.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-47"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-47)">
+<text data-node="root.scroll[notifications].group.11.badge.0" data-shader="stock::text_sdf" x="66.80" y="540.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#11</text>
+</g>
+<clipPath id="clip-48"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-48)">
+<text data-node="root.scroll[notifications].group.11.text.1" data-shader="stock::text_sdf" x="93.60" y="540.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 11</text>
+</g>
+<clipPath id="clip-49"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-49)">
+<text data-node="root.scroll[notifications].group.11.text.3" data-shader="stock::text_sdf" x="613.20" y="540.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">12m ago</text>
+</g>
+<clipPath id="clip-50"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-50)">
+<rect data-node="root.scroll[notifications].group.12.badge.0" data-shader="stock::rounded_rect" x="48.00" y="582.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-51"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-51)">
+<text data-node="root.scroll[notifications].group.12.badge.0" data-shader="stock::text_sdf" x="66.80" y="596.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#12</text>
+</g>
+<clipPath id="clip-52"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-52)">
+<text data-node="root.scroll[notifications].group.12.text.1" data-shader="stock::text_sdf" x="93.60" y="596.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 12</text>
+</g>
+<clipPath id="clip-53"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-53)">
+<text data-node="root.scroll[notifications].group.12.text.3" data-shader="stock::text_sdf" x="613.20" y="596.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">13m ago</text>
+</g>
+<clipPath id="clip-54"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-54)">
+<rect data-node="root.scroll[notifications].group.13.badge.0" data-shader="stock::rounded_rect" x="48.00" y="638.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-55"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-55)">
+<text data-node="root.scroll[notifications].group.13.badge.0" data-shader="stock::text_sdf" x="66.80" y="652.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#13</text>
+</g>
+<clipPath id="clip-56"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-56)">
+<text data-node="root.scroll[notifications].group.13.text.1" data-shader="stock::text_sdf" x="93.60" y="652.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 13</text>
+</g>
+<clipPath id="clip-57"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-57)">
+<text data-node="root.scroll[notifications].group.13.text.3" data-shader="stock::text_sdf" x="613.20" y="652.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">14m ago</text>
+</g>
+<clipPath id="clip-58"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-58)">
+<rect data-node="root.scroll[notifications].group.14.badge.0" data-shader="stock::rounded_rect" x="48.00" y="694.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-59"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-59)">
+<text data-node="root.scroll[notifications].group.14.badge.0" data-shader="stock::text_sdf" x="66.80" y="708.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#14</text>
+</g>
+<clipPath id="clip-60"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-60)">
+<text data-node="root.scroll[notifications].group.14.text.1" data-shader="stock::text_sdf" x="93.60" y="708.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 14</text>
+</g>
+<clipPath id="clip-61"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-61)">
+<text data-node="root.scroll[notifications].group.14.text.3" data-shader="stock::text_sdf" x="613.20" y="708.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">15m ago</text>
+</g>
+<clipPath id="clip-62"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-62)">
+<rect data-node="root.scroll[notifications].group.15.badge.0" data-shader="stock::rounded_rect" x="48.00" y="750.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-63"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-63)">
+<text data-node="root.scroll[notifications].group.15.badge.0" data-shader="stock::text_sdf" x="66.80" y="764.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#15</text>
+</g>
+<clipPath id="clip-64"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-64)">
+<text data-node="root.scroll[notifications].group.15.text.1" data-shader="stock::text_sdf" x="93.60" y="764.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 15</text>
+</g>
+<clipPath id="clip-65"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-65)">
+<text data-node="root.scroll[notifications].group.15.text.3" data-shader="stock::text_sdf" x="613.20" y="764.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">16m ago</text>
+</g>
+<clipPath id="clip-66"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-66)">
+<rect data-node="root.scroll[notifications].group.16.badge.0" data-shader="stock::rounded_rect" x="48.00" y="806.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-67"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-67)">
+<text data-node="root.scroll[notifications].group.16.badge.0" data-shader="stock::text_sdf" x="66.80" y="820.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#16</text>
+</g>
+<clipPath id="clip-68"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-68)">
+<text data-node="root.scroll[notifications].group.16.text.1" data-shader="stock::text_sdf" x="93.60" y="820.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 16</text>
+</g>
+<clipPath id="clip-69"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-69)">
+<text data-node="root.scroll[notifications].group.16.text.3" data-shader="stock::text_sdf" x="613.20" y="820.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">17m ago</text>
+</g>
+<clipPath id="clip-70"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-70)">
+<rect data-node="root.scroll[notifications].group.17.badge.0" data-shader="stock::rounded_rect" x="48.00" y="862.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-71"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-71)">
+<text data-node="root.scroll[notifications].group.17.badge.0" data-shader="stock::text_sdf" x="66.80" y="876.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#17</text>
+</g>
+<clipPath id="clip-72"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-72)">
+<text data-node="root.scroll[notifications].group.17.text.1" data-shader="stock::text_sdf" x="93.60" y="876.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 17</text>
+</g>
+<clipPath id="clip-73"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-73)">
+<text data-node="root.scroll[notifications].group.17.text.3" data-shader="stock::text_sdf" x="613.20" y="876.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">18m ago</text>
+</g>
+<clipPath id="clip-74"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-74)">
+<rect data-node="root.scroll[notifications].group.18.badge.0" data-shader="stock::rounded_rect" x="48.00" y="918.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-75"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-75)">
+<text data-node="root.scroll[notifications].group.18.badge.0" data-shader="stock::text_sdf" x="66.80" y="932.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#18</text>
+</g>
+<clipPath id="clip-76"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-76)">
+<text data-node="root.scroll[notifications].group.18.text.1" data-shader="stock::text_sdf" x="93.60" y="932.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 18</text>
+</g>
+<clipPath id="clip-77"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-77)">
+<text data-node="root.scroll[notifications].group.18.text.3" data-shader="stock::text_sdf" x="613.20" y="932.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">19m ago</text>
+</g>
+<clipPath id="clip-78"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-78)">
+<rect data-node="root.scroll[notifications].group.19.badge.0" data-shader="stock::rounded_rect" x="48.00" y="974.60" width="37.60" height="22.00" rx="11.00" fill="rgba(92,170,255,0.149)" stroke="rgba(92,170,255,0.471)" stroke-width="1.00" />
+</g>
+<clipPath id="clip-79"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-79)">
+<text data-node="root.scroll[notifications].group.19.badge.0" data-shader="stock::text_sdf" x="66.80" y="988.36" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12.00" font-weight="500" fill="#5caaff" text-anchor="middle">#19</text>
+</g>
+<clipPath id="clip-80"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-80)">
+<text data-node="root.scroll[notifications].group.19.text.1" data-shader="stock::text_sdf" x="93.60" y="988.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="700" fill="#e8eef6" text-anchor="start">Notification 19</text>
+</g>
+<clipPath id="clip-81"><rect x="28.00" y="111.60" width="664.00" height="420.00"/></clipPath><g clip-path="url(#clip-81)">
+<text data-node="root.scroll[notifications].group.19.text.3" data-shader="stock::text_sdf" x="613.20" y="988.82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14.00" font-weight="400" fill="#94a0b0" text-anchor="start">20m ago</text>
+</g>
+</svg>

@@ -31,6 +31,15 @@ pub fn layout(root: &mut El, viewport: Rect) {
     layout_children(root);
 }
 
+/// Assign every node's `computed_id` without positioning anything else.
+/// The renderer calls this before applying scroll offsets — scroll
+/// state is keyed by `computed_id`, but layout (which positions and
+/// would otherwise be the place to assign IDs) needs offsets in hand.
+/// Idempotent; `layout` calls the same logic internally.
+pub fn assign_ids(root: &mut El) {
+    assign_id(root, "root");
+}
+
 fn assign_id(node: &mut El, path: &str) {
     node.computed_id = path.to_string();
     for (i, c) in node.children.iter_mut().enumerate() {
@@ -57,6 +66,7 @@ fn role_token(k: &Kind) -> &'static str {
         Kind::Overlay => "overlay",
         Kind::Scrim => "scrim",
         Kind::Modal => "modal",
+        Kind::Scroll => "scroll",
         Kind::Custom(name) => name,
     }
 }
@@ -72,6 +82,45 @@ fn layout_children(node: &mut El) {
         }
         Axis::Column => layout_axis(node, true),
         Axis::Row => layout_axis(node, false),
+    }
+    if node.scrollable {
+        apply_scroll_offset(node);
+    }
+}
+
+/// Scrollable post-pass: measure content height from the laid-out
+/// children, clamp `scroll_offset_y` to the available range, and
+/// translate every descendant's `computed` rect by `-offset`.
+///
+/// Children should size with `Hug` or `Fixed` on the main axis —
+/// `Fill` children would absorb the viewport's height and there would
+/// be nothing to scroll.
+fn apply_scroll_offset(node: &mut El) {
+    let inner = node.computed.inset(node.padding);
+    if node.children.is_empty() {
+        node.scroll_offset_y = 0.0;
+        return;
+    }
+    let content_bottom = node
+        .children
+        .iter()
+        .map(|c| c.computed.bottom())
+        .fold(f32::NEG_INFINITY, f32::max);
+    let content_h = (content_bottom - inner.y).max(0.0);
+    let max_offset = (content_h - inner.h).max(0.0);
+    let clamped = node.scroll_offset_y.clamp(0.0, max_offset);
+    if clamped > 0.0 {
+        for c in &mut node.children {
+            shift_subtree_y(c, -clamped);
+        }
+    }
+    node.scroll_offset_y = clamped;
+}
+
+fn shift_subtree_y(node: &mut El, dy: f32) {
+    node.computed.y += dy;
+    for c in &mut node.children {
+        shift_subtree_y(c, dy);
     }
 }
 
@@ -370,6 +419,48 @@ mod tests {
         let child = &root.children[0];
         assert!((child.computed.x - 200.0).abs() < 0.5, "expected x≈200, got {}", child.computed.x);
         assert!(child.computed.y > 100.0 && child.computed.y < 200.0, "expected centered y, got {}", child.computed.y);
+    }
+
+    #[test]
+    fn scroll_offset_translates_children_and_clamps_to_content() {
+        // Six 50px-tall rows in a 200px-tall scroll viewport.
+        // Content height = 6*50 + 5*gap_default = 300 + 5*12 = 360 px.
+        // Visible viewport (no padding) = 200 px → max_offset = 160.
+        let mut root = scroll((0..6).map(|i| {
+            crate::text::text(format!("row {i}")).height(Size::Fixed(50.0))
+        }))
+        .key("list")
+        .height(Size::Fixed(200.0));
+        root.scroll_offset_y = 80.0;
+
+        layout(&mut root, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        // Offset is in range, applied verbatim.
+        assert!(
+            (root.scroll_offset_y - 80.0).abs() < 0.01,
+            "offset clamped unexpectedly: {}",
+            root.scroll_offset_y
+        );
+        // First child shifted up by 80.
+        assert!(
+            (root.children[0].computed.y - (-80.0)).abs() < 0.01,
+            "child 0 y = {} (expected -80)",
+            root.children[0].computed.y
+        );
+        // Now overshoot — should clamp to max_offset=160.
+        root.scroll_offset_y = 9999.0;
+        layout(&mut root, Rect::new(0.0, 0.0, 300.0, 200.0));
+        assert!(
+            (root.scroll_offset_y - 160.0).abs() < 0.01,
+            "overshoot clamped to {}",
+            root.scroll_offset_y
+        );
+        // Content fits → offset clamps to 0.
+        let mut tiny = scroll([crate::text::text("just one row").height(Size::Fixed(20.0))])
+            .height(Size::Fixed(200.0));
+        tiny.scroll_offset_y = 50.0;
+        layout(&mut tiny, Rect::new(0.0, 0.0, 300.0, 200.0));
+        assert_eq!(tiny.scroll_offset_y, 0.0);
     }
 
     #[test]

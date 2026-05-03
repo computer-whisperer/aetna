@@ -231,6 +231,10 @@ pub enum Kind {
     Overlay,
     Scrim,
     Modal,
+    /// A vertically scrollable region. Renders its content with an
+    /// applied scroll offset, clips overflow, and routes wheel events
+    /// to update the offset.
+    Scroll,
     /// Escape hatch for app-defined components.
     Custom(&'static str),
 }
@@ -304,6 +308,18 @@ pub struct El {
     /// where overflow should not leak visually or receive events.
     pub clip: bool,
 
+    /// This element is a vertical scroll viewport. The layout pass measures
+    /// content height ignoring `scroll_offset_y`, then translates child
+    /// rects by `-scroll_offset_y` and writes the clamped offset back.
+    /// Set automatically by [`scroll`]; the offset itself is owned by
+    /// [`crate::event::UiState`] and applied before layout.
+    pub scrollable: bool,
+    /// Vertical scroll offset in logical pixels. Set by
+    /// `UiState::apply_scroll_to_tree` from the per-node tracker; the
+    /// layout pass clamps it to `[0, content_h - viewport_h]` and writes
+    /// the clamped value back here so the renderer can persist it.
+    pub scroll_offset_y: f32,
+
     /// Override the implicit `stock::rounded_rect` binding for this
     /// node's surface. v0.1 ships no users of this; it's the escape
     /// hatch a user crate uses to bind a custom shader (e.g.
@@ -350,6 +366,8 @@ impl Default for El {
             radius: 0.0,
             shadow: 0.0,
             clip: false,
+            scrollable: false,
+            scroll_offset_y: 0.0,
             shader_override: None,
             text: None,
             text_color: None,
@@ -414,6 +432,7 @@ impl El {
     pub fn radius(mut self, r: f32) -> Self { self.radius = r; self }
     pub fn shadow(mut self, s: f32) -> Self { self.shadow = s; self }
     pub fn clip(mut self) -> Self { self.clip = true; self }
+    pub fn scrollable(mut self) -> Self { self.scrollable = true; self }
 
     /// Bind a shader for the surface paint, replacing the implicit
     /// `stock::rounded_rect`. The element's `fill`/`stroke`/`radius`/
@@ -501,6 +520,29 @@ where
         .at_loc(Location::caller())
         .children(children)
         .axis(Axis::Overlay)
+}
+
+/// A vertical scroll viewport. Children stack as in [`column`]; the
+/// container clips overflow and translates content by the current scroll
+/// offset. Wheel events over the viewport update the offset.
+///
+/// Give it a `.key("...")` so the offset persists by name across
+/// rebuilds — without a key, the offset is keyed by sibling index and
+/// resets if structure shifts.
+#[track_caller]
+pub fn scroll<I, E>(children: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    El::new(Kind::Scroll)
+        .at_loc(Location::caller())
+        .children(children)
+        .gap(crate::tokens::SPACE_MD)
+        .align(Align::Stretch)
+        .axis(Axis::Column)
+        .clip()
+        .scrollable()
 }
 
 /// A `Fill(1)` filler. Inside a `row` it pushes siblings to the right;

@@ -22,7 +22,7 @@ use std::sync::Arc;
 use attempt_4::{App, KeyModifiers, Rect, UiKey, UiRenderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
@@ -170,6 +170,20 @@ impl<A: App> ApplicationHandler for Host<A> {
                         }
                         gfx.window.request_redraw();
                     }
+                }
+            }
+
+            WindowEvent::MouseWheel { delta, .. } => {
+                let Some((lx, ly)) = self.last_pointer else { return };
+                // Convert wheel ticks to logical pixels. Line-based
+                // deltas come from notched mouse wheels; pixel-based
+                // from trackpads. ~50 px/line matches typical OS feel.
+                let dy = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => -y * 50.0,
+                    MouseScrollDelta::PixelDelta(p) => -(p.y as f32) / scale,
+                };
+                if gfx.renderer.pointer_wheel(lx, ly, dy) {
+                    gfx.window.request_redraw();
                 }
             }
 

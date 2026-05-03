@@ -76,7 +76,7 @@ pub use wgpu_render::UiRenderer;
 pub use tree::{
     El, Kind, Color, Size, Sides, Rect, Axis, Align, Justify, FontWeight,
     InteractionState, Source, TextAlign, TextWrap,
-    column, row, stack, spacer, divider,
+    column, row, scroll, stack, spacer, divider,
 };
 pub use style::StyleProfile;
 pub use layout::layout;
