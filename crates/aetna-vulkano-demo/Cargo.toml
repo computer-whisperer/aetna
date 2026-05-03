@@ -13,3 +13,5 @@ path = "src/lib.rs"
 [dependencies]
 aetna-core = { path = "../aetna-core" }
 aetna-vulkano = { path = "../aetna-vulkano" }
+vulkano = "0.35"
+winit = "0.30"
