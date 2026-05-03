@@ -1,6 +1,8 @@
-# new_ui_library
+# Aetna
 
-An exploratory project building a UI library shaped around how **an LLM** authors UI, not how a human web developer does. The thesis: when the author is a model, the load-bearing constraints flip — vocabulary parity with the training distribution matters more than configurability, the *minimum* output should be the *correct* output, and the visual ceiling is set by what shaders the model can write, not by what the framework's CSS-shaped surface exposes.
+A thin UI library that inserts into an existing Vulkan or wgpu renderer rather than owning the device, queue, or swapchain. The name echoes the API it sits on — Vulkan is named for Vulcan, the Roman smith-god, and Mt. Aetna is the volcano where his forge stood. The library doesn't replace the host's renderer; it shares its pass.
+
+Aetna is shaped around how **an LLM** authors UI, not how a human web developer does. The thesis: when the author is a model, the load-bearing constraints flip — vocabulary parity with the training distribution matters more than configurability, the *minimum* output should be the *correct* output, and the visual ceiling is set by what shaders the model can write, not by what the framework's CSS-shaped surface exposes.
 
 The repo is structured as a sequence of attempts. Each rebuilds the prior one once a load-bearing premise had been settled.
 
