@@ -1,0 +1,25 @@
+stock::rounded_rect  used 7 times
+  root.group.0.card.1 fill=bg-card radius=12.00 shadow=12.00 stroke=border stroke_width=1.00
+  root.group.0.card.1.group.2.badge.2 fill=info radius=999.00 stroke=info stroke_width=1.00
+  root.group.0.card.2 fill=bg-card radius=12.00 shadow=12.00 stroke=border stroke_width=1.00
+  root.group.0.card.2.group.1.button[open-delete] fill=destructive radius=8.00 stroke=destructive stroke_width=1.00
+  root.overlay.1.scrim[delete-account:dismiss] fill=overlay-scrim radius=0.00
+  root.overlay.1.modal.1 fill=bg-card radius=12.00 shadow=24.00 stroke=border stroke_width=1.00
+  root.overlay.1.modal.1.group.2.button[confirm-delete] fill=destructive radius=8.00 stroke=destructive stroke_width=1.00
+
+stock::text_sdf  used 14 times
+  root.group.0.heading.0 text="Account" color=text-foreground size=26.0 weight=Bold mono=false wrap=NoWrap anchor=Start
+  root.group.0.card.1.heading.0 text="Profile" color=text-foreground size=16.0 weight=Semibold mono=false wrap=NoWrap anchor=Start
+  root.group.0.card.1.group.1.text.0 text="Email" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.group.0.card.1.group.1.text.2 text="user@example.com" color=text-muted-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.group.0.card.1.group.2.text.0 text="Plan" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.group.0.card.1.group.2.badge.2 text="Pro" color=info size=12.0 weight=Medium mono=false wrap=NoWrap anchor=Middle
+  root.group.0.card.2.heading.0 text="Danger zone" color=text-foreground size=16.0 weight=Semibold mono=false wrap=NoWrap anchor=Start
+  root.group.0.card.2.group.1.group.0.text.0 text="Delete account" color=text-foreground size=14.0 weight=Bold mono=false wrap=NoWrap anchor=Start
+  root.group.0.card.2.group.1.group.0.text.1 text="Remove this account and all …" color=text-muted-foreground size=12.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.group.0.card.2.group.1.button[open-delete] text="Delete" color=text-on-solid-light size=14.0 weight=Semibold mono=false wrap=NoWrap anchor=Middle
+  root.overlay.1.modal.1.heading.0 text="Delete account?" color=text-foreground size=16.0 weight=Semibold mono=false wrap=NoWrap anchor=Start
+  root.overlay.1.modal.1.text.1 text="Permanent action. Export dat…" color=text-muted-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.overlay.1.modal.1.group.2.button[cancel-delete] text="Cancel" color=text-muted-foreground size=14.0 weight=Medium mono=false wrap=NoWrap anchor=Middle
+  root.overlay.1.modal.1.group.2.button[confirm-delete] text="Delete" color=text-on-solid-light size=14.0 weight=Semibold mono=false wrap=NoWrap anchor=Middle
+

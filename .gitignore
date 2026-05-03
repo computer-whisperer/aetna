@@ -1,4 +1,6 @@
 target/
 
 # Rendered PNG fixtures — regenerated from SVG by tools/svg_to_png.sh
+# (and from the wgpu render bins in aetna-demo/out/)
 attempts/*/out/*.png
+crates/*/out/*.png

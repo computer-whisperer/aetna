@@ -1,0 +1,104 @@
+root kind=Group rect=(0,0,720,600) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:32
+  root.heading.0 kind=Heading rect=(28,28,156,28) size=(Hug,Hug) text="Notifications" text_color=text-foreground source=examples/scroll_list.rs:33
+  root.text.1 kind=Text rect=(28,74,697,20) size=(Hug,Hug) text="Roll the wheel inside the panel to scrol…" text_color=text-muted-foreground source=examples/scroll_list.rs:34
+  root.scroll[notifications] kind=Scroll rect=(28,112,664,420) size=(Fill(1.0),Fixed(420.0)) clip=true scroll_y=220 source=examples/scroll_list.rs:27
+    root.scroll[notifications].group.0 kind=Group rect=(36,-100,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.0.badge.0 kind=Badge rect=(48,-89,30,22) size=(Hug,Fixed(22.0)) text="#0" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.0.text.1 kind=Text rect=(86,-88,118,20) size=(Hug,Hug) text="Notification 0" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.0.spacer.2 kind=Spacer rect=(212,-78,402,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.0.text.3 kind=Text rect=(622,-88,50,20) size=(Hug,Hug) text="1m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.1 kind=Group rect=(36,-44,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.1.badge.0 kind=Badge rect=(48,-33,30,22) size=(Hug,Fixed(22.0)) text="#1" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.1.text.1 kind=Text rect=(86,-32,118,20) size=(Hug,Hug) text="Notification 1" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.1.spacer.2 kind=Spacer rect=(212,-22,402,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.1.text.3 kind=Text rect=(622,-32,50,20) size=(Hug,Hug) text="2m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.2 kind=Group rect=(36,12,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.2.badge.0 kind=Badge rect=(48,23,30,22) size=(Hug,Fixed(22.0)) text="#2" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.2.text.1 kind=Text rect=(86,24,118,20) size=(Hug,Hug) text="Notification 2" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.2.spacer.2 kind=Spacer rect=(212,34,402,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.2.text.3 kind=Text rect=(622,24,50,20) size=(Hug,Hug) text="3m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.3 kind=Group rect=(36,68,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.3.badge.0 kind=Badge rect=(48,79,30,22) size=(Hug,Fixed(22.0)) text="#3" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.3.text.1 kind=Text rect=(86,80,118,20) size=(Hug,Hug) text="Notification 3" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.3.spacer.2 kind=Spacer rect=(212,90,402,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.3.text.3 kind=Text rect=(622,80,50,20) size=(Hug,Hug) text="4m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.4 kind=Group rect=(36,124,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.4.badge.0 kind=Badge rect=(48,135,30,22) size=(Hug,Fixed(22.0)) text="#4" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.4.text.1 kind=Text rect=(86,136,118,20) size=(Hug,Hug) text="Notification 4" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.4.spacer.2 kind=Spacer rect=(212,146,402,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.4.text.3 kind=Text rect=(622,136,50,20) size=(Hug,Hug) text="5m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.5 kind=Group rect=(36,180,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.5.badge.0 kind=Badge rect=(48,191,30,22) size=(Hug,Fixed(22.0)) text="#5" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.5.text.1 kind=Text rect=(86,192,118,20) size=(Hug,Hug) text="Notification 5" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.5.spacer.2 kind=Spacer rect=(212,202,402,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.5.text.3 kind=Text rect=(622,192,50,20) size=(Hug,Hug) text="6m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.6 kind=Group rect=(36,236,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.6.badge.0 kind=Badge rect=(48,247,30,22) size=(Hug,Fixed(22.0)) text="#6" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.6.text.1 kind=Text rect=(86,248,118,20) size=(Hug,Hug) text="Notification 6" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.6.spacer.2 kind=Spacer rect=(212,258,402,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.6.text.3 kind=Text rect=(622,248,50,20) size=(Hug,Hug) text="7m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.7 kind=Group rect=(36,292,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.7.badge.0 kind=Badge rect=(48,303,30,22) size=(Hug,Fixed(22.0)) text="#7" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.7.text.1 kind=Text rect=(86,304,118,20) size=(Hug,Hug) text="Notification 7" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.7.spacer.2 kind=Spacer rect=(212,314,402,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.7.text.3 kind=Text rect=(622,304,50,20) size=(Hug,Hug) text="8m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.8 kind=Group rect=(36,348,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.8.badge.0 kind=Badge rect=(48,359,30,22) size=(Hug,Fixed(22.0)) text="#8" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.8.text.1 kind=Text rect=(86,360,118,20) size=(Hug,Hug) text="Notification 8" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.8.spacer.2 kind=Spacer rect=(212,370,402,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.8.text.3 kind=Text rect=(622,360,50,20) size=(Hug,Hug) text="9m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.9 kind=Group rect=(36,404,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.9.badge.0 kind=Badge rect=(48,415,30,22) size=(Hug,Fixed(22.0)) text="#9" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.9.text.1 kind=Text rect=(86,416,118,20) size=(Hug,Hug) text="Notification 9" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.9.spacer.2 kind=Spacer rect=(212,426,393,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.9.text.3 kind=Text rect=(613,416,59,20) size=(Hug,Hug) text="10m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.10 kind=Group rect=(36,460,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.10.badge.0 kind=Badge rect=(48,471,38,22) size=(Hug,Fixed(22.0)) text="#10" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.10.text.1 kind=Text rect=(94,472,126,20) size=(Hug,Hug) text="Notification 10" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.10.spacer.2 kind=Spacer rect=(228,482,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.10.text.3 kind=Text rect=(613,472,59,20) size=(Hug,Hug) text="11m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.11 kind=Group rect=(36,516,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.11.badge.0 kind=Badge rect=(48,527,38,22) size=(Hug,Fixed(22.0)) text="#11" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.11.text.1 kind=Text rect=(94,528,126,20) size=(Hug,Hug) text="Notification 11" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.11.spacer.2 kind=Spacer rect=(228,538,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.11.text.3 kind=Text rect=(613,528,59,20) size=(Hug,Hug) text="12m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.12 kind=Group rect=(36,572,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.12.badge.0 kind=Badge rect=(48,583,38,22) size=(Hug,Fixed(22.0)) text="#12" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.12.text.1 kind=Text rect=(94,584,126,20) size=(Hug,Hug) text="Notification 12" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.12.spacer.2 kind=Spacer rect=(228,594,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.12.text.3 kind=Text rect=(613,584,59,20) size=(Hug,Hug) text="13m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.13 kind=Group rect=(36,628,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.13.badge.0 kind=Badge rect=(48,639,38,22) size=(Hug,Fixed(22.0)) text="#13" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.13.text.1 kind=Text rect=(94,640,126,20) size=(Hug,Hug) text="Notification 13" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.13.spacer.2 kind=Spacer rect=(228,650,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.13.text.3 kind=Text rect=(613,640,59,20) size=(Hug,Hug) text="14m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.14 kind=Group rect=(36,684,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.14.badge.0 kind=Badge rect=(48,695,38,22) size=(Hug,Fixed(22.0)) text="#14" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.14.text.1 kind=Text rect=(94,696,126,20) size=(Hug,Hug) text="Notification 14" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.14.spacer.2 kind=Spacer rect=(228,706,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.14.text.3 kind=Text rect=(613,696,59,20) size=(Hug,Hug) text="15m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.15 kind=Group rect=(36,740,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.15.badge.0 kind=Badge rect=(48,751,38,22) size=(Hug,Fixed(22.0)) text="#15" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.15.text.1 kind=Text rect=(94,752,126,20) size=(Hug,Hug) text="Notification 15" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.15.spacer.2 kind=Spacer rect=(228,762,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.15.text.3 kind=Text rect=(613,752,59,20) size=(Hug,Hug) text="16m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.16 kind=Group rect=(36,796,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.16.badge.0 kind=Badge rect=(48,807,38,22) size=(Hug,Fixed(22.0)) text="#16" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.16.text.1 kind=Text rect=(94,808,126,20) size=(Hug,Hug) text="Notification 16" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.16.spacer.2 kind=Spacer rect=(228,818,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.16.text.3 kind=Text rect=(613,808,59,20) size=(Hug,Hug) text="17m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.17 kind=Group rect=(36,852,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.17.badge.0 kind=Badge rect=(48,863,38,22) size=(Hug,Fixed(22.0)) text="#17" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.17.text.1 kind=Text rect=(94,864,126,20) size=(Hug,Hug) text="Notification 17" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.17.spacer.2 kind=Spacer rect=(228,874,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.17.text.3 kind=Text rect=(613,864,59,20) size=(Hug,Hug) text="18m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.18 kind=Group rect=(36,908,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.18.badge.0 kind=Badge rect=(48,919,38,22) size=(Hug,Fixed(22.0)) text="#18" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.18.text.1 kind=Text rect=(94,920,126,20) size=(Hug,Hug) text="Notification 18" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.18.spacer.2 kind=Spacer rect=(228,930,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.18.text.3 kind=Text rect=(613,920,59,20) size=(Hug,Hug) text="19m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
+    root.scroll[notifications].group.19 kind=Group rect=(36,964,648,44) size=(Fill(1.0),Fixed(44.0)) source=examples/scroll_list.rs:15
+      root.scroll[notifications].group.19.badge.0 kind=Badge rect=(48,975,38,22) size=(Hug,Fixed(22.0)) text="#19" fill=info text_color=info source=examples/scroll_list.rs:16
+      root.scroll[notifications].group.19.text.1 kind=Text rect=(94,976,126,20) size=(Hug,Hug) text="Notification 19" text_color=text-foreground source=examples/scroll_list.rs:17
+      root.scroll[notifications].group.19.spacer.2 kind=Spacer rect=(228,986,378,0) size=(Fill(1.0),Fill(1.0)) source=examples/scroll_list.rs:18
+      root.scroll[notifications].group.19.text.3 kind=Text rect=(613,976,59,20) size=(Hug,Hug) text="20m ago" text_color=text-muted-foreground source=examples/scroll_list.rs:19
