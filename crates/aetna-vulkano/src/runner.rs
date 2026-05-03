@@ -27,8 +27,7 @@ use std::time::Instant;
 
 use aetna_core::{
     AnimationMode, El, KeyChord, KeyModifiers, Rect, UiEvent, UiEventKind, UiKey, UiState,
-    draw_ops, hit_test, ir,
-    layout,
+    draw_ops, hit_test, ir, layout,
     shader::{ShaderHandle, StockShader, stock_wgsl},
 };
 use smallvec::smallvec;
@@ -44,10 +43,7 @@ use vulkano::{
     device::{Device, Queue},
     format::Format,
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
-    pipeline::{
-        GraphicsPipeline, Pipeline, PipelineBindPoint,
-        graphics::viewport::Viewport,
-    },
+    pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint, graphics::viewport::Viewport},
     render_pass::{RenderPass, Subpass},
 };
 
@@ -222,8 +218,8 @@ impl Runner {
 
         let instance_buf = create_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
 
-        let text_subpass = Subpass::from(render_pass.clone(), 0)
-            .expect("aetna-vulkano: text subpass 0");
+        let text_subpass =
+            Subpass::from(render_pass.clone(), 0).expect("aetna-vulkano: text subpass 0");
         let text_paint = TextPaint::new(
             device.clone(),
             queue.clone(),
@@ -280,8 +276,7 @@ impl Runner {
             .unwrap_or_else(|e| panic!("aetna-vulkano: WGSL compile failed for `{name}`: {e}"));
         self.registered_shaders.insert(name, spirv);
 
-        let subpass = Subpass::from(self.render_pass.clone(), 0)
-            .expect("aetna-vulkano: subpass 0");
+        let subpass = Subpass::from(self.render_pass.clone(), 0).expect("aetna-vulkano: subpass 0");
         let pipeline = build_quad_pipeline(self.device.clone(), subpass, name, wgsl);
         self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
     }
@@ -408,7 +403,7 @@ impl Runner {
                         self.paint_items.push(PaintItem::Text(index));
                     }
                 }
-                ir::DrawOp::BackdropSnapshot { .. } => {
+                ir::DrawOp::BackdropSnapshot => {
                     close_run(
                         &mut self.runs,
                         &mut self.paint_items,
@@ -592,10 +587,7 @@ impl Runner {
                         )
                         .expect("bind_descriptor_sets");
                     builder
-                        .bind_vertex_buffers(
-                            0,
-                            (self.quad_vbo.clone(), self.instance_buf.clone()),
-                        )
+                        .bind_vertex_buffers(0, (self.quad_vbo.clone(), self.instance_buf.clone()))
                         .expect("bind_vertex_buffers");
                     // SAFETY: the pipeline expects 4 vertices (the unit
                     // quad strip) and `run.count` instances starting at
@@ -642,7 +634,6 @@ impl Runner {
                 }
             }
         }
-
     }
 }
 

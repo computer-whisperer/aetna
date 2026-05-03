@@ -99,8 +99,7 @@ pub(crate) fn build_quad_pipeline(
     name: &str,
     wgsl: &str,
 ) -> Arc<GraphicsPipeline> {
-    let words =
-        wgsl_to_spirv(name, wgsl).unwrap_or_else(|e| panic!("WGSL compile failed: {e}"));
+    let words = wgsl_to_spirv(name, wgsl).unwrap_or_else(|e| panic!("WGSL compile failed: {e}"));
     // SAFETY: the SPIR-V words are the verified output of naga's spv-out
     // emitter; they passed `naga::valid::Validator` before reaching us.
     let module = unsafe {
@@ -157,4 +156,3 @@ pub(crate) fn build_quad_pipeline(
     )
     .unwrap_or_else(|e| panic!("GraphicsPipeline::new for `{name}`: {e:?}"))
 }
-

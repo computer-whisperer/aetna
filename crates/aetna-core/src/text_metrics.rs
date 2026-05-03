@@ -254,7 +254,9 @@ fn layout_text_cosmic(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> Option<TextLayout> {
-    FONT_SYSTEM.with_borrow_mut(|font_system| layout_text_cosmic_with(font_system, text, size, weight, wrap, available_width))
+    FONT_SYSTEM.with_borrow_mut(|font_system| {
+        layout_text_cosmic_with(font_system, text, size, weight, wrap, available_width)
+    })
 }
 
 fn layout_text_cosmic_with(

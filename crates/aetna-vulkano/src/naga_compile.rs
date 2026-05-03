@@ -14,18 +14,9 @@ use naga::valid;
 /// name attached so a failure inside `register_shader` is traceable.
 #[derive(Debug)]
 pub enum CompileError {
-    Parse {
-        name: String,
-        message: String,
-    },
-    Validate {
-        name: String,
-        message: String,
-    },
-    SpirVWrite {
-        name: String,
-        message: String,
-    },
+    Parse { name: String, message: String },
+    Validate { name: String, message: String },
+    SpirVWrite { name: String, message: String },
 }
 
 impl std::fmt::Display for CompileError {
@@ -100,8 +91,8 @@ mod tests {
 
     #[test]
     fn text_compiles() {
-        let words = wgsl_to_spirv("text", stock_wgsl::TEXT)
-            .expect("text.wgsl should compile cleanly");
+        let words =
+            wgsl_to_spirv("text", stock_wgsl::TEXT).expect("text.wgsl should compile cleanly");
         assert_spirv_words(&words);
     }
 

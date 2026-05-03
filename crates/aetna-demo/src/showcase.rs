@@ -386,7 +386,12 @@ fn picker_view(state: &PickerState) -> El {
                 badge(format!("{}", i + 1)).muted(),
                 text(*label),
                 spacer(),
-                text(if Some(i) == state.opened { "opened" } else { "" }).muted(),
+                text(if Some(i) == state.opened {
+                    "opened"
+                } else {
+                    ""
+                })
+                .muted(),
             ])
             .gap(tokens::SPACE_SM)
             .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
@@ -437,7 +442,10 @@ fn picker_hotkeys(state: &PickerState) -> Vec<(KeyChord, String)> {
     ];
     if state.search_active {
         for c in b'a'..=b'z' {
-            out.push((KeyChord::vim(c as char), format!("picker-search-{}", c as char)));
+            out.push((
+                KeyChord::vim(c as char),
+                format!("picker-search-{}", c as char),
+            ));
         }
     }
     out

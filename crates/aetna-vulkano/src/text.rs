@@ -25,8 +25,8 @@ use smallvec::smallvec;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        AutoCommandBufferBuilder, BufferImageCopy, CommandBufferUsage,
-        CopyBufferToImageInfo, allocator::StandardCommandBufferAllocator,
+        AutoCommandBufferBuilder, BufferImageCopy, CommandBufferUsage, CopyBufferToImageInfo,
+        allocator::StandardCommandBufferAllocator,
     },
     descriptor_set::{
         DescriptorSet, WriteDescriptorSet, allocator::StandardDescriptorSetAllocator,
@@ -172,9 +172,7 @@ impl TextPaint {
         let avail = match (wrap, anchor) {
             (TextWrap::Wrap, _) => Some(rect.w * scale_factor),
             (TextWrap::NoWrap, TextAnchor::Start) => None,
-            (TextWrap::NoWrap, TextAnchor::Middle | TextAnchor::End) => {
-                Some(rect.w * scale_factor)
-            }
+            (TextWrap::NoWrap, TextAnchor::Middle | TextAnchor::End) => Some(rect.w * scale_factor),
         };
         let shaped =
             self.atlas

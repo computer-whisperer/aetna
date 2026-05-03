@@ -90,6 +90,11 @@ pub fn run_with_init<A: App + 'static, F: FnOnce(&mut Runner) + 'static>(
     Ok(())
 }
 
+/// One-shot Runner initialiser, consumed inside `resumed()` once the
+/// runner exists. Boxed so `Host` stays object-safe and the App's
+/// generic parameter doesn't leak into the closure type.
+type InitRunner = Box<dyn FnOnce(&mut Runner)>;
+
 struct Host<A: App> {
     title: &'static str,
     viewport: Rect,
@@ -98,10 +103,7 @@ struct Host<A: App> {
     modifiers: KeyModifiers,
     last_pointer: Option<(f32, f32)>,
     rcx: Option<RenderContext>,
-    /// One-shot Runner initialiser, consumed inside `resumed()` once the
-    /// runner exists. Boxed so `Host` stays object-safe and the App's
-    /// generic parameter doesn't leak into the closure type.
-    init_runner: Option<Box<dyn FnOnce(&mut Runner)>>,
+    init_runner: Option<InitRunner>,
 }
 
 struct RenderContext {
@@ -129,8 +131,8 @@ impl<A: App> ApplicationHandler for Host<A> {
             ));
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
-        let surface = Surface::from_window(self.instance.clone(), window.clone())
-            .expect("create surface");
+        let surface =
+            Surface::from_window(self.instance.clone(), window.clone()).expect("create surface");
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
@@ -306,8 +308,7 @@ impl<A: App> ApplicationHandler for Host<A> {
                         })
                         .expect("recreate swapchain");
                     rcx.swapchain = new_swapchain;
-                    rcx.framebuffers =
-                        build_framebuffers(&new_images, rcx.runner.render_pass());
+                    rcx.framebuffers = build_framebuffers(&new_images, rcx.runner.render_pass());
                     rcx.runner.set_surface_size(extent[0], extent[1]);
                     rcx.recreate_swapchain = false;
                 }
@@ -452,7 +453,10 @@ fn create_swapchain(
     (swapchain, images, image_format)
 }
 
-fn build_framebuffers(images: &[Arc<Image>], render_pass: &Arc<RenderPass>) -> Vec<Arc<Framebuffer>> {
+fn build_framebuffers(
+    images: &[Arc<Image>],
+    render_pass: &Arc<RenderPass>,
+) -> Vec<Arc<Framebuffer>> {
     images
         .iter()
         .map(|image| {

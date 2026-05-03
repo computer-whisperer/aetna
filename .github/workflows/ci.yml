@@ -20,7 +20,7 @@ jobs:
           components: rustfmt
       # `attempts/*` is a frozen historical archive that does not follow
       # the new rustfmt standard. Limit the gate to the live crates.
-      - run: cargo fmt -p aetna-core -p aetna-wgpu -p aetna-demo -p aetna-web --check
+      - run: cargo fmt -p aetna-core -p aetna-wgpu -p aetna-demo -p aetna-web -p aetna-vulkano -p aetna-vulkano-demo --check
 
   clippy:
     name: Clippy (live crates)
@@ -35,7 +35,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libvulkan-dev libwayland-dev libxkbcommon-dev libdbus-1-dev
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p aetna-core -p aetna-wgpu -p aetna-demo -p aetna-web --all-targets --locked -- -D warnings
+      - run: cargo clippy -p aetna-core -p aetna-wgpu -p aetna-demo -p aetna-web -p aetna-vulkano -p aetna-vulkano-demo --all-targets --locked -- -D warnings
 
   build-test:
     name: Build + Test

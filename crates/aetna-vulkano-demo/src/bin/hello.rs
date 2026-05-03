@@ -92,8 +92,8 @@ impl ApplicationHandler for Host {
             .with_inner_size(PhysicalSize::new(900, 640));
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
-        let surface = Surface::from_window(self.instance.clone(), window.clone())
-            .expect("create surface");
+        let surface =
+            Surface::from_window(self.instance.clone(), window.clone()).expect("create surface");
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
@@ -291,7 +291,9 @@ impl ApplicationHandler for Host {
                         Default::default(),
                     )
                     .expect("begin render pass");
-                builder.end_render_pass(Default::default()).expect("end pass");
+                builder
+                    .end_render_pass(Default::default())
+                    .expect("end pass");
                 let command_buffer = builder.build().expect("build cmd");
 
                 let future = rcx
@@ -324,7 +326,10 @@ impl ApplicationHandler for Host {
     }
 }
 
-fn build_framebuffers(images: &[Arc<Image>], render_pass: &Arc<RenderPass>) -> Vec<Arc<Framebuffer>> {
+fn build_framebuffers(
+    images: &[Arc<Image>],
+    render_pass: &Arc<RenderPass>,
+) -> Vec<Arc<Framebuffer>> {
     images
         .iter()
         .map(|image| {
