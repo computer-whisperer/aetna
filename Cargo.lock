@@ -27,11 +27,6 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "aetna-core"
 version = "0.1.0"
-dependencies = [
- "bytemuck",
- "glyphon",
- "wgpu",
-]
 
 [[package]]
 name = "aetna-demo"
@@ -40,6 +35,12 @@ version = "0.1.0"
 [[package]]
 name = "aetna-wgpu"
 version = "0.1.0"
+dependencies = [
+ "aetna-core",
+ "bytemuck",
+ "glyphon",
+ "wgpu",
+]
 
 [[package]]
 name = "ahash"

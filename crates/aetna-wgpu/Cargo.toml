@@ -7,3 +7,9 @@ license = "MIT OR Apache-2.0"
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+aetna-core = { path = "../aetna-core" }
+wgpu = "23"
+bytemuck = { version = "1.21", features = ["derive"] }
+glyphon = "0.7"

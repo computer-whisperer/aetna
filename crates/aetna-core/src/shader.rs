@@ -1,5 +1,11 @@
 //! Shader handles, uniform values, and bindings.
 //!
+//! ## Stock shader source
+//!
+//! WGSL source for stock shaders is exposed under [`stock_wgsl`] so
+//! backend crates can `include_str!`-equivalent it without reaching
+//! across crate directories. See `crates/aetna-core/shaders/`.
+//!
 //! Sits between the grammar layer (where users write `.fill(c)`,
 //! `.radius(r)`) and the renderer (which consumes typed [`DrawOp`]s with
 //! shader handles + uniform blocks).
@@ -149,4 +155,10 @@ impl ShaderBinding {
     pub fn vec4(self, key: &'static str, v: [f32; 4]) -> Self {
         self.with(key, UniformValue::Vec4(v))
     }
+}
+
+/// WGSL source for stock shaders. Backend crates compile these into
+/// pipelines; the source lives here so the asset shipping is centralised.
+pub mod stock_wgsl {
+    pub const ROUNDED_RECT: &str = include_str!("../shaders/rounded_rect.wgsl");
 }

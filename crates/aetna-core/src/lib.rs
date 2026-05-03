@@ -73,9 +73,6 @@ pub mod badge;
 pub mod card;
 pub mod overlay;
 
-pub mod wgpu_render;
-pub use wgpu_render::{PrepareResult, UiRenderer};
-
 // Prelude — for `use aetna_core::*;`.
 pub use tree::{
     El, Kind, Color, Size, Sides, Rect, Axis, Align, Justify, FontWeight,

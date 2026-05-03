@@ -11,8 +11,3 @@ path = "src/lib.rs"
 [[example]]
 name = "settings"
 path = "examples/settings.rs"
-
-[dependencies]
-wgpu = "23"
-bytemuck = { version = "1.21", features = ["derive"] }
-glyphon = "0.7"
