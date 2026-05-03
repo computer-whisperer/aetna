@@ -8,7 +8,7 @@
 //!
 //! The single public entry point today is [`Runner`], which owns:
 //! - GPU resources (pipelines, buffers, glyph atlas)
-//! - [`UiState`](aetna_core::event::UiState) (hover/press/focus/scroll
+//! - [`UiState`](aetna_core::state::UiState) (hover/press/focus/scroll
 //!   trackers, hotkey registry, animation state)
 //! - The last laid-out tree (so events arriving between frames hit-test
 //!   against current geometry)
@@ -67,12 +67,12 @@ use glyphon::{
 use wgpu::util::DeviceExt;
 
 use aetna_core::draw_ops;
-use aetna_core::event::{
-    self, AnimationMode, KeyChord, KeyModifiers, UiEvent, UiEventKind, UiKey, UiState,
-};
+use aetna_core::event::{KeyChord, KeyModifiers, UiEvent, UiEventKind, UiKey};
+use aetna_core::hit_test;
 use aetna_core::ir::DrawOp;
 use aetna_core::layout;
 use aetna_core::shader::{ShaderHandle, StockShader, stock_wgsl};
+use aetna_core::state::{AnimationMode, UiState};
 use aetna_core::tree::{El, Rect};
 
 use crate::instance::{
@@ -519,7 +519,7 @@ impl Runner {
         let hit = self
             .last_tree
             .as_ref()
-            .and_then(|t| event::hit_test_target(t, (x, y)));
+            .and_then(|t| hit_test::hit_test_target(t, (x, y)));
         self.ui_state.hovered = hit;
         self.ui_state
             .hovered
@@ -541,7 +541,7 @@ impl Runner {
         let hit = self
             .last_tree
             .as_ref()
-            .and_then(|t| event::hit_test_target(t, (x, y)));
+            .and_then(|t| hit_test::hit_test_target(t, (x, y)));
         self.ui_state.set_focus(hit.clone());
         self.ui_state.pressed = hit;
     }
@@ -553,7 +553,7 @@ impl Runner {
         let hit = self
             .last_tree
             .as_ref()
-            .and_then(|t| event::hit_test_target(t, (x, y)));
+            .and_then(|t| hit_test::hit_test_target(t, (x, y)));
         let pressed = self.ui_state.pressed.take();
         match (pressed, hit) {
             (Some(p), Some(h)) if p.node_id == h.node_id => Some(UiEvent {

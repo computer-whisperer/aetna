@@ -7,7 +7,7 @@
 //! State styling lands here on the CPU side. Hover lightens / press
 //! darkens / focus-ring fade are pre-eased into `n.fill`, `n.text_color`,
 //! `n.stroke`, and `n.focus_ring_alpha` by
-//! [`crate::event::UiState::tick_visual_animations`] *before* this
+//! [`crate::state::UiState::tick_visual_animations`] *before* this
 //! pass runs. What remains here are the deltas that don't ease — alpha
 //! multiplication for `Disabled`, and the `Loading` text suffix.
 

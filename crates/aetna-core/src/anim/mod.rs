@@ -31,6 +31,8 @@ use std::time::{Duration, Instant};
 
 use crate::tree::Color;
 
+pub mod tick;
+
 /// A value the animator can interpolate. Each variant fans out to a
 /// fixed number of f32 channels that the integrator steps independently.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -205,7 +207,7 @@ const SPRING_EPSILON_VEL: f32 = 0.5;
 const DT_CAP: f32 = 0.064;
 
 /// In-flight animation state for one (node, prop) pair. Stored on
-/// [`crate::event::UiState`] keyed by `(ComputedId, AnimProp)`.
+/// [`crate::state::UiState`] keyed by `(ComputedId, AnimProp)`.
 #[derive(Clone, Debug)]
 pub struct Animation {
     pub current: AnimValue,

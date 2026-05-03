@@ -1,0 +1,177 @@
+//! Visual-state animation tick — drives state envelopes (hover / press /
+//! focus ring) and app-driven prop tracks (`fill`, `text_color`, etc.)
+//! on top of the per-`(node, prop)` [`Animation`] map owned by
+//! [`crate::state::UiState`].
+//!
+//! Split out of `event.rs` so the integrator-adjacent code lives next to
+//! the rest of the animation primitives. The state module owns the map
+//! and the public entry point ([`UiState::tick_visual_animations`]); this
+//! module owns the per-node walker.
+
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
+
+use crate::anim::{AnimProp, AnimValue, Animation, Timing};
+use crate::state::AnimationMode;
+use crate::tree::{El, InteractionState};
+
+/// App-driven props, processed *first* on nodes with `n.animate` set.
+/// They write eased build-time values back to `n.fill` etc., so the
+/// state pass that follows reads the already-eased value when computing
+/// hover / press deltas. State visuals therefore compose on top of
+/// app-driven motion without either tracker fighting the other.
+const APP_PROPS: &[AnimProp] = &[
+    AnimProp::AppFill,
+    AnimProp::AppStroke,
+    AnimProp::AppTextColor,
+    AnimProp::AppOpacity,
+    AnimProp::AppScale,
+    AnimProp::AppTranslateX,
+    AnimProp::AppTranslateY,
+];
+
+/// State-driven envelopes, processed *after* app props. Always tracked
+/// on keyed interactive nodes — no author opt-in. Each is a 0..1 amount;
+/// `apply_state` in `draw_ops` mixes the build-time visual toward the
+/// state-modulated visual based on these.
+const STATE_PROPS: &[AnimProp] = &[
+    AnimProp::HoverAmount,
+    AnimProp::PressAmount,
+    AnimProp::FocusRingAlpha,
+];
+
+pub(crate) fn tick_node(
+    node: &mut El,
+    anims: &mut HashMap<(String, AnimProp), Animation>,
+    visited: &mut HashSet<(String, AnimProp)>,
+    now: Instant,
+    mode: AnimationMode,
+    needs_redraw: &mut bool,
+) {
+    if !node.computed_id.is_empty() {
+        // App-driven props: only on nodes that opted in via .animate().
+        if let Some(timing) = node.animate {
+            for &prop in APP_PROPS {
+                process_prop(node, prop, timing, anims, visited, now, mode, needs_redraw);
+            }
+        }
+        // State-driven props: only on keyed interactive nodes; the
+        // library always tracks these, no author opt-in.
+        if node.key.is_some() {
+            for &prop in STATE_PROPS {
+                let timing = state_timing_for(prop);
+                process_prop(node, prop, timing, anims, visited, now, mode, needs_redraw);
+            }
+        }
+    }
+    for child in &mut node.children {
+        tick_node(child, anims, visited, now, mode, needs_redraw);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_prop(
+    node: &mut El,
+    prop: AnimProp,
+    timing: Timing,
+    anims: &mut HashMap<(String, AnimProp), Animation>,
+    visited: &mut HashSet<(String, AnimProp)>,
+    now: Instant,
+    mode: AnimationMode,
+    needs_redraw: &mut bool,
+) {
+    let Some(target) = compute_target(node, prop) else {
+        return;
+    };
+    let key = (node.computed_id.clone(), prop);
+    visited.insert(key.clone());
+    let anim = anims
+        .entry(key)
+        .or_insert_with(|| Animation::new(target, target, timing, now));
+    anim.retarget(target, now);
+    let settled = match mode {
+        AnimationMode::Live => anim.step(now),
+        AnimationMode::Settled => {
+            anim.settle();
+            true
+        }
+    };
+    write_prop(node, prop, anim.current);
+    if !settled {
+        *needs_redraw = true;
+    }
+}
+
+/// Compute the visual target for `prop` based on the node's current
+/// interaction state and its build-closure-supplied original value.
+/// Returns `None` if the prop doesn't apply (e.g., a node with no fill
+/// has no `StateFill` to animate).
+fn compute_target(n: &El, prop: AnimProp) -> Option<AnimValue> {
+    match prop {
+        AnimProp::HoverAmount => Some(AnimValue::Float(
+            if matches!(n.state, InteractionState::Hover) { 1.0 } else { 0.0 },
+        )),
+        AnimProp::PressAmount => Some(AnimValue::Float(
+            if matches!(n.state, InteractionState::Press) { 1.0 } else { 0.0 },
+        )),
+        AnimProp::FocusRingAlpha => Some(AnimValue::Float(
+            if matches!(n.state, InteractionState::Focus) { 1.0 } else { 0.0 },
+        )),
+        AnimProp::AppFill => n.fill.map(AnimValue::Color),
+        AnimProp::AppStroke => n.stroke.map(AnimValue::Color),
+        AnimProp::AppTextColor => n.text_color.map(AnimValue::Color),
+        AnimProp::AppOpacity => Some(AnimValue::Float(n.opacity)),
+        AnimProp::AppScale => Some(AnimValue::Float(n.scale)),
+        AnimProp::AppTranslateX => Some(AnimValue::Float(n.translate.0)),
+        AnimProp::AppTranslateY => Some(AnimValue::Float(n.translate.1)),
+    }
+}
+
+/// Library-default timing for state-driven envelopes. Hover, press,
+/// focus transitions are uniformly snappy — overshoot on a 0..1
+/// envelope reads as jitter, so we stick to a near-critical preset.
+fn state_timing_for(prop: AnimProp) -> Timing {
+    match prop {
+        AnimProp::HoverAmount
+        | AnimProp::PressAmount
+        | AnimProp::FocusRingAlpha => Timing::SPRING_QUICK,
+        // App props don't reach this function — they pull timing from
+        // the per-node `animate` setting in `tick_node`.
+        _ => Timing::SPRING_QUICK,
+    }
+}
+
+fn write_prop(n: &mut El, prop: AnimProp, value: AnimValue) {
+    match (prop, value) {
+        (AnimProp::AppFill, AnimValue::Color(c)) => n.fill = Some(c),
+        (AnimProp::AppStroke, AnimValue::Color(c)) => n.stroke = Some(c),
+        (AnimProp::AppTextColor, AnimValue::Color(c)) => n.text_color = Some(c),
+        (AnimProp::HoverAmount, AnimValue::Float(v)) => n.hover_amount = v.clamp(0.0, 1.0),
+        (AnimProp::PressAmount, AnimValue::Float(v)) => n.press_amount = v.clamp(0.0, 1.0),
+        (AnimProp::FocusRingAlpha, AnimValue::Float(v)) => {
+            n.focus_ring_alpha = v.clamp(0.0, 1.0);
+        }
+        (AnimProp::AppOpacity, AnimValue::Float(v)) => n.opacity = v.clamp(0.0, 1.0),
+        (AnimProp::AppScale, AnimValue::Float(v)) => n.scale = v.max(0.0),
+        (AnimProp::AppTranslateX, AnimValue::Float(v)) => n.translate.0 = v,
+        (AnimProp::AppTranslateY, AnimValue::Float(v)) => n.translate.1 = v,
+        _ => {}
+    }
+}
+
+pub(crate) fn is_in_flight(anim: &Animation) -> bool {
+    let cur = anim.current.channels();
+    let tgt = anim.target.channels();
+    if cur.n != tgt.n {
+        return true;
+    }
+    for i in 0..cur.n {
+        if (cur.v[i] - tgt.v[i]).abs() > f32::EPSILON {
+            return true;
+        }
+        if anim.velocity.n == cur.n && anim.velocity.v[i].abs() > f32::EPSILON {
+            return true;
+        }
+    }
+    false
+}

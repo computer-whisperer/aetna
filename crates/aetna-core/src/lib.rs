@@ -61,6 +61,9 @@ pub mod ir;
 pub mod draw_ops;
 pub mod anim;
 pub mod event;
+pub mod state;
+pub mod hit_test;
+pub mod focus;
 pub mod svg;
 pub mod inspect;
 pub mod lint;
@@ -86,9 +89,11 @@ pub use ir::{DrawOp, TextAnchor};
 pub use draw_ops::draw_ops;
 pub use anim::{AnimProp, AnimValue, Animation, SpringConfig, Timing, TweenConfig};
 pub use event::{
-    AnimationMode, App, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget,
-    focus_order, hit_test, hit_test_target,
+    App, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget,
 };
+pub use state::{AnimationMode, UiState};
+pub use hit_test::{hit_test, hit_test_target};
+pub use focus::focus_order;
 pub use svg::svg_from_ops;
 pub use inspect::dump_tree;
 pub use lint::{LintReport, Finding, FindingKind, lint};
