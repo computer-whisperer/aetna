@@ -1,0 +1,90 @@
+//! Design tokens — the named, finite vocabulary of values everything else
+//! refers to.
+//!
+//! Tokens are public `const` values, not a runtime struct. That means:
+//!
+//! - Reading the file once gives you the entire vocabulary.
+//! - Components reference tokens by name (`tokens::BG_CARD`) directly,
+//!   no theme handle threaded through every call.
+//! - Constants are inlined and indistinguishable from any other f32/Color
+//!   at runtime — there's no `OnceLock` to initialize.
+//!
+//! Naming intentionally shadows shadcn/Tailwind so LLM training transfers:
+//! `BG_CARD`, `TEXT_MUTED_FOREGROUND`, `RADIUS_LG`, `SPACE_MD`, etc.
+//!
+//! In attempt_4, [`Color`] tokens flow into shader uniforms at render
+//! time — the `token` metadata field stays attached so the shader manifest
+//! and tree dump can show "fill=bg-card" rather than rgba bytes.
+
+use crate::tree::Color;
+
+// ---- Backgrounds ----
+pub const BG_APP: Color = Color::token("bg-app", 14, 16, 22, 255);
+pub const BG_CARD: Color = Color::token("bg-card", 23, 26, 33, 255);
+pub const BG_MUTED: Color = Color::token("bg-muted", 32, 36, 45, 255);
+pub const BG_RAISED: Color = Color::token("bg-raised", 41, 47, 58, 255);
+pub const OVERLAY_SCRIM: Color = Color::token("overlay-scrim", 3, 6, 12, 178);
+
+// ---- Text ----
+pub const TEXT_FOREGROUND: Color = Color::token("text-foreground", 232, 238, 246, 255);
+pub const TEXT_MUTED_FOREGROUND: Color = Color::token("text-muted-foreground", 148, 160, 176, 255);
+
+// ---- Borders ----
+pub const BORDER: Color = Color::token("border", 50, 58, 72, 255);
+pub const BORDER_STRONG: Color = Color::token("border-strong", 80, 96, 118, 255);
+
+// ---- Status colors ----
+pub const SUCCESS: Color = Color::token("success", 80, 210, 140, 255);
+pub const WARNING: Color = Color::token("warning", 245, 190, 85, 255);
+pub const DESTRUCTIVE: Color = Color::token("destructive", 245, 95, 110, 255);
+pub const INFO: Color = Color::token("info", 92, 170, 255, 255);
+
+// ---- Accents ----
+pub const PRIMARY: Color = Color::token("primary", 92, 170, 255, 255);
+pub const PRIMARY_HOVER: Color = Color::token("primary-hover", 110, 184, 255, 255);
+
+// ---- Solid-foreground (text-on-solid-fill colors) ----
+pub const TEXT_ON_SOLID_DARK: Color = Color::token("text-on-solid-dark", 8, 16, 25, 255);
+pub const TEXT_ON_SOLID_LIGHT: Color = Color::token("text-on-solid-light", 250, 250, 252, 255);
+
+// ---- Spacing ----
+pub const SPACE_XS: f32 = 4.0;
+pub const SPACE_SM: f32 = 8.0;
+pub const SPACE_MD: f32 = 12.0;
+pub const SPACE_LG: f32 = 18.0;
+pub const SPACE_XL: f32 = 28.0;
+
+// ---- Radius ----
+pub const RADIUS_SM: f32 = 4.0;
+pub const RADIUS_MD: f32 = 8.0;
+pub const RADIUS_LG: f32 = 12.0;
+pub const RADIUS_PILL: f32 = 999.0;
+
+// ---- Shadow (passed to renderer as a "level"; backend interprets) ----
+pub const SHADOW_SM: f32 = 4.0;
+pub const SHADOW_MD: f32 = 12.0;
+pub const SHADOW_LG: f32 = 24.0;
+
+// ---- Font sizes ----
+pub const FONT_XS: f32 = 11.0;
+pub const FONT_SM: f32 = 12.0;
+pub const FONT_BASE: f32 = 14.0;
+pub const FONT_LG: f32 = 16.0;
+pub const FONT_XL: f32 = 20.0;
+pub const FONT_XXL: f32 = 26.0;
+
+// ---- State styling ----
+//
+// Visual deltas applied when an element is in a non-default interaction
+// state. Renderer consumes these.
+
+/// How much to darken a fill on press, as a 0..1 factor.
+pub const PRESS_DARKEN: f32 = 0.12;
+/// How much to lighten a fill on hover, as a 0..1 factor.
+pub const HOVER_LIGHTEN: f32 = 0.06;
+/// Opacity multiplier when an element is disabled.
+pub const DISABLED_ALPHA: f32 = 0.5;
+/// Focus ring color (typically a tinted accent).
+pub const FOCUS_RING: Color = Color::token("focus-ring", 92, 170, 255, 200);
+/// Focus ring outset (additional stroke beyond the element bounds).
+pub const FOCUS_RING_WIDTH: f32 = 2.0;
