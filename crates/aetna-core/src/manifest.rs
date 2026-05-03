@@ -110,6 +110,7 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 mono,
                 wrap,
                 anchor,
+                layout: _,
             } => {
                 let preview: String = text.chars().take(40).collect();
                 let suffix = if text.chars().count() > 40 { "…" } else { "" };

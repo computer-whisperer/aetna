@@ -64,6 +64,7 @@ pub mod event;
 pub mod state;
 pub mod hit_test;
 pub mod focus;
+pub mod text_metrics;
 pub mod svg;
 pub mod inspect;
 pub mod lint;
@@ -94,6 +95,10 @@ pub use event::{
 pub use state::{AnimationMode, UiState};
 pub use hit_test::{hit_test, hit_test_target};
 pub use focus::focus_order;
+pub use text_metrics::{
+    line_height, line_width, layout_text, measure_text, wrap_lines, MeasuredText, TextLayout,
+    TextLine,
+};
 pub use svg::svg_from_ops;
 pub use inspect::dump_tree;
 pub use lint::{LintReport, Finding, FindingKind, lint};

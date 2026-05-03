@@ -133,7 +133,9 @@ fn walk(
                 TextWrap::NoWrap => None,
                 TextWrap::Wrap => Some(computed.w),
             };
-            if let Some((text_w, text_h)) = layout::estimated_text_size(n, available_width) {
+            if let Some(text_layout) = layout::text_layout(n, available_width) {
+                let text_w = text_layout.width + n.padding.left + n.padding.right;
+                let text_h = text_layout.height + n.padding.top + n.padding.bottom;
                 let overflow_x = (text_w - computed.w).max(0.0);
                 let overflow_y = (text_h - computed.h).max(0.0);
                 if overflow_x > 0.5 || overflow_y > 0.5 {

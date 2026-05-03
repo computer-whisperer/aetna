@@ -27,6 +27,10 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "aetna-core"
 version = "0.1.0"
+dependencies = [
+ "cosmic-text",
+ "ttf-parser 0.25.1",
+]
 
 [[package]]
 name = "aetna-demo"

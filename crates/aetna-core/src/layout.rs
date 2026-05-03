@@ -18,11 +18,13 @@
 //! are computed per-axis and inserted into the side map. Scroll offsets
 //! likewise read/write [`UiState::scroll_offsets`] directly.
 //!
-//! Text intrinsic measurement is approximate (`chars × font_size × 0.56`).
-//! Good enough for SVG fixtures; will be replaced when glyphon-based
-//! shaping lands.
+//! Text intrinsic measurement uses bundled-font glyph advances via
+//! [`crate::text_metrics`]. Full shaping still belongs to the renderer
+//! for now; this keeps layout/lint/SVG close enough to glyphon output
+//! without committing to the final text stack.
 
 use crate::state::UiState;
+use crate::text_metrics;
 use crate::tree::*;
 
 /// Lay out the whole tree into the given viewport rect.
@@ -267,19 +269,21 @@ fn overlay_rect(c: &El, parent: Rect, align: Align, justify: Justify) -> Rect {
     Rect::new(x, y, w, h)
 }
 
-/// Approximate intrinsic (width, height) for hugging layouts.
+/// Intrinsic (width, height) for hugging layouts.
 pub fn intrinsic(c: &El) -> (f32, f32) {
     intrinsic_constrained(c, None)
 }
 
 fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
     if let Some(text) = &c.text {
-        let char_w = c.font_size * char_width_factor(c.font_mono);
-        let line_h = c.font_size * 1.4;
-        let unwrapped_w = text
-            .split('\n')
-            .map(|line| line.chars().count() as f32 * char_w)
-            .fold(0.0, f32::max);
+        let unwrapped = text_metrics::layout_text(
+            text,
+            c.font_size,
+            c.font_weight,
+            c.font_mono,
+            TextWrap::NoWrap,
+            None,
+        );
         let content_available = match c.text_wrap {
             TextWrap::NoWrap => None,
             TextWrap::Wrap => available_width
@@ -287,15 +291,20 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
                     Size::Fixed(v) => Some(v),
                     Size::Fill(_) | Size::Hug => None,
                 })
-                .map(|w| (w - c.padding.left - c.padding.right).max(char_w)),
+                .map(|w| (w - c.padding.left - c.padding.right).max(1.0)),
         };
-        let line_count = content_available
-            .map(|w| wrapped_line_count(text, w, char_w))
-            .unwrap_or_else(|| text.split('\n').count().max(1));
+        let layout = text_metrics::layout_text(
+            text,
+            c.font_size,
+            c.font_weight,
+            c.font_mono,
+            c.text_wrap,
+            content_available,
+        );
         let w = content_available
-            .map(|w| unwrapped_w.min(w) + c.padding.left + c.padding.right)
-            .unwrap_or(unwrapped_w + c.padding.left + c.padding.right);
-        let h = line_count as f32 * line_h + c.padding.top + c.padding.bottom;
+            .map(|available| unwrapped.width.min(available) + c.padding.left + c.padding.right)
+            .unwrap_or(layout.width + c.padding.left + c.padding.right);
+        let h = layout.height + c.padding.top + c.padding.bottom;
         return apply_min(c, w, h);
     }
     match c.axis {
@@ -338,58 +347,31 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
     }
 }
 
-pub(crate) fn estimated_text_size(c: &El, available_width: Option<f32>) -> Option<(f32, f32)> {
-    c.text.as_ref()?;
-    Some(intrinsic_constrained(c, available_width))
+pub(crate) fn text_layout(c: &El, available_width: Option<f32>) -> Option<text_metrics::TextLayout> {
+    let text = c.text.as_ref()?;
+    let content_available = match c.text_wrap {
+        TextWrap::NoWrap => None,
+        TextWrap::Wrap => available_width
+            .or(match c.width {
+                Size::Fixed(v) => Some(v),
+                Size::Fill(_) | Size::Hug => None,
+            })
+            .map(|w| (w - c.padding.left - c.padding.right).max(1.0)),
+    };
+    Some(text_metrics::layout_text(
+        text,
+        c.font_size,
+        c.font_weight,
+        c.font_mono,
+        c.text_wrap,
+        content_available,
+    ))
 }
 
 fn apply_min(c: &El, mut w: f32, mut h: f32) -> (f32, f32) {
     if let Size::Fixed(v) = c.width { w = v; }
     if let Size::Fixed(v) = c.height { h = v; }
     (w, h)
-}
-
-fn char_width_factor(mono: bool) -> f32 {
-    // Conservative-leaning estimate. cosmic-text's actual run width for
-    // typical sans-serif sits around 0.56–0.62 of size depending on the
-    // glyph mix; pick the upper end so layout reserves enough width for
-    // text that the wgpu glyph run won't overflow visibly. The SVG
-    // fixture path also benefits — fewer false-positive overflow lints.
-    if mono { 0.62 } else { 0.60 }
-}
-
-fn wrapped_line_count(text: &str, max_width: f32, char_width: f32) -> usize {
-    let max_chars = (max_width / char_width).floor().max(1.0) as usize;
-    let mut total = 0;
-    for paragraph in text.split('\n') {
-        let mut line_len = 0usize;
-        let mut saw_word = false;
-        for word in paragraph.split_whitespace() {
-            saw_word = true;
-            let word_len = word.chars().count();
-            if word_len > max_chars {
-                if line_len > 0 {
-                    total += 1;
-                    line_len = 0;
-                }
-                total += (word_len + max_chars - 1) / max_chars;
-                continue;
-            }
-            let next_len = if line_len == 0 { word_len } else { line_len + 1 + word_len };
-            if next_len > max_chars {
-                total += 1;
-                line_len = word_len;
-            } else {
-                line_len = next_len;
-            }
-        }
-        if saw_word {
-            total += 1;
-        } else {
-            total += 1;
-        }
-    }
-    total.max(1)
 }
 
 #[cfg(test)]

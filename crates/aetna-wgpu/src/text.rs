@@ -1,10 +1,9 @@
 //! Glyphon-backed text rendering for `stock::text_sdf`.
 //!
-//! This module is the wgpu/glyphon-shaped half of text. The
-//! backend-agnostic `cosmic-text` layout half lives in `aetna-core` (or
-//! will, after v5.1's text decouple). For v5.0 we still consume glyphon
-//! directly here; the structure of this module makes it easy to lift the
-//! layout step out later.
+//! This module is the wgpu/glyphon rasterization half of text. The
+//! backend-agnostic `cosmic-text` layout artifact lives in `aetna-core`;
+//! this path still builds a glyphon buffer for GPU painting until Aetna
+//! owns the atlas/rasterization layer too.
 
 use glyphon::cosmic_text::Align;
 use glyphon::{

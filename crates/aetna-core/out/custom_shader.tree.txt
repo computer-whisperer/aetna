@@ -1,11 +1,11 @@
 root kind=Group rect=(0,0,720,360) size=(Fill(1.0),Fill(1.0)) source=examples/custom_shader.rs:35
-  root.heading.0 kind=Heading rect=(28,28,281,36) size=(Hug,Hug) text="Custom shader demo" text_color=text-foreground source=examples/custom_shader.rs:36
+  root.heading.0 kind=Heading rect=(28,28,249,36) size=(Hug,Hug) text="Custom shader demo" text_color=text-foreground source=examples/custom_shader.rs:36
   root.text.1 kind=Text rect=(28,82,664,39) size=(Fill(1.0),Hug) text="Three buttons below paint via a register…" wrap=Wrap text_color=text-muted-foreground source=examples/custom_shader.rs:37
   root.card.2 kind=Card rect=(28,140,664,106) size=(Fill(1.0),Hug) fill=bg-card source=examples/custom_shader.rs:43
-    root.card.2.heading.0 kind=Heading rect=(46,158,384,22) size=(Hug,Hug) text="gradient.wgsl — vertical linear gradient" text_color=text-foreground source=examples/custom_shader.rs:43
+    root.card.2.heading.0 kind=Heading rect=(46,158,277,22) size=(Hug,Hug) text="gradient.wgsl — vertical linear gradient" text_color=text-foreground source=examples/custom_shader.rs:43
     root.card.2.group.1 kind=Group rect=(46,192,628,36) size=(Fill(1.0),Hug) source=examples/custom_shader.rs:44
-      root.card.2.group.1.button.0 kind=Button rect=(46,192,83,36) size=(Hug,Fixed(36.0)) text="Sunrise" fill=bg-muted text_color=text-on-solid-dark shader=custom::gradient source=examples/custom_shader.rs:24
-      root.card.2.group.1.button.1 kind=Button rect=(141,192,66,36) size=(Hug,Fixed(36.0)) text="Ocean" fill=bg-muted text_color=text-on-solid-dark shader=custom::gradient source=examples/custom_shader.rs:24
-      root.card.2.group.1.button.2 kind=Button rect=(219,192,74,36) size=(Hug,Fixed(36.0)) text="Forest" fill=bg-muted text_color=text-on-solid-dark shader=custom::gradient source=examples/custom_shader.rs:24
-      root.card.2.group.1.spacer.3 kind=Spacer rect=(305,210,291,0) size=(Fill(1.0),Fill(1.0)) source=examples/custom_shader.rs:63
-      root.card.2.group.1.button.4 kind=Button rect=(608,192,66,36) size=(Hug,Fixed(36.0)) text="Stock" fill=bg-muted text_color=text-foreground source=examples/custom_shader.rs:64
+      root.card.2.group.1.button.0 kind=Button rect=(46,192,71,36) size=(Hug,Fixed(36.0)) text="Sunrise" fill=bg-muted text_color=text-on-solid-dark shader=custom::gradient source=examples/custom_shader.rs:24
+      root.card.2.group.1.button.1 kind=Button rect=(129,192,64,36) size=(Hug,Fixed(36.0)) text="Ocean" fill=bg-muted text_color=text-on-solid-dark shader=custom::gradient source=examples/custom_shader.rs:24
+      root.card.2.group.1.button.2 kind=Button rect=(205,192,64,36) size=(Hug,Fixed(36.0)) text="Forest" fill=bg-muted text_color=text-on-solid-dark shader=custom::gradient source=examples/custom_shader.rs:24
+      root.card.2.group.1.spacer.3 kind=Spacer rect=(281,210,322,0) size=(Fill(1.0),Fill(1.0)) source=examples/custom_shader.rs:63
+      root.card.2.group.1.button.4 kind=Button rect=(614,192,60,36) size=(Hug,Fixed(36.0)) text="Stock" fill=bg-muted text_color=text-foreground source=examples/custom_shader.rs:64

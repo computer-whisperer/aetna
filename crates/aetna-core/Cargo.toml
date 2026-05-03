@@ -8,6 +8,10 @@ license = "MIT OR Apache-2.0"
 [lib]
 path = "src/lib.rs"
 
+[dependencies]
+cosmic-text = "0.12.1"
+ttf-parser = "0.25.1"
+
 [[example]]
 name = "settings"
 path = "examples/settings.rs"

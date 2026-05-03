@@ -15,6 +15,7 @@
 use crate::ir::*;
 use crate::shader::*;
 use crate::state::{EnvelopeKind, UiState};
+use crate::text_metrics;
 use crate::tokens;
 use crate::tree::*;
 
@@ -145,6 +146,17 @@ fn push_node(
         };
         let text_color =
             opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
+        let layout = text_metrics::layout_text(
+            &display,
+            painted_font_size,
+            weight,
+            n.font_mono,
+            n.text_wrap,
+            match n.text_wrap {
+                TextWrap::NoWrap => None,
+                TextWrap::Wrap => Some(painted_rect.w),
+            },
+        );
         out.push(DrawOp::GlyphRun {
             id: n.computed_id.clone(),
             rect: painted_rect,
@@ -157,6 +169,7 @@ fn push_node(
             mono: n.font_mono,
             wrap: n.text_wrap,
             anchor,
+            layout,
         });
     }
 

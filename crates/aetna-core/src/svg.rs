@@ -20,6 +20,7 @@ use std::fmt::Write as _;
 
 use crate::ir::*;
 use crate::shader::*;
+use crate::text_metrics;
 use crate::tokens;
 use crate::tree::*;
 
@@ -68,15 +69,15 @@ fn emit_op(s: &mut String, op: &DrawOp) {
             id,
             rect,
             color,
-            text,
             size,
             weight,
             mono,
             wrap,
             anchor,
+            layout,
             ..
         } => {
-            emit_glyph_run(s, id, *rect, *color, text, *size, *weight, *mono, *wrap, *anchor);
+            emit_glyph_run(s, id, *rect, *color, *size, *weight, *mono, *wrap, *anchor, layout);
         }
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
@@ -204,25 +205,20 @@ fn emit_glyph_run(
     id: &str,
     rect: Rect,
     color: Color,
-    text: &str,
     size: f32,
     weight: FontWeight,
     mono: bool,
     wrap: TextWrap,
     anchor: TextAnchor,
+    layout: &text_metrics::TextLayout,
 ) {
     let (x, anchor_attr) = match anchor {
         TextAnchor::Start => (rect.x, "start"),
         TextAnchor::Middle => (rect.center_x(), "middle"),
         TextAnchor::End => (rect.right(), "end"),
     };
-    let lines = match wrap {
-        TextWrap::NoWrap => vec![text.to_string()],
-        TextWrap::Wrap => wrap_lines(text, rect.w, size, mono),
-    };
-    let line_h = size * 1.4;
     let line_top = match wrap {
-        TextWrap::NoWrap => rect.y + ((rect.h - line_h) * 0.5).max(0.0),
+        TextWrap::NoWrap => rect.y + ((rect.h - layout.line_height) * 0.5).max(0.0),
         TextWrap::Wrap => rect.y,
     };
     let family = if mono {
@@ -236,11 +232,11 @@ fn emit_glyph_run(
         FontWeight::Semibold => "600",
         FontWeight::Bold => "700",
     };
-    for (i, line) in lines.iter().enumerate() {
-        // SVG uses a baseline; glyphon positions by line top. 0.93 is
-        // Roboto's ascent ratio and keeps the fallback artifact close to
-        // the wgpu text path.
-        let y = line_top + i as f32 * line_h + size * 0.93;
+    for line in &layout.lines {
+        // SVG uses a baseline; glyphon positions by line top. The core
+        // text layout carries Roboto's baseline offset so artifacts stay
+        // close to the wgpu text path.
+        let y = line_top + line.baseline;
         let _ = writeln!(
             s,
             r#"<text data-node="{}" data-shader="stock::text_sdf" x="{:.2}" y="{:.2}" font-family="{}" font-size="{:.2}" font-weight="{}" fill="{}" text-anchor="{}">{}</text>"#,
@@ -252,44 +248,9 @@ fn emit_glyph_run(
             weight_str,
             color_svg(color),
             anchor_attr,
-            esc(line)
+            esc(&line.text)
         );
     }
-}
-
-fn wrap_lines(text: &str, width: f32, size: f32, mono: bool) -> Vec<String> {
-    let char_w = size * if mono { 0.62 } else { 0.60 };
-    let max_chars = (width / char_w).floor().max(1.0) as usize;
-    let mut out = Vec::new();
-    for paragraph in text.split('\n') {
-        let mut line = String::new();
-        for word in paragraph.split_whitespace() {
-            let word_len = word.chars().count();
-            let next_len = if line.is_empty() {
-                word_len
-            } else {
-                line.chars().count() + 1 + word_len
-            };
-            if next_len > max_chars && !line.is_empty() {
-                out.push(std::mem::take(&mut line));
-            }
-            if word_len > max_chars {
-                for ch in word.chars() {
-                    if line.chars().count() >= max_chars {
-                        out.push(std::mem::take(&mut line));
-                    }
-                    line.push(ch);
-                }
-            } else {
-                if !line.is_empty() {
-                    line.push(' ');
-                }
-                line.push_str(word);
-            }
-        }
-        out.push(line);
-    }
-    out
 }
 
 fn as_color(v: &UniformValue) -> Option<Color> {
