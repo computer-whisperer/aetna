@@ -1,8 +1,10 @@
-# attempt_4 — Library Vision
+# Aetna — Library Vision
+
+> *Aetna's manifesto for the application layer. The premises were settled during the attempt_4 milestone (`attempts/attempt_4/`); references to attempt_4 and the v0.X roadmap below describe the historical slice progression that walked the vision into working code. The vision itself carries forward to Aetna proper.*
 
 `SHADER_VISION.md` covers the *rendering* layer: why we paint UI through wgpu pipelines, why LLMs can author shaders, why insert-into-pass is the right host integration. This document covers the *library* layer: what kind of UI library this is, what it owns, and what it doesn't.
 
-attempt_4's grammar substrate already validated — a fresh sub-agent built a polished login screen one-shot from the attempt_3 DSL. The visual ceiling is rising via stock + custom shaders. What's missing is the shape of the application layer — the part that turns "renders a static fixture" into "is the right substrate for a real native app."
+The grammar substrate validated during attempt_3 — a fresh sub-agent built a polished login screen one-shot from the attempt_3 DSL — and attempt_4 raised the visual ceiling via stock + custom shaders. What this document settles is the shape of the application layer: the part that turns "renders a static fixture" into "is the right substrate for a real native app."
 
 ## The thesis
 

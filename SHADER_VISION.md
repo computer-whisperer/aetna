@@ -1,6 +1,8 @@
-# attempt_4 — Shader Vision
+# Aetna — Shader Vision
 
-This document captures the design intent for attempt_4: a wgpu-first UI library where shader-based rendering is first-class. attempt_3 settled the grammar layer (layout, tokens, style profiles, source-mapped lint, bundle pipeline). attempt_4 keeps that grammar largely intact and **rebuilds the rendering layer** so that what looks like "css concerns" in other libraries — gradients, shadows, frosted glass, hover transitions, custom shapes — are shader concerns here.
+> *Aetna's manifesto for the rendering layer. The premises were settled during the attempt_4 milestone (`attempts/attempt_4/`); references to attempt_4 and the v0.X roadmap below describe the historical slice progression that walked the vision into working code. The vision itself carries forward to Aetna proper.*
+
+This document captures Aetna's design intent: a wgpu-first UI library where shader-based rendering is first-class. attempt_3 settled the grammar layer (layout, tokens, style profiles, source-mapped lint, bundle pipeline). attempt_4 kept that grammar largely intact and **rebuilt the rendering layer** so that what looks like "css concerns" in other libraries — gradients, shadows, frosted glass, hover transitions, custom shapes — are shader concerns here.
 
 attempt_3 validated the grammar with a cold-LLM-session test (a fresh sub-agent produced a polished login screen one-shot, lint-clean, with no prior context). What attempt_3 didn't test, and can't test from its `RenderCmd::Rect { fill, stroke, radius, shadow }` IR, is the visual ceiling. That ceiling is what attempt_4 raises.
 
