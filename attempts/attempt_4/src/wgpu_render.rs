@@ -2,9 +2,9 @@
 //!
 //! v0.1 scope: paints `stock::rounded_rect` quads + `stock::text_sdf`
 //! glyph runs, plus user-registered custom shaders that share the
-//! rounded_rect vertex layout. Focus rings and shadow are reserved
-//! (focus_ring lights up easily via the same instance-buffer pattern;
-//! shadow needs SDF widening — both follow).
+//! rounded_rect vertex layout. Focus rings reuse the rounded-rect
+//! pipeline as an outline-only instance; shadow is still reserved until
+//! the SDF quad can widen beyond the element rect.
 //!
 //! # Insert-into-pass integration
 //!
@@ -50,8 +50,10 @@
 //! [`DrawOp::GlyphRun`]s — fine for v0.1 (no caching), and matches our
 //! current "tree is rebuilt each frame" loop.
 //!
-//! Paint order: quads (stock + custom, interleaved by run) first, then
-//! text on top.
+//! Paint order follows the draw-op stream. Consecutive quads with the
+//! same shader and scissor are batched, but text is rendered exactly at
+//! its position in the stream so overlays and modal layers compose
+//! correctly.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -109,6 +111,7 @@ const INITIAL_INSTANCE_CAPACITY: usize = 256;
 #[derive(Clone, Copy)]
 struct InstanceRun {
     handle: ShaderHandle,
+    scissor: Option<PhysicalScissor>,
     first: u32,
     count: u32,
 }
@@ -130,14 +133,16 @@ pub struct UiRenderer {
     // One pipeline per registered shader (stock + custom).
     pipelines: HashMap<ShaderHandle, wgpu::RenderPipeline>,
 
-    // Text pipeline (stock::text_sdf, via glyphon).
+    // Text pipeline resources (stock::text_sdf, via glyphon).
     font_system: FontSystem,
     swash_cache: SwashCache,
     glyph_atlas: TextAtlas,
     glyph_viewport: Viewport,
-    text_renderer: TextRenderer,
-    text_buffers: Vec<Buffer>,
-    text_metas: Vec<TextMeta>,
+    text_layers: Vec<TextLayer>,
+
+    // Replayed by draw() in exact paint order.
+    paint_items: Vec<PaintItem>,
+    viewport_px: (u32, u32),
 
     // Interaction state (v0.2).
     ui_state: UiState,
@@ -145,6 +150,25 @@ pub struct UiRenderer {
     /// hit-test against the geometry the user is actually looking at.
     /// Stored by clone (cheap at fixture sizes; revisit when trees grow).
     last_tree: Option<El>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PhysicalScissor {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+}
+
+#[derive(Clone, Copy)]
+enum PaintItem {
+    QuadRun(usize),
+    Text(usize),
+}
+
+struct TextLayer {
+    renderer: TextRenderer,
+    scissor: Option<PhysicalScissor>,
 }
 
 #[derive(Clone, Copy)]
@@ -198,12 +222,7 @@ impl UiRenderer {
         let quad_vbo = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("attempt_4::quad_vbo"),
             // Triangle strip: 4 corners, uv 0..1.
-            contents: bytemuck::cast_slice::<f32, u8>(&[
-                0.0, 0.0,
-                1.0, 0.0,
-                0.0, 1.0,
-                1.0, 1.0,
-            ]),
+            contents: bytemuck::cast_slice::<f32, u8>(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
@@ -220,7 +239,7 @@ impl UiRenderer {
             push_constant_ranges: &[],
         });
 
-        // Build the rounded_rect pipeline up-front; custom shaders are
+        // Build stock rect-shaped pipelines up-front; custom shaders are
         // added on demand by the host.
         let mut pipelines = HashMap::new();
         let rr_pipeline = build_quad_pipeline(
@@ -231,6 +250,14 @@ impl UiRenderer {
             ROUNDED_RECT_WGSL,
         );
         pipelines.insert(ShaderHandle::Stock(StockShader::RoundedRect), rr_pipeline);
+        let focus_pipeline = build_quad_pipeline(
+            device,
+            &pipeline_layout,
+            target_format,
+            "stock::focus_ring",
+            ROUNDED_RECT_WGSL,
+        );
+        pipelines.insert(ShaderHandle::Stock(StockShader::FocusRing), focus_pipeline);
 
         // ---- Text pipeline (glyphon) ----
         let mut font_system = FontSystem::new();
@@ -245,13 +272,7 @@ impl UiRenderer {
         let swash_cache = SwashCache::new();
         let glyph_cache = Cache::new(device);
         let glyph_viewport = Viewport::new(device, &glyph_cache);
-        let mut glyph_atlas = TextAtlas::new(device, queue, &glyph_cache, target_format);
-        let text_renderer = TextRenderer::new(
-            &mut glyph_atlas,
-            device,
-            wgpu::MultisampleState::default(),
-            None,
-        );
+        let glyph_atlas = TextAtlas::new(device, queue, &glyph_cache, target_format);
 
         Self {
             target_format,
@@ -269,9 +290,10 @@ impl UiRenderer {
             swash_cache,
             glyph_atlas,
             glyph_viewport,
-            text_renderer,
-            text_buffers: Vec::new(),
-            text_metas: Vec::new(),
+            text_layers: Vec::new(),
+
+            paint_items: Vec::new(),
+            viewport_px: (1, 1),
 
             ui_state: UiState::new(),
             last_tree: None,
@@ -327,30 +349,156 @@ impl UiRenderer {
         layout::layout(root, viewport);
         let ops = draw_ops::draw_ops(root);
 
-        // ---- Quads: pack into one buffer, group into runs ----
+        self.viewport_px = (
+            (viewport.w * scale_factor).ceil().max(1.0) as u32,
+            (viewport.h * scale_factor).ceil().max(1.0) as u32,
+        );
+        self.glyph_viewport.update(
+            queue,
+            Resolution {
+                width: self.viewport_px.0,
+                height: self.viewport_px.1,
+            },
+        );
+
+        // ---- Paint stream: pack quads, prepare text, preserve order ----
         self.quad_scratch.clear();
         self.runs.clear();
-        let mut current: Option<ShaderHandle> = None;
+        self.text_layers.clear();
+        self.paint_items.clear();
+        let mut current: Option<(ShaderHandle, Option<PhysicalScissor>)> = None;
         let mut run_first: u32 = 0;
 
         for op in &ops {
-            let DrawOp::Quad { rect, shader, uniforms, .. } = op else { continue };
-            // Skip ops whose shader has no pipeline registered (e.g.
-            // FocusRing in v0.1, custom shaders the host forgot to
-            // register). The lint pass surfaces this elsewhere.
-            if !self.pipelines.contains_key(shader) {
-                continue;
-            }
-            let inst = pack_instance(*rect, *shader, uniforms);
+            match op {
+                DrawOp::Quad {
+                    rect,
+                    scissor,
+                    shader,
+                    uniforms,
+                    ..
+                } => {
+                    // Skip ops whose shader has no pipeline registered
+                    // (e.g. FocusRing until its pipeline lands, custom
+                    // shaders the host forgot to register). The lint
+                    // pass surfaces this elsewhere.
+                    if !self.pipelines.contains_key(shader) {
+                        continue;
+                    }
+                    let physical_scissor =
+                        physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(physical_scissor, Some(s) if s.w == 0 || s.h == 0) {
+                        continue;
+                    }
+                    let inst = pack_instance(*rect, *shader, uniforms);
 
-            if Some(*shader) != current {
-                close_run(&mut self.runs, current, run_first, self.quad_scratch.len() as u32);
-                current = Some(*shader);
-                run_first = self.quad_scratch.len() as u32;
+                    let run_key = (*shader, physical_scissor);
+                    if current != Some(run_key) {
+                        close_run(
+                            &mut self.runs,
+                            &mut self.paint_items,
+                            current,
+                            run_first,
+                            self.quad_scratch.len() as u32,
+                        );
+                        current = Some(run_key);
+                        run_first = self.quad_scratch.len() as u32;
+                    }
+                    self.quad_scratch.push(inst);
+                }
+                DrawOp::GlyphRun {
+                    rect,
+                    scissor,
+                    color,
+                    text,
+                    size,
+                    weight,
+                    mono,
+                    anchor,
+                    ..
+                } => {
+                    close_run(
+                        &mut self.runs,
+                        &mut self.paint_items,
+                        current,
+                        run_first,
+                        self.quad_scratch.len() as u32,
+                    );
+                    current = None;
+                    run_first = self.quad_scratch.len() as u32;
+
+                    let physical_scissor =
+                        physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(physical_scissor, Some(s) if s.w == 0 || s.h == 0) {
+                        continue;
+                    }
+                    let (buffer, meta) = build_text_buffer(
+                        &mut self.font_system,
+                        *rect,
+                        *scissor,
+                        text,
+                        *size,
+                        *weight,
+                        *mono,
+                        *anchor,
+                        *color,
+                        scale_factor,
+                    );
+                    let mut renderer = TextRenderer::new(
+                        &mut self.glyph_atlas,
+                        device,
+                        wgpu::MultisampleState::default(),
+                        None,
+                    );
+                    let text_area = TextArea {
+                        buffer: &buffer,
+                        left: meta.left,
+                        top: meta.top,
+                        // Positions/sizes are pre-multiplied to physical
+                        // pixels already; tell glyphon not to scale further.
+                        scale: 1.0,
+                        bounds: meta.bounds,
+                        default_color: meta.color,
+                        custom_glyphs: &[],
+                    };
+                    renderer
+                        .prepare(
+                            device,
+                            queue,
+                            &mut self.font_system,
+                            &mut self.glyph_atlas,
+                            &self.glyph_viewport,
+                            [text_area],
+                            &mut self.swash_cache,
+                        )
+                        .expect("glyphon prepare");
+                    let index = self.text_layers.len();
+                    self.text_layers.push(TextLayer {
+                        renderer,
+                        scissor: physical_scissor,
+                    });
+                    self.paint_items.push(PaintItem::Text(index));
+                }
+                DrawOp::BackdropSnapshot => {
+                    close_run(
+                        &mut self.runs,
+                        &mut self.paint_items,
+                        current,
+                        run_first,
+                        self.quad_scratch.len() as u32,
+                    );
+                    current = None;
+                    run_first = self.quad_scratch.len() as u32;
+                }
             }
-            self.quad_scratch.push(inst);
         }
-        close_run(&mut self.runs, current, run_first, self.quad_scratch.len() as u32);
+        close_run(
+            &mut self.runs,
+            &mut self.paint_items,
+            current,
+            run_first,
+            self.quad_scratch.len() as u32,
+        );
 
         if self.quad_scratch.len() > self.instance_capacity {
             let new_cap = self.quad_scratch.len().next_power_of_two();
@@ -377,85 +525,6 @@ impl UiRenderer {
         };
         queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
 
-        // ---- Text ----
-        //
-        // Canonical HiDPI: rasterize glyphs at physical DPI. Pre-multiply
-        // every text quantity (size, line height, position, bounds) by
-        // scale_factor and set TextArea.scale = 1.0. Glyphon then sees
-        // physical-coord positions and rasterizes at physical glyph size,
-        // producing crisp text. The glyphon Viewport is the physical
-        // framebuffer resolution.
-        self.text_buffers.clear();
-        self.text_metas.clear();
-        for op in &ops {
-            if let DrawOp::GlyphRun {
-                rect, color, text, size, weight, mono, anchor, ..
-            } = op
-            {
-                build_text_buffer(
-                    &mut self.font_system,
-                    *rect,
-                    text,
-                    *size,
-                    *weight,
-                    *mono,
-                    *anchor,
-                    *color,
-                    scale_factor,
-                    &mut self.text_buffers,
-                    &mut self.text_metas,
-                );
-            }
-        }
-
-        self.glyph_viewport.update(
-            queue,
-            Resolution {
-                width: (viewport.w * scale_factor) as u32,
-                height: (viewport.h * scale_factor) as u32,
-            },
-        );
-
-        // Split borrow so glyphon::prepare can take &mut on font_system,
-        // glyph_atlas, etc. simultaneously with &TextArea borrowed from
-        // self.text_buffers.
-        let Self {
-            text_buffers,
-            text_metas,
-            text_renderer,
-            glyph_atlas,
-            glyph_viewport,
-            font_system,
-            swash_cache,
-            ..
-        } = self;
-        let text_areas: Vec<TextArea> = text_buffers
-            .iter()
-            .zip(text_metas.iter())
-            .map(|(buffer, meta)| TextArea {
-                buffer,
-                left: meta.left,
-                top: meta.top,
-                // Positions/sizes are pre-multiplied to physical pixels
-                // already; tell glyphon not to scale further.
-                scale: 1.0,
-                bounds: meta.bounds,
-                default_color: meta.color,
-                custom_glyphs: &[],
-            })
-            .collect();
-        text_renderer
-            .prepare(
-                device,
-                queue,
-                font_system,
-                glyph_atlas,
-                glyph_viewport,
-                text_areas,
-                swash_cache,
-            )
-            .expect("glyphon prepare");
-
         // Snapshot the laid-out tree so pointer events arriving before
         // the next prepare can hit-test against current geometry.
         self.last_tree = Some(root.clone());
@@ -475,16 +544,19 @@ impl UiRenderer {
         let hit = self
             .last_tree
             .as_ref()
-            .and_then(|t| event::hit_test(t, (x, y)));
-        self.ui_state.hovered_key = hit;
-        self.ui_state.hovered_key.as_deref()
+            .and_then(|t| event::hit_test_target(t, (x, y)));
+        self.ui_state.hovered = hit;
+        self.ui_state
+            .hovered
+            .as_ref()
+            .map(|target| target.key.as_str())
     }
 
     /// Pointer left the window — clear hover/press.
     pub fn pointer_left(&mut self) {
         self.ui_state.pointer_pos = None;
-        self.ui_state.hovered_key = None;
-        self.ui_state.pressed_key = None;
+        self.ui_state.hovered = None;
+        self.ui_state.pressed = None;
     }
 
     /// Primary mouse button down at `(x, y)` (logical px). Records the
@@ -494,8 +566,8 @@ impl UiRenderer {
         let hit = self
             .last_tree
             .as_ref()
-            .and_then(|t| event::hit_test(t, (x, y)));
-        self.ui_state.pressed_key = hit;
+            .and_then(|t| event::hit_test_target(t, (x, y)));
+        self.ui_state.pressed = hit;
     }
 
     /// Primary mouse button up at `(x, y)`. If the release lands on the
@@ -505,11 +577,13 @@ impl UiRenderer {
         let hit = self
             .last_tree
             .as_ref()
-            .and_then(|t| event::hit_test(t, (x, y)));
-        let pressed = self.ui_state.pressed_key.take();
+            .and_then(|t| event::hit_test_target(t, (x, y)));
+        let pressed = self.ui_state.pressed.take();
         match (pressed, hit) {
-            (Some(p), Some(h)) if p == h => Some(UiEvent {
-                key: Some(p),
+            (Some(p), Some(h)) if p.node_id == h.node_id => Some(UiEvent {
+                key: Some(p.key.clone()),
+                target: Some(p),
+                pointer: Some((x, y)),
                 kind: UiEventKind::Click,
             }),
             _ => None,
@@ -517,26 +591,38 @@ impl UiRenderer {
     }
 
     /// Record draws into the host-managed render pass. Call after
-    /// [`Self::prepare`]. Paint order: quads (one draw call per shader
-    /// run, in tree order), then text on top.
+    /// [`Self::prepare`]. Paint order follows the draw-op stream.
     pub fn draw<'pass>(&'pass self, pass: &mut wgpu::RenderPass<'pass>) {
-        if !self.runs.is_empty() {
-            pass.set_bind_group(0, &self.quad_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
-            pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            for run in &self.runs {
-                let pipeline = self
-                    .pipelines
-                    .get(&run.handle)
-                    .expect("run handle has no pipeline (bug in prepare)");
-                pass.set_pipeline(pipeline);
-                pass.draw(0..4, run.first..run.first + run.count);
+        let full = PhysicalScissor {
+            x: 0,
+            y: 0,
+            w: self.viewport_px.0,
+            h: self.viewport_px.1,
+        };
+        for item in &self.paint_items {
+            match *item {
+                PaintItem::QuadRun(index) => {
+                    let run = &self.runs[index];
+                    set_scissor(pass, run.scissor, full);
+                    pass.set_bind_group(0, &self.quad_bind_group, &[]);
+                    pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
+                    pass.set_vertex_buffer(1, self.instance_buf.slice(..));
+                    let pipeline = self
+                        .pipelines
+                        .get(&run.handle)
+                        .expect("run handle has no pipeline (bug in prepare)");
+                    pass.set_pipeline(pipeline);
+                    pass.draw(0..4, run.first..run.first + run.count);
+                }
+                PaintItem::Text(index) => {
+                    let layer = &self.text_layers[index];
+                    set_scissor(pass, layer.scissor, full);
+                    layer
+                        .renderer
+                        .render(&self.glyph_atlas, &self.glyph_viewport, pass)
+                        .expect("glyphon render");
+                }
             }
-        }
-        if !self.text_buffers.is_empty() {
-            self.text_renderer
-                .render(&self.glyph_atlas, &self.glyph_viewport, pass)
-                .expect("glyphon render");
         }
     }
 }
@@ -613,13 +699,53 @@ fn build_quad_pipeline(
     })
 }
 
-fn close_run(runs: &mut Vec<InstanceRun>, handle: Option<ShaderHandle>, first: u32, end: u32) {
-    if let Some(handle) = handle {
+fn close_run(
+    runs: &mut Vec<InstanceRun>,
+    paint_items: &mut Vec<PaintItem>,
+    run_key: Option<(ShaderHandle, Option<PhysicalScissor>)>,
+    first: u32,
+    end: u32,
+) {
+    if let Some((handle, scissor)) = run_key {
         let count = end - first;
         if count > 0 {
-            runs.push(InstanceRun { handle, first, count });
+            let index = runs.len();
+            runs.push(InstanceRun {
+                handle,
+                scissor,
+                first,
+                count,
+            });
+            paint_items.push(PaintItem::QuadRun(index));
         }
     }
+}
+
+fn physical_scissor(
+    scissor: Option<Rect>,
+    scale: f32,
+    viewport_px: (u32, u32),
+) -> Option<PhysicalScissor> {
+    let r = scissor?;
+    let x1 = (r.x * scale).floor().clamp(0.0, viewport_px.0 as f32) as u32;
+    let y1 = (r.y * scale).floor().clamp(0.0, viewport_px.1 as f32) as u32;
+    let x2 = (r.right() * scale).ceil().clamp(0.0, viewport_px.0 as f32) as u32;
+    let y2 = (r.bottom() * scale).ceil().clamp(0.0, viewport_px.1 as f32) as u32;
+    Some(PhysicalScissor {
+        x: x1,
+        y: y1,
+        w: x2.saturating_sub(x1),
+        h: y2.saturating_sub(y1),
+    })
+}
+
+fn set_scissor(
+    pass: &mut wgpu::RenderPass<'_>,
+    scissor: Option<PhysicalScissor>,
+    full: PhysicalScissor,
+) {
+    let s = scissor.unwrap_or(full);
+    pass.set_scissor_rect(s.x, s.y, s.w, s.h);
 }
 
 /// Pack a quad's uniforms into the shared `QuadInstance` layout. Stock
@@ -652,6 +778,21 @@ fn pack_instance(
                 0.0,
             ],
         },
+        ShaderHandle::Stock(StockShader::FocusRing) => QuadInstance {
+            rect: rect_arr,
+            slot_a: [0.0; 4],
+            slot_b: uniforms
+                .get("color")
+                .and_then(as_color)
+                .map(rgba_f32)
+                .unwrap_or([0.0; 4]),
+            slot_c: [
+                uniforms.get("width").and_then(as_f32).unwrap_or(0.0),
+                uniforms.get("radius").and_then(as_f32).unwrap_or(0.0),
+                0.0,
+                0.0,
+            ],
+        },
         _ => QuadInstance {
             rect: rect_arr,
             slot_a: uniforms.get("vec_a").map(value_to_vec4).unwrap_or([0.0; 4]),
@@ -665,6 +806,7 @@ fn pack_instance(
 fn build_text_buffer(
     font_system: &mut FontSystem,
     rect: Rect,
+    scissor: Option<Rect>,
     text: &str,
     size: f32,
     weight: FontWeight,
@@ -672,9 +814,7 @@ fn build_text_buffer(
     anchor: TextAnchor,
     color: Color,
     scale: f32,
-    out_buffers: &mut Vec<Buffer>,
-    out_metas: &mut Vec<TextMeta>,
-) {
+) -> (Buffer, TextMeta) {
     // All text quantities are pre-multiplied to physical pixels here so
     // glyphon rasterizes at native device DPI (crisp text on HiDPI).
     let physical_size = size * scale;
@@ -700,7 +840,11 @@ fn build_text_buffer(
     // Use bundled Roboto for sans-serif so typography is consistent
     // regardless of what fonts the host has installed. fontdb resolves
     // Name("Roboto") to whichever weight matches the request.
-    let family = if mono { Family::Monospace } else { Family::Name("Roboto") };
+    let family = if mono {
+        Family::Monospace
+    } else {
+        Family::Name("Roboto")
+    };
     let attrs = Attrs::new().family(family).weight(map_weight(weight));
     buffer.set_text(font_system, text, attrs, Shaping::Advanced);
 
@@ -726,18 +870,19 @@ fn build_text_buffer(
     // narrower than cosmic-text's actual run width. Real overflow shows
     // up in the lint pass and as visible overlap, not silent glyph
     // chopping.
-    out_buffers.push(buffer);
-    out_metas.push(TextMeta {
+    let bounds = scissor.unwrap_or(Rect::new(0.0, 0.0, 1_000_000_000.0, 1_000_000_000.0));
+    let meta = TextMeta {
         left,
         top,
         color: glyphon_color(color),
         bounds: TextBounds {
-            left: (rect.x * scale).floor() as i32 - 2,
-            top: (rect.y * scale).floor() as i32 - 2,
-            right: i32::MAX / 2,
-            bottom: i32::MAX / 2,
+            left: (bounds.x * scale).floor() as i32 - 2,
+            top: (bounds.y * scale).floor() as i32 - 2,
+            right: (bounds.right() * scale).ceil() as i32 + 2,
+            bottom: (bounds.bottom() * scale).ceil() as i32 + 2,
         },
-    });
+    };
+    (buffer, meta)
 }
 
 fn map_weight(w: FontWeight) -> Weight {
@@ -798,5 +943,48 @@ fn srgb_to_linear(c: f32) -> f32 {
         c / 12.92
     } else {
         ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shader::UniformBlock;
+    use crate::tokens;
+
+    #[test]
+    fn focus_ring_uniforms_pack_into_rounded_rect_layout() {
+        let mut uniforms = UniformBlock::new();
+        uniforms.insert("color", UniformValue::Color(tokens::FOCUS_RING));
+        uniforms.insert("width", UniformValue::F32(2.0));
+        uniforms.insert("radius", UniformValue::F32(9.0));
+
+        let inst = pack_instance(
+            Rect::new(1.0, 2.0, 30.0, 40.0),
+            ShaderHandle::Stock(StockShader::FocusRing),
+            &uniforms,
+        );
+
+        assert_eq!(inst.rect, [1.0, 2.0, 30.0, 40.0]);
+        assert_eq!(inst.slot_a, [0.0; 4]);
+        assert!(inst.slot_b[3] > 0.0, "focus ring stroke should be visible");
+        assert_eq!(inst.slot_c[0], 2.0);
+        assert_eq!(inst.slot_c[1], 9.0);
+    }
+
+    #[test]
+    fn physical_scissor_converts_logical_to_physical_pixels() {
+        let scissor = physical_scissor(Some(Rect::new(10.2, 20.2, 30.2, 40.2)), 2.0, (200, 200))
+            .expect("scissor");
+
+        assert_eq!(
+            scissor,
+            PhysicalScissor {
+                x: 20,
+                y: 40,
+                w: 61,
+                h: 81
+            }
+        );
     }
 }

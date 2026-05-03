@@ -54,6 +54,9 @@ fn role_token(k: &Kind) -> &'static str {
         Kind::Heading => "heading",
         Kind::Spacer => "spacer",
         Kind::Divider => "divider",
+        Kind::Overlay => "overlay",
+        Kind::Scrim => "scrim",
+        Kind::Modal => "modal",
         Kind::Custom(name) => name,
     }
 }
@@ -63,7 +66,7 @@ fn layout_children(node: &mut El) {
         Axis::Overlay => {
             let inner = node.computed.inset(node.padding);
             for c in &mut node.children {
-                c.computed = clamp(c, inner);
+                c.computed = overlay_rect(c, inner, node.align, node.justify);
                 layout_children(c);
             }
         }
@@ -157,16 +160,29 @@ fn main_size_of(c: &El, iw: f32, ih: f32, vertical: bool) -> MainSize {
     }
 }
 
-fn clamp(c: &El, parent: Rect) -> Rect {
+fn overlay_rect(c: &El, parent: Rect, align: Align, justify: Justify) -> Rect {
+    let (iw, ih) = intrinsic(c);
     let w = match c.width {
         Size::Fixed(v) => v,
-        _ => parent.w,
+        Size::Hug => iw.min(parent.w),
+        Size::Fill(_) => parent.w,
     };
     let h = match c.height {
         Size::Fixed(v) => v,
-        _ => parent.h,
+        Size::Hug => ih.min(parent.h),
+        Size::Fill(_) => parent.h,
     };
-    Rect::new(parent.x, parent.y, w, h)
+    let x = match align {
+        Align::Start | Align::Stretch => parent.x,
+        Align::Center => parent.x + (parent.w - w) * 0.5,
+        Align::End => parent.right() - w,
+    };
+    let y = match justify {
+        Justify::Start | Justify::SpaceBetween => parent.y,
+        Justify::Center => parent.y + (parent.h - h) * 0.5,
+        Justify::End => parent.bottom() - h,
+    };
+    Rect::new(x, y, w, h)
 }
 
 /// Approximate intrinsic (width, height) for hugging layouts.
@@ -258,5 +274,18 @@ mod tests {
         let child = &root.children[0];
         assert!((child.computed.y - 80.0).abs() < 0.5,
             "expected y≈80, got {}", child.computed.y);
+    }
+
+    #[test]
+    fn overlay_can_center_hug_child() {
+        let mut root = stack([crate::card("Dialog", [crate::text("Body")])
+            .width(Size::Fixed(200.0))
+            .height(Size::Hug)])
+        .align(Align::Center)
+        .justify(Justify::Center);
+        layout(&mut root, Rect::new(0.0, 0.0, 600.0, 400.0));
+        let child = &root.children[0];
+        assert!((child.computed.x - 200.0).abs() < 0.5, "expected x≈200, got {}", child.computed.x);
+        assert!(child.computed.y > 100.0 && child.computed.y < 200.0, "expected centered y, got {}", child.computed.y);
     }
 }

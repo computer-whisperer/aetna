@@ -23,6 +23,7 @@ pub const BG_APP: Color = Color::token("bg-app", 14, 16, 22, 255);
 pub const BG_CARD: Color = Color::token("bg-card", 23, 26, 33, 255);
 pub const BG_MUTED: Color = Color::token("bg-muted", 32, 36, 45, 255);
 pub const BG_RAISED: Color = Color::token("bg-raised", 41, 47, 58, 255);
+pub const OVERLAY_SCRIM: Color = Color::token("overlay-scrim", 3, 6, 12, 178);
 
 // ---- Text ----
 pub const TEXT_FOREGROUND: Color = Color::token("text-foreground", 232, 238, 246, 255);

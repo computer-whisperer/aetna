@@ -44,6 +44,22 @@ impl Rect {
     pub fn bottom(self) -> f32 { self.y + self.h }
     pub fn center_x(self) -> f32 { self.x + self.w * 0.5 }
     pub fn center_y(self) -> f32 { self.y + self.h * 0.5 }
+    pub fn contains(self, x: f32, y: f32) -> bool {
+        x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
+    }
+    pub fn intersect(self, other: Rect) -> Option<Rect> {
+        let x1 = self.x.max(other.x);
+        let y1 = self.y.max(other.y);
+        let x2 = self.right().min(other.right());
+        let y2 = self.bottom().min(other.bottom());
+        if x2 <= x1 {
+            return None;
+        }
+        if y2 <= y1 {
+            return None;
+        }
+        Some(Rect::new(x1, y1, x2 - x1, y2 - y1))
+    }
     pub fn inset(self, p: Sides) -> Self {
         Self::new(
             self.x + p.left,
@@ -197,6 +213,9 @@ pub enum Kind {
     Heading,
     Spacer,
     Divider,
+    Overlay,
+    Scrim,
+    Modal,
     /// Escape hatch for app-defined components.
     Custom(&'static str),
 }
@@ -242,6 +261,7 @@ pub struct El {
     pub style_profile: StyleProfile,
     pub state: InteractionState,
     pub key: Option<String>,
+    pub block_pointer: bool,
     pub source: Source,
 
     // Layout
@@ -263,6 +283,10 @@ pub struct El {
     pub stroke_width: f32,
     pub radius: f32,
     pub shadow: f32,
+    /// Clip this element's own paint and descendants to its computed rect.
+    /// Used by scroll panes, embedded viewports, overlays, and any region
+    /// where overflow should not leak visually or receive events.
+    pub clip: bool,
 
     /// Override the implicit `stock::rounded_rect` binding for this
     /// node's surface. v0.1 ships no users of this; it's the escape
@@ -292,6 +316,7 @@ impl Default for El {
             style_profile: StyleProfile::TextOnly,
             state: InteractionState::Default,
             key: None,
+            block_pointer: false,
             source: Source::default(),
             axis: Axis::Overlay,
             gap: 0.0,
@@ -305,6 +330,7 @@ impl Default for El {
             stroke_width: 0.0,
             radius: 0.0,
             shadow: 0.0,
+            clip: false,
             shader_override: None,
             text: None,
             text_color: None,
@@ -323,6 +349,7 @@ impl El {
 
     // ---- Identity / source ----
     pub fn key(mut self, k: impl Into<String>) -> Self { self.key = Some(k.into()); self }
+    pub fn block_pointer(mut self) -> Self { self.block_pointer = true; self }
     pub fn at(mut self, file: &'static str, line: u32) -> Self {
         self.source = Source { file, line };
         self
@@ -364,6 +391,7 @@ impl El {
     pub fn stroke_width(mut self, w: f32) -> Self { self.stroke_width = w; self }
     pub fn radius(mut self, r: f32) -> Self { self.radius = r; self }
     pub fn shadow(mut self, s: f32) -> Self { self.shadow = s; self }
+    pub fn clip(mut self) -> Self { self.clip = true; self }
 
     /// Bind a shader for the surface paint, replacing the implicit
     /// `stock::rounded_rect`. The element's `fill`/`stroke`/`radius`/

@@ -60,6 +60,15 @@
 
 use crate::tree::{El, InteractionState, Rect};
 
+/// Hit-test target metadata. `key` is the author-facing route, while
+/// `node_id` is the stable laid-out tree path used by artifacts.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiTarget {
+    pub key: String,
+    pub node_id: String,
+    pub rect: Rect,
+}
+
 /// User-facing event. The host's [`App::on_event`] receives one of these
 /// per discrete user action (click, key press, scroll wheel tick, …).
 #[derive(Clone, Debug)]
@@ -68,6 +77,10 @@ pub struct UiEvent {
     /// for events with no specific target (e.g., a window-level
     /// keyboard event).
     pub key: Option<String>,
+    /// Full hit-test target for events routed to a concrete element.
+    pub target: Option<UiTarget>,
+    /// Pointer position in logical pixels when the event was emitted.
+    pub pointer: Option<(f32, f32)>,
     pub kind: UiEventKind,
 }
 
@@ -104,8 +117,8 @@ pub struct UiState {
     /// Last known pointer position in **logical** pixels. `None` until
     /// the pointer enters the window.
     pub pointer_pos: Option<(f32, f32)>,
-    pub hovered_key: Option<String>,
-    pub pressed_key: Option<String>,
+    pub hovered: Option<UiTarget>,
+    pub pressed: Option<UiTarget>,
 }
 
 impl UiState {
@@ -116,13 +129,13 @@ impl UiState {
     /// Walk the tree and set `state` on nodes whose keys match the
     /// current hovered/pressed trackers. Press wins over hover.
     pub fn apply_to_tree(&self, root: &mut El) {
-        if let Some(k) = self.pressed_key.as_deref() {
-            set_state_for_key(root, k, InteractionState::Press);
+        if let Some(target) = &self.pressed {
+            set_state_for_target(root, target, InteractionState::Press);
         }
-        if let Some(k) = self.hovered_key.as_deref() {
+        if let Some(target) = &self.hovered {
             // Don't overwrite a press visual if both happen to match.
-            if Some(k) != self.pressed_key.as_deref() {
-                set_state_for_key(root, k, InteractionState::Hover);
+            if self.pressed.as_ref().map(|p| p.node_id.as_str()) != Some(target.node_id.as_str()) {
+                set_state_for_target(root, target, InteractionState::Hover);
             }
         }
     }
@@ -136,34 +149,72 @@ impl UiState {
 /// hit-test targets — author intent is "I tagged it with a key, it's
 /// interactive."
 pub fn hit_test(root: &El, point: (f32, f32)) -> Option<String> {
-    hit_test_rec(root, point)
+    hit_test_target(root, point).map(|target| target.key)
 }
 
-fn hit_test_rec(node: &El, point: (f32, f32)) -> Option<String> {
-    if !rect_contains(node.computed, point) {
-        return None;
+/// Find the topmost keyed node and return full target metadata.
+pub fn hit_test_target(root: &El, point: (f32, f32)) -> Option<UiTarget> {
+    match hit_test_rec(root, point, None) {
+        Hit::Target(target) => Some(target),
+        Hit::Blocked | Hit::Miss => None,
     }
+}
+
+enum Hit {
+    Target(UiTarget),
+    Blocked,
+    Miss,
+}
+
+fn hit_test_rec(node: &El, point: (f32, f32), inherited_clip: Option<Rect>) -> Hit {
+    if let Some(clip) = inherited_clip
+        && !clip.contains(point.0, point.1)
+    {
+        return Hit::Miss;
+    }
+    if !node.computed.contains(point.0, point.1) {
+        return Hit::Miss;
+    }
+    let child_clip = if node.clip {
+        match inherited_clip {
+            Some(clip) => Some(
+                clip.intersect(node.computed)
+                    .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+            ),
+            None => Some(node.computed),
+        }
+    } else {
+        inherited_clip
+    };
     // Children paint last → are on top → check first.
     for child in node.children.iter().rev() {
-        if let Some(hit) = hit_test_rec(child, point) {
-            return Some(hit);
+        match hit_test_rec(child, point, child_clip) {
+            Hit::Target(target) => return Hit::Target(target),
+            Hit::Blocked => return Hit::Blocked,
+            Hit::Miss => {}
         }
     }
     // No child hit. Self counts only if it has a key.
-    node.key.clone()
+    if let Some(key) = &node.key {
+        return Hit::Target(UiTarget {
+            key: key.clone(),
+            node_id: node.computed_id.clone(),
+            rect: node.computed,
+        });
+    }
+    if node.block_pointer {
+        return Hit::Blocked;
+    }
+    Hit::Miss
 }
 
-fn rect_contains(r: Rect, (x, y): (f32, f32)) -> bool {
-    x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
-}
-
-fn set_state_for_key(node: &mut El, key: &str, state: InteractionState) -> bool {
-    if node.key.as_deref() == Some(key) {
+fn set_state_for_target(node: &mut El, target: &UiTarget, state: InteractionState) -> bool {
+    if node.computed_id == target.node_id {
         node.state = state;
         return true;
     }
     for child in &mut node.children {
-        if set_state_for_key(child, key, state) {
+        if set_state_for_target(child, target, state) {
             return true;
         }
     }
@@ -180,10 +231,7 @@ mod tests {
     fn lay_out_counter() -> El {
         let mut tree = column([
             crate::text("0"),
-            row([
-                button("-").key("dec"),
-                button("+").key("inc"),
-            ]),
+            row([button("-").key("dec"), button("+").key("inc")]),
         ])
         .padding(20.0);
         layout(&mut tree, Rect::new(0.0, 0.0, 400.0, 200.0));
@@ -198,7 +246,11 @@ mod tests {
             let r = find_rect(&tree, key).expect("button rect");
             let center = (r.x + r.w * 0.5, r.y + r.h * 0.5);
             let hit = hit_test(&tree, center);
-            assert_eq!(hit.as_deref(), Some(*key), "hit-test {key} returned {hit:?}");
+            assert_eq!(
+                hit.as_deref(),
+                Some(*key),
+                "hit-test {key} returned {hit:?}"
+            );
         }
     }
 
@@ -223,8 +275,8 @@ mod tests {
         let mut tree = lay_out_counter();
         let state = UiState {
             pointer_pos: None,
-            hovered_key: Some("inc".into()),
-            pressed_key: None,
+            hovered: Some(target(&tree, "inc")),
+            pressed: None,
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Hover));
@@ -236,23 +288,74 @@ mod tests {
         let mut tree = lay_out_counter();
         let state = UiState {
             pointer_pos: None,
-            hovered_key: Some("inc".into()),
-            pressed_key: Some("inc".into()),
+            hovered: Some(target(&tree, "inc")),
+            pressed: Some(target(&tree, "inc")),
         };
         state.apply_to_tree(&mut tree);
         assert_eq!(node_state(&tree, "inc"), Some(InteractionState::Press));
     }
 
+    #[test]
+    fn hit_test_respects_clipping_ancestor() {
+        let mut tree = column([row([
+            button("-").key("visible"),
+            button("+").key("clipped").width(Size::Fixed(240.0)),
+        ])
+        .clip()
+        .width(Size::Fixed(80.0))]);
+        layout(&mut tree, Rect::new(0.0, 0.0, 400.0, 100.0));
+
+        let clipped = find_rect(&tree, "clipped").expect("clipped button rect");
+        assert!(hit_test(&tree, (clipped.center_x(), clipped.center_y())).is_none());
+    }
+
+    #[test]
+    fn unkeyed_blocking_node_stops_fallthrough() {
+        let mut tree = stack([
+            El::new(Kind::Scrim).key("dismiss").fill(crate::tokens::OVERLAY_SCRIM),
+            El::new(Kind::Modal)
+                .block_pointer()
+                .width(Size::Fixed(100.0))
+                .height(Size::Fixed(100.0)),
+        ])
+        .align(Align::Center)
+        .justify(Justify::Center);
+        layout(&mut tree, Rect::new(0.0, 0.0, 300.0, 300.0));
+
+        assert!(hit_test(&tree, (150.0, 150.0)).is_none());
+        assert_eq!(hit_test(&tree, (10.0, 10.0)).as_deref(), Some("dismiss"));
+    }
+
     fn find_rect(node: &El, key: &str) -> Option<Rect> {
-        if node.key.as_deref() == Some(key) { return Some(node.computed); }
+        if node.key.as_deref() == Some(key) {
+            return Some(node.computed);
+        }
         node.children.iter().find_map(|c| find_rect(c, key))
     }
     fn find_text_rect(node: &El) -> Option<Rect> {
-        if matches!(node.kind, Kind::Text) { return Some(node.computed); }
+        if matches!(node.kind, Kind::Text) {
+            return Some(node.computed);
+        }
         node.children.iter().find_map(find_text_rect)
     }
     fn node_state(node: &El, key: &str) -> Option<InteractionState> {
-        if node.key.as_deref() == Some(key) { return Some(node.state); }
+        if node.key.as_deref() == Some(key) {
+            return Some(node.state);
+        }
         node.children.iter().find_map(|c| node_state(c, key))
+    }
+    fn target(node: &El, key: &str) -> UiTarget {
+        let rect = find_rect(node, key).expect("target rect");
+        UiTarget {
+            key: key.to_string(),
+            node_id: find_id(node, key).expect("target id"),
+            rect,
+        }
+    }
+    fn find_id(node: &El, key: &str) -> Option<String> {
+        if node.key.as_deref() == Some(key) {
+            return Some(node.computed_id.clone());
+        }
+        node.children.iter().find_map(|c| find_id(c, key))
     }
 }

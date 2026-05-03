@@ -77,4 +77,10 @@ impl DrawOp {
             DrawOp::BackdropSnapshot => None,
         }
     }
+    pub fn scissor(&self) -> Option<Rect> {
+        match self {
+            DrawOp::Quad { scissor, .. } | DrawOp::GlyphRun { scissor, .. } => *scissor,
+            DrawOp::BackdropSnapshot => None,
+        }
+    }
 }

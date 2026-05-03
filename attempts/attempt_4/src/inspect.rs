@@ -22,7 +22,11 @@ fn dump_node(n: &El, depth: usize, s: &mut String) {
     let _ = write!(
         s,
         "{indent}{id} kind={kind} rect=({x:.0},{y:.0},{w:.0},{h:.0}) size=({sw:?},{sh:?})",
-        id = if n.computed_id.is_empty() { "<unlaid>" } else { &n.computed_id },
+        id = if n.computed_id.is_empty() {
+            "<unlaid>"
+        } else {
+            &n.computed_id
+        },
         kind = kind_str(&n.kind),
         x = n.computed.x,
         y = n.computed.y,
@@ -33,6 +37,9 @@ fn dump_node(n: &El, depth: usize, s: &mut String) {
     );
     if !matches!(n.state, InteractionState::Default) {
         let _ = write!(s, " state={:?}", n.state);
+    }
+    if n.clip {
+        s.push_str(" clip=true");
     }
     if let Some(text) = &n.text {
         let preview: String = text.chars().take(40).collect();
@@ -68,6 +75,9 @@ fn kind_str(k: &Kind) -> &str {
         Kind::Heading => "Heading",
         Kind::Spacer => "Spacer",
         Kind::Divider => "Divider",
+        Kind::Overlay => "Overlay",
+        Kind::Scrim => "Scrim",
+        Kind::Modal => "Modal",
         Kind::Custom(name) => name,
     }
 }

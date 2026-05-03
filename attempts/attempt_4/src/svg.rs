@@ -31,19 +31,54 @@ pub fn svg_from_ops(width: f32, height: f32, ops: &[DrawOp], bg: Color) -> Strin
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">"#
     );
     s.push_str(SHADOW_DEFS);
-    let _ = writeln!(s, r#"<rect width="100%" height="100%" fill="{}"/>"#, color_svg(bg));
+    let _ = writeln!(
+        s,
+        r#"<rect width="100%" height="100%" fill="{}"/>"#,
+        color_svg(bg)
+    );
 
-    for op in ops {
-        match op {
-            DrawOp::Quad { id, rect, shader, uniforms, .. } => emit_quad(&mut s, id, *rect, shader, uniforms),
-            DrawOp::GlyphRun { id, rect, color, text, size, weight, mono, anchor, .. } => {
-                emit_glyph_run(&mut s, id, *rect, *color, text, *size, *weight, *mono, *anchor);
-            }
-            DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
+    for (i, op) in ops.iter().enumerate() {
+        if let Some(scissor) = op.scissor() {
+            let clip_id = format!("clip-{i}");
+            let _ = writeln!(
+                s,
+                r#"<clipPath id="{clip_id}"><rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}"/></clipPath><g clip-path="url(#{clip_id})">"#,
+                scissor.x, scissor.y, scissor.w, scissor.h,
+            );
+            emit_op(&mut s, op);
+            s.push_str("</g>\n");
+        } else {
+            emit_op(&mut s, op);
         }
     }
     s.push_str("</svg>\n");
     s
+}
+
+fn emit_op(s: &mut String, op: &DrawOp) {
+    match op {
+        DrawOp::Quad {
+            id,
+            rect,
+            shader,
+            uniforms,
+            ..
+        } => emit_quad(s, id, *rect, shader, uniforms),
+        DrawOp::GlyphRun {
+            id,
+            rect,
+            color,
+            text,
+            size,
+            weight,
+            mono,
+            anchor,
+            ..
+        } => {
+            emit_glyph_run(s, id, *rect, *color, text, *size, *weight, *mono, *anchor);
+        }
+        DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
+    }
 }
 
 fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, uniforms: &UniformBlock) {
@@ -60,41 +95,82 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
                 None => r#" fill="none""#.to_string(),
             };
             let stroke_attr = match stroke {
-                Some(c) => format!(r#" stroke="{}" stroke-width="{:.2}""#, color_svg(c), stroke_w),
+                Some(c) => format!(
+                    r#" stroke="{}" stroke-width="{:.2}""#,
+                    color_svg(c),
+                    stroke_w
+                ),
                 None => String::new(),
             };
             let filter = shadow_filter(shadow);
             let _ = writeln!(
                 s,
                 r#"<rect data-node="{}" data-shader="stock::rounded_rect" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}"{}{}{} />"#,
-                esc(id), rect.x, rect.y, rect.w, rect.h, r, fill_attr, stroke_attr, filter
+                esc(id),
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                r,
+                fill_attr,
+                stroke_attr,
+                filter
             );
         }
         ShaderHandle::Stock(StockShader::FocusRing) => {
-            let color = uniforms.get("color").and_then(as_color).unwrap_or(tokens::FOCUS_RING);
-            let width = uniforms.get("width").and_then(as_f32).unwrap_or(tokens::FOCUS_RING_WIDTH);
+            let color = uniforms
+                .get("color")
+                .and_then(as_color)
+                .unwrap_or(tokens::FOCUS_RING);
+            let width = uniforms
+                .get("width")
+                .and_then(as_f32)
+                .unwrap_or(tokens::FOCUS_RING_WIDTH);
             let radius = uniforms.get("radius").and_then(as_f32).unwrap_or(0.0);
             let r = radius.min(rect.w * 0.5).min(rect.h * 0.5).max(0.0);
             let _ = writeln!(
                 s,
                 r#"<rect data-node="{}" data-shader="stock::focus_ring" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="none" stroke="{}" stroke-width="{:.2}" />"#,
-                esc(id), rect.x, rect.y, rect.w, rect.h, r, color_svg(color), width
+                esc(id),
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                r,
+                color_svg(color),
+                width
             );
         }
         ShaderHandle::Stock(StockShader::SolidQuad) => {
-            let fill = uniforms.get("fill").and_then(as_color).unwrap_or(tokens::BG_MUTED);
+            let fill = uniforms
+                .get("fill")
+                .and_then(as_color)
+                .unwrap_or(tokens::BG_MUTED);
             let _ = writeln!(
                 s,
                 r#"<rect data-node="{}" data-shader="stock::solid_quad" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="{}" />"#,
-                esc(id), rect.x, rect.y, rect.w, rect.h, color_svg(fill)
+                esc(id),
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                color_svg(fill)
             );
         }
         ShaderHandle::Stock(StockShader::DividerLine) => {
-            let fill = uniforms.get("fill").and_then(as_color).unwrap_or(tokens::BORDER);
+            let fill = uniforms
+                .get("fill")
+                .and_then(as_color)
+                .unwrap_or(tokens::BORDER);
             let _ = writeln!(
                 s,
                 r#"<rect data-node="{}" data-shader="stock::divider_line" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="{}" />"#,
-                esc(id), rect.x, rect.y, rect.w, rect.h, color_svg(fill)
+                esc(id),
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                color_svg(fill)
             );
         }
         ShaderHandle::Stock(StockShader::TextSdf) => {
@@ -110,7 +186,13 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
             let _ = writeln!(
                 s,
                 r#"<g data-node="{}" data-shader="custom::{}"><title>{}</title><rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="rgba(255,0,255,0.18)" stroke="rgba(255,0,255,0.5)" stroke-width="1" stroke-dasharray="3 2" /></g>"#,
-                esc(id), esc(name), esc(&title), rect.x, rect.y, rect.w, rect.h
+                esc(id),
+                esc(name),
+                esc(&title),
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h
             );
         }
     }
@@ -155,15 +237,29 @@ fn emit_glyph_run(
     let _ = writeln!(
         s,
         r#"<text data-node="{}" data-shader="stock::text_sdf" x="{:.2}" y="{:.2}" font-family="{}" font-size="{:.2}" font-weight="{}" fill="{}" text-anchor="{}">{}</text>"#,
-        esc(id), x, y, family, size, weight_str, color_svg(color), anchor_attr, esc(text)
+        esc(id),
+        x,
+        y,
+        family,
+        size,
+        weight_str,
+        color_svg(color),
+        anchor_attr,
+        esc(text)
     );
 }
 
 fn as_color(v: &UniformValue) -> Option<Color> {
-    match v { UniformValue::Color(c) => Some(*c), _ => None }
+    match v {
+        UniformValue::Color(c) => Some(*c),
+        _ => None,
+    }
 }
 fn as_f32(v: &UniformValue) -> Option<f32> {
-    match v { UniformValue::F32(f) => Some(*f), _ => None }
+    match v {
+        UniformValue::F32(f) => Some(*f),
+        _ => None,
+    }
 }
 
 // Explicit feMerge form instead of the convenient `feDropShadow`. Both
@@ -197,10 +293,15 @@ const SHADOW_DEFS: &str = r##"<defs>
 "##;
 
 fn shadow_filter(shadow: f32) -> &'static str {
-    if shadow >= 16.0 { r#" filter="url(#shadow-lg)""# }
-    else if shadow >= 6.0 { r#" filter="url(#shadow-md)""# }
-    else if shadow > 0.0 { r#" filter="url(#shadow-sm)""# }
-    else { "" }
+    if shadow >= 16.0 {
+        r#" filter="url(#shadow-lg)""#
+    } else if shadow >= 6.0 {
+        r#" filter="url(#shadow-md)""#
+    } else if shadow > 0.0 {
+        r#" filter="url(#shadow-sm)""#
+    } else {
+        ""
+    }
 }
 
 pub(crate) fn color_svg(c: Color) -> String {

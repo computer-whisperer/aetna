@@ -1,0 +1,30 @@
+root kind=Group rect=(0,0,720,560) size=(Fill(1.0),Fill(1.0)) source=examples/modal.rs:10
+  root.group.0 kind=Group rect=(0,0,720,560) size=(Fill(1.0),Fill(1.0)) source=examples/modal.rs:11
+    root.group.0.heading.0 kind=Heading rect=(28,28,109,36) size=(Hug,Hug) text="Account" text_color=text-foreground source=examples/modal.rs:12
+    root.group.0.card.1 kind=Card rect=(28,82,664,124) size=(Fill(1.0),Hug) fill=bg-card source=examples/modal.rs:13
+      root.group.0.card.1.heading.0 kind=Heading rect=(46,100,67,22) size=(Hug,Hug) text="Profile" text_color=text-foreground source=examples/modal.rs:13
+      root.group.0.card.1.group.1 kind=Group rect=(46,135,628,20) size=(Fill(1.0),Hug) source=examples/modal.rs:14
+        root.group.0.card.1.group.1.text.0 kind=Text rect=(46,135,42,20) size=(Hug,Hug) text="Email" text_color=text-foreground source=examples/modal.rs:14
+        root.group.0.card.1.group.1.spacer.1 kind=Spacer rect=(96,145,436,0) size=(Fill(1.0),Fill(1.0)) source=examples/modal.rs:14
+        root.group.0.card.1.group.1.text.2 kind=Text rect=(540,135,134,20) size=(Hug,Hug) text="user@example.com" text_color=text-muted-foreground source=examples/modal.rs:14
+      root.group.0.card.1.group.2 kind=Group rect=(46,166,628,22) size=(Fill(1.0),Hug) source=examples/modal.rs:15
+        root.group.0.card.1.group.2.text.0 kind=Text rect=(46,168,34,20) size=(Hug,Hug) text="Plan" text_color=text-foreground source=examples/modal.rs:15
+        root.group.0.card.1.group.2.spacer.1 kind=Spacer rect=(88,177,541,0) size=(Fill(1.0),Fill(1.0)) source=examples/modal.rs:15
+        root.group.0.card.1.group.2.badge.2 kind=Badge rect=(636,166,38,22) size=(Hug,Fixed(22.0)) text="Pro" fill=info text_color=info source=examples/modal.rs:15
+    root.group.0.card.2 kind=Card rect=(28,224,664,111) size=(Fill(1.0),Hug) fill=bg-card source=examples/modal.rs:17
+      root.group.0.card.2.heading.0 kind=Heading rect=(46,242,106,22) size=(Hug,Hug) text="Danger zone" text_color=text-foreground source=examples/modal.rs:17
+      root.group.0.card.2.group.1 kind=Group rect=(46,277,628,40) size=(Fill(1.0),Hug) source=examples/modal.rs:18
+        root.group.0.card.2.group.1.group.0 kind=Group rect=(46,277,317,40) size=(Hug,Fill(1.0)) source=examples/modal.rs:19
+          root.group.0.card.2.group.1.group.0.text.0 kind=Text rect=(46,277,118,20) size=(Hug,Hug) text="Delete account" text_color=text-foreground source=examples/modal.rs:20
+          root.group.0.card.2.group.1.group.0.text.1 kind=Text rect=(46,300,317,17) size=(Hug,Hug) text="Remove this account and all associated d…" text_color=text-muted-foreground source=examples/modal.rs:21
+        root.group.0.card.2.group.1.spacer.1 kind=Spacer rect=(371,297,221,0) size=(Fill(1.0),Fill(1.0)) source=examples/modal.rs:26
+        root.group.0.card.2.group.1.button[open-delete] kind=Button rect=(600,279,74,36) size=(Hug,Fixed(36.0)) text="Delete" fill=destructive text_color=text-on-solid-light source=examples/modal.rs:27
+  root.overlay.1 kind=Overlay rect=(0,0,720,560) size=(Fill(1.0),Fill(1.0)) clip=true source=examples/modal.rs:33
+    root.overlay.1.scrim[delete-account:dismiss] kind=Scrim rect=(0,0,720,560) size=(Fill(1.0),Fill(1.0)) fill=overlay-scrim source=examples/modal.rs:33
+    root.overlay.1.modal.1 kind=Modal rect=(150,211,420,138) size=(Fixed(420.0),Hug) clip=true fill=bg-card source=examples/modal.rs:33
+      root.overlay.1.modal.1.heading.0 kind=Heading rect=(168,229,144,22) size=(Hug,Hug) text="Delete account?" text_color=text-foreground source=examples/modal.rs:33
+      root.overlay.1.modal.1.text.1 kind=Text rect=(168,263,302,20) size=(Hug,Hug) text="Permanent action. Export data first." text_color=text-muted-foreground source=examples/modal.rs:34
+      root.overlay.1.modal.1.group.2 kind=Group rect=(168,295,384,36) size=(Fill(1.0),Hug) source=examples/modal.rs:35
+        root.overlay.1.modal.1.group.2.spacer.0 kind=Spacer rect=(168,313,219,0) size=(Fill(1.0),Fill(1.0)) source=examples/modal.rs:36
+        root.overlay.1.modal.1.group.2.button[cancel-delete] kind=Button rect=(395,295,74,36) size=(Hug,Fixed(36.0)) text="Cancel" text_color=text-muted-foreground source=examples/modal.rs:37
+        root.overlay.1.modal.1.group.2.button[confirm-delete] kind=Button rect=(478,295,74,36) size=(Hug,Fixed(36.0)) text="Delete" fill=destructive text_color=text-on-solid-light source=examples/modal.rs:38

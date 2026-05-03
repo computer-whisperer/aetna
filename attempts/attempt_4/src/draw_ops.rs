@@ -18,12 +18,17 @@ use crate::tree::*;
 /// Walk the laid-out tree and emit draw ops in paint order.
 pub fn draw_ops(root: &El) -> Vec<DrawOp> {
     let mut out = Vec::new();
-    push_node(root, &mut out);
+    push_node(root, &mut out, None);
     out
 }
 
-fn push_node(n: &El, out: &mut Vec<DrawOp>) {
+fn push_node(n: &El, out: &mut Vec<DrawOp>, inherited_scissor: Option<Rect>) {
     let (fill, stroke, text_color, weight, suffix) = apply_state(n);
+    let own_scissor = if n.clip {
+        intersect_scissor(inherited_scissor, n.computed)
+    } else {
+        inherited_scissor
+    };
 
     // Surface paint. Either a custom shader override, or the implicit
     // `stock::rounded_rect` driven by the El's fill/stroke/radius/shadow.
@@ -31,7 +36,7 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>) {
         out.push(DrawOp::Quad {
             id: n.computed_id.clone(),
             rect: n.computed,
-            scissor: None,
+            scissor: own_scissor,
             shader: custom.handle,
             uniforms: custom.uniforms.clone(),
         });
@@ -51,7 +56,7 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>) {
         out.push(DrawOp::Quad {
             id: n.computed_id.clone(),
             rect: n.computed,
-            scissor: None,
+            scissor: own_scissor,
             shader: ShaderHandle::Stock(StockShader::RoundedRect),
             uniforms,
         });
@@ -60,18 +65,23 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>) {
     // Focus ring: an extra inset quad on focus-state nodes, painted by
     // `stock::focus_ring`.
     if matches!(n.state, InteractionState::Focus)
-        && (matches!(n.kind, Kind::Button | Kind::Card | Kind::Badge | Kind::Custom(_))
-            || stroke.is_some())
+        && (matches!(
+            n.kind,
+            Kind::Button | Kind::Card | Kind::Badge | Kind::Custom(_)
+        ) || stroke.is_some())
     {
         let ring_rect = inset_rect(n.computed, -tokens::FOCUS_RING_WIDTH * 0.5);
         let mut uniforms = UniformBlock::new();
         uniforms.insert("color", UniformValue::Color(tokens::FOCUS_RING));
         uniforms.insert("width", UniformValue::F32(tokens::FOCUS_RING_WIDTH));
-        uniforms.insert("radius", UniformValue::F32(n.radius + tokens::FOCUS_RING_WIDTH * 0.5));
+        uniforms.insert(
+            "radius",
+            UniformValue::F32(n.radius + tokens::FOCUS_RING_WIDTH * 0.5),
+        );
         out.push(DrawOp::Quad {
             id: format!("{}.focus-ring", n.computed_id),
             rect: ring_rect,
-            scissor: None,
+            scissor: own_scissor,
             shader: ShaderHandle::Stock(StockShader::FocusRing),
             uniforms,
         });
@@ -89,7 +99,7 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>) {
         out.push(DrawOp::GlyphRun {
             id: n.computed_id.clone(),
             rect: n.computed,
-            scissor: None,
+            scissor: own_scissor,
             shader: ShaderHandle::Stock(StockShader::TextSdf),
             color: text_color.unwrap_or(tokens::TEXT_FOREGROUND),
             text: display,
@@ -101,7 +111,7 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>) {
     }
 
     for c in &n.children {
-        push_node(c, out);
+        push_node(c, out, own_scissor);
     }
 }
 
@@ -111,7 +121,15 @@ fn push_node(n: &El, out: &mut Vec<DrawOp>) {
 /// In v0.2 this likely moves into the shader via a `state` uniform; for
 /// v0.1 the CPU-side delta is simpler and lets stock shaders stay
 /// stateless.
-fn apply_state(n: &El) -> (Option<Color>, Option<Color>, Option<Color>, FontWeight, Option<&'static str>) {
+fn apply_state(
+    n: &El,
+) -> (
+    Option<Color>,
+    Option<Color>,
+    Option<Color>,
+    FontWeight,
+    Option<&'static str>,
+) {
     let mut fill = n.fill;
     let mut stroke = n.stroke;
     let mut text_color = n.text_color;
@@ -133,7 +151,8 @@ fn apply_state(n: &El) -> (Option<Color>, Option<Color>, Option<Color>, FontWeig
             let alpha = (255.0 * tokens::DISABLED_ALPHA) as u8;
             fill = fill.map(|c| c.with_alpha(((c.a as u32 * alpha as u32) / 255) as u8));
             stroke = stroke.map(|c| c.with_alpha(((c.a as u32 * alpha as u32) / 255) as u8));
-            text_color = text_color.map(|c| c.with_alpha(((c.a as u32 * alpha as u32) / 255) as u8));
+            text_color =
+                text_color.map(|c| c.with_alpha(((c.a as u32 * alpha as u32) / 255) as u8));
         }
         InteractionState::Loading => {
             text_color = text_color.map(|c| c.with_alpha(((c.a as u32 * 200) / 255) as u8));
@@ -145,4 +164,38 @@ fn apply_state(n: &El) -> (Option<Color>, Option<Color>, Option<Color>, FontWeig
 
 fn inset_rect(r: Rect, by: f32) -> Rect {
     Rect::new(r.x - by, r.y - by, r.w + by * 2.0, r.h + by * 2.0)
+}
+
+fn intersect_scissor(current: Option<Rect>, next: Rect) -> Option<Rect> {
+    match current {
+        Some(r) => Some(r.intersect(next).unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0))),
+        None => Some(next),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{button, column, row};
+
+    #[test]
+    fn clip_sets_scissor_on_descendant_ops() {
+        let mut root = column([row([
+            button("Inside").key("inside"),
+            button("Too wide").key("outside").width(Size::Fixed(300.0)),
+        ])
+        .clip()
+        .width(Size::Fixed(120.0))]);
+        crate::layout::layout(&mut root, Rect::new(0.0, 0.0, 400.0, 100.0));
+
+        let ops = draw_ops(&root);
+        let clipped = ops
+            .iter()
+            .find(|op| op.id().contains("outside"))
+            .expect("outside button op");
+        let DrawOp::Quad { scissor, .. } = clipped else {
+            panic!("expected button surface quad");
+        };
+        assert_eq!(*scissor, Some(Rect::new(0.0, 0.0, 120.0, 36.0)));
+    }
 }
