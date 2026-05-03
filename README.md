@@ -14,7 +14,7 @@ The repo is structured as a sequence of attempts. Each rebuilds the prior one on
 Two manifesto documents stand under attempt_4 — read these before reviewing. They are deliberately independent:
 
 - **`attempts/attempt_4/SHADER_VISION.md`** — the *rendering* layer. Why we paint UI through wgpu pipelines, why CSS-shaped concerns (gradients, shadows, frosted glass) become shader concerns here, why the library inserts into the host's existing render pass rather than owning the device/queue/swapchain. Argues that LLMs writing shaders is the ceiling-raiser.
-- **`attempts/attempt_4/LIBRARY_VISION.md`** — the *application* layer. The shape: a declarative scene library that projects time-varying state into a tree, with **three escape hatches** (custom shader, custom layout, embedded viewport) and **zero state model**. Sets out what the library owns (layout, paint, hit-test, visual lifecycle, scroll/clip, animation, modal stacks, rich text) vs. doesn't (state model, persistence, network, theme runtime, window management).
+- **`attempts/attempt_4/LIBRARY_VISION.md`** — the *application* layer. The shape: a declarative scene library that projects time-varying state into a tree, with **two escape hatches** (custom shader, custom layout) and **zero state model**. The library is a thin helper over wgpu/vulkano; host-painted regions (3D viewports, video panes, custom canvases) fall out of the library/host split rather than needing a designed primitive. Sets out what the library owns (layout, paint, hit-test, visual lifecycle, scroll/clip, animation, modal stacks, rich text) vs. doesn't (state model, persistence, network, theme runtime, window management).
 
 ## Where we are at
 
@@ -74,7 +74,7 @@ No JSX, no signals, no `useState`, no retained-mode component identity. Hover an
 |---|---|---|
 | v0.1 | Layout, stock surface, glyphon text, custom shader. | done |
 | v0.2 | Hit-testing, click events, automatic hover/press, App trait, state-driven rebuild. | done |
-| v0.3 | Scroll/clip, embedded viewport (third escape hatch), modal/overlay primitive. | clip + modal/overlay + scroll done; **embedded viewport DSL pending** |
+| v0.3 | Scroll/clip, modal/overlay primitive. (Embedded viewport dropped — host-painted regions fall out of the library/host split, see `LIBRARY_VISION.md`.) | done |
 | v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. | focus + keyboard + hotkeys done; **animation primitives pending** |
 | v0.5 | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | |
 | v0.6 | Rich text composition (markdown runs, inline highlighting, embedded elements). | paragraph wrapping + text alignment landed (partial) |
@@ -136,16 +136,14 @@ cargo test -p attempt_4                           # 30 unit tests + 1 doctest
 
 If you've been pointed here for a fresh review, the highest-value places to push:
 
-1. **Is `LIBRARY_VISION.md`'s thesis sound?** Specifically: *"a declarative scene that projects time-varying state into a tree, with three escape hatches and zero state model."* Does this shape hold up across the reference applications named in the doc (whisper-git, whisper-agent, whisper-tensor, volumetric), or does it implicitly assume server-streamed UIs?
+1. **Is `LIBRARY_VISION.md`'s thesis sound?** Specifically: *"a declarative scene that projects time-varying state into a tree, with two escape hatches and zero state model."* Does this shape hold up across the reference applications named in the doc (whisper-git, whisper-agent, whisper-tensor, volumetric), or does it implicitly assume server-streamed UIs?
 
 2. **Is the v0.2 API surface load-bearing?** `App` (two methods) + `UiEvent` + `.key("...")` is the entire interactive contract today. Is anything missing that v0.3+ will paint into a corner — e.g., an event identity model that `key`-as-`String` won't extend cleanly to keyboard/focus/drag?
 
-3. **Are the three escape hatches the right three?** Custom shader (done), custom layout (queued for v0.5), embedded viewport (queued for v0.3). Is there a fourth that this design can't grow into? Is one of the three not actually load-bearing?
+3. **Two hatches, not three.** A 2026-05 review of whisper-tensor / polychora / volumetric concluded that "embedded viewport" is not a designed primitive — it falls out of the library/host split (host owns the encoder; the library inserts into its render pass; the host can record any other draws into the same encoder). The remaining hatches are custom shader (done) and custom layout (queued for v0.5). Is there a *fourth* hatch that this design can't grow into, or is one of the remaining two actually redundant?
 
-4. **Does the library/host split hold?** The library doesn't own device, queue, swapchain, event loop, state model, or persistence. Is that line drawn in the right place — small enough that an LLM holds the whole API in context, large enough to free authors from boilerplate?
+4. **Does the library/host split hold?** The library doesn't own device, queue, swapchain, event loop, state model, or persistence. Is that line drawn in the right place — small enough that an LLM holds the whole API in context, large enough to free authors from boilerplate? In particular: is the implicit "host paints whatever else it needs into its own encoder, alongside our pass" contract crisp enough, or does it need a small public accessor (e.g., `UiRenderer::rect_of(key)`) to be usable in practice?
 
-5. **How should v0.3 actually slice?** The roadmap currently lumps scroll/clip + embedded viewport + modal/overlay into one slice. They are arguably three independent substrate changes. We've been considering splitting them into v0.3a/b/c, each with its own fixture — is that the right call, or does landing them together force shared design decisions worth not separating?
-
-6. **Anything missing you would expect a UI library to claim?** What's a real, polished native application that this design *can't* express, even after v0.7+? If you can name one, that's the most valuable signal.
+5. **Anything missing you would expect a UI library to claim?** What's a real, polished native application that this design *can't* express, even after v0.7+? If you can name one, that's the most valuable signal.
 
 This is a young project. Concrete pushback — including "the thesis is wrong, here's why" — is more valuable than incremental polish.

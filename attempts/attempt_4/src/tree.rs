@@ -304,7 +304,7 @@ pub struct El {
     pub radius: f32,
     pub shadow: f32,
     /// Clip this element's own paint and descendants to its computed rect.
-    /// Used by scroll panes, embedded viewports, overlays, and any region
+    /// Used by scroll panes, host-painted regions, overlays, and any region
     /// where overflow should not leak visually or receive events.
     pub clip: bool,
 

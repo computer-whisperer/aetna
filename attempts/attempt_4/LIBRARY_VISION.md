@@ -6,7 +6,7 @@ attempt_4's grammar substrate already validated — a fresh sub-agent built a po
 
 ## The thesis
 
-> A **declarative scene library that projects time-varying state into a tree**, with three escape hatches (custom shader, custom layout, embedded viewport), rich domain primitives, and **zero state model**.
+> A **declarative scene library that projects time-varying state into a tree**, with two escape hatches (custom shader, custom layout), rich domain primitives, and **zero state model**. The library is a thin helper over wgpu/vulkano: any application can render whatever it needs in sections of the interface alongside the library's paint, without going through a designed primitive.
 
 Not SwiftUI. Not Iced. Not egui. The shape is:
 
@@ -25,19 +25,32 @@ The reference applications (whisper-git, whisper-agent, whisper-tensor, volumetr
 4. **Keyboard-first interaction.** `j/k`, `Ctrl+F`, hotkeys-everywhere, focus traversal.
 5. **Rich text composition.** Markdown, code blocks, inline diff highlighting, embedded inline elements.
 
-What no existing library does well *together*: shader-level visual customization, structural layout customization, and host-painted regions inside the same render pass. Existing libraries either handle the "form + table" case (egui, iced) or are full game engines (Bevy UI). The middle ground — "polished native app with custom domain visualizations" — is where each project we surveyed re-invented its own renderer.
+What no existing library does well *together*: shader-level visual customization, structural layout customization, and a clean composition story with host-owned rendering in the same frame. Existing libraries either handle the "form + table" case (egui, iced) or are full game engines (Bevy UI). The middle ground — "polished native app with custom domain visualizations alongside host-painted regions" — is where each project we surveyed re-invented its own renderer.
 
-## The three escape hatches
+## The two escape hatches
 
-LLMs can write GPU code. The library's contract with its authors is: when stock isn't enough, **drop down**. Three separate dropdown points exist:
+LLMs can write GPU code. The library's contract with its authors is: when stock isn't enough, **drop down**. Two separate dropdown points exist:
 
 | Hatch | Purpose | Status |
 |---|---|---|
 | **Custom shader** | Visual ceiling — gradients, frosted glass, noise, shaders that go beyond `rounded_rect`'s uniforms. | Implemented in v0.1; `gradient.wgsl` proof of concept. |
 | **Custom layout** | Structural ceiling — force-directed graphs, commit-graph lanes, timelines, treemaps, anything `column`/`row` can't express. Author registers a `LayoutFn(children, constraints) -> rects`. | Not yet built. |
-| **Embedded viewport** | Host-painted region inside our render pass. The host gets a sub-rect + access to the encoder, paints whatever it wants (volume rendering, video, custom canvas), and the library renders chrome around it. | Substrate exists (insert-into-pass); no DSL surface yet. |
 
-These three hatches close out the ceiling. Together they say: anything an existing GPU UI library can render can be expressed inside this one too, without forking.
+Together they say: anything an existing GPU UI library can render visually or structurally can be expressed inside this one too, without forking.
+
+### Host-composed rendering is not an escape hatch
+
+Earlier drafts named a third hatch — "embedded viewport" — for cases like volume-rendered viewports, video panes, or 3D canvases inside an otherwise UI-shaped layout. Surveying three reference applications (whisper-tensor's tensor-DAG explorer, polychora's game-engine HUD, volumetric's CAD viewport) made the cleaner answer visible: **a region the host paints is not a library primitive — it is a consequence of the library/host split.**
+
+The library does not own the device, queue, swapchain, or the larger render flow (per `SHADER_VISION.md`). The host already owns the encoder. So an app that wants a viewport region:
+
+1. Reserves a keyed `El` of the size it wants in the layout tree.
+2. Reads back the layout-computed rect for that key.
+3. Paints into its own encoder using that rect (before, after, or interleaved with the library's pass — the host decides ordering).
+
+No DSL surface is required. No "library opens a hole; host paints into it" inversion is required. The library inserts into the host's render pass; the host can record any other draws into the same encoder. This is what polychora does to bake egui meshes into its own pass, and what volumetric does via egui's `PaintCallback`. We just have to not stand in the way.
+
+If a future need surfaces (e.g., a stable accessor for "give me the rect of node `key`"), it lands as a small public method on `UiRenderer`, not as a designed escape hatch.
 
 ## What the library owns vs. doesn't
 
@@ -113,7 +126,7 @@ Compared to the surface area of React/Iced/SwiftUI, this is a rounding error.
 |---|---|---|
 | **v0.1** | Layout, stock surface, glyphon text, custom shader. | Rendering substrate works; LLMs can write shaders. |
 | **v0.2** | Hit-testing, click events, automatic hover/press, App trait, state-driven rebuild. | Real interactive apps possible; build-from-state shape works. |
-| **v0.3** | Scroll/clip, embedded viewport (third escape hatch), modal/overlay primitive. | Multi-pane apps with host-painted regions possible. |
+| **v0.3** | Scroll/clip, modal/overlay primitive. (Host-painted regions implicitly supported by the library/host split — see "Host-composed rendering is not an escape hatch".) | Multi-pane apps with host-painted regions possible. |
 | **v0.4** | Animation primitives, focus traversal, keyboard event routing, hotkey system. | Polished interaction; vim-style apps possible. |
 | **v0.5** | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | Domain visualizations possible; large streams render efficiently. |
 | **v0.6** | Rich text composition (markdown runs, inline highlighting, embedded elements). | Whisper-agent-grade chat, whisper-git-grade diff viewer possible. |
