@@ -49,6 +49,19 @@ pub fn run<A: App + 'static>(
     viewport: Rect,
     app: A,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_init(title, viewport, app, |_| {})
+}
+
+/// Like [`run`], but invokes `init_runner` on the freshly-built
+/// [`Runner`] before the first frame. Use this to call
+/// [`Runner::register_shader`] for any custom shaders the App's tree
+/// references — same shape as `aetna-demo`'s `render_custom` fixture.
+pub fn run_with_init<A: App + 'static, F: FnOnce(&mut Runner) + 'static>(
+    title: &'static str,
+    viewport: Rect,
+    app: A,
+    init_runner: F,
+) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
@@ -71,6 +84,7 @@ pub fn run<A: App + 'static>(
         modifiers: KeyModifiers::default(),
         last_pointer: None,
         rcx: None,
+        init_runner: Some(Box::new(init_runner)),
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -84,6 +98,10 @@ struct Host<A: App> {
     modifiers: KeyModifiers,
     last_pointer: Option<(f32, f32)>,
     rcx: Option<RenderContext>,
+    /// One-shot Runner initialiser, consumed inside `resumed()` once the
+    /// runner exists. Boxed so `Host` stays object-safe and the App's
+    /// generic parameter doesn't leak into the closure type.
+    init_runner: Option<Box<dyn FnOnce(&mut Runner)>>,
 }
 
 struct RenderContext {
@@ -162,6 +180,9 @@ impl<A: App> ApplicationHandler for Host<A> {
         let mut runner = Runner::new(device.clone(), queue.clone(), image_format);
         let extent: [u32; 2] = window.inner_size().into();
         runner.set_surface_size(extent[0], extent[1]);
+        if let Some(init) = self.init_runner.take() {
+            init(&mut runner);
+        }
 
         let framebuffers = build_framebuffers(&images, runner.render_pass());
 
