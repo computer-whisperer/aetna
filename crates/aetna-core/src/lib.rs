@@ -67,6 +67,7 @@ pub mod shader;
 pub mod state;
 pub mod style;
 pub mod svg;
+pub mod text_atlas;
 pub mod text_metrics;
 pub mod tokens;
 pub mod tree;
@@ -93,6 +94,9 @@ pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, Uniform
 pub use state::{AnimationMode, UiState};
 pub use style::StyleProfile;
 pub use svg::svg_from_ops;
+pub use text_atlas::{
+    AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, ShapedGlyph, ShapedRun,
+};
 pub use text_metrics::{
     MeasuredText, TextLayout, TextLine, layout_text, line_height, line_width, measure_text,
     wrap_lines,

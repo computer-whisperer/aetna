@@ -29,6 +29,7 @@ name = "aetna-core"
 version = "0.1.0"
 dependencies = [
  "cosmic-text",
+ "swash",
  "ttf-parser 0.25.1",
 ]
 
