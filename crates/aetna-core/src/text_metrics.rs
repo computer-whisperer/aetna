@@ -9,6 +9,7 @@
 
 use crate::tree::{FontWeight, TextWrap};
 use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Weight, Wrap, fontdb};
+use std::cell::RefCell;
 
 const ROBOTO_REGULAR: &[u8] = include_bytes!("../fonts/Roboto-Regular.ttf");
 const ROBOTO_MEDIUM: &[u8] = include_bytes!("../fonts/Roboto-Medium.ttf");
@@ -253,18 +254,28 @@ fn layout_text_cosmic(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> Option<TextLayout> {
+    FONT_SYSTEM.with_borrow_mut(|font_system| layout_text_cosmic_with(font_system, text, size, weight, wrap, available_width))
+}
+
+fn layout_text_cosmic_with(
+    font_system: &mut FontSystem,
+    text: &str,
+    size: f32,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> Option<TextLayout> {
     let line_height = line_height(size);
-    let mut font_system = roboto_font_system();
-    let mut buffer = Buffer::new(&mut font_system, Metrics::new(size, line_height));
+    let mut buffer = Buffer::new(font_system, Metrics::new(size, line_height));
     buffer.set_wrap(
-        &mut font_system,
+        font_system,
         match wrap {
             TextWrap::NoWrap => Wrap::None,
             TextWrap::Wrap => Wrap::WordOrGlyph,
         },
     );
     buffer.set_size(
-        &mut font_system,
+        font_system,
         match wrap {
             TextWrap::NoWrap => None,
             TextWrap::Wrap => available_width,
@@ -274,8 +285,8 @@ fn layout_text_cosmic(
     let attrs = Attrs::new()
         .family(Family::Name("Roboto"))
         .weight(cosmic_weight(weight));
-    buffer.set_text(&mut font_system, text, attrs, Shaping::Advanced);
-    buffer.shape_until_scroll(&mut font_system, false);
+    buffer.set_text(font_system, text, attrs, Shaping::Advanced);
+    buffer.shape_until_scroll(font_system, false);
 
     let mut lines = Vec::new();
     let mut height: f32 = 0.0;
@@ -301,6 +312,15 @@ fn layout_text_cosmic(
         height: height.max(line_height),
         line_height,
     })
+}
+
+// `FontSystem` construction loads three full Roboto faces (~450KB total)
+// and builds a fontdb. Doing it per text-shape call burned ~22ms in the
+// layout pass on the wasm showcase — basically all of it. Cache once
+// per thread; cosmic-text's internal shape cache also accumulates across
+// calls now, which is the side benefit.
+thread_local! {
+    static FONT_SYSTEM: RefCell<FontSystem> = RefCell::new(roboto_font_system());
 }
 
 fn roboto_font_system() -> FontSystem {
