@@ -15,15 +15,14 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 aetna-core = { path = "../aetna-core" }
 aetna-wgpu = { path = "../aetna-wgpu" }
+# `aetna-demo` is the home of the shared `Showcase` App impl; depending
+# on it from both native and wasm gives us one type that drives both
+# targets. `aetna_demo::run` (the native winit runner) is the canonical
+# native entry; the wasm path here uses its own browser-tailored
+# event loop below.
+aetna-demo = { path = "../aetna-demo" }
 wgpu = "23"
 winit = "0.30"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# Native window runner from aetna-demo. The native bin re-uses
-# `aetna_demo::run` so we don't duplicate the winit event-loop
-# plumbing — only the wasm path forks (different surface init,
-# spawn_app vs run_app, no pollster).
-aetna-demo = { path = "../aetna-demo" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # wasm-bindgen is the FFI bridge wasm-pack consumes.

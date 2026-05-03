@@ -18,6 +18,9 @@
 //! - Requests a redraw whenever interaction state changes (mouse move,
 //!   button down/up) so hover/press visuals are immediate.
 
+pub mod showcase;
+pub use showcase::Showcase;
+
 use std::sync::Arc;
 
 use aetna_core::{App, KeyModifiers, Rect, UiKey};

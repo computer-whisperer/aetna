@@ -1,28 +1,31 @@
-//! aetna-web — shared App impl + dual entry points for native + browser.
+//! aetna-web — wasm browser entry point for the shared [`Showcase`] App.
 //!
-//! This is the "one UI crate, two backends" split — same shape as
-//! whisper-agent-webui at `../../whisper-agent`. The portable [`Counter`]
-//! `App` impl is identical in both targets; what differs is the surface
-//! provider:
+//! "One UI crate, two backends" split — same shape as whisper-agent-webui
+//! at `../../whisper-agent`. The [`Showcase`] App impl lives in
+//! `aetna-demo` (so the native bin and the browser bundle drive the
+//! same type); this crate provides only the wasm entry path:
 //!
-//! - **Native:** the sibling binary `aetna-counter-native` calls
-//!   [`launch_native`], which delegates to `aetna_demo::run` (winit
-//!   window + wgpu surface, blocking event loop).
-//! - **Wasm:** wasm-pack builds this crate as a `cdylib`. The
-//!   `#[wasm_bindgen(start)]` entry below opens a wgpu surface against
-//!   a `<canvas id="aetna_canvas">` in the host page and drives the
-//!   same App through a winit event loop tailored for the browser
-//!   (`spawn_app` rather than `run_app`, async adapter request).
+//! - **Wasm:** `wasm-pack build --target web` ships this crate as a
+//!   `cdylib`. The `#[wasm_bindgen(start)]` entry below opens a wgpu
+//!   surface against a `<canvas id="aetna_canvas">` in the host page
+//!   and drives [`Showcase`] through a winit event loop tailored for
+//!   the browser (`spawn_app` rather than `run_app`, async adapter
+//!   request).
+//! - **Native:** run the same App via `cargo run -p aetna-demo --bin
+//!   showcase`. There's no separate native bin in this crate — that
+//!   path is covered by `aetna-demo`'s canonical winit runner.
 //!
 //! See `assets/index.html` for the minimal browser harness; see
 //! `tools/build_web.sh` for the wasm-pack invocation.
 //!
 //! Runtime parity check: both targets render the same fixture, accept
-//! click + hover input, and exercise the live `aetna-wgpu` paint path
-//! (including the v5.1 atlas-backed text). Animation is the same code;
-//! only the time source differs (browser raf vs. winit redraw).
+//! click + hover + scroll + keyboard input, and exercise the live
+//! `aetna-wgpu` paint path (including the v5.1 atlas-backed text).
+//! Animation is the same code; only the time source differs (browser
+//! raf vs. winit redraw).
 
-use aetna_core::{App, El, Rect, UiEvent, UiEventKind, button, column, h1, row, text, tokens};
+use aetna_core::Rect;
+pub use aetna_demo::Showcase;
 
 /// Default logical viewport. Sized to feel reasonable both as a winit
 /// window and as a browser canvas. Browsers can override this by
@@ -30,59 +33,9 @@ use aetna_core::{App, El, Rect, UiEvent, UiEventKind, button, column, h1, row, t
 pub const VIEWPORT: Rect = Rect {
     x: 0.0,
     y: 0.0,
-    w: 480.0,
-    h: 320.0,
+    w: 900.0,
+    h: 640.0,
 };
-
-/// Portable Counter — the v0.2 proof point, in shared form so native
-/// and browser show byte-identical UIs (modulo OS font fallbacks; we
-/// ship Roboto in-tree so this is mostly a non-issue).
-#[derive(Default)]
-pub struct Counter {
-    pub value: i32,
-}
-
-impl App for Counter {
-    fn build(&self) -> El {
-        column([
-            h1(format!("{}", self.value)),
-            row([
-                button("−").key("dec").secondary(),
-                button("Reset").key("reset").ghost(),
-                button("+").key("inc").primary(),
-            ])
-            .gap(tokens::SPACE_MD),
-            text(if self.value == 0 {
-                "Click + or − to change the count.".to_string()
-            } else {
-                format!("You have clicked +/− a net {} times.", self.value)
-            })
-            .center_text()
-            .muted(),
-        ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
-        .align(aetna_core::Align::Center)
-    }
-
-    fn on_event(&mut self, e: UiEvent) {
-        match (e.kind, e.key.as_deref()) {
-            (UiEventKind::Click | UiEventKind::Activate, Some("inc")) => self.value += 1,
-            (UiEventKind::Click | UiEventKind::Activate, Some("dec")) => self.value -= 1,
-            (UiEventKind::Click | UiEventKind::Activate, Some("reset")) => self.value = 0,
-            _ => {}
-        }
-    }
-}
-
-// ---- Native entry ----
-
-/// Native entry — opens a winit window and runs [`Counter`] through the
-/// `aetna-demo` shared runner. Called from `bin/aetna-counter-native.rs`.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn launch_native() -> Result<(), Box<dyn std::error::Error>> {
-    aetna_demo::run("Aetna — counter (native)", VIEWPORT, Counter::default())
-}
 
 // ---- Wasm entry ----
 //
@@ -108,7 +61,7 @@ mod web_entry {
     use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
     use winit::window::{Window, WindowId};
 
-    use super::{Counter, VIEWPORT};
+    use super::{Showcase, VIEWPORT};
 
     const CANVAS_ID: &str = "aetna_canvas";
 
@@ -120,7 +73,7 @@ mod web_entry {
         let _ = console_log::init_with_level(log::Level::Info);
 
         let event_loop = EventLoop::new().expect("EventLoop::new");
-        let host = Host::<Counter>::new(VIEWPORT, Counter::default());
+        let host = Host::<Showcase>::new(VIEWPORT, Showcase::new());
         // spawn_app hands control to the browser. Native uses
         // run_app(...) which blocks; on wasm32 the event loop is
         // driven by the browser's animation-frame callbacks.
