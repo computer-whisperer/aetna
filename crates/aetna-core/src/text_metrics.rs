@@ -82,9 +82,7 @@ pub fn layout_text(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> TextLayout {
-    if !mono
-        && let Some(layout) = layout_text_cosmic(text, size, weight, wrap, available_width)
-    {
+    if !mono && let Some(layout) = layout_text_cosmic(text, size, weight, wrap, available_width) {
         return layout;
     }
 
@@ -162,9 +160,7 @@ fn wrap_lines_by_width(
 /// Measure one single-line string. Newline characters are ignored; use
 /// [`measure_text`] for multi-line text.
 pub fn line_width(text: &str, size: f32, weight: FontWeight, mono: bool) -> f32 {
-    if !mono
-        && let Some(layout) = layout_text_cosmic(text, size, weight, TextWrap::NoWrap, None)
-    {
+    if !mono && let Some(layout) = layout_text_cosmic(text, size, weight, TextWrap::NoWrap, None) {
         return layout.width;
     }
     line_width_by_ttf(text, size, weight, mono)
