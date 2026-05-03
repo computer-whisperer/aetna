@@ -8,9 +8,10 @@
 # server's root is crates/aetna-web/).
 #
 # Usage:
-#   tools/build_web.sh             # build only
-#   tools/build_web.sh --serve     # build + serve at http://127.0.0.1:8080/
-#   tools/build_web.sh --release   # release-mode wasm bundle (smaller, slower to build)
+#   tools/build_web.sh             # release build (default — dev wasm is too
+#                                  # slow under our prepare/text path)
+#   tools/build_web.sh --serve     # build + serve at http://127.0.0.1:8083/
+#   tools/build_web.sh --dev       # unoptimized build (faster compile, slower run)
 #
 # Requires: wasm-pack (cargo install wasm-pack), and python3 for --serve.
 
@@ -20,11 +21,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 SERVE=0
-PROFILE=dev
+PROFILE=release
 for arg in "$@"; do
     case "$arg" in
         --serve)   SERVE=1 ;;
         --release) PROFILE=release ;;
+        --dev)     PROFILE=dev ;;
         -h|--help)
             sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
             exit 0

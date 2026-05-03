@@ -226,6 +226,15 @@ pub enum AnimProp {
 const SPRING_EPSILON_DISP: f32 = 0.5;
 const SPRING_EPSILON_VEL: f32 = 0.5;
 const DT_CAP: f32 = 0.064;
+/// Hard upper bound on the per-substep timestep used inside `step_spring`.
+/// The semi-implicit Euler scheme with explicit damping is stable for
+/// `dt < 2·sqrt(m/k) + small damping correction`; the stiffest preset
+/// (`SpringConfig::QUICK`, k=380, c=30) has a stability bound near 58 ms.
+/// `DT_CAP` (64 ms) sits above that, so without substepping the integrator
+/// can blow up after long idle pauses or on slow frames — `current`
+/// overshoots into ±values and the 0..1 envelope `clamp` rounds to a
+/// binary flicker. 4 ms keeps every preset comfortably stable.
+const SPRING_MAX_SUBSTEP: f32 = 1.0 / 250.0;
 
 /// In-flight animation state for one (node, prop) pair. Stored on
 /// [`crate::state::UiState`] keyed by `(ComputedId, AnimProp)`.
@@ -310,17 +319,31 @@ impl Animation {
         } else {
             AnimChannels::zero(cur.n)
         };
-        let mut all_settled = true;
-        for i in 0..cur.n {
-            let displacement = cur.v[i] - tgt.v[i];
-            let force = -cfg.stiffness * displacement - cfg.damping * vel.v[i];
-            // Semi-implicit Euler: update velocity first, then position
-            // using the new velocity. More stable than fully explicit
-            // for stiff systems within UI's typical stiffness range.
-            vel.v[i] += (force / cfg.mass) * dt;
-            cur.v[i] += vel.v[i] * dt;
-            if displacement.abs() > SPRING_EPSILON_DISP || vel.v[i].abs() > SPRING_EPSILON_VEL {
-                all_settled = false;
+        // Substep so each integrator step is well within the stability
+        // bound for every SpringConfig preset. A single h = `dt` step
+        // would diverge for stiff presets when frames stall or the host
+        // resumes after a long idle (dt clamped to DT_CAP > stability
+        // bound for QUICK), producing binary 0/1 flicker once `current`
+        // overshoots into ±range and write_prop's clamp rounds it.
+        let n_steps = (dt / SPRING_MAX_SUBSTEP).ceil().max(1.0) as usize;
+        let h = dt / n_steps as f32;
+        let mut all_settled = false;
+        for _ in 0..n_steps {
+            all_settled = true;
+            for i in 0..cur.n {
+                let displacement = cur.v[i] - tgt.v[i];
+                let force = -cfg.stiffness * displacement - cfg.damping * vel.v[i];
+                // Semi-implicit Euler: update velocity first, then position
+                // using the new velocity. More stable than fully explicit
+                // for stiff systems within UI's typical stiffness range.
+                vel.v[i] += (force / cfg.mass) * h;
+                cur.v[i] += vel.v[i] * h;
+                if displacement.abs() > SPRING_EPSILON_DISP || vel.v[i].abs() > SPRING_EPSILON_VEL {
+                    all_settled = false;
+                }
+            }
+            if all_settled {
+                break;
             }
         }
         if all_settled {

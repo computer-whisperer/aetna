@@ -278,6 +278,33 @@ impl UiState {
         self.animations.values().any(is_in_flight)
     }
 
+    /// One-line summary of interactive state for diagnostic logging.
+    /// Format: `hov=<key|->|press=<key|->|focus=<key|->|env={...}|in_flight=N`.
+    /// Keep terse — this is intended for per-frame `console.log`.
+    pub fn debug_summary(&self) -> String {
+        let key = |t: &Option<UiTarget>| {
+            t.as_ref()
+                .map(|t| t.key.clone())
+                .unwrap_or_else(|| "-".into())
+        };
+        let mut env: Vec<String> = self
+            .envelopes
+            .iter()
+            .map(|((id, kind), v)| format!("{id}/{kind:?}={v:.3}"))
+            .collect();
+        env.sort();
+        let in_flight = self.animations.values().filter(|a| is_in_flight(a)).count();
+        format!(
+            "hov={}|press={}|focus={}|env=[{}]|in_flight={}/{}",
+            key(&self.hovered),
+            key(&self.pressed),
+            key(&self.focused),
+            env.join(","),
+            in_flight,
+            self.animations.len(),
+        )
+    }
+
     pub fn key_down(
         &mut self,
         key: UiKey,

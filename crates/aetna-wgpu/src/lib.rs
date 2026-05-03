@@ -288,6 +288,14 @@ impl Runner {
         &self.ui_state
     }
 
+    /// One-line diagnostic snapshot of interactive state — passes through
+    /// to [`UiState::debug_summary`]. Intended for per-frame logging
+    /// (e.g., `console.log` from the wasm host while debugging hover /
+    /// animation glitches).
+    pub fn debug_summary(&self) -> String {
+        self.ui_state.debug_summary()
+    }
+
     /// Return the most recently laid-out rectangle for a keyed node.
     ///
     /// Call after [`Self::prepare`]. This is the host-composition hook:
