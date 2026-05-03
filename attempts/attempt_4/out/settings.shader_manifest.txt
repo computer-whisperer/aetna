@@ -10,25 +10,25 @@ stock::rounded_rect  used 9 times
   root.group.4.button.2 fill=primary radius=8.00 stroke=primary stroke_width=1.00
 
 stock::text_sdf  used 21 times
-  root.heading.0 text="Settings" color=text-foreground size=26.0 weight=Bold mono=false anchor=Start
-  root.card.1.heading.0 text="Account" color=text-foreground size=16.0 weight=Semibold mono=false anchor=Start
-  root.card.1.group.1.text.0 text="Email" color=text-foreground size=14.0 weight=Regular mono=false anchor=Start
-  root.card.1.group.1.text.2 text="user@example.com" color=text-muted-foreground size=14.0 weight=Regular mono=false anchor=Start
-  root.card.1.group.2.text.0 text="Two-factor authentication" color=text-foreground size=14.0 weight=Regular mono=false anchor=Start
-  root.card.1.group.2.badge.2 text="Enabled" color=success size=12.0 weight=Medium mono=false anchor=Middle
-  root.card.1.group.3.text.0 text="Recovery codes" color=text-foreground size=14.0 weight=Regular mono=false anchor=Start
-  root.card.1.group.3.button.2 text="Generate" color=text-foreground size=14.0 weight=Medium mono=false anchor=Middle
-  root.card.2.heading.0 text="Appearance" color=text-foreground size=16.0 weight=Semibold mono=false anchor=Start
-  root.card.2.group.1.text.0 text="Theme" color=text-foreground size=14.0 weight=Regular mono=false anchor=Start
-  root.card.2.group.1.button.2 text="Dark" color=text-foreground size=14.0 weight=Medium mono=false anchor=Middle
-  root.card.2.group.2.text.0 text="Compact mode" color=text-foreground size=14.0 weight=Regular mono=false anchor=Start
-  root.card.2.group.2.badge.2 text="Off" color=text-muted-foreground size=12.0 weight=Medium mono=false anchor=Middle
-  root.card.2.group.3.text.0 text="Font size" color=text-foreground size=14.0 weight=Regular mono=false anchor=Start
-  root.card.2.group.3.text.2 text="14" color=text-foreground size=14.0 weight=Regular mono=false anchor=Start
-  root.card.3.heading.0 text="Danger zone" color=text-foreground size=16.0 weight=Semibold mono=false anchor=Start
-  root.card.3.group.1.group.0.text.0 text="Delete account" color=text-foreground size=14.0 weight=Bold mono=false anchor=Start
-  root.card.3.group.1.group.0.text.1 text="Permanently remove your acco…" color=text-muted-foreground size=12.0 weight=Regular mono=false anchor=Start
-  root.card.3.group.1.button.2 text="Delete" color=text-on-solid-light size=14.0 weight=Semibold mono=false anchor=Middle
-  root.group.4.button.1 text="Cancel" color=text-muted-foreground size=14.0 weight=Medium mono=false anchor=Middle
-  root.group.4.button.2 text="Save" color=text-on-solid-dark size=14.0 weight=Semibold mono=false anchor=Middle
+  root.heading.0 text="Settings" color=text-foreground size=26.0 weight=Bold mono=false wrap=NoWrap anchor=Start
+  root.card.1.heading.0 text="Account" color=text-foreground size=16.0 weight=Semibold mono=false wrap=NoWrap anchor=Start
+  root.card.1.group.1.text.0 text="Email" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.card.1.group.1.text.2 text="user@example.com" color=text-muted-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.card.1.group.2.text.0 text="Two-factor authentication" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.card.1.group.2.badge.2 text="Enabled" color=success size=12.0 weight=Medium mono=false wrap=NoWrap anchor=Middle
+  root.card.1.group.3.text.0 text="Recovery codes" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.card.1.group.3.button.2 text="Generate" color=text-foreground size=14.0 weight=Medium mono=false wrap=NoWrap anchor=Middle
+  root.card.2.heading.0 text="Appearance" color=text-foreground size=16.0 weight=Semibold mono=false wrap=NoWrap anchor=Start
+  root.card.2.group.1.text.0 text="Theme" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.card.2.group.1.button.2 text="Dark" color=text-foreground size=14.0 weight=Medium mono=false wrap=NoWrap anchor=Middle
+  root.card.2.group.2.text.0 text="Compact mode" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.card.2.group.2.badge.2 text="Off" color=text-muted-foreground size=12.0 weight=Medium mono=false wrap=NoWrap anchor=Middle
+  root.card.2.group.3.text.0 text="Font size" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.card.2.group.3.text.2 text="14" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.card.3.heading.0 text="Danger zone" color=text-foreground size=16.0 weight=Semibold mono=false wrap=NoWrap anchor=Start
+  root.card.3.group.1.group.0.text.0 text="Delete account" color=text-foreground size=14.0 weight=Bold mono=false wrap=NoWrap anchor=Start
+  root.card.3.group.1.group.0.text.1 text="Permanently remove your acco…" color=text-muted-foreground size=12.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+  root.card.3.group.1.button.2 text="Delete" color=text-on-solid-light size=14.0 weight=Semibold mono=false wrap=NoWrap anchor=Middle
+  root.group.4.button.1 text="Cancel" color=text-muted-foreground size=14.0 weight=Medium mono=false wrap=NoWrap anchor=Middle
+  root.group.4.button.2 text="Save" color=text-on-solid-dark size=14.0 weight=Semibold mono=false wrap=NoWrap anchor=Middle
 

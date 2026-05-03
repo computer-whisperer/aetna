@@ -127,7 +127,7 @@ Compared to the surface area of React/Iced/SwiftUI, this is a rounding error.
 | **v0.1** | Layout, stock surface, glyphon text, custom shader. | Rendering substrate works; LLMs can write shaders. |
 | **v0.2** | Hit-testing, click events, automatic hover/press, App trait, state-driven rebuild. | Real interactive apps possible; build-from-state shape works. |
 | **v0.3** | Scroll/clip, modal/overlay primitive. (Host-painted regions implicitly supported by the library/host split — see "Host-composed rendering is not an escape hatch".) | Multi-pane apps with host-painted regions possible. |
-| **v0.4** | Animation primitives, focus traversal, keyboard event routing, hotkey system. | Polished interaction; vim-style apps possible. |
+| **v0.4** | Animation primitives (springs + tweens, per-(node, prop) tracker, library-owned hover/press/focus envelopes, author-facing `.animate(timing)` + `.opacity` / `.translate` / `.scale` for app-driven prop interpolation), focus traversal, keyboard event routing, hotkey system. | Polished interaction; vim-style apps possible; visual feel competitive with the best React Native apps. |
 | **v0.5** | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | Domain visualizations possible; large streams render efficiently. |
 | **v0.6** | Rich text composition (markdown runs, inline highlighting, embedded elements). | Whisper-agent-grade chat, whisper-git-grade diff viewer possible. |
 | **v0.7+** | Stock shader: shadow, focus_ring, divider_line. Backdrop sampling. wgpu-wasm + vulkano backends. Liquid glass. | Visual ceiling reaches the SHADER_VISION premise. |

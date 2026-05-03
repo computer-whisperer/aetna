@@ -35,6 +35,7 @@ focus traversal + keyboard event routing (v0.4), and hotkey system
 | Scroll viewport (v0.3) | working | `attempt_4 --example scroll_list` → `out/scroll_list.svg`; `attempt_4_demo --bin scroll_list` (interactive, wheel) |
 | Focus traversal + keyboard routing (v0.4) | working | Tab / Shift+Tab / Enter / Space / Escape in any interactive demo |
 | Hotkey system (v0.4) | working | `attempt_4_demo --bin hotkey_picker` — `j`/`k` movement, Ctrl+L, `/`, etc., zero per-key matching in the app |
+| Animation primitives (v0.4) | spring + tween + per-(node, prop) tracker; library-owned hover / press / focus envelopes auto-ease on every keyed interactive node; author-facing `.animate(timing)` + `.opacity` / `.translate` / `.scale` for app-driven prop interpolation; `prepare()` returns `needs_redraw` so frames tick only while motion is in flight | `attempt_4_demo --bin animated_palette` — selection scales, fades, slides; counter & hotkey_picker get hover/press easing for free |
 | Bundle pipeline | `tree.txt` + `draw_ops.txt` + `shader_manifest.txt` + `lint.txt` + `.svg` + `.png` per fixture | `out/*` (PNGs gitignored, regenerated from SVG by `tools/svg_to_png.sh`) |
 
 Author surface today — the entire interactive contract:
@@ -75,7 +76,7 @@ No JSX, no signals, no `useState`, no retained-mode component identity. Hover an
 | v0.1 | Layout, stock surface, glyphon text, custom shader. | done |
 | v0.2 | Hit-testing, click events, automatic hover/press, App trait, state-driven rebuild. | done |
 | v0.3 | Scroll/clip, modal/overlay primitive. (Embedded viewport dropped — host-painted regions fall out of the library/host split, see `LIBRARY_VISION.md`.) | done |
-| v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. | focus + keyboard + hotkeys done; **animation primitives pending** |
+| v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. | done |
 | v0.5 | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | |
 | v0.6 | Rich text composition (markdown runs, inline highlighting, embedded elements). | paragraph wrapping + text alignment landed (partial) |
 | v0.7+ | Stock shader: shadow, focus_ring, divider_line. Backdrop sampling. wgpu-wasm + vulkano backends. Liquid glass as the architectural acceptance test. | `focus_ring` shared with `rounded_rect` pipeline |
@@ -115,6 +116,7 @@ attempts/
       counter.rs                    interactive counter — v0.2 proof point
       scroll_list.rs                interactive scroll list — v0.3 proof point
       hotkey_picker.rs              keyboard-only picker — v0.4 proof point
+      animated_palette.rs           selection picker with scale / opacity / translate / fill animations — v0.4 .animate() proof point
       render_settings.rs            \
       render_counter.rs              | headless artifact generators
       render_custom.rs              /
@@ -128,6 +130,7 @@ Try it locally:
 cargo run -p attempt_4_demo --bin counter         # interactive — v0.2
 cargo run -p attempt_4_demo --bin scroll_list     # interactive — v0.3 wheel
 cargo run -p attempt_4_demo --bin hotkey_picker   # interactive — v0.4 keyboard
+cargo run -p attempt_4_demo --bin animated_palette # interactive — v0.4 .animate()
 cargo run -p attempt_4 --example scroll_list      # headless → out/scroll_list.svg
 cargo test -p attempt_4                           # 30 unit tests + 1 doctest
 ```

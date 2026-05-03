@@ -26,6 +26,7 @@
 
 use std::panic::Location;
 
+use crate::anim::Timing;
 use crate::shader::ShaderBinding;
 use crate::style::StyleProfile;
 
@@ -210,6 +211,20 @@ impl Color {
             ..self
         }
     }
+
+    /// Linearly interpolate between two colours by `t` in `[0, 1]`.
+    /// `t = 0` returns `self`, `t = 1` returns `other`. Token metadata
+    /// is preserved from `self` so an interpolated token stays named.
+    pub fn mix(self, other: Self, t: f32) -> Self {
+        let t = t.clamp(0.0, 1.0);
+        Self {
+            r: lerp_u8(self.r, other.r, t),
+            g: lerp_u8(self.g, other.g, t),
+            b: lerp_u8(self.b, other.b, t),
+            a: lerp_u8(self.a, other.a, t),
+            token: self.token,
+        }
+    }
 }
 
 fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
@@ -337,6 +352,32 @@ pub struct El {
 
     pub children: Vec<El>,
 
+    /// Paint-time alpha multiplier in `[0, 1]`. Default `1.0`. Multiplies
+    /// the alpha channel of `fill`, `stroke`, and text colour at draw
+    /// time. Layout-neutral. App-driven changes are eased when
+    /// [`Self::animate`] is set.
+    pub opacity: f32,
+    /// Paint-time offset in logical pixels. Default `(0.0, 0.0)`.
+    /// **Subtree-inheriting**: descendants paint at their computed rect
+    /// plus all ancestor `translate` accumulated through the paint
+    /// recursion. Use this to slide a sidebar / drawer / list-item
+    /// without re-running layout. App-driven changes are eased when
+    /// [`Self::animate`] is set.
+    pub translate: (f32, f32),
+    /// Per-node uniform scale around the computed-rect centre. Default
+    /// `1.0`. Scales this node's surface quad and (if it carries text)
+    /// its glyph run together. **Not** subtree-inheriting — descendants
+    /// keep their own scale. Use this for tap-bounce on a button. App-
+    /// driven changes are eased when [`Self::animate`] is set.
+    pub scale: f32,
+    /// Opt-in app-driven prop interpolation. When `Some(timing)`, the
+    /// animation tracker eases `fill` / `text_color` / `stroke` /
+    /// `opacity` / `translate` / `scale` between rebuilds — the value
+    /// the build closure produces becomes the spring/tween target;
+    /// `current` carries over from last frame. State visuals (hover /
+    /// press / focus ring) keep their own library defaults regardless.
+    pub animate: Option<Timing>,
+
     /// Filled by the layout pass.
     pub computed: Rect,
     /// Stable path-based ID, filled by the layout pass for inspection.
@@ -348,6 +389,16 @@ pub struct El {
     /// ring quad iff this is > 0 and scales the ring's color alpha
     /// by it. Lets the ring fade out after focus moves elsewhere.
     pub focus_ring_alpha: f32,
+    /// Hover-state visual envelope in `[0, 1]`. Written by the
+    /// animation tracker. `apply_state` in `draw_ops` lerps the display
+    /// fill / stroke / text-colour between the build-time value and
+    /// `lighten(value, HOVER_LIGHTEN)` based on this. Storing the
+    /// *amount* instead of the absolute eased colour keeps state
+    /// transitions independent of mid-flight build-value changes.
+    pub hover_amount: f32,
+    /// Press-state envelope, mirroring [`Self::hover_amount`]. Lerps
+    /// toward `darken(value, PRESS_DARKEN)`.
+    pub press_amount: f32,
 }
 
 impl Default for El {
@@ -384,9 +435,15 @@ impl Default for El {
             font_weight: FontWeight::Regular,
             font_mono: false,
             children: Vec::new(),
+            opacity: 1.0,
+            translate: (0.0, 0.0),
+            scale: 1.0,
+            animate: None,
             computed: Rect::default(),
             computed_id: String::new(),
             focus_ring_alpha: 0.0,
+            hover_amount: 0.0,
+            press_amount: 0.0,
         }
     }
 }
@@ -441,6 +498,29 @@ impl El {
     pub fn shadow(mut self, s: f32) -> Self { self.shadow = s; self }
     pub fn clip(mut self) -> Self { self.clip = true; self }
     pub fn scrollable(mut self) -> Self { self.scrollable = true; self }
+
+    // ---- Paint-time transforms (animatable via `.animate()`) ----
+    /// Multiply this element's paint alpha by `v` (clamped to `[0, 1]`).
+    /// Layout-neutral. Multiplies onto `fill`, `stroke`, and text colour
+    /// at paint time.
+    pub fn opacity(mut self, v: f32) -> Self { self.opacity = v.clamp(0.0, 1.0); self }
+    /// Offset this element's paint and its descendants by `(x, y)` in
+    /// logical pixels. Layout-neutral; descendants inherit the offset.
+    pub fn translate(mut self, x: f32, y: f32) -> Self { self.translate = (x, y); self }
+    /// Uniformly scale this element's paint around its rect centre.
+    /// Affects the surface quad and (if it carries text) the glyph
+    /// run together. Not subtree-inheriting.
+    pub fn scale(mut self, v: f32) -> Self { self.scale = v.max(0.0); self }
+    /// Opt this element into app-driven prop interpolation. When the
+    /// build closure produces a different value for `fill` /
+    /// `text_color` / `stroke` / `opacity` / `translate` / `scale`
+    /// between rebuilds, the library eases from the prior frame's
+    /// value to the new value using `timing`. State visuals (hover /
+    /// press / focus) remain on the library's own timing.
+    pub fn animate(mut self, timing: Timing) -> Self {
+        self.animate = Some(timing);
+        self
+    }
 
     /// Bind a shader for the surface paint, replacing the implicit
     /// `stock::rounded_rect`. The element's `fill`/`stroke`/`radius`/

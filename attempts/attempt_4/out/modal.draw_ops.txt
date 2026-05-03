@@ -1,21 +1,21 @@
-Glyph  shader=stock::text_sdf          rect=(28,28,109,36) id=root.group.0.heading.0 text="Account" color=text-foreground size=26.0 weight=Bold mono=false anchor=Start
+Glyph  shader=stock::text_sdf          rect=(28,28,109,36) id=root.group.0.heading.0 text="Account" color=text-foreground size=26.0 weight=Bold mono=false wrap=NoWrap anchor=Start
 Quad   shader=stock::rounded_rect      rect=(28,82,664,124) id=root.group.0.card.1 fill=bg-card radius=12.00 shadow=12.00 stroke=border stroke_width=1.00
-Glyph  shader=stock::text_sdf          rect=(46,100,67,22) id=root.group.0.card.1.heading.0 text="Profile" color=text-foreground size=16.0 weight=Semibold mono=false anchor=Start
-Glyph  shader=stock::text_sdf          rect=(46,135,42,20) id=root.group.0.card.1.group.1.text.0 text="Email" color=text-foreground size=14.0 weight=Regular mono=false anchor=Start
-Glyph  shader=stock::text_sdf          rect=(540,135,134,20) id=root.group.0.card.1.group.1.text.2 text="user@example.com" color=text-muted-foreground size=14.0 weight=Regular mono=false anchor=Start
-Glyph  shader=stock::text_sdf          rect=(46,168,34,20) id=root.group.0.card.1.group.2.text.0 text="Plan" color=text-foreground size=14.0 weight=Regular mono=false anchor=Start
+Glyph  shader=stock::text_sdf          rect=(46,100,67,22) id=root.group.0.card.1.heading.0 text="Profile" color=text-foreground size=16.0 weight=Semibold mono=false wrap=NoWrap anchor=Start
+Glyph  shader=stock::text_sdf          rect=(46,135,42,20) id=root.group.0.card.1.group.1.text.0 text="Email" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+Glyph  shader=stock::text_sdf          rect=(540,135,134,20) id=root.group.0.card.1.group.1.text.2 text="user@example.com" color=text-muted-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
+Glyph  shader=stock::text_sdf          rect=(46,168,34,20) id=root.group.0.card.1.group.2.text.0 text="Plan" color=text-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start
 Quad   shader=stock::rounded_rect      rect=(636,166,38,22) id=root.group.0.card.1.group.2.badge.2 fill=info radius=999.00 stroke=info stroke_width=1.00
-Glyph  shader=stock::text_sdf          rect=(636,166,38,22) id=root.group.0.card.1.group.2.badge.2 text="Pro" color=info size=12.0 weight=Medium mono=false anchor=Middle
+Glyph  shader=stock::text_sdf          rect=(636,166,38,22) id=root.group.0.card.1.group.2.badge.2 text="Pro" color=info size=12.0 weight=Medium mono=false wrap=NoWrap anchor=Middle
 Quad   shader=stock::rounded_rect      rect=(28,224,664,111) id=root.group.0.card.2 fill=bg-card radius=12.00 shadow=12.00 stroke=border stroke_width=1.00
-Glyph  shader=stock::text_sdf          rect=(46,242,106,22) id=root.group.0.card.2.heading.0 text="Danger zone" color=text-foreground size=16.0 weight=Semibold mono=false anchor=Start
-Glyph  shader=stock::text_sdf          rect=(46,277,118,20) id=root.group.0.card.2.group.1.group.0.text.0 text="Delete account" color=text-foreground size=14.0 weight=Bold mono=false anchor=Start
-Glyph  shader=stock::text_sdf          rect=(46,300,317,17) id=root.group.0.card.2.group.1.group.0.text.1 text="Remove this account and all associated d…" color=text-muted-foreground size=12.0 weight=Regular mono=false anchor=Start
+Glyph  shader=stock::text_sdf          rect=(46,242,106,22) id=root.group.0.card.2.heading.0 text="Danger zone" color=text-foreground size=16.0 weight=Semibold mono=false wrap=NoWrap anchor=Start
+Glyph  shader=stock::text_sdf          rect=(46,277,118,20) id=root.group.0.card.2.group.1.group.0.text.0 text="Delete account" color=text-foreground size=14.0 weight=Bold mono=false wrap=NoWrap anchor=Start
+Glyph  shader=stock::text_sdf          rect=(46,300,317,17) id=root.group.0.card.2.group.1.group.0.text.1 text="Remove this account and all associated d…" color=text-muted-foreground size=12.0 weight=Regular mono=false wrap=NoWrap anchor=Start
 Quad   shader=stock::rounded_rect      rect=(600,279,74,36) id=root.group.0.card.2.group.1.button[open-delete] fill=destructive radius=8.00 stroke=destructive stroke_width=1.00
-Glyph  shader=stock::text_sdf          rect=(600,279,74,36) id=root.group.0.card.2.group.1.button[open-delete] text="Delete" color=text-on-solid-light size=14.0 weight=Semibold mono=false anchor=Middle
+Glyph  shader=stock::text_sdf          rect=(600,279,74,36) id=root.group.0.card.2.group.1.button[open-delete] text="Delete" color=text-on-solid-light size=14.0 weight=Semibold mono=false wrap=NoWrap anchor=Middle
 Quad   shader=stock::rounded_rect      rect=(0,0,720,560) id=root.overlay.1.scrim[delete-account:dismiss] scissor=(0,0,720,560) fill=overlay-scrim radius=0.00
 Quad   shader=stock::rounded_rect      rect=(150,211,420,138) id=root.overlay.1.modal.1 scissor=(150,211,420,138) fill=bg-card radius=12.00 shadow=24.00 stroke=border stroke_width=1.00
-Glyph  shader=stock::text_sdf          rect=(168,229,144,22) id=root.overlay.1.modal.1.heading.0 text="Delete account?" color=text-foreground size=16.0 weight=Semibold mono=false anchor=Start scissor=(150,211,420,138)
-Glyph  shader=stock::text_sdf          rect=(168,263,302,20) id=root.overlay.1.modal.1.text.1 text="Permanent action. Export data first." color=text-muted-foreground size=14.0 weight=Regular mono=false anchor=Start scissor=(150,211,420,138)
-Glyph  shader=stock::text_sdf          rect=(395,295,74,36) id=root.overlay.1.modal.1.group.2.button[cancel-delete] text="Cancel" color=text-muted-foreground size=14.0 weight=Medium mono=false anchor=Middle scissor=(150,211,420,138)
+Glyph  shader=stock::text_sdf          rect=(168,229,144,22) id=root.overlay.1.modal.1.heading.0 text="Delete account?" color=text-foreground size=16.0 weight=Semibold mono=false wrap=NoWrap anchor=Start scissor=(150,211,420,138)
+Glyph  shader=stock::text_sdf          rect=(168,263,302,20) id=root.overlay.1.modal.1.text.1 text="Permanent action. Export data first." color=text-muted-foreground size=14.0 weight=Regular mono=false wrap=NoWrap anchor=Start scissor=(150,211,420,138)
+Glyph  shader=stock::text_sdf          rect=(395,295,74,36) id=root.overlay.1.modal.1.group.2.button[cancel-delete] text="Cancel" color=text-muted-foreground size=14.0 weight=Medium mono=false wrap=NoWrap anchor=Middle scissor=(150,211,420,138)
 Quad   shader=stock::rounded_rect      rect=(478,295,74,36) id=root.overlay.1.modal.1.group.2.button[confirm-delete] scissor=(150,211,420,138) fill=destructive radius=8.00 stroke=destructive stroke_width=1.00
-Glyph  shader=stock::text_sdf          rect=(478,295,74,36) id=root.overlay.1.modal.1.group.2.button[confirm-delete] text="Delete" color=text-on-solid-light size=14.0 weight=Semibold mono=false anchor=Middle scissor=(150,211,420,138)
+Glyph  shader=stock::text_sdf          rect=(478,295,74,36) id=root.overlay.1.modal.1.group.2.button[confirm-delete] text="Delete" color=text-on-solid-light size=14.0 weight=Semibold mono=false wrap=NoWrap anchor=Middle scissor=(150,211,420,138)

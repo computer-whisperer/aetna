@@ -156,21 +156,48 @@ impl Timing {
 /// Identifies a specific animatable property on a node. Used as part
 /// of the per-(node, prop) tracker key.
 ///
-/// In v0.4 commit 1 only the `State*` and `FocusRingAlpha` variants are
-/// driven; the rest are reserved for the explicit `.animate()` API in
-/// commit 2.
+/// Two families:
+///
+/// - **State envelopes** (`HoverAmount`, `PressAmount`, `FocusRingAlpha`)
+///   are 0..1 floats tracking *how much* of the corresponding state's
+///   visual delta is currently applied. The library updates these on
+///   every keyed interactive node automatically; no author opt-in. Why
+///   envelopes and not absolute colours: `apply_state` in `draw_ops`
+///   computes the display colour by lerping between `n.fill` and
+///   `state_color(n.fill)` based on the envelope. That keeps state
+///   easing completely independent of build-value changes — when the
+///   author swaps a button's fill mid-hover, the new fill takes effect
+///   instantly with the same hover envelope, no fighting between
+///   trackers.
+/// - **App-driven absolute values** (`App*`) are author-opted-in via
+///   [`crate::tree::El::animate`]. The tracker eases the value the build
+///   closure produces from the previous frame's value to the new one.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum AnimProp {
-    /// State-derived fill colour (hover lightens, press darkens). The
-    /// library tracks this automatically for any keyed interactive node.
-    StateFill,
-    /// State-derived stroke colour. Mirrors `StateFill`.
-    StateStroke,
-    /// State-derived text colour. Mirrors `StateFill` for hover.
-    StateTextColor,
+    /// 0..1 amount of the hover-state visual delta currently applied.
+    /// Eases 0→1 on pointer enter, 1→0 on pointer leave.
+    HoverAmount,
+    /// 0..1 amount of the press-state visual delta currently applied.
+    /// Eases 0→1 on press, 1→0 on release.
+    PressAmount,
     /// Focus-ring alpha — eases 0→1 on focus enter, 1→0 on focus leave.
     /// Lets the ring fade out after focus moves elsewhere.
     FocusRingAlpha,
+    /// App-driven fill colour — eases between the values the build
+    /// closure produces across rebuilds.
+    AppFill,
+    /// App-driven stroke colour.
+    AppStroke,
+    /// App-driven text colour.
+    AppTextColor,
+    /// App-driven paint-time alpha multiplier in `[0, 1]`.
+    AppOpacity,
+    /// App-driven uniform scale around the rect centre.
+    AppScale,
+    /// App-driven translate offset in logical pixels — X channel.
+    AppTranslateX,
+    /// App-driven translate offset in logical pixels — Y channel.
+    AppTranslateY,
 }
 
 const SPRING_EPSILON_DISP: f32 = 0.5;
