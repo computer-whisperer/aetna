@@ -8,6 +8,10 @@
 //! GPU-typed parameters swapped for `vulkano`'s. WGSL stays the source
 //! shader language; `naga` transpiles to SPIR-V at pipeline build time.
 //!
-//! Empty for v5.3 step 1 — the crate exists so the workspace builds.
-//! Subsequent steps wire up the naga helper, the Vulkan device/pipelines,
-//! and the paint-stream loop.
+//! v5.3 step 2 (current): the WGSL → SPIR-V helper module is in place
+//! and unit-tested against both stock shaders. Subsequent steps wire up
+//! the Vulkan device/pipelines and the paint-stream loop.
+
+pub mod naga_compile;
+
+pub use naga_compile::{CompileError, wgsl_to_spirv};
