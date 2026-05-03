@@ -1,52 +1,63 @@
-//! attempt_4_demo — standalone harness running attempt_4 fixtures
+//! attempt_4_demo — standalone harness running attempt_4 [`App`]s
 //! against a real wgpu surface in a winit window.
 //!
-//! The library crate (`attempt_4`) is the substrate; this crate is the
-//! "host application" doing what a real consumer would do — owning the
-//! event loop, the device/queue, the swapchain, and the render pass.
-//! It's intentionally separate so the `attempt_4` crate has zero winit
-//! dependency and is host-agnostic.
+//! v0.2 shape: the host owns the event loop, the device/queue, the
+//! swapchain, and the render pass. The library (`attempt_4`) owns
+//! layout, paint, hit-testing, and visual state. The user owns the
+//! [`App`] — its state, its build closure, its event handler.
 //!
-//! [`run`] takes a tree-builder closure and runs an event loop that
-//! re-paints whenever the window asks. v0.1 doesn't react to events
-//! (no hover/press over the network), but the structure is in place.
+//! [`run`] takes an [`App`] and runs an event loop that:
+//!
+//! - Calls `app.build()` on every redraw, applying current hover/press
+//!   visuals automatically before paint.
+//! - Routes `winit` pointer events through the renderer's hit-tester
+//!   and dispatches `Click` events back via `App::on_event`.
+//! - Requests a redraw whenever interaction state changes (mouse move,
+//!   button down/up) so hover/press visuals are immediate.
+//!
+//! Keyboard events, scrolling, and focus traversal are not yet wired —
+//! they're the next slice. The architecture is intentionally
+//! event-pump-shaped so adding them is non-breaking.
 
 use std::sync::Arc;
 
-use attempt_4::{El, Rect, UiRenderer};
+use attempt_4::{App, Rect, UiRenderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
 
-/// Run a windowed demo, painting the tree returned by `build`.
+/// Run a windowed app. Blocks until the user closes the window.
 ///
-/// `build` is called once at startup; v0.1 doesn't yet reactively
-/// rebuild on events (hover/press will land later). The window opens
-/// at the tree's natural size (taken from `viewport.w` / `viewport.h`)
-/// and re-renders on resize.
-pub fn run<F>(title: &'static str, viewport: Rect, build: F) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: Fn() -> El + 'static,
-{
+/// The `App` is owned by the runner; its `&mut self` is updated in
+/// response to routed events and read on every `build` call.
+pub fn run<A: App + 'static>(
+    title: &'static str,
+    viewport: Rect,
+    app: A,
+) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
-    let mut app = App {
+    let mut host = Host {
         title,
         viewport,
-        build: Box::new(build),
+        app,
         gfx: None,
+        last_pointer: None,
     };
-    event_loop.run_app(&mut app)?;
+    event_loop.run_app(&mut host)?;
     Ok(())
 }
 
-struct App {
+struct Host<A: App> {
     title: &'static str,
     viewport: Rect,
-    build: Box<dyn Fn() -> El>,
+    app: A,
     gfx: Option<Gfx>,
+    /// Last pointer position in logical pixels (winit reports physical;
+    /// we divide by the window's scale factor before storing).
+    last_pointer: Option<(f32, f32)>,
 }
 
 struct Gfx {
@@ -58,7 +69,7 @@ struct Gfx {
     renderer: UiRenderer,
 }
 
-impl ApplicationHandler for App {
+impl<A: App> ApplicationHandler for Host<A> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.gfx.is_some() {
             return;
@@ -119,14 +130,48 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(gfx) = self.gfx.as_mut() else { return };
+        let scale = gfx.window.scale_factor() as f32;
+
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
+
             WindowEvent::Resized(size) => {
                 gfx.config.width = size.width.max(1);
                 gfx.config.height = size.height.max(1);
                 gfx.surface.configure(&gfx.device, &gfx.config);
                 gfx.window.request_redraw();
             }
+
+            WindowEvent::CursorMoved { position, .. } => {
+                let lx = position.x as f32 / scale;
+                let ly = position.y as f32 / scale;
+                self.last_pointer = Some((lx, ly));
+                gfx.renderer.pointer_moved(lx, ly);
+                gfx.window.request_redraw();
+            }
+
+            WindowEvent::CursorLeft { .. } => {
+                self.last_pointer = None;
+                gfx.renderer.pointer_left();
+                gfx.window.request_redraw();
+            }
+
+            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
+                let Some((lx, ly)) = self.last_pointer else { return };
+                match state {
+                    ElementState::Pressed => {
+                        gfx.renderer.pointer_down(lx, ly);
+                        gfx.window.request_redraw();
+                    }
+                    ElementState::Released => {
+                        if let Some(event) = gfx.renderer.pointer_up(lx, ly) {
+                            self.app.on_event(event);
+                        }
+                        gfx.window.request_redraw();
+                    }
+                }
+            }
+
             WindowEvent::RedrawRequested => {
                 let frame = match gfx.surface.get_current_texture() {
                     Ok(f) => f,
@@ -141,9 +186,9 @@ impl ApplicationHandler for App {
                 };
                 let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-                let mut tree = (self.build)();
-                // Window is configured at physical size; layout works in
-                // logical pixels so divide by the OS-reported scale.
+                let mut tree = self.app.build();
+                // Window is configured at physical size; layout works
+                // in logical pixels so divide by the OS-reported scale.
                 let scale_factor = gfx.window.scale_factor() as f32;
                 let viewport = Rect::new(
                     0.0,

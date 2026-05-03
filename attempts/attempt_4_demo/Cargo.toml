@@ -10,6 +10,14 @@ name = "settings"
 path = "src/bin/settings.rs"
 
 [[bin]]
+name = "counter"
+path = "src/bin/counter.rs"
+
+[[bin]]
+name = "render_counter"
+path = "src/bin/render_counter.rs"
+
+[[bin]]
 name = "render_png"
 path = "src/bin/render_png.rs"
 

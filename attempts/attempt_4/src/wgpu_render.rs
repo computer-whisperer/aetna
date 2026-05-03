@@ -65,6 +65,7 @@ use glyphon::{
 use wgpu::util::DeviceExt;
 
 use crate::draw_ops;
+use crate::event::{self, UiEvent, UiEventKind, UiState};
 use crate::ir::{DrawOp, TextAnchor};
 use crate::layout;
 use crate::shader::{ShaderHandle, StockShader, UniformValue};
@@ -137,6 +138,13 @@ pub struct UiRenderer {
     text_renderer: TextRenderer,
     text_buffers: Vec<Buffer>,
     text_metas: Vec<TextMeta>,
+
+    // Interaction state (v0.2).
+    ui_state: UiState,
+    /// Last laid-out tree, kept so events arriving between frames can
+    /// hit-test against the geometry the user is actually looking at.
+    /// Stored by clone (cheap at fixture sizes; revisit when trees grow).
+    last_tree: Option<El>,
 }
 
 #[derive(Clone, Copy)]
@@ -264,6 +272,9 @@ impl UiRenderer {
             text_renderer,
             text_buffers: Vec::new(),
             text_metas: Vec::new(),
+
+            ui_state: UiState::new(),
+            last_tree: None,
         }
     }
 
@@ -308,6 +319,11 @@ impl UiRenderer {
         viewport: Rect,
         scale_factor: f32,
     ) {
+        // Apply UI-state visual deltas (hover/press) before layout, so
+        // they're visible this frame. Layout doesn't depend on state;
+        // draw_ops does (via apply_state) and reads the modified `state`.
+        self.ui_state.apply_to_tree(root);
+
         layout::layout(root, viewport);
         let ops = draw_ops::draw_ops(root);
 
@@ -439,6 +455,65 @@ impl UiRenderer {
                 swash_cache,
             )
             .expect("glyphon prepare");
+
+        // Snapshot the laid-out tree so pointer events arriving before
+        // the next prepare can hit-test against current geometry.
+        self.last_tree = Some(root.clone());
+    }
+
+    // ---- v0.2 input plumbing ----
+    //
+    // The host (winit-side) calls these from its event loop.
+    // Coordinates are **logical pixels** — divide winit's physical
+    // PhysicalPosition by the window scale factor before handing them in.
+
+    /// Update pointer position and recompute the hovered key.
+    /// Returns the new hovered key, if any (host can use it for cursor
+    /// styling or to decide whether to call `request_redraw`).
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<&str> {
+        self.ui_state.pointer_pos = Some((x, y));
+        let hit = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| event::hit_test(t, (x, y)));
+        self.ui_state.hovered_key = hit;
+        self.ui_state.hovered_key.as_deref()
+    }
+
+    /// Pointer left the window — clear hover/press.
+    pub fn pointer_left(&mut self) {
+        self.ui_state.pointer_pos = None;
+        self.ui_state.hovered_key = None;
+        self.ui_state.pressed_key = None;
+    }
+
+    /// Primary mouse button down at `(x, y)` (logical px). Records the
+    /// pressed key for press-visual feedback; the actual click event
+    /// fires on the matching `pointer_up`.
+    pub fn pointer_down(&mut self, x: f32, y: f32) {
+        let hit = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| event::hit_test(t, (x, y)));
+        self.ui_state.pressed_key = hit;
+    }
+
+    /// Primary mouse button up at `(x, y)`. If the release lands on the
+    /// same keyed node as the corresponding `pointer_down`, a `Click`
+    /// event is returned for the host to dispatch via `App::on_event`.
+    pub fn pointer_up(&mut self, x: f32, y: f32) -> Option<UiEvent> {
+        let hit = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| event::hit_test(t, (x, y)));
+        let pressed = self.ui_state.pressed_key.take();
+        match (pressed, hit) {
+            (Some(p), Some(h)) if p == h => Some(UiEvent {
+                key: Some(p),
+                kind: UiEventKind::Click,
+            }),
+            _ => None,
+        }
     }
 
     /// Record draws into the host-managed render pass. Call after
