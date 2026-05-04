@@ -13,11 +13,23 @@ use bytemuck::{Pod, Zeroable};
 use aetna_core::paint::QuadInstance;
 
 /// Per-frame globals bound at @group(0).
+///
+/// Layout matches the shared WGSL convention:
+/// ```wgsl
+/// struct FrameUniforms {
+///     viewport: vec2<f32>,  // logical px (width, height)
+///     time:     f32,        // seconds since runner start
+///     _pad:     f32,
+/// };
+/// ```
+/// Existing custom shaders that declared `_pad: vec2<f32>` continue
+/// to work — same 16-byte slab; only field naming differs.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub(crate) struct FrameUniforms {
     pub viewport: [f32; 2],
-    pub _pad: [f32; 2],
+    pub time: f32,
+    pub _pad: f32,
 }
 
 /// Per-instance vertex attributes — must match the shared

@@ -94,7 +94,12 @@ pub struct Runner {
 
     // Shared resources.
     pipeline_layout: wgpu::PipelineLayout,
+    /// Pipeline layout for `samples_backdrop` custom shaders — adds
+    /// `@group(1)` for the snapshot texture + sampler.
+    backdrop_pipeline_layout: wgpu::PipelineLayout,
     quad_bind_group: wgpu::BindGroup,
+    backdrop_bind_layout: wgpu::BindGroupLayout,
+    backdrop_sampler: wgpu::Sampler,
     frame_buf: wgpu::Buffer,
     quad_vbo: wgpu::Buffer,
     instance_buf: wgpu::Buffer,
@@ -110,10 +115,27 @@ pub struct Runner {
     // stock::text resources — atlas, page textures, glyph instances.
     text_paint: TextPaint,
 
+    /// Lazily-allocated snapshot of the color target, sized to match
+    /// the current target on each `render()`. Backdrop-sampling
+    /// shaders read this via `@group(1)` after Pass A.
+    snapshot: Option<SnapshotTexture>,
+    /// Bind group binding the snapshot view + sampler. Rebuilt each
+    /// time the snapshot texture is reallocated.
+    backdrop_bind_group: Option<wgpu::BindGroup>,
+
+    /// Wall-clock origin for the `time` field in `FrameUniforms`.
+    /// `prepare()` writes `(now - start_time).as_secs_f32()`.
+    start_time: Instant,
+
     // Backend-agnostic state shared with aetna-vulkano: interaction
     // state, paint-stream scratch (quad_scratch / runs / paint_items),
     // viewport_px, last_tree, the 13 input plumbing methods.
     core: RunnerCore,
+}
+
+struct SnapshotTexture {
+    texture: wgpu::Texture,
+    extent: (u32, u32),
 }
 
 impl Runner {
@@ -176,6 +198,52 @@ impl Runner {
             push_constant_ranges: &[],
         });
 
+        // ---- Backdrop sampling resources ----
+        //
+        // Custom shaders that opt into backdrop sampling (registered
+        // via `register_shader_with(..samples_backdrop=true)`) get a
+        // pipeline layout with `@group(1)` for the snapshot texture
+        // and sampler. The bind group is rebuilt whenever the
+        // snapshot is (re)allocated.
+        let backdrop_bind_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("aetna_wgpu::backdrop_bind_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        let backdrop_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("aetna_wgpu::backdrop_pipeline_layout"),
+                bind_group_layouts: &[&frame_bind_layout, &backdrop_bind_layout],
+                push_constant_ranges: &[],
+            });
+        let backdrop_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("aetna_wgpu::backdrop_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         // Build stock rect-shaped pipelines up-front; custom shaders are
         // added on demand by the host.
         let mut pipelines = HashMap::new();
@@ -205,7 +273,10 @@ impl Runner {
         Self {
             target_format,
             pipeline_layout,
+            backdrop_pipeline_layout,
             quad_bind_group,
+            backdrop_bind_layout,
+            backdrop_sampler,
             frame_buf,
             quad_vbo,
             instance_buf,
@@ -213,6 +284,9 @@ impl Runner {
             pipelines,
             backdrop_shaders: HashSet::new(),
             text_paint,
+            snapshot: None,
+            backdrop_bind_group: None,
+            start_time: Instant::now(),
             core,
         }
     }
@@ -263,13 +337,12 @@ impl Runner {
         samples_backdrop: bool,
     ) {
         let label = format!("custom::{name}");
-        let pipeline = build_quad_pipeline(
-            device,
-            &self.pipeline_layout,
-            self.target_format,
-            &label,
-            wgsl,
-        );
+        let layout = if samples_backdrop {
+            &self.backdrop_pipeline_layout
+        } else {
+            &self.pipeline_layout
+        };
+        let pipeline = build_quad_pipeline(device, layout, self.target_format, &label, wgsl);
         self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
         if samples_backdrop {
             self.backdrop_shaders.insert(name);
@@ -370,9 +443,11 @@ impl Runner {
             );
         }
         self.text_paint.flush(device, queue);
+        let time = (Instant::now() - self.start_time).as_secs_f32();
         let frame = FrameUniforms {
             viewport: [viewport.w, viewport.h],
-            _pad: [0.0, 0.0],
+            time,
+            _pad: 0.0,
         };
         queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
         timings.gpu_upload = Instant::now() - t_paint_end;
@@ -452,19 +527,216 @@ impl Runner {
 
     /// Record draws into the host-managed render pass. Call after
     /// [`Self::prepare`]. Paint order follows the draw-op stream.
+    ///
+    /// **No backdrop sampling.** This entry point cannot honor pass
+    /// boundaries (the host owns the pass lifetime), so any
+    /// `BackdropSnapshot` items in the paint stream are no-ops and any
+    /// shader bound with `samples_backdrop=true` reads an undefined
+    /// backdrop binding. Use [`Self::render`] for backdrop-aware
+    /// rendering.
     pub fn draw<'pass>(&'pass self, pass: &mut wgpu::RenderPass<'pass>) {
+        self.draw_items(pass, &self.core.paint_items);
+    }
+
+    /// Record draws into a host-supplied encoder, owning pass
+    /// lifetimes ourselves so backdrop-sampling shaders can sample a
+    /// snapshot of Pass A's content.
+    ///
+    /// The host hands us:
+    /// - the encoder (we record into it),
+    /// - the color target's `wgpu::Texture` (used as `copy_src` when
+    ///   we snapshot it; must include `COPY_SRC` in its usage flags),
+    /// - the corresponding `wgpu::TextureView` (we attach it to every
+    ///   render pass we begin), and
+    /// - the `LoadOp` to use on the *first* pass — `Clear(color)` to
+    ///   clear behind us, `Load` to composite onto whatever was
+    ///   already in the target.
+    ///
+    /// Multi-pass schedule when the paint stream contains a
+    /// `BackdropSnapshot`:
+    ///
+    /// 1. Pass A — every paint item before the snapshot, with the
+    ///    caller-supplied `LoadOp`.
+    /// 2. `copy_texture_to_texture` — target → snapshot.
+    /// 3. Pass B — paint items from the snapshot onward, with
+    ///    `LoadOp::Load` so Pass A's pixels remain underneath.
+    ///
+    /// Without a snapshot, this collapses to a single pass and is
+    /// equivalent to [`Self::draw`] called inside a host-managed
+    /// pass with the same `LoadOp`.
+    pub fn render(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target_tex: &wgpu::Texture,
+        target_view: &wgpu::TextureView,
+        load_op: wgpu::LoadOp<wgpu::Color>,
+    ) {
+        // Locate the (at most one) snapshot boundary.
+        let split_at = self
+            .core
+            .paint_items
+            .iter()
+            .position(|p| matches!(p, PaintItem::BackdropSnapshot));
+
+        if let Some(idx) = split_at {
+            self.ensure_snapshot(device, target_tex);
+            // Pass A
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("aetna_wgpu::pass_a"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: target_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: load_op,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                self.draw_items(&mut pass, &self.core.paint_items[..idx]);
+            }
+            // Snapshot copy. Target must support COPY_SRC; snapshot
+            // texture (created in `ensure_snapshot`) supports COPY_DST
+            // + TEXTURE_BINDING.
+            let snapshot = self.snapshot.as_ref().expect("snapshot ensured");
+            encoder.copy_texture_to_texture(
+                wgpu::ImageCopyTexture {
+                    texture: target_tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::ImageCopyTexture {
+                    texture: &snapshot.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: snapshot.extent.0,
+                    height: snapshot.extent.1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            // Pass B
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("aetna_wgpu::pass_b"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: target_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                // Skip the snapshot item itself; it's a marker, not a draw.
+                self.draw_items(&mut pass, &self.core.paint_items[idx + 1..]);
+            }
+        } else {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("aetna_wgpu::pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: load_op,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            self.draw_items(&mut pass, &self.core.paint_items);
+        }
+    }
+
+    /// (Re)allocate the snapshot texture to match `target_tex`'s
+    /// extent + format. Idempotent when the size matches; rebuilds the
+    /// `backdrop_bind_group` whenever the snapshot is recreated.
+    fn ensure_snapshot(&mut self, device: &wgpu::Device, target_tex: &wgpu::Texture) {
+        let extent = target_tex.size();
+        let want = (extent.width, extent.height);
+        if let Some(s) = &self.snapshot
+            && s.extent == want
+        {
+            return;
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("aetna_wgpu::backdrop_snapshot"),
+            size: wgpu::Extent3d {
+                width: want.0,
+                height: want.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.target_format,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("aetna_wgpu::backdrop_bind_group"),
+            layout: &self.backdrop_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.backdrop_sampler),
+                },
+            ],
+        });
+        self.snapshot = Some(SnapshotTexture {
+            texture,
+            extent: want,
+        });
+        self.backdrop_bind_group = Some(bind_group);
+    }
+
+    /// Walk a slice of `PaintItem`s into the given pass. Helper shared
+    /// by [`Self::draw`] and [`Self::render`]. `BackdropSnapshot`
+    /// items are no-ops here; `render()` handles them by splitting
+    /// the slice before passing to this helper.
+    fn draw_items<'pass>(
+        &'pass self,
+        pass: &mut wgpu::RenderPass<'pass>,
+        items: &'pass [PaintItem],
+    ) {
         let full = PhysicalScissor {
             x: 0,
             y: 0,
             w: self.core.viewport_px.0,
             h: self.core.viewport_px.1,
         };
-        for item in &self.core.paint_items {
+        for item in items {
             match *item {
                 PaintItem::QuadRun(index) => {
                     let run = &self.core.runs[index];
                     set_scissor(pass, run.scissor, full);
                     pass.set_bind_group(0, &self.quad_bind_group, &[]);
+                    let is_backdrop_shader = matches!(
+                        run.handle,
+                        ShaderHandle::Custom(name) if self.backdrop_shaders.contains(name)
+                    );
+                    if is_backdrop_shader
+                        && let Some(bg) = &self.backdrop_bind_group
+                    {
+                        pass.set_bind_group(1, bg, &[]);
+                    }
                     pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
                     pass.set_vertex_buffer(1, self.instance_buf.slice(..));
                     let pipeline = self
@@ -484,14 +756,10 @@ impl Runner {
                     pass.set_vertex_buffer(1, self.text_paint.instance_buf().slice(..));
                     pass.draw(0..4, run.first..run.first + run.count);
                 }
-                // Pass boundary — the single-pass `draw()` entry can't
-                // honor it (you can't end+restart a host-owned pass
-                // mid-recording). Step B introduces a `render(encoder,
-                // ...)` entry point that owns pass lifetimes and copies
-                // the target into the snapshot texture here. Until then,
-                // backdrop-sampling shaders draw against an undefined
-                // backdrop binding; step A is just the scheduler.
-                PaintItem::BackdropSnapshot => {}
+                PaintItem::BackdropSnapshot => {
+                    // Marker only — `render()` splits the slice on
+                    // these and never includes one in a draw range.
+                }
             }
         }
     }

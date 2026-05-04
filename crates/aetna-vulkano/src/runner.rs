@@ -96,6 +96,9 @@ pub struct Runner {
     /// multi-pass + snapshot.
     backdrop_shaders: HashSet<&'static str>,
 
+    /// Wall-clock origin for the `time` field in `FrameUniforms`.
+    start_time: Instant,
+
     // Backend-agnostic state shared with aetna-wgpu: interaction state,
     // paint-stream scratch (quad_scratch / runs / paint_items),
     // viewport_px, last_tree, the 13 input plumbing methods.
@@ -233,6 +236,7 @@ impl Runner {
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             registered_shaders: HashMap::new(),
             backdrop_shaders: HashSet::new(),
+            start_time: Instant::now(),
             core: {
                 let mut c = RunnerCore::new();
                 c.quad_scratch = Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize);
@@ -351,9 +355,11 @@ impl Runner {
                 .frame_uniform_buf
                 .write()
                 .expect("aetna-vulkano: frame uniform write");
+            let time = (Instant::now() - self.start_time).as_secs_f32();
             *write = FrameUniforms {
                 viewport: [viewport.w, viewport.h],
-                _pad: [0.0, 0.0],
+                time,
+                _pad: 0.0,
             };
         }
         timings.gpu_upload = Instant::now() - t_paint_end;

@@ -50,7 +50,8 @@ use crate::naga_compile::wgsl_to_spirv;
 #[derive(Copy, Clone, Pod, Zeroable, Debug, Default)]
 pub(crate) struct FrameUniforms {
     pub viewport: [f32; 2],
-    pub _pad: [f32; 2],
+    pub time: f32,
+    pub _pad: f32,
 }
 
 /// Vertex layout shared by every rect-shaped pipeline.
