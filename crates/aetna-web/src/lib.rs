@@ -286,15 +286,25 @@ mod web_entry {
             // drawing buffer disagree.
             sync_canvas_to_css(&canvas, &window);
 
-            // Restrict to the WebGL2 backend on the browser side.
-            // Firefox's WebGPU implementation currently wedges its
-            // compositor on pointer events with our atlas-uploading
-            // path (whole window goes black until the cursor leaves);
-            // WebGL2 sidesteps the bug and is the more battle-tested
-            // backend through wgpu 23 anyway. Revisit when wgpu /
-            // Firefox WebGPU shake out further.
+            // Allow both browser backends. wgpu prefers WebGPU when
+            // available (Chrome/Edge stable) and falls back to WebGL2
+            // otherwise. WebGPU is required for backdrop-sampling
+            // shaders (`liquid_glass`) because WebGL2 surfaces don't
+            // advertise `COPY_SRC` on the swapchain texture, so the
+            // snapshot copy can't run — we register backdrop shaders
+            // only when the chosen adapter's surface supports COPY_SRC,
+            // which in practice means "WebGPU was selected."
+            //
+            // Firefox: as of 2026-05, Firefox's WebGPU implementation
+            // still wedges its compositor on pointer events with our
+            // atlas-uploading path (whole canvas goes black until the
+            // cursor leaves). The workaround on the user side is to
+            // disable WebGPU in `about:config` (`dom.webgpu.enabled =
+            // false`); wgpu then transparently picks WebGL2 here and
+            // backdrop shaders are skipped via the COPY_SRC check
+            // below. Revisit when Firefox WebGPU stabilises.
             let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                backends: wgpu::Backends::GL,
+                backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
                 ..Default::default()
             });
             let surface = instance
@@ -304,7 +314,15 @@ mod web_entry {
             // Adapter + device requests are async on wasm; spawn the
             // setup as a future and stash the result in self.gfx so
             // subsequent resumed/window_event calls find it ready.
+            //
+            // `App::shaders()` is captured here (before the move into
+            // the async block) so the runner can register custom
+            // shaders the App declares — including backdrop-sampling
+            // ones like `liquid_glass`. Without this the showcase's
+            // glass card draws are silently dropped because the
+            // pipeline doesn't exist.
             let viewport = self.viewport;
+            let shaders = self.app.shaders();
             let gfx_slot = self.gfx.clone();
             let window_for_async = window.clone();
             wasm_bindgen_futures::spawn_local(async move {
@@ -349,8 +367,25 @@ mod web_entry {
                 // that aetna-demo's native runner uses; matches what
                 // sync_canvas_to_css() set the canvas backing buffer to.
                 let inner = window_for_async.inner_size();
+                // COPY_SRC is required so backdrop-sampling shaders can
+                // copy the post-Pass-A surface into the runner's
+                // snapshot texture mid-frame. WebGL2 surfaces typically
+                // advertise it; if the adapter ever doesn't, we fall
+                // back to RENDER_ATTACHMENT-only and any backdrop
+                // shaders the App declared simply won't paint a glass
+                // surface (the rest of the UI is unaffected).
+                let want_copy_src = surface_caps.usages.contains(wgpu::TextureUsages::COPY_SRC);
+                let usage = if want_copy_src {
+                    wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC
+                } else {
+                    log::warn!(
+                        "aetna-web: surface does not advertise COPY_SRC; backdrop-sampling \
+                         shaders will paint nothing on this backend"
+                    );
+                    wgpu::TextureUsages::RENDER_ATTACHMENT
+                };
                 let config = wgpu::SurfaceConfiguration {
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    usage,
                     format,
                     width: inner.width.max(1),
                     height: inner.height.max(1),
@@ -363,6 +398,18 @@ mod web_entry {
 
                 let mut renderer = Runner::new(&device, &queue, format);
                 renderer.set_surface_size(config.width, config.height);
+                // Register every shader the App declared. If the
+                // surface doesn't support COPY_SRC (so multi-pass
+                // backdrop sampling is impossible), skip the backdrop
+                // shaders rather than registering them and rendering
+                // garbage — matches how the vulkano backend used to
+                // degrade before v0.7 step E.
+                for s in shaders {
+                    if s.samples_backdrop && !want_copy_src {
+                        continue;
+                    }
+                    renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
+                }
 
                 *gfx_slot.borrow_mut() = Some(Gfx {
                     window: window_for_async.clone(),
@@ -516,24 +563,19 @@ mod web_entry {
                             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                                 label: Some("aetna_web::encoder"),
                             });
-                    {
-                        let bg = bg_color();
-                        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("aetna_web::pass"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(bg),
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
-                        gfx.renderer.draw(&mut pass);
-                    }
+                    // `render()` owns pass lifetimes itself so it can
+                    // split around `BackdropSnapshot` boundaries when
+                    // the App uses backdrop-sampling shaders. With no
+                    // boundary it collapses to a single Clear pass —
+                    // same behaviour as the old `begin_render_pass +
+                    // draw + end_render_pass` path.
+                    gfx.renderer.render(
+                        &gfx.device,
+                        &mut encoder,
+                        &frame.texture,
+                        &view,
+                        wgpu::LoadOp::Clear(bg_color()),
+                    );
                     gfx.queue.submit(Some(encoder.finish()));
                     frame.present();
                     let t_after_submit = Instant::now();
