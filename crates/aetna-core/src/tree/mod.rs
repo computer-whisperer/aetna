@@ -113,6 +113,19 @@ pub struct El {
     pub font_size: f32,
     pub font_weight: FontWeight,
     pub font_mono: bool,
+    /// v0.6 — italic styling. Author-set via [`Self::italic`]; honoured
+    /// when this El is a styled text leaf inside an [`Kind::Inlines`]
+    /// parent and (best-effort) on standalone text Els.
+    pub text_italic: bool,
+    /// v0.6 — underline styling. Author-set via [`Self::underline`].
+    pub text_underline: bool,
+    /// v0.6 — strikethrough styling. Author-set via [`Self::strikethrough`].
+    pub text_strikethrough: bool,
+    /// v0.6 — link target URL. When set on a text leaf inside
+    /// [`Kind::Inlines`], the run renders as a link (themed) and runs
+    /// sharing a URL group together for hit-test. Author-set via
+    /// [`Self::link`].
+    pub text_link: Option<String>,
 
     pub children: Vec<El>,
 
@@ -182,6 +195,10 @@ impl Default for El {
             font_size: crate::tokens::FONT_BASE,
             font_weight: FontWeight::Regular,
             font_mono: false,
+            text_italic: false,
+            text_underline: false,
+            text_strikethrough: false,
+            text_link: None,
             children: Vec::new(),
             opacity: 1.0,
             translate: (0.0, 0.0),
@@ -391,6 +408,44 @@ impl El {
         self
     }
 
+    /// v0.6 — italic styling for a text run. Honoured by the
+    /// [`Kind::Inlines`] layout pass and (best-effort) on standalone
+    /// text Els.
+    pub fn italic(mut self) -> Self {
+        self.text_italic = true;
+        self
+    }
+
+    /// v0.6 — underline styling for a text run.
+    pub fn underline(mut self) -> Self {
+        self.text_underline = true;
+        self
+    }
+
+    /// v0.6 — strikethrough styling for a text run.
+    pub fn strikethrough(mut self) -> Self {
+        self.text_strikethrough = true;
+        self
+    }
+
+    /// v0.6 — markdown-flavoured inline-code styling. Today this is
+    /// `mono`; later slices will add a tinted background per the
+    /// theme. Authors who want raw mono without code chrome should
+    /// use [`Self::mono`] instead.
+    pub fn code(mut self) -> Self {
+        self.font_mono = true;
+        self
+    }
+
+    /// v0.6 — mark this run as a link to `url`. Inside an
+    /// [`Kind::Inlines`] parent the run paints with a link-themed
+    /// color; runs sharing the same URL group together for hit-test
+    /// (v0.6.3).
+    pub fn link(mut self, url: impl Into<String>) -> Self {
+        self.text_link = Some(url.into());
+        self
+    }
+
     // ---- Children ----
     pub fn child(mut self, c: impl Into<El>) -> Self {
         self.children.push(c.into());
@@ -487,6 +542,48 @@ where
         .axis(Axis::Column)
         .clip()
         .scrollable()
+}
+
+/// v0.6 — block whose direct children flow inline (text leaves +
+/// embeds + hard breaks). Models HTML's `<p>` shape: heterogeneous
+/// children, attributed runs, optional inline embeds. Children are
+/// styled via the existing modifier chain (`.bold()`, `.italic()`,
+/// `.color(c)`, `.code()`, `.link(url)`, etc.) — there is no parallel
+/// `RichText`/`TextRun` type.
+///
+/// ```ignore
+/// text_runs([
+///     text("Aetna v0.6 — "),
+///     text("rich text").bold(),
+///     text(" composition."),
+///     hard_break(),
+///     text("Custom shaders, custom layouts, "),
+///     text("virtual_list").code(),
+///     text(" — and now inline runs."),
+/// ])
+/// ```
+#[track_caller]
+pub fn text_runs<I, E>(children: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    El::new(Kind::Inlines)
+        .at_loc(Location::caller())
+        .axis(Axis::Column)
+        .align(Align::Start)
+        .children(children)
+}
+
+/// v0.6 — forced line break inside a [`text_runs`] block. Mirrors
+/// HTML's `<br>`. Outside an `Inlines` parent, lays out as a
+/// zero-size leaf.
+#[track_caller]
+pub fn hard_break() -> El {
+    El::new(Kind::HardBreak)
+        .at_loc(Location::caller())
+        .width(Size::Hug)
+        .height(Size::Hug)
 }
 
 /// v0.5 — virtualized vertical list of `count` rows of fixed height

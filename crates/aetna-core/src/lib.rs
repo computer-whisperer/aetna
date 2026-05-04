@@ -105,7 +105,8 @@ pub use text_metrics::{
 };
 pub use tree::{
     Align, Axis, Color, El, FontWeight, InteractionState, Justify, Kind, Rect, Sides, Size, Source,
-    TextAlign, TextWrap, column, divider, row, scroll, spacer, stack, virtual_list,
+    TextAlign, TextWrap, column, divider, hard_break, row, scroll, spacer, stack, text_runs,
+    virtual_list,
 };
 
 pub use badge::badge;

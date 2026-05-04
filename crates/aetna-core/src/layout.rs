@@ -189,6 +189,8 @@ fn role_token(k: &Kind) -> &'static str {
         Kind::Modal => "modal",
         Kind::Scroll => "scroll",
         Kind::VirtualList => "virtual_list",
+        Kind::Inlines => "inlines",
+        Kind::HardBreak => "hard_break",
         Kind::Custom(name) => name,
     }
 }
@@ -980,6 +982,24 @@ mod tests {
             .height(Size::Fixed(200.0));
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+    }
+
+    #[test]
+    fn text_runs_constructor_shape_smoke() {
+        let el = crate::tree::text_runs([
+            crate::text::text("Hello, "),
+            crate::text::text("world").bold(),
+            crate::tree::hard_break(),
+            crate::text::text("of text").italic(),
+        ]);
+        assert_eq!(el.kind, Kind::Inlines);
+        assert_eq!(el.children.len(), 4);
+        assert!(matches!(
+            el.children[1].font_weight,
+            FontWeight::Bold | FontWeight::Semibold
+        ));
+        assert_eq!(el.children[2].kind, Kind::HardBreak);
+        assert!(el.children[3].text_italic);
     }
 
     #[test]

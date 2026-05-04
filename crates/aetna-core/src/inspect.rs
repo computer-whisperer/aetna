@@ -97,6 +97,8 @@ fn kind_str(k: &Kind) -> &str {
         Kind::Modal => "Modal",
         Kind::Scroll => "Scroll",
         Kind::VirtualList => "VirtualList",
+        Kind::Inlines => "Inlines",
+        Kind::HardBreak => "HardBreak",
         Kind::Custom(name) => name,
     }
 }
