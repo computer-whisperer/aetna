@@ -8,7 +8,12 @@
 //!
 //! Reads computed rects from [`UiState::computed_rects`] (populated by
 //! the layout pass) — the tree carries identity (`computed_id`) but not
-//! geometry.
+//! geometry. Paint-time transforms (`translate`, `scale`) are then
+//! applied in the same way `draw_ops::push_node` applies them, so
+//! hit-testing matches what the user sees. Parent rects are *not*
+//! barriers: a child can paint outside its parent (a swatch lifting on
+//! `.scale(1.15)`) and still be hittable. Only `clip()` (an explicit
+//! author-declared boundary) gates descent into descendants.
 
 use crate::event::UiTarget;
 use crate::state::UiState;
@@ -22,7 +27,7 @@ pub fn hit_test(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<Stri
 
 /// Find the topmost keyed node and return full target metadata.
 pub fn hit_test_target(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<UiTarget> {
-    match hit_test_rec(root, ui_state, point, None) {
+    match hit_test_rec(root, ui_state, point, None, (0.0, 0.0)) {
         Hit::Target(target) => Some(target),
         Hit::Blocked | Hit::Miss => None,
     }
@@ -39,41 +44,59 @@ fn hit_test_rec(
     ui_state: &UiState,
     point: (f32, f32),
     inherited_clip: Option<Rect>,
+    inherited_translate: (f32, f32),
 ) -> Hit {
     if let Some(clip) = inherited_clip
         && !clip.contains(point.0, point.1)
     {
         return Hit::Miss;
     }
+    // Mirror `draw_ops::push_node`: translate accumulates through the
+    // subtree; scale applies to this node only and doesn't propagate.
+    // Hit-testing must use the same painted rect that the user sees, or
+    // clicks on a translated card land on whatever sibling occupies the
+    // un-translated layout slot.
+    let total_translate = (
+        inherited_translate.0 + node.translate.0,
+        inherited_translate.1 + node.translate.1,
+    );
     let computed = ui_state.rect(&node.computed_id);
-    if !computed.contains(point.0, point.1) {
-        return Hit::Miss;
-    }
+    let translated_rect = translated(computed, total_translate);
+    let painted_rect = scaled_around_center(translated_rect, node.scale);
+    // We do NOT early-return on `!painted_rect.contains(point)`.
+    // A child can paint outside its parent's rect (the palette
+    // swatches `.scale(1.15).translate(0, -8)` lift over the row's
+    // computed bounds) and the only hard boundary is `inherited_clip`.
+    // The painted-rect containment is checked below for self-as-target.
     let child_clip = if node.clip {
         match inherited_clip {
             Some(clip) => Some(
-                clip.intersect(computed)
+                clip.intersect(painted_rect)
                     .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
             ),
-            None => Some(computed),
+            None => Some(painted_rect),
         }
     } else {
         inherited_clip
     };
     // Children paint last → are on top → check first.
     for child in node.children.iter().rev() {
-        match hit_test_rec(child, ui_state, point, child_clip) {
+        match hit_test_rec(child, ui_state, point, child_clip, total_translate) {
             Hit::Target(target) => return Hit::Target(target),
             Hit::Blocked => return Hit::Blocked,
             Hit::Miss => {}
         }
     }
-    // No child hit. Self counts only if it has a key.
+    // No child hit. Self counts only if its painted rect contains the
+    // point AND it's keyed (author tagged it interactive).
+    if !painted_rect.contains(point.0, point.1) {
+        return Hit::Miss;
+    }
     if let Some(key) = &node.key {
         return Hit::Target(UiTarget {
             key: key.clone(),
             node_id: node.computed_id.clone(),
-            rect: computed,
+            rect: painted_rect,
         });
     }
     if node.block_pointer {
@@ -87,7 +110,7 @@ fn hit_test_rec(
 /// Used to route wheel events.
 pub(crate) fn scroll_target_at(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<String> {
     let mut hit = None;
-    scroll_target_rec(root, ui_state, point, None, &mut hit);
+    scroll_target_rec(root, ui_state, point, None, (0.0, 0.0), &mut hit);
     hit
 }
 
@@ -96,6 +119,7 @@ fn scroll_target_rec(
     ui_state: &UiState,
     point: (f32, f32),
     inherited_clip: Option<Rect>,
+    inherited_translate: (f32, f32),
     out: &mut Option<String>,
 ) {
     if let Some(clip) = inherited_clip
@@ -103,27 +127,51 @@ fn scroll_target_rec(
     {
         return;
     }
+    let total_translate = (
+        inherited_translate.0 + node.translate.0,
+        inherited_translate.1 + node.translate.1,
+    );
     let computed = ui_state.rect(&node.computed_id);
-    if !computed.contains(point.0, point.1) {
-        return;
-    }
-    if node.scrollable {
+    let translated_rect = translated(computed, total_translate);
+    let painted_rect = scaled_around_center(translated_rect, node.scale);
+    // Self counts as a scroll target only if its painted rect contains
+    // the point — but we still recurse into children regardless, since
+    // a child can paint outside its parent (translate/scale).
+    if node.scrollable && painted_rect.contains(point.0, point.1) {
         *out = Some(node.computed_id.clone());
     }
     let child_clip = if node.clip {
         match inherited_clip {
             Some(clip) => Some(
-                clip.intersect(computed)
+                clip.intersect(painted_rect)
                     .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
             ),
-            None => Some(computed),
+            None => Some(painted_rect),
         }
     } else {
         inherited_clip
     };
     for c in &node.children {
-        scroll_target_rec(c, ui_state, point, child_clip, out);
+        scroll_target_rec(c, ui_state, point, child_clip, total_translate, out);
     }
+}
+
+fn translated(r: Rect, offset: (f32, f32)) -> Rect {
+    if offset.0 == 0.0 && offset.1 == 0.0 {
+        return r;
+    }
+    Rect::new(r.x + offset.0, r.y + offset.1, r.w, r.h)
+}
+
+fn scaled_around_center(r: Rect, s: f32) -> Rect {
+    if (s - 1.0).abs() < f32::EPSILON {
+        return r;
+    }
+    let cx = r.center_x();
+    let cy = r.center_y();
+    let w = r.w * s;
+    let h = r.h * s;
+    Rect::new(cx - w * 0.5, cy - h * 0.5, w, h)
 }
 
 #[cfg(test)]
@@ -198,6 +246,83 @@ mod tests {
 
         let clipped = find_rect(&tree, &state, "clipped").expect("clipped button rect");
         assert!(hit_test(&tree, &state, (clipped.center_x(), clipped.center_y())).is_none());
+    }
+
+    #[test]
+    fn hit_test_follows_ancestor_translate() {
+        // A keyed button inside a column that is translated horizontally
+        // by 120 px must be hit-testable at its translated location, and
+        // the un-translated layout slot should miss. This guards against
+        // a regression where `.translate()` (paint-time) shifts visuals
+        // but hit-testing still uses layout rects, causing clicks on the
+        // visually-shifted widget to land on whatever sibling occupies
+        // the original layout slot.
+        let mut tree = row([
+            column([button("A").key("a")]).translate(120.0, 0.0),
+            button("B").key("b"),
+        ]);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 100.0));
+
+        let untranslated = find_rect(&tree, &state, "a").expect("a layout rect");
+        let translated_center = (untranslated.center_x() + 120.0, untranslated.center_y());
+        let untranslated_center = (untranslated.center_x(), untranslated.center_y());
+
+        assert_eq!(
+            hit_test(&tree, &state, translated_center).as_deref(),
+            Some("a"),
+            "click at translated location should hit the translated button"
+        );
+        // The original layout slot may still belong to an ancestor row,
+        // but it must not return "a" — that would be the bug.
+        assert_ne!(
+            hit_test(&tree, &state, untranslated_center).as_deref(),
+            Some("a"),
+            "click at the un-translated layout slot must not hit the translated button"
+        );
+    }
+
+    #[test]
+    fn hit_test_child_lifted_above_parent_still_hits() {
+        // Reproduces the palette swatch bug: a child uses
+        // `.scale(1.15).translate(0, -8)` so its painted rect lifts
+        // above the parent row's layout rect. A click on the lifted
+        // top edge must still find the child — the parent row's bounds
+        // should not be a hit-test boundary, since only `clip()` is.
+        let mut tree = row([crate::card("c", [crate::text("body")])
+            .key("swatch")
+            .width(Size::Fixed(120.0))
+            .height(Size::Fixed(120.0))
+            .scale(1.15)
+            .translate(0.0, -20.0)]);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+
+        let layout_rect = find_rect(&tree, &state, "swatch").expect("swatch rect");
+        // Painted top is roughly: layout.y - 20 (translate) - layout.h * 0.075 (scale lift).
+        let painted_top_y = layout_rect.y - 20.0 - layout_rect.h * 0.075 + 1.0;
+        let painted_top_x = layout_rect.center_x();
+        assert_eq!(
+            hit_test(&tree, &state, (painted_top_x, painted_top_y)).as_deref(),
+            Some("swatch"),
+            "click on lifted top of scaled+translated child should hit"
+        );
+    }
+
+    #[test]
+    fn hit_test_translate_inherits_to_descendants() {
+        // Ancestor translate should propagate through a chain of children.
+        let mut tree = column([row([button("X").key("x")]).translate(0.0, 50.0)]);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+
+        let pre = find_rect(&tree, &state, "x").expect("x layout rect");
+        let translated = (pre.center_x(), pre.center_y() + 50.0);
+        assert_eq!(
+            hit_test(&tree, &state, translated).as_deref(),
+            Some("x"),
+            "ancestor translate must accumulate to descendants"
+        );
     }
 
     #[test]
