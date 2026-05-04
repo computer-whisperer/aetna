@@ -13,14 +13,37 @@
 //! crate (so the asset bytes don't bloat the engine source tree). At
 //! construction the atlas loads every byte slice in
 //! [`aetna_fonts::DEFAULT_FONTS`] into its `fontdb`. Callers that need
-//! a custom bundle (their own brand typeface, full pan-CJK, color
-//! emoji once that lands) use [`GlyphAtlas::register_font`] to push
-//! more fonts into the database, or build with
-//! `default-features = false` on aetna-core to drop the bundled assets
-//! entirely.
+//! a custom bundle (their own brand typeface, full pan-CJK, additional
+//! color fonts) use [`GlyphAtlas::register_font`] to push more fonts
+//! into the database, or build with `default-features = false` on
+//! aetna-core to drop the bundled assets entirely.
 //!
 //! cosmic-text walks fontdb when a primary face lacks a glyph, so any
 //! font in the database participates in fallback automatically.
+//!
+//! ## Color glyphs
+//!
+//! The atlas is unified RGBA — every glyph is stored as 4 bytes/pixel
+//! so the same shader path handles outline text and color glyphs.
+//! Three color formats flow through swash and the
+//! [`Content::Color`](swash::scale::image::Content) arm of
+//! [`expand_to_rgba`]:
+//!
+//! - **CBDT/CBLC** (Google's color bitmap format) — used by the bundled
+//!   `NotoColorEmoji`. swash decodes the embedded PNG/raw bitmaps and
+//!   resamples to the requested em size.
+//! - **COLRv0 + CPAL** (Microsoft's layered-outline format) — each
+//!   glyph is a stack of solid-color outlines drawn in palette order.
+//!   swash composites the layers internally and emits one RGBA bitmap.
+//!   Used by Material Symbols' color variant, Bungee Color, etc.
+//! - **sbix** (Apple's color-bitmap format) — same `Content::Color`
+//!   path; no in-tree fixtures yet.
+//!
+//! What we **don't** support: **COLRv1** features — gradients, nested
+//! transforms, blend modes, variable color tables. swash 0.1.19 only
+//! understands COLRv0; a COLRv1 font (Noto Color Emoji's COLR build,
+//! recent Twitter Twemoji v15+) will fall back to v0 layers if the
+//! font supplies them, otherwise the glyph won't rasterize.
 //!
 //! SVG and layout/measurement keep using [`crate::text_metrics`] — its
 //! line-level layout is what they consume; the per-glyph artifact here
@@ -978,6 +1001,71 @@ mod tests {
         // Empty stack is rejected — primary family stays put.
         atlas.set_default_family_stack(vec![]);
         assert_eq!(atlas.default_family(), "MyBrand");
+    }
+
+    #[test]
+    fn colr_v0_glyph_rasterizes_with_palette_colors() {
+        // Synthetic COLRv0 font: a single PUA glyph at U+E001 composed
+        // of two CPAL layers (red square, blue diamond on top). swash's
+        // ColorOutline source should rasterize both layers, blit each
+        // with its palette color into one RGBA buffer, and emit
+        // Content::Color — which the unified atlas captures as a color
+        // glyph. Verifies that COLRv0 (not just CBDT) flows through the
+        // engine.
+        const COLR_FONT: &[u8] = include_bytes!("../tests/fixtures/test_colr.ttf");
+        let mut atlas = GlyphAtlas::new();
+        atlas.register_font(COLR_FONT.to_vec());
+        atlas.set_default_family_stack(vec!["AetnaColrTest".into()]);
+
+        let run = atlas.shape_and_rasterize(
+            "\u{E001}",
+            48.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            TextAnchor::Start,
+            None,
+            Color::rgb(255, 255, 255),
+        );
+        assert_eq!(run.glyphs.len(), 1, "expected one glyph for U+E001");
+        let slot = atlas.slot(run.glyphs[0].key).expect("colr slot");
+        assert!(
+            slot.is_color,
+            "COLR glyph should be marked is_color = true; got {slot:?}"
+        );
+
+        // Walk the slot's rect and look for distinct red and blue
+        // pixels. Both must be present for the test to prove that
+        // multi-layer COLR rasterization actually composited.
+        let page = &atlas.pages()[slot.page as usize];
+        let stride = page.width as usize * ATLAS_BYTES_PER_PIXEL as usize;
+        let mut found_red = false;
+        let mut found_blue = false;
+        for row in 0..slot.rect.h as usize {
+            for col in 0..slot.rect.w as usize {
+                let off = (slot.rect.y as usize + row) * stride + (slot.rect.x as usize + col) * 4;
+                let r = page.pixels[off];
+                let g = page.pixels[off + 1];
+                let b = page.pixels[off + 2];
+                let a = page.pixels[off + 3];
+                if a < 200 {
+                    continue;
+                }
+                if r > 200 && g < 60 && b < 60 {
+                    found_red = true;
+                }
+                if b > 200 && r < 60 && g < 60 {
+                    found_blue = true;
+                }
+            }
+        }
+        assert!(
+            found_red,
+            "expected red pixels from CPAL palette index 0 (square layer)"
+        );
+        assert!(
+            found_blue,
+            "expected blue pixels from CPAL palette index 1 (diamond layer)"
+        );
     }
 
     #[cfg(feature = "emoji")]
