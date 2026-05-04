@@ -95,7 +95,7 @@ pub struct InstanceRun {
     pub count: u32,
 }
 
-/// A contiguous run of vector-icon line segments sharing a scissor.
+/// A contiguous run of backend-owned vector icon geometry sharing a scissor.
 #[derive(Clone, Copy)]
 pub struct IconRun {
     pub scissor: Option<PhysicalScissor>,
@@ -116,9 +116,9 @@ pub struct PhysicalScissor {
 /// Sequencing entry for the recorded paint stream.
 ///
 /// - `QuadRun(idx)` — a contiguous instance run (indexed into `runs`).
-/// - `IconRun(idx)` — a vector icon line-segment run (backend-owned
-///   storage, indexed by the wgpu icon painter; other backends may keep
-///   using text fallback and never emit this item).
+/// - `IconRun(idx)` — a vector icon run (backend-owned storage,
+///   indexed by the wgpu icon painter; other backends may keep using
+///   text fallback and never emit this item).
 /// - `Text(idx)` — a glyph layer (indexed into the backend's
 ///   `TextLayer` vector).
 /// - `BackdropSnapshot` — a pass boundary. The backend ends the

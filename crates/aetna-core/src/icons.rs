@@ -6,10 +6,12 @@
 //! vector-icon pipeline lands.
 
 use std::panic::Location;
+use std::sync::OnceLock;
 
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
+use crate::vector::{VectorAsset, parse_current_color_svg_asset};
 
 pub trait IntoIconName {
     fn into_icon_name(self) -> IconName;
@@ -316,6 +318,61 @@ pub fn icon_strokes(name: IconName) -> &'static [IconStroke] {
     }
 }
 
+pub fn icon_vector_asset(name: IconName) -> &'static VectorAsset {
+    static ASSETS: OnceLock<Vec<VectorAsset>> = OnceLock::new();
+    &ASSETS.get_or_init(build_icon_vector_assets)[name_index(name)]
+}
+
+pub fn all_icon_names() -> &'static [IconName] {
+    &[
+        IconName::Activity,
+        IconName::AlertCircle,
+        IconName::BarChart,
+        IconName::Bell,
+        IconName::Check,
+        IconName::ChevronDown,
+        IconName::ChevronRight,
+        IconName::Command,
+        IconName::Download,
+        IconName::FileText,
+        IconName::Folder,
+        IconName::GitBranch,
+        IconName::GitCommit,
+        IconName::Info,
+        IconName::LayoutDashboard,
+        IconName::Menu,
+        IconName::MoreHorizontal,
+        IconName::Plus,
+        IconName::RefreshCw,
+        IconName::Search,
+        IconName::Settings,
+        IconName::Upload,
+        IconName::Users,
+        IconName::X,
+    ]
+}
+
+fn build_icon_vector_assets() -> Vec<VectorAsset> {
+    all_icon_names()
+        .iter()
+        .map(|name| {
+            let svg = format!(
+                r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{}</svg>"##,
+                icon_path(*name)
+            );
+            parse_current_color_svg_asset(&svg)
+                .unwrap_or_else(|err| panic!("failed to parse built-in icon {}: {err}", name.name()))
+        })
+        .collect()
+}
+
+fn name_index(name: IconName) -> usize {
+    all_icon_names()
+        .iter()
+        .position(|n| *n == name)
+        .expect("IconName missing from all_icon_names")
+}
+
 /// SVG path markup in a 24x24 coordinate system. Paths deliberately use
 /// `currentColor`; the SVG fallback supplies colour/stroke externally.
 pub fn icon_path(name: IconName) -> &'static str {
@@ -399,36 +456,23 @@ mod tests {
 
     #[test]
     fn every_builtin_icon_has_gpu_strokes() {
-        let names = [
-            IconName::Activity,
-            IconName::AlertCircle,
-            IconName::BarChart,
-            IconName::Bell,
-            IconName::Check,
-            IconName::ChevronDown,
-            IconName::ChevronRight,
-            IconName::Command,
-            IconName::Download,
-            IconName::FileText,
-            IconName::Folder,
-            IconName::GitBranch,
-            IconName::GitCommit,
-            IconName::Info,
-            IconName::LayoutDashboard,
-            IconName::Menu,
-            IconName::MoreHorizontal,
-            IconName::Plus,
-            IconName::RefreshCw,
-            IconName::Search,
-            IconName::Settings,
-            IconName::Upload,
-            IconName::Users,
-            IconName::X,
-        ];
-        for name in names {
+        for name in all_icon_names() {
             assert!(
-                !icon_strokes(name).is_empty(),
+                !icon_strokes(*name).is_empty(),
                 "{} has no GPU strokes",
+                name.name()
+            );
+        }
+    }
+
+    #[test]
+    fn every_builtin_icon_parses_as_svg_vector_asset() {
+        for name in all_icon_names() {
+            let asset = icon_vector_asset(*name);
+            assert_eq!(asset.view_box, [0.0, 0.0, 24.0, 24.0]);
+            assert!(
+                !asset.paths.is_empty(),
+                "{} has no vector paths",
                 name.name()
             );
         }

@@ -69,6 +69,7 @@ pub mod text;
 pub mod theme;
 pub mod tokens;
 pub mod tree;
+pub mod vector;
 pub mod widgets;
 
 // Prelude — for `use aetna_core::*;`.
@@ -88,7 +89,9 @@ pub use event::{
 };
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
-pub use icons::{IconStroke, IntoIconName, icon, icon_path, icon_strokes};
+pub use icons::{
+    IconStroke, IntoIconName, all_icon_names, icon, icon_path, icon_strokes, icon_vector_asset,
+};
 pub use ir::{DrawOp, TextAnchor};
 pub use layout::{LayoutCtx, LayoutFn, VirtualItems, layout};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
@@ -106,6 +109,10 @@ pub use tree::{
     Align, Axis, Color, El, FontWeight, IconName, InteractionState, Justify, Kind, Rect, Sides,
     Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column, divider,
     hard_break, row, scroll, spacer, stack, text_runs, virtual_list,
+};
+pub use vector::{
+    VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorLineCap, VectorLineJoin,
+    VectorParseError, VectorPath, VectorSegment, VectorStroke, parse_svg_asset,
 };
 
 pub use widgets::badge::badge;

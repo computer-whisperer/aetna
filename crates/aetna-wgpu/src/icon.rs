@@ -1,32 +1,49 @@
 //! GPU vector-icon rendering.
 //!
-//! Icons are flattened by `aetna-core` into 24x24 line strokes. This
-//! module scales those strokes into the laid-out icon rect and renders
-//! each segment with a small SDF shader. Keeping the icon vocabulary as
-//! stroke instances gives future theme shaders a concrete GPU hook for
-//! non-flat treatments without changing widget APIs.
+//! Built-in icons are parsed from SVG through `usvg` into Aetna's
+//! backend-agnostic vector IR, then tessellated with lyon into triangle
+//! vertices for this backend. This is the canonical geometry path;
+//! shader experimentation can layer on top of these vector vertices.
 
 use std::borrow::Cow;
 use std::ops::Range;
 
-use aetna_core::icons::icon_strokes;
-use aetna_core::paint::{IconInstance, IconRun, PhysicalScissor, rgba_f32};
+use aetna_core::icons::icon_vector_asset;
+use aetna_core::paint::{IconRun, PhysicalScissor, rgba_f32};
 use aetna_core::shader::stock_wgsl;
 use aetna_core::tree::{Color, IconName, Rect};
+use aetna_core::vector::{
+    VectorAsset, VectorColor, VectorFillRule, VectorLineCap, VectorLineJoin, VectorPath,
+    VectorSegment,
+};
 
-const INITIAL_INSTANCE_CAPACITY: usize = 256;
+use bytemuck::{Pod, Zeroable};
+use lyon_tessellation::geometry_builder::{BuffersBuilder, VertexBuffers};
+use lyon_tessellation::math::point;
+use lyon_tessellation::path::Path as LyonPath;
+use lyon_tessellation::{
+    FillOptions, FillTessellator, FillVertex, LineCap, LineJoin, StrokeOptions, StrokeTessellator,
+    StrokeVertex,
+};
 
-const INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
-    1 => Float32x4, // rect
-    2 => Float32x4, // line
-    3 => Float32x4, // color
-    4 => Float32x4, // params
+const INITIAL_VERTEX_CAPACITY: usize = 1024;
+
+const VERTEX_ATTRS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![
+    0 => Float32x2, // position in logical px
+    1 => Float32x4, // linear rgba
 ];
 
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable, Debug)]
+pub(crate) struct VectorVertex {
+    pub pos: [f32; 2],
+    pub color: [f32; 4],
+}
+
 pub(crate) struct IconPaint {
-    instances: Vec<IconInstance>,
-    instance_buf: wgpu::Buffer,
-    instance_capacity: usize,
+    vertices: Vec<VectorVertex>,
+    vertex_buf: wgpu::Buffer,
+    vertex_capacity: usize,
     runs: Vec<IconRun>,
     pipeline: wgpu::RenderPipeline,
 }
@@ -37,9 +54,9 @@ impl IconPaint {
         target_format: wgpu::TextureFormat,
         frame_bind_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("aetna_wgpu::icon::instance_buf"),
-            size: (INITIAL_INSTANCE_CAPACITY * std::mem::size_of::<IconInstance>()) as u64,
+        let vertex_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aetna_wgpu::icon::vertex_buf"),
+            size: (INITIAL_VERTEX_CAPACITY * std::mem::size_of::<VectorVertex>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -50,32 +67,21 @@ impl IconPaint {
             push_constant_ranges: &[],
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("stock::icon_line"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(stock_wgsl::ICON_LINE)),
+            label: Some("stock::vector"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(stock_wgsl::VECTOR)),
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("stock::icon_line"),
+            label: Some("stock::vector"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
-                buffers: &[
-                    wgpu::VertexBufferLayout {
-                        array_stride: (2 * std::mem::size_of::<f32>()) as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[wgpu::VertexAttribute {
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x2,
-                            offset: 0,
-                        }],
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<IconInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &INSTANCE_ATTRS,
-                    },
-                ],
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<VectorVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &VERTEX_ATTRS,
+                }],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -88,7 +94,7 @@ impl IconPaint {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None,
@@ -103,16 +109,16 @@ impl IconPaint {
         });
 
         Self {
-            instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
-            instance_buf,
-            instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            vertices: Vec::with_capacity(INITIAL_VERTEX_CAPACITY),
+            vertex_buf,
+            vertex_capacity: INITIAL_VERTEX_CAPACITY,
             runs: Vec::new(),
             pipeline,
         }
     }
 
     pub(crate) fn frame_begin(&mut self) {
-        self.instances.clear();
+        self.vertices.clear();
         self.runs.clear();
     }
 
@@ -124,37 +130,20 @@ impl IconPaint {
         color: Color,
         stroke_width: f32,
     ) -> Range<usize> {
-        let strokes = icon_strokes(name);
-        if strokes.is_empty() || rect.w <= 0.0 || rect.h <= 0.0 {
+        let asset = icon_vector_asset(name);
+        if rect.w <= 0.0 || rect.h <= 0.0 {
             let start = self.runs.len();
             return start..start;
         }
 
-        let first = self.instances.len() as u32;
-        let sx = rect.w / 24.0;
-        let sy = rect.h / 24.0;
-        let stroke_px = (stroke_width * (sx + sy) * 0.5).max(0.75);
-        let color = rgba_f32(color);
-        let outset = stroke_px * 0.5 + 2.0;
-
-        for stroke in strokes {
-            let x0 = rect.x + stroke.from[0] * sx;
-            let y0 = rect.y + stroke.from[1] * sy;
-            let x1 = rect.x + stroke.to[0] * sx;
-            let y1 = rect.y + stroke.to[1] * sy;
-            let min_x = x0.min(x1) - outset;
-            let min_y = y0.min(y1) - outset;
-            let max_x = x0.max(x1) + outset;
-            let max_y = y0.max(y1) + outset;
-            self.instances.push(IconInstance {
-                rect: [min_x, min_y, max_x - min_x, max_y - min_y],
-                line: [x0, y0, x1, y1],
-                color,
-                params: [stroke_px, 0.0, 0.0, 0.0],
-            });
+        let first = self.vertices.len() as u32;
+        tessellate_asset(asset, rect, color, stroke_width, &mut self.vertices);
+        let count = self.vertices.len() as u32 - first;
+        if count == 0 {
+            let start = self.runs.len();
+            return start..start;
         }
 
-        let count = self.instances.len() as u32 - first;
         let start = self.runs.len();
         self.runs.push(IconRun {
             scissor,
@@ -165,18 +154,18 @@ impl IconPaint {
     }
 
     pub(crate) fn flush(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        if self.instances.len() > self.instance_capacity {
-            let new_cap = self.instances.len().next_power_of_two();
-            self.instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("aetna_wgpu::icon::instance_buf (resized)"),
-                size: (new_cap * std::mem::size_of::<IconInstance>()) as u64,
+        if self.vertices.len() > self.vertex_capacity {
+            let new_cap = self.vertices.len().next_power_of_two();
+            self.vertex_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("aetna_wgpu::icon::vertex_buf (resized)"),
+                size: (new_cap * std::mem::size_of::<VectorVertex>()) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            self.instance_capacity = new_cap;
+            self.vertex_capacity = new_cap;
         }
-        if !self.instances.is_empty() {
-            queue.write_buffer(&self.instance_buf, 0, bytemuck::cast_slice(&self.instances));
+        if !self.vertices.is_empty() {
+            queue.write_buffer(&self.vertex_buf, 0, bytemuck::cast_slice(&self.vertices));
         }
     }
 
@@ -188,7 +177,182 @@ impl IconPaint {
         &self.pipeline
     }
 
-    pub(crate) fn instance_buf(&self) -> &wgpu::Buffer {
-        &self.instance_buf
+    pub(crate) fn vertex_buf(&self) -> &wgpu::Buffer {
+        &self.vertex_buf
+    }
+}
+
+fn tessellate_asset(
+    asset: &VectorAsset,
+    rect: Rect,
+    current_color: Color,
+    stroke_width: f32,
+    out: &mut Vec<VectorVertex>,
+) {
+    let [vx, vy, vw, vh] = asset.view_box;
+    let sx = rect.w / vw.max(1.0);
+    let sy = rect.h / vh.max(1.0);
+    let stroke_scale = (sx + sy) * 0.5;
+
+    for vector_path in &asset.paths {
+        let path = build_lyon_path(vector_path, rect, [vx, vy], [sx, sy]);
+        if let Some(fill) = vector_path.fill {
+            let color = resolve_color(fill.color, current_color, fill.opacity);
+            let mut geometry: VertexBuffers<VectorVertex, u16> = VertexBuffers::new();
+            let options = FillOptions::tolerance(0.05).with_fill_rule(match fill.rule {
+                VectorFillRule::NonZero => lyon_tessellation::FillRule::NonZero,
+                VectorFillRule::EvenOdd => lyon_tessellation::FillRule::EvenOdd,
+            });
+            let _ = FillTessellator::new().tessellate_path(
+                &path,
+                &options,
+                &mut BuffersBuilder::new(&mut geometry, |v: FillVertex<'_>| {
+                    let p = v.position();
+                    VectorVertex {
+                        pos: [p.x, p.y],
+                        color,
+                    }
+                }),
+            );
+            append_indexed(&geometry, out);
+        }
+
+        if let Some(stroke) = vector_path.stroke {
+            let color = resolve_color(stroke.color, current_color, stroke.opacity);
+            let width = if matches!(stroke.color, VectorColor::CurrentColor) {
+                stroke_width * stroke_scale
+            } else {
+                stroke.width * stroke_scale
+            }
+            .max(0.5);
+            let mut geometry: VertexBuffers<VectorVertex, u16> = VertexBuffers::new();
+            let options = StrokeOptions::tolerance(0.05)
+                .with_line_width(width)
+                .with_line_cap(match stroke.line_cap {
+                    VectorLineCap::Butt => LineCap::Butt,
+                    VectorLineCap::Round => LineCap::Round,
+                    VectorLineCap::Square => LineCap::Square,
+                })
+                .with_line_join(match stroke.line_join {
+                    VectorLineJoin::Miter => LineJoin::Miter,
+                    VectorLineJoin::MiterClip => LineJoin::MiterClip,
+                    VectorLineJoin::Round => LineJoin::Round,
+                    VectorLineJoin::Bevel => LineJoin::Bevel,
+                })
+                .with_miter_limit(stroke.miter_limit.max(1.0));
+            let _ = StrokeTessellator::new().tessellate_path(
+                &path,
+                &options,
+                &mut BuffersBuilder::new(&mut geometry, |v: StrokeVertex<'_, '_>| {
+                    let p = v.position();
+                    VectorVertex {
+                        pos: [p.x, p.y],
+                        color,
+                    }
+                }),
+            );
+            append_indexed(&geometry, out);
+        }
+    }
+}
+
+fn build_lyon_path(
+    path: &VectorPath,
+    rect: Rect,
+    view_origin: [f32; 2],
+    scale: [f32; 2],
+) -> LyonPath {
+    let mut builder = LyonPath::builder();
+    let mut open = false;
+    for segment in &path.segments {
+        match *segment {
+            VectorSegment::MoveTo(p) => {
+                if open {
+                    builder.end(false);
+                }
+                builder.begin(map_point(rect, view_origin, scale, p));
+                open = true;
+            }
+            VectorSegment::LineTo(p) => {
+                builder.line_to(map_point(rect, view_origin, scale, p));
+            }
+            VectorSegment::QuadTo(c, p) => {
+                builder.quadratic_bezier_to(
+                    map_point(rect, view_origin, scale, c),
+                    map_point(rect, view_origin, scale, p),
+                );
+            }
+            VectorSegment::CubicTo(c0, c1, p) => {
+                builder.cubic_bezier_to(
+                    map_point(rect, view_origin, scale, c0),
+                    map_point(rect, view_origin, scale, c1),
+                    map_point(rect, view_origin, scale, p),
+                );
+            }
+            VectorSegment::Close => {
+                if open {
+                    builder.close();
+                    open = false;
+                }
+            }
+        }
+    }
+    if open {
+        builder.end(false);
+    }
+    builder.build()
+}
+
+fn map_point(
+    rect: Rect,
+    view_origin: [f32; 2],
+    scale: [f32; 2],
+    p: [f32; 2],
+) -> lyon_tessellation::math::Point {
+    point(
+        rect.x + (p[0] - view_origin[0]) * scale[0],
+        rect.y + (p[1] - view_origin[1]) * scale[1],
+    )
+}
+
+fn resolve_color(color: VectorColor, current_color: Color, opacity: f32) -> [f32; 4] {
+    let mut rgba = match color {
+        VectorColor::CurrentColor => rgba_f32(current_color),
+        VectorColor::Solid(color) => rgba_f32(color),
+    };
+    rgba[3] *= opacity.clamp(0.0, 1.0);
+    rgba
+}
+
+fn append_indexed(geometry: &VertexBuffers<VectorVertex, u16>, out: &mut Vec<VectorVertex>) {
+    for index in &geometry.indices {
+        if let Some(vertex) = geometry.vertices.get(*index as usize) {
+            out.push(*vertex);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aetna_core::icons::all_icon_names;
+
+    #[test]
+    fn tessellates_every_builtin_icon() {
+        for name in all_icon_names() {
+            let mut vertices = Vec::new();
+            tessellate_asset(
+                icon_vector_asset(*name),
+                Rect::new(0.0, 0.0, 16.0, 16.0),
+                Color::rgb(15, 23, 42),
+                2.0,
+                &mut vertices,
+            );
+            assert!(
+                !vertices.is_empty(),
+                "{} produced no tessellated vertices",
+                name.name()
+            );
+        }
     }
 }

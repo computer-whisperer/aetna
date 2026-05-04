@@ -862,9 +862,8 @@ impl Runner {
                     set_scissor(pass, run.scissor, full);
                     pass.set_pipeline(self.icon_paint.pipeline());
                     pass.set_bind_group(0, &self.quad_bind_group, &[]);
-                    pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
-                    pass.set_vertex_buffer(1, self.icon_paint.instance_buf().slice(..));
-                    pass.draw(0..4, run.first..run.first + run.count);
+                    pass.set_vertex_buffer(0, self.icon_paint.vertex_buf().slice(..));
+                    pass.draw(run.first..run.first + run.count, 0..1);
                 }
                 PaintItem::BackdropSnapshot => {
                     // Marker only — `render()` splits the slice on

@@ -1,0 +1,97 @@
+//! Shared icon gallery fixture for windowed and headless wgpu demos.
+
+use aetna_core::*;
+
+pub struct IconGallery;
+
+impl App for IconGallery {
+    fn build(&self) -> El {
+        icon_gallery()
+    }
+}
+
+pub fn icon_gallery() -> El {
+    let names = all_icon_names();
+    let mut rows = Vec::new();
+    for chunk in names.chunks(6) {
+        rows.push(
+            row(chunk
+                .iter()
+                .map(|name| icon_tile(*name))
+                .collect::<Vec<_>>())
+            .gap(tokens::SPACE_MD)
+            .width(Size::Fill(1.0)),
+        );
+    }
+
+    column([
+        row([
+            column([
+                h1("Vector icons"),
+                paragraph("SVG source parsed by usvg, tessellated by lyon, drawn through wgpu.")
+                    .muted()
+                    .max_lines(2),
+            ])
+            .gap(tokens::SPACE_XS)
+            .width(Size::Fill(1.0)),
+            row([
+                button_with_icon("upload", "Action").secondary(),
+                icon_button("bell").ghost(),
+            ])
+            .gap(tokens::SPACE_SM),
+        ])
+        .align(Align::Center)
+        .width(Size::Fill(1.0)),
+        card("Built-ins", rows),
+        row([
+            button_with_icon("search", "Search").primary(),
+            button_with_icon("download", "Export").secondary(),
+            button_with_icon("refresh-cw", "Refresh").ghost(),
+            spacer(),
+            icon("settings")
+                .icon_size(22.0)
+                .text_color(tokens::TEXT_MUTED_FOREGROUND),
+        ])
+        .gap(tokens::SPACE_SM)
+        .align(Align::Center)
+        .width(Size::Fill(1.0)),
+    ])
+    .gap(tokens::SPACE_LG)
+    .padding(tokens::SPACE_XL)
+    .width(Size::Fill(1.0))
+    .height(Size::Hug)
+}
+
+fn icon_tile(name: IconName) -> El {
+    column([
+        icon(name)
+            .icon_size(28.0)
+            .icon_stroke_width(2.0)
+            .text_color(color_for_icon(name)),
+        text(name.name())
+            .small()
+            .muted()
+            .center_text()
+            .ellipsis()
+            .width(Size::Fill(1.0)),
+    ])
+    .gap(tokens::SPACE_SM)
+    .align(Align::Center)
+    .justify(Justify::Center)
+    .padding(tokens::SPACE_MD)
+    .width(Size::Fixed(118.0))
+    .height(Size::Fixed(92.0))
+    .fill(tokens::BG_CARD)
+    .stroke(tokens::BORDER)
+    .radius(tokens::RADIUS_MD)
+}
+
+fn color_for_icon(name: IconName) -> Color {
+    match name {
+        IconName::AlertCircle | IconName::X => tokens::DESTRUCTIVE,
+        IconName::Check => tokens::SUCCESS,
+        IconName::Bell | IconName::Activity => tokens::WARNING,
+        IconName::Download | IconName::Upload | IconName::RefreshCw => tokens::PRIMARY,
+        _ => tokens::TEXT_FOREGROUND,
+    }
+}

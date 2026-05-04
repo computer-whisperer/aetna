@@ -1,0 +1,44 @@
+// stock::vector — tessellated SVG/vector geometry.
+//
+// CPU-side SVG assets are normalized into Aetna vector IR and
+// tessellated into triangles. This shader is intentionally plain: it
+// establishes the triangle pipeline that later theme/material shaders
+// can enrich with local coordinates, bevels, or other effects.
+
+struct FrameUniforms {
+    viewport: vec2<f32>,
+    time: f32,
+    _pad: f32,
+};
+
+@group(0) @binding(0) var<uniform> frame: FrameUniforms;
+
+struct VertexInput {
+    @location(0) pos_px: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
+    let clip = vec4<f32>(
+        in.pos_px.x / frame.viewport.x * 2.0 - 1.0,
+        1.0 - in.pos_px.y / frame.viewport.y * 2.0,
+        0.0,
+        1.0,
+    );
+
+    var out: VertexOutput;
+    out.clip_pos = clip;
+    out.color = in.color;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(in.color.rgb * in.color.a, in.color.a);
+}

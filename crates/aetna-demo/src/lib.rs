@@ -18,7 +18,9 @@
 //! - Requests a redraw whenever interaction state changes (mouse move,
 //!   button down/up) so hover/press visuals are immediate.
 
+pub mod icon_gallery;
 pub mod showcase;
+pub use icon_gallery::IconGallery;
 pub use showcase::Showcase;
 
 use std::sync::Arc;
