@@ -74,7 +74,14 @@ impl LintReport {
 pub fn lint(root: &El, ui_state: &UiState, library_path_marker: Option<&str>) -> LintReport {
     let mut r = LintReport::default();
     let mut seen_ids: std::collections::BTreeMap<String, usize> = Default::default();
-    walk(root, ui_state, &mut r, &mut seen_ids, library_path_marker);
+    walk(
+        root,
+        None,
+        ui_state,
+        &mut r,
+        &mut seen_ids,
+        library_path_marker,
+    );
     for (id, n) in seen_ids {
         if n > 1 {
             r.findings.push(Finding {
@@ -90,6 +97,7 @@ pub fn lint(root: &El, ui_state: &UiState, library_path_marker: Option<&str>) ->
 
 fn walk(
     n: &El,
+    parent_kind: Option<&Kind>,
     ui_state: &UiState,
     r: &mut LintReport,
     seen: &mut std::collections::BTreeMap<String, usize>,
@@ -102,6 +110,12 @@ fn walk(
         Some(marker) => !n.source.file.contains(marker),
         None => true,
     };
+    // Children of an Inlines paragraph are encoded into one
+    // AttributedText draw op by draw_ops; their individual rects are
+    // intentionally zero-size. Skip the per-text overflow + per-child
+    // overflow checks for them — the paragraph as a whole holds the
+    // rect, so any overflow lint applies at the Inlines node level.
+    let inside_inlines = matches!(parent_kind, Some(Kind::Inlines));
 
     if from_user {
         if let Some(c) = n.fill
@@ -146,7 +160,7 @@ fn walk(
                 ),
             });
         }
-        if n.text.is_some() {
+        if n.text.is_some() && !inside_inlines {
             let available_width = match n.text_wrap {
                 TextWrap::NoWrap => None,
                 TextWrap::Wrap => Some(computed.w),
@@ -173,7 +187,10 @@ fn walk(
     // Overflow: child rect extends past parent. Scrollable parents
     // overflow their content on the main axis by design — that's the
     // whole point — so don't flag children of a scroll viewport.
-    let suppress_overflow = n.scrollable;
+    // Inlines parents intentionally zero-size their children (the
+    // paragraph paints them as one AttributedText), so per-child rect
+    // checks would always fire — suppress.
+    let suppress_overflow = n.scrollable || matches!(n.kind, Kind::Inlines);
     for c in &n.children {
         let c_rect = ui_state.rect(&c.computed_id);
         if !suppress_overflow && !rect_contains(computed, c_rect, 0.5) {
@@ -191,7 +208,7 @@ fn walk(
                 ),
             });
         }
-        walk(c, ui_state, r, seen, lib_marker);
+        walk(c, Some(&n.kind), ui_state, r, seen, lib_marker);
     }
 }
 

@@ -18,7 +18,9 @@ use std::sync::Arc;
 
 use aetna_core::ir::TextAnchor;
 use aetna_core::shader::stock_wgsl;
-use aetna_core::text_atlas::{ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas};
+use aetna_core::text_atlas::{
+    ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas, RunStyle, ShapedRun,
+};
 use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};
 use bytemuck::{Pod, Zeroable};
 use smallvec::smallvec;
@@ -171,15 +173,44 @@ impl TextPaint {
         scale_factor: f32,
     ) -> Range<usize> {
         let physical_size = size * scale_factor;
-        let avail = match (wrap, anchor) {
-            (TextWrap::Wrap, _) => Some(rect.w * scale_factor),
-            (TextWrap::NoWrap, TextAnchor::Start) => None,
-            (TextWrap::NoWrap, TextAnchor::Middle | TextAnchor::End) => Some(rect.w * scale_factor),
-        };
+        let avail = wrap_available_width(rect.w, scale_factor, wrap, anchor);
         let shaped =
             self.atlas
                 .shape_and_rasterize(text, physical_size, weight, wrap, anchor, avail, color);
+        self.emit_shaped_glyphs(rect, scissor, &shaped, wrap, scale_factor)
+    }
 
+    #[allow(clippy::too_many_arguments)]
+    fn record_runs_inner(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        runs: &[(String, RunStyle)],
+        size: f32,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        scale_factor: f32,
+    ) -> Range<usize> {
+        let physical_size = size * scale_factor;
+        let avail = wrap_available_width(rect.w, scale_factor, wrap, anchor);
+        let runs_ref: Vec<(&str, RunStyle)> = runs
+            .iter()
+            .map(|(text, style)| (text.as_str(), style.clone()))
+            .collect();
+        let shaped =
+            self.atlas
+                .shape_and_rasterize_runs(&runs_ref, physical_size, wrap, anchor, avail);
+        self.emit_shaped_glyphs(rect, scissor, &shaped, wrap, scale_factor)
+    }
+
+    fn emit_shaped_glyphs(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        shaped: &ShapedRun,
+        wrap: TextWrap,
+        scale_factor: f32,
+    ) -> Range<usize> {
         let runs_start = self.runs.len();
         if shaped.glyphs.is_empty() {
             return runs_start..runs_start;
@@ -443,6 +474,32 @@ impl TextRecorder for TextPaint {
             anchor,
             scale_factor,
         )
+    }
+
+    fn record_runs(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        runs: &[(String, RunStyle)],
+        size: f32,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        scale_factor: f32,
+    ) -> Range<usize> {
+        self.record_runs_inner(rect, scissor, runs, size, wrap, anchor, scale_factor)
+    }
+}
+
+fn wrap_available_width(
+    rect_w: f32,
+    scale_factor: f32,
+    wrap: TextWrap,
+    anchor: TextAnchor,
+) -> Option<f32> {
+    match (wrap, anchor) {
+        (TextWrap::Wrap, _) => Some(rect_w * scale_factor),
+        (TextWrap::NoWrap, TextAnchor::Start) => None,
+        (TextWrap::NoWrap, TextAnchor::Middle | TextAnchor::End) => Some(rect_w * scale_factor),
     }
 }
 

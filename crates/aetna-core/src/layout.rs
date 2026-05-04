@@ -196,6 +196,26 @@ fn role_token(k: &Kind) -> &'static str {
 }
 
 fn layout_children(node: &mut El, node_rect: Rect, ui_state: &mut UiState) {
+    if matches!(node.kind, Kind::Inlines) {
+        // The paragraph paints as a single AttributedText DrawOp;
+        // child Text/HardBreak nodes are aggregated by draw_ops::
+        // push_node and don't paint independently. Give each child a
+        // zero-size rect so the rest of the engine (hit-test, focus,
+        // animation, lint) treats them as non-paint pseudo-nodes. The
+        // paragraph's hit-test target is the Inlines node itself,
+        // sized by node_rect.
+        for c in &mut node.children {
+            ui_state.computed_rects.insert(
+                c.computed_id.clone(),
+                Rect::new(node_rect.x, node_rect.y, 0.0, 0.0),
+            );
+            // Recurse so descendants of Text/HardBreak nodes (rare —
+            // these are leaves in practice — but keeping the invariant
+            // simple) still get their rects assigned.
+            layout_children(c, Rect::new(node_rect.x, node_rect.y, 0.0, 0.0), ui_state);
+        }
+        return;
+    }
     if let Some(items) = node.virtual_items.clone() {
         layout_virtual(node, node_rect, items, ui_state);
         return;
@@ -525,6 +545,15 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
         }
         return apply_min(c, 0.0, 0.0);
     }
+    if matches!(c.kind, Kind::Inlines) {
+        return inline_paragraph_intrinsic(c, available_width);
+    }
+    if matches!(c.kind, Kind::HardBreak) {
+        // HardBreak is meaningful only inside Inlines (where draw_ops
+        // encodes it as `\n` in the attributed text). Outside Inlines
+        // it's a no-op layout-wise.
+        return apply_min(c, 0.0, 0.0);
+    }
     if let Some(text) = &c.text {
         let unwrapped = text_metrics::layout_text(
             text,
@@ -639,6 +668,88 @@ fn apply_min(c: &El, mut w: f32, mut h: f32) -> (f32, f32) {
         h = v;
     }
     (w, h)
+}
+
+/// Approximate intrinsic measurement for `Kind::Inlines` paragraphs.
+///
+/// The paragraph paints through cosmic-text's rich-text shaping (which
+/// resolves bold/italic/mono runs against fontdb), but layout needs a
+/// width and height *before* we get to the renderer. We concatenate
+/// the runs' text into one string and call `text_metrics::layout_text`
+/// at the dominant font size — same approximation the lint pass uses
+/// for single-style text. Bold/italic widths are slightly different
+/// from regular; for body-text paragraphs that difference is well
+/// under one wrap-line and we accept it. If a fixture wraps within
+/// 1-2 characters of a boundary the rendered glyphs may straddle the
+/// laid-out rect by a fraction of a glyph.
+fn inline_paragraph_intrinsic(node: &El, available_width: Option<f32>) -> (f32, f32) {
+    let concat = concat_inline_text(&node.children);
+    let size = inline_paragraph_size(node);
+    let unwrapped = text_metrics::layout_text(
+        &concat,
+        size,
+        FontWeight::Regular,
+        false,
+        TextWrap::NoWrap,
+        None,
+    );
+    let content_available = match node.text_wrap {
+        TextWrap::NoWrap => None,
+        TextWrap::Wrap => available_width
+            .or(match node.width {
+                Size::Fixed(v) => Some(v),
+                Size::Fill(_) | Size::Hug => None,
+            })
+            .map(|w| (w - node.padding.left - node.padding.right).max(1.0)),
+    };
+    let layout = text_metrics::layout_text(
+        &concat,
+        size,
+        FontWeight::Regular,
+        false,
+        node.text_wrap,
+        content_available,
+    );
+    let w = content_available
+        .map(|av| unwrapped.width.min(av) + node.padding.left + node.padding.right)
+        .unwrap_or(layout.width + node.padding.left + node.padding.right);
+    let h = layout.height + node.padding.top + node.padding.bottom;
+    apply_min(node, w, h)
+}
+
+/// Walk an Inlines paragraph's children and produce the source-order
+/// concatenation that draw_ops will hand to the atlas. `Kind::Text`
+/// contributes its `text` field; `Kind::HardBreak` contributes a
+/// newline; anything else contributes nothing (an unsupported child
+/// kind inside Inlines is a programmer error elsewhere — measurement
+/// silently ignores it).
+fn concat_inline_text(children: &[El]) -> String {
+    let mut s = String::new();
+    for c in children {
+        match c.kind {
+            Kind::Text => {
+                if let Some(t) = &c.text {
+                    s.push_str(t);
+                }
+            }
+            Kind::HardBreak => s.push('\n'),
+            _ => {}
+        }
+    }
+    s
+}
+
+/// Pick the font size that drives the paragraph's measurement. We use
+/// the maximum across text children rather than the parent's own
+/// `font_size`, because builders set sizes on the leaf text nodes.
+fn inline_paragraph_size(node: &El) -> f32 {
+    let mut size: f32 = node.font_size;
+    for c in &node.children {
+        if matches!(c.kind, Kind::Text) {
+            size = size.max(c.font_size);
+        }
+    }
+    size
 }
 
 #[cfg(test)]

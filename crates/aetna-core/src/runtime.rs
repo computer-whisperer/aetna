@@ -64,6 +64,7 @@ use crate::paint::{
 };
 use crate::shader::ShaderHandle;
 use crate::state::{AnimationMode, UiState};
+use crate::text_atlas::RunStyle;
 use crate::tree::{Color, El, FontWeight, Rect, TextWrap};
 
 /// Reported back from each backend's `prepare(...)` per frame. The
@@ -369,6 +370,35 @@ impl RunnerCore {
                         self.paint_items.push(PaintItem::Text(index));
                     }
                 }
+                DrawOp::AttributedText {
+                    rect,
+                    scissor,
+                    runs,
+                    size,
+                    wrap,
+                    anchor,
+                    ..
+                } => {
+                    close_run(
+                        &mut self.runs,
+                        &mut self.paint_items,
+                        current,
+                        run_first,
+                        self.quad_scratch.len() as u32,
+                    );
+                    current = None;
+                    run_first = self.quad_scratch.len() as u32;
+
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        continue;
+                    }
+                    let layers =
+                        text.record_runs(*rect, phys, runs, *size, *wrap, *anchor, scale_factor);
+                    for index in layers {
+                        self.paint_items.push(PaintItem::Text(index));
+                    }
+                }
                 DrawOp::BackdropSnapshot => {
                     close_run(
                         &mut self.runs,
@@ -419,6 +449,22 @@ pub trait TextRecorder {
         text: &str,
         size: f32,
         weight: FontWeight,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        scale_factor: f32,
+    ) -> Range<usize>;
+
+    /// Append per-glyph instances for an attributed paragraph (one
+    /// shaped run with per-character RunStyle metadata). Wrapping
+    /// decisions cross run boundaries — the result is one ShapedRun
+    /// just like a single-style call.
+    #[allow(clippy::too_many_arguments)]
+    fn record_runs(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        runs: &[(String, RunStyle)],
+        size: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,

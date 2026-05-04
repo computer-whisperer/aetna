@@ -81,6 +81,18 @@ fn emit_op(s: &mut String, op: &DrawOp) {
                 s, id, *rect, *color, *size, *weight, *mono, *wrap, *anchor, layout,
             );
         }
+        DrawOp::AttributedText {
+            id,
+            rect,
+            runs,
+            size,
+            wrap,
+            anchor,
+            layout,
+            ..
+        } => {
+            emit_attributed_text(s, id, *rect, *size, *wrap, *anchor, runs, layout);
+        }
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
 }
@@ -254,6 +266,77 @@ fn emit_glyph_run(
             esc(&line.text)
         );
     }
+}
+
+/// Degraded SVG emission for attributed text. The wgpu/vulkano paths
+/// shape runs through cosmic-text and produce per-glyph color +
+/// run_index, so each run can paint its own fill. SVG can't easily
+/// reproduce cosmic-text's wrapping decisions, so we collapse the
+/// paragraph onto one `<text>` element with one `<tspan>` per run,
+/// carrying that run's color / weight / style attributes. This is
+/// honest about the rendering layer's limits — the SVG fallback
+/// captures *which* runs flowed where in source order, even if it
+/// can't replicate the exact line breaks.
+#[allow(clippy::too_many_arguments)]
+fn emit_attributed_text(
+    s: &mut String,
+    id: &str,
+    rect: Rect,
+    size: f32,
+    wrap: TextWrap,
+    anchor: TextAnchor,
+    runs: &[(String, crate::text_atlas::RunStyle)],
+    layout: &text_metrics::TextLayout,
+) {
+    let (x, anchor_attr) = match anchor {
+        TextAnchor::Start => (rect.x, "start"),
+        TextAnchor::Middle => (rect.center_x(), "middle"),
+        TextAnchor::End => (rect.right(), "end"),
+    };
+    let line_top = match wrap {
+        TextWrap::NoWrap => rect.y + ((rect.h - layout.line_height) * 0.5).max(0.0),
+        TextWrap::Wrap => rect.y,
+    };
+    let baseline = layout
+        .lines
+        .first()
+        .map(|l| l.baseline)
+        .unwrap_or(layout.line_height * 0.8);
+    let y = line_top + baseline;
+
+    let _ = write!(
+        s,
+        r#"<text data-node="{}" data-shader="stock::text" x="{:.2}" y="{:.2}" font-size="{:.2}" text-anchor="{}">"#,
+        esc(id),
+        x,
+        y,
+        size,
+        anchor_attr,
+    );
+    for (text, style) in runs {
+        let family = if style.mono {
+            "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+        } else {
+            "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+        };
+        let weight_str = match style.weight {
+            FontWeight::Regular => "400",
+            FontWeight::Medium => "500",
+            FontWeight::Semibold => "600",
+            FontWeight::Bold => "700",
+        };
+        let style_attr = if style.italic { "italic" } else { "normal" };
+        let _ = write!(
+            s,
+            r#"<tspan font-family="{}" font-weight="{}" font-style="{}" fill="{}">{}</tspan>"#,
+            family,
+            weight_str,
+            style_attr,
+            color_svg(style.color),
+            esc(text),
+        );
+    }
+    s.push_str("</text>\n");
 }
 
 fn as_color(v: &UniformValue) -> Option<Color> {

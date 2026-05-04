@@ -15,6 +15,7 @@
 use crate::ir::*;
 use crate::shader::*;
 use crate::state::{EnvelopeKind, UiState};
+use crate::text_atlas::RunStyle;
 use crate::text_metrics;
 use crate::tokens;
 use crate::tree::*;
@@ -172,9 +173,97 @@ fn push_node(
         });
     }
 
+    // Attributed paragraph: aggregate child Text/HardBreak runs into one
+    // DrawOp::AttributedText so cosmic-text shapes the runs together
+    // (wrapping crosses run boundaries like real prose). Skip recursion
+    // into children — they're encoded in the runs and don't paint
+    // independently.
+    if matches!(n.kind, Kind::Inlines) {
+        let runs = collect_inline_runs(n, opacity);
+        let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
+        let inline_size = inline_paragraph_font_size(n) * n.scale;
+        let anchor = match n.text_align {
+            TextAlign::Start => TextAnchor::Start,
+            TextAlign::Center => TextAnchor::Middle,
+            TextAlign::End => TextAnchor::End,
+        };
+        let layout = text_metrics::layout_text(
+            &concat,
+            inline_size,
+            FontWeight::Regular,
+            false,
+            n.text_wrap,
+            match n.text_wrap {
+                TextWrap::NoWrap => None,
+                TextWrap::Wrap => Some(painted_rect.w),
+            },
+        );
+        out.push(DrawOp::AttributedText {
+            id: n.computed_id.clone(),
+            rect: painted_rect,
+            scissor: own_scissor,
+            shader: ShaderHandle::Stock(StockShader::Text),
+            runs,
+            size: inline_size,
+            wrap: n.text_wrap,
+            anchor,
+            layout,
+        });
+        return;
+    }
+
     for c in &n.children {
         push_node(c, ui_state, out, own_scissor, total_translate, opacity);
     }
+}
+
+/// Walk an Inlines paragraph's children and produce source-order
+/// (text, RunStyle) tuples. Each `Kind::Text` child contributes one
+/// run carrying its `font_weight`, `text_italic`, `font_mono`, and
+/// `text_color`. `Kind::HardBreak` contributes a `\n` run with default
+/// styling — cosmic-text turns the newline into a line break during
+/// shaping, so style doesn't matter (no glyph is emitted).
+fn collect_inline_runs(node: &El, opacity: f32) -> Vec<(String, RunStyle)> {
+    let mut runs: Vec<(String, RunStyle)> = Vec::with_capacity(node.children.len());
+    for c in &node.children {
+        match c.kind {
+            Kind::Text => {
+                if let Some(text) = &c.text {
+                    let color = opaque(c.text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
+                    let mut style = RunStyle::new(c.font_weight, color);
+                    if c.text_italic {
+                        style = style.italic();
+                    }
+                    if c.font_mono {
+                        style = style.mono();
+                    }
+                    runs.push((text.clone(), style));
+                }
+            }
+            Kind::HardBreak => {
+                runs.push((
+                    "\n".to_string(),
+                    RunStyle::new(FontWeight::Regular, tokens::TEXT_FOREGROUND),
+                ));
+            }
+            _ => {}
+        }
+    }
+    runs
+}
+
+/// Pick the dominant font size for the paragraph's approximate
+/// pre-shaping layout (used by SVG and lint). Mirrors the layout
+/// pass's `inline_paragraph_size` heuristic — max across text
+/// children, falling back to the parent's own `font_size`.
+fn inline_paragraph_font_size(node: &El) -> f32 {
+    let mut size: f32 = node.font_size;
+    for c in &node.children {
+        if matches!(c.kind, Kind::Text) {
+            size = size.max(c.font_size);
+        }
+    }
+    size
 }
 
 fn translated(r: Rect, offset: (f32, f32)) -> Rect {

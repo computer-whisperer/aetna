@@ -60,6 +60,28 @@ pub fn shader_manifest(ops: &[DrawOp]) -> String {
                     );
                     s.push('\n');
                 }
+                DrawOp::AttributedText {
+                    id,
+                    runs,
+                    size,
+                    wrap,
+                    anchor,
+                    ..
+                } => {
+                    let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
+                    let preview: String = concat.chars().take(28).collect();
+                    let suffix = if concat.chars().count() > 28 {
+                        "…"
+                    } else {
+                        ""
+                    };
+                    let _ = write!(
+                        s,
+                        "  {id} attr=\"{preview}{suffix}\" runs={} size={size:.1} wrap={wrap:?} anchor={anchor:?}",
+                        runs.len(),
+                    );
+                    s.push('\n');
+                }
                 DrawOp::BackdropSnapshot => {}
             }
         }
@@ -123,6 +145,39 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                     rect.w,
                     rect.h,
                     color_label(*color),
+                );
+                if let Some(sci) = scissor {
+                    write_scissor(&mut s, *sci);
+                }
+                s.push('\n');
+            }
+            DrawOp::AttributedText {
+                id,
+                rect,
+                scissor,
+                shader,
+                runs,
+                size,
+                wrap,
+                anchor,
+                layout: _,
+            } => {
+                let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
+                let preview: String = concat.chars().take(40).collect();
+                let suffix = if concat.chars().count() > 40 {
+                    "…"
+                } else {
+                    ""
+                };
+                let _ = write!(
+                    s,
+                    "Attr   shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} attr=\"{preview}{suffix}\" runs={} size={size:.1} wrap={wrap:?} anchor={anchor:?}",
+                    shader.name(),
+                    rect.x,
+                    rect.y,
+                    rect.w,
+                    rect.h,
+                    runs.len(),
                 );
                 if let Some(sci) = scissor {
                     write_scissor(&mut s, *sci);

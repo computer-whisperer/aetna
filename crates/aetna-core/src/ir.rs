@@ -21,6 +21,7 @@
 //! shaders or full custom shaders.
 
 use crate::shader::{ShaderHandle, UniformBlock};
+use crate::text_atlas::RunStyle;
 use crate::text_metrics::TextLayout;
 use crate::tree::{Color, FontWeight, Rect, TextWrap};
 
@@ -55,6 +56,26 @@ pub enum DrawOp {
         anchor: TextAnchor,
         layout: TextLayout,
     },
+    /// An attributed paragraph: a sequence of styled runs that flow
+    /// together inside one `rect`. The runtime hands `runs` straight to
+    /// [`crate::text_atlas::GlyphAtlas::shape_and_rasterize_runs`] so
+    /// wrapping decisions cross run boundaries (real prose, not glued
+    /// segments). `layout` is an approximate pre-shaping measurement
+    /// from `text_metrics` — backends shape for accurate placement;
+    /// SVG uses it to lay tspan baselines.
+    AttributedText {
+        id: String,
+        rect: Rect,
+        scissor: Option<Rect>,
+        shader: ShaderHandle,
+        /// Source-order styled spans. Each `String` may contain
+        /// embedded `\n` to express in-paragraph hard breaks.
+        runs: Vec<(String, RunStyle)>,
+        size: f32,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        layout: TextLayout,
+    },
     /// Mid-frame snapshot of the current target into a sampled texture,
     /// scheduled before any backdrop-sampling pass. Reserved for v2.
     BackdropSnapshot,
@@ -70,19 +91,25 @@ pub enum TextAnchor {
 impl DrawOp {
     pub fn id(&self) -> &str {
         match self {
-            DrawOp::Quad { id, .. } | DrawOp::GlyphRun { id, .. } => id,
+            DrawOp::Quad { id, .. }
+            | DrawOp::GlyphRun { id, .. }
+            | DrawOp::AttributedText { id, .. } => id,
             DrawOp::BackdropSnapshot => "<backdrop-snapshot>",
         }
     }
     pub fn shader(&self) -> Option<&ShaderHandle> {
         match self {
-            DrawOp::Quad { shader, .. } | DrawOp::GlyphRun { shader, .. } => Some(shader),
+            DrawOp::Quad { shader, .. }
+            | DrawOp::GlyphRun { shader, .. }
+            | DrawOp::AttributedText { shader, .. } => Some(shader),
             DrawOp::BackdropSnapshot => None,
         }
     }
     pub fn scissor(&self) -> Option<Rect> {
         match self {
-            DrawOp::Quad { scissor, .. } | DrawOp::GlyphRun { scissor, .. } => *scissor,
+            DrawOp::Quad { scissor, .. }
+            | DrawOp::GlyphRun { scissor, .. }
+            | DrawOp::AttributedText { scissor, .. } => *scissor,
             DrawOp::BackdropSnapshot => None,
         }
     }
