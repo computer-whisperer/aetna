@@ -484,12 +484,7 @@ impl Runner {
     /// selection anchor, draggable handles) can do so. For
     /// `Secondary` / `Middle`, records on a side channel and returns
     /// `None`. The actual click event fires on `pointer_up`.
-    pub fn pointer_down(
-        &mut self,
-        x: f32,
-        y: f32,
-        button: PointerButton,
-    ) -> Option<UiEvent> {
+    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Option<UiEvent> {
         self.core.pointer_down(x, y, button)
     }
 

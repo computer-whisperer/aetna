@@ -822,10 +822,12 @@ mod tests {
         // Six 50px-tall rows in a 200px-tall scroll viewport.
         // Content height = 6*50 + 5*gap_default = 300 + 5*12 = 360 px.
         // Visible viewport (no padding) = 200 px → max_offset = 160.
-        let mut root =
-            scroll((0..6).map(|i| crate::widgets::text::text(format!("row {i}")).height(Size::Fixed(50.0))))
-                .key("list")
-                .height(Size::Fixed(200.0));
+        let mut root = scroll(
+            (0..6)
+                .map(|i| crate::widgets::text::text(format!("row {i}")).height(Size::Fixed(50.0))),
+        )
+        .key("list")
+        .height(Size::Fixed(200.0));
         let mut state = UiState::new();
         assign_ids(&mut root);
         state.scroll_offsets.insert(root.computed_id.clone(), 80.0);
@@ -864,8 +866,9 @@ mod tests {
             "overshoot clamped to {stored}"
         );
         // Content fits → offset clamps to 0.
-        let mut tiny = scroll([crate::widgets::text::text("just one row").height(Size::Fixed(20.0))])
-            .height(Size::Fixed(200.0));
+        let mut tiny =
+            scroll([crate::widgets::text::text("just one row").height(Size::Fixed(20.0))])
+                .height(Size::Fixed(200.0));
         let mut tiny_state = UiState::new();
         assign_ids(&mut tiny);
         tiny_state
@@ -1049,7 +1052,8 @@ mod tests {
     #[test]
     fn virtual_list_clamps_overshoot_offset() {
         // 10 rows × 50 = 500 content height; viewport 200; max offset = 300.
-        let mut root = crate::tree::virtual_list(10, 50.0, |i| crate::widgets::text::text(format!("r{i}")));
+        let mut root =
+            crate::tree::virtual_list(10, 50.0, |i| crate::widgets::text::text(format!("r{i}")));
         let mut state = UiState::new();
         assign_ids(&mut root);
         state
@@ -1069,7 +1073,8 @@ mod tests {
 
     #[test]
     fn virtual_list_empty_count_realizes_no_children() {
-        let mut root = crate::tree::virtual_list(0, 50.0, |i| crate::widgets::text::text(format!("r{i}")));
+        let mut root =
+            crate::tree::virtual_list(0, 50.0, |i| crate::widgets::text::text(format!("r{i}")));
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
         assert_eq!(root.children.len(), 0);
@@ -1084,13 +1089,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "Size::Hug would defeat virtualization")]
     fn virtual_list_hug_panics() {
-        let mut root =
-            column([
-                crate::tree::virtual_list(10, 50.0, |i| crate::widgets::text::text(format!("r{i}")))
-                    .height(Size::Hug),
-            ])
-            .width(Size::Fixed(300.0))
-            .height(Size::Fixed(200.0));
+        let mut root = column([crate::tree::virtual_list(10, 50.0, |i| {
+            crate::widgets::text::text(format!("r{i}"))
+        })
+        .height(Size::Hug)])
+        .width(Size::Fixed(300.0))
+        .height(Size::Fixed(200.0));
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
     }

@@ -24,8 +24,8 @@
 //!   into the other, or pasting text from another application.
 //! - Tab / Shift+Tab moves focus between fields.
 
-use aetna_core::*;
 use aetna_core::widgets::text_input;
+use aetna_core::*;
 
 struct Form {
     name: String,
@@ -54,7 +54,10 @@ impl App for Form {
         column([
             h2("Form"),
             field_row("Name", text_input(&self.name, self.name_sel).key("name")),
-            field_row("Email", text_input(&self.email, self.email_sel).key("email")),
+            field_row(
+                "Email",
+                text_input(&self.email, self.email_sel).key("email"),
+            ),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
             preview_block(self),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
@@ -155,10 +158,7 @@ fn preview_block(form: &Form) -> El {
 fn preview_line(field: &str, value: &str, sel: TextSelection) -> El {
     let (lo, hi) = sel.ordered();
     let summary = if sel.is_collapsed() {
-        format!(
-            "{field:>5} = {:?}  caret={}",
-            value, sel.head
-        )
+        format!("{field:>5} = {:?}  caret={}", value, sel.head)
     } else {
         format!(
             "{field:>5} = {:?}  selection={}..{}  ({:?})",

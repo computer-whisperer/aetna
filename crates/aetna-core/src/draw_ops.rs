@@ -136,10 +136,7 @@ fn push_node(
                 "focus_color",
                 UniformValue::Color(base.with_alpha(eased_alpha)),
             );
-            uniforms.insert(
-                "focus_width",
-                UniformValue::F32(tokens::FOCUS_RING_WIDTH),
-            );
+            uniforms.insert("focus_width", UniformValue::F32(tokens::FOCUS_RING_WIDTH));
         }
         out.push(DrawOp::Quad {
             id: n.computed_id.clone(),

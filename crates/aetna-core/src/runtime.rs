@@ -215,12 +215,7 @@ impl RunnerCore {
     /// like text_input can react at down-time (e.g., set the selection
     /// anchor before any drag extends it). Secondary/middle store on a
     /// separate channel and never emit a `PointerDown`.
-    pub fn pointer_down(
-        &mut self,
-        x: f32,
-        y: f32,
-        button: PointerButton,
-    ) -> Option<UiEvent> {
+    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Option<UiEvent> {
         let hit = self
             .last_tree
             .as_ref()
@@ -615,9 +610,7 @@ fn find_capture_keys(node: &El, id: &str) -> Option<bool> {
     if node.computed_id == id {
         return Some(node.capture_keys);
     }
-    node.children
-        .iter()
-        .find_map(|c| find_capture_keys(c, id))
+    node.children.iter().find_map(|c| find_capture_keys(c, id))
 }
 
 /// Glyph-recording surface implemented by each backend's `TextPaint`.
@@ -707,11 +700,8 @@ mod tests {
         } else {
             crate::widgets::text::text("noop").key("ti").focusable()
         };
-        let mut tree = crate::column([
-            crate::widgets::button::button("Btn").key("btn"),
-            ti,
-        ])
-        .padding(10.0);
+        let mut tree =
+            crate::column([crate::widgets::button::button("Btn").key("btn"), ti]).padding(10.0);
         let mut core = RunnerCore::new();
         crate::layout::layout(
             &mut tree,
@@ -794,8 +784,14 @@ mod tests {
         let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind.clone()).collect();
         assert_eq!(kinds, vec![UiEventKind::SecondaryClick]);
         let focused_after = core.ui_state.focused.as_ref().map(|t| t.key.clone());
-        assert_eq!(focused_before, focused_after, "right-click must not steal focus");
-        assert!(core.ui_state.pressed.is_none(), "right-click must not set primary press");
+        assert_eq!(
+            focused_before, focused_after,
+            "right-click must not steal focus"
+        );
+        assert!(
+            core.ui_state.pressed.is_none(),
+            "right-click must not set primary press"
+        );
     }
 
     #[test]

@@ -471,12 +471,7 @@ impl Runner {
         self.core.pointer_left();
     }
 
-    pub fn pointer_down(
-        &mut self,
-        x: f32,
-        y: f32,
-        button: PointerButton,
-    ) -> Option<UiEvent> {
+    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Option<UiEvent> {
         self.core.pointer_down(x, y, button)
     }
 

@@ -54,10 +54,7 @@ pub struct TextSelection {
 impl TextSelection {
     /// Collapsed selection at byte offset `head`.
     pub const fn caret(head: usize) -> Self {
-        Self {
-            anchor: head,
-            head,
-        }
+        Self { anchor: head, head }
     }
 
     /// Selection from `anchor` to `head`. Either order is valid; the
@@ -312,9 +309,7 @@ pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &Ui
                     true
                 }
                 UiKey::Home => {
-                    if selection.head == 0
-                        && (mods.shift || selection.anchor == 0)
-                    {
+                    if selection.head == 0 && (mods.shift || selection.anchor == 0) {
                         return false;
                     }
                     selection.head = 0;
@@ -325,9 +320,7 @@ pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &Ui
                 }
                 UiKey::End => {
                     let end = value.len();
-                    if selection.head == end
-                        && (mods.shift || selection.anchor == end)
-                    {
+                    if selection.head == end && (mods.shift || selection.anchor == end) {
                         return false;
                     }
                     selection.head = end;
@@ -619,7 +612,12 @@ mod tests {
             .iter()
             .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
             .expect("caret child");
-        let expected = line_width(&value[..head], tokens::FONT_BASE, FontWeight::Regular, false);
+        let expected = line_width(
+            &value[..head],
+            tokens::FONT_BASE,
+            FontWeight::Regular,
+            false,
+        );
         assert!(
             (caret.translate.0 - expected).abs() < 0.01,
             "caret translate.x = {}, expected {}",
@@ -740,7 +738,11 @@ mod tests {
     fn apply_backspace_collapsed_at_start_is_noop() {
         let mut value = String::from("hi");
         let mut sel = TextSelection::caret(0);
-        assert!(!apply_event(&mut value, &mut sel, &ev_key(UiKey::Backspace)));
+        assert!(!apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key(UiKey::Backspace)
+        ));
     }
 
     #[test]
@@ -771,7 +773,11 @@ mod tests {
 
         let mut sel = TextSelection::range(1, 4);
         // ArrowRight (no shift) collapses to the RIGHT edge.
-        assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::ArrowRight)));
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key(UiKey::ArrowRight)
+        ));
         assert_eq!(sel, TextSelection::caret(4));
     }
 
@@ -983,9 +989,7 @@ mod tests {
         let ops = draw_ops(&tree, &state);
         let glyph_runs = ops
             .iter()
-            .filter(|op| {
-                matches!(op, DrawOp::GlyphRun { id, .. } if id.contains("text_input[ti]"))
-            })
+            .filter(|op| matches!(op, DrawOp::GlyphRun { id, .. } if id.contains("text_input[ti]")))
             .count();
         assert_eq!(
             glyph_runs, 1,
@@ -1090,17 +1094,26 @@ mod tests {
             .expect("pointer_down emits PointerDown");
         assert!(apply_event(&mut value, &mut sel, &down));
 
-        let drag = core
-            .pointer_moved(drag_x, cy)
-            .expect("Drag while pressed");
+        let drag = core.pointer_moved(drag_x, cy).expect("Drag while pressed");
         assert!(apply_event(&mut value, &mut sel, &drag));
 
         let events = core.pointer_up(drag_x, cy, PointerButton::Primary);
         for e in &events {
             apply_event(&mut value, &mut sel, e);
         }
-        assert!(!sel.is_collapsed(), "expected drag-select to leave a non-empty selection");
-        assert_eq!(sel.anchor, 0, "anchor should sit at the down position (caret 0)");
-        assert!(sel.head > 0 && sel.head <= value.len(), "head={} value.len={}", sel.head, value.len());
+        assert!(
+            !sel.is_collapsed(),
+            "expected drag-select to leave a non-empty selection"
+        );
+        assert_eq!(
+            sel.anchor, 0,
+            "anchor should sit at the down position (caret 0)"
+        );
+        assert!(
+            sel.head > 0 && sel.head <= value.len(),
+            "head={} value.len={}",
+            sel.head,
+            value.len()
+        );
     }
 }

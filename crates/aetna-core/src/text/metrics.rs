@@ -544,8 +544,16 @@ mod tests {
 
     #[test]
     fn hit_text_at_origin_lands_on_first_byte() {
-        let hit = hit_text("hello world", 16.0, FontWeight::Regular, TextWrap::NoWrap, None, 0.0, 8.0)
-            .expect("hit at origin");
+        let hit = hit_text(
+            "hello world",
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            None,
+            0.0,
+            8.0,
+        )
+        .expect("hit at origin");
         assert_eq!(hit.line, 0);
         assert_eq!(hit.byte_index, 0);
     }
@@ -554,8 +562,16 @@ mod tests {
     fn hit_text_past_last_glyph_clamps_to_end() {
         let text = "hello";
         // y=8 lands inside the line; a huge x clamps to end-of-line.
-        let hit = hit_text(text, 16.0, FontWeight::Regular, TextWrap::NoWrap, None, 1000.0, 8.0)
-            .expect("hit past end");
+        let hit = hit_text(
+            text,
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            None,
+            1000.0,
+            8.0,
+        )
+        .expect("hit past end");
         assert_eq!(hit.line, 0);
         assert_eq!(hit.byte_index, text.len());
     }
@@ -568,7 +584,15 @@ mod tests {
         let text = "abcdefghij";
         let mut prev = 0usize;
         for x in [4.0, 16.0, 32.0, 64.0, 96.0] {
-            let hit = hit_text(text, 16.0, FontWeight::Regular, TextWrap::NoWrap, None, x, 8.0);
+            let hit = hit_text(
+                text,
+                16.0,
+                FontWeight::Regular,
+                TextWrap::NoWrap,
+                None,
+                x,
+                8.0,
+            );
             let Some(hit) = hit else { continue };
             assert!(
                 hit.byte_index >= prev,
