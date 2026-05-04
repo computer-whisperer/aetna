@@ -23,7 +23,7 @@ use swash::zeno::Format;
 
 use crate::ir::TextAnchor;
 use crate::text_metrics::{TextLayout, TextLine, line_height};
-use crate::tree::{FontWeight, TextWrap};
+use crate::tree::{Color, FontWeight, TextWrap};
 
 const ROBOTO_REGULAR: &[u8] = include_bytes!("../fonts/Roboto-Regular.ttf");
 const ROBOTO_MEDIUM: &[u8] = include_bytes!("../fonts/Roboto-Medium.ttf");
@@ -33,9 +33,20 @@ const ROBOTO_BOLD: &[u8] = include_bytes!("../fonts/Roboto-Bold.ttf");
 /// single page; larger UIs allocate a second page on demand.
 const PAGE_SIZE: u32 = 512;
 
-/// One shaped glyph carrying its atlas key and pen position. Positions
-/// are in **logical pixels** relative to the shaped run's origin (top
-/// of the first line, x = 0).
+/// One shaped glyph carrying its atlas key, pen position, paint color,
+/// and the index of the run that produced it. Positions are in
+/// **logical pixels** relative to the shaped run's origin (top of the
+/// first line, x = 0).
+///
+/// `color` lives on the glyph (rather than a single per-run uniform)
+/// so attributed paragraphs (v0.6 inline runs) emit one shaped output
+/// with per-glyph colors. Single-style text passes one color and every
+/// glyph receives the same value — no behaviour change.
+///
+/// `run_index` identifies which input run produced this glyph
+/// (always `0` for single-style text). v0.6.4 selection / hit-test
+/// uses this to map glyphs back to runs (which carry link URLs,
+/// semantic tags, etc.).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShapedGlyph {
     pub key: GlyphKey,
@@ -48,6 +59,11 @@ pub struct ShapedGlyph {
     /// Source byte range in the input string — kept for future caret /
     /// selection logic.
     pub byte_range: Range<usize>,
+    /// Paint color for this glyph.
+    pub color: Color,
+    /// Index of the run (within an attributed `text_runs` parent) that
+    /// produced this glyph. `0` for single-style text.
+    pub run_index: u32,
 }
 
 /// One shaped + atlased run, the artifact a backend's text path consumes.
@@ -176,6 +192,7 @@ impl GlyphAtlas {
     /// every glyph it produces is present in the atlas. Returns the
     /// shaped runs (per-glyph keys + positions) and the line-level
     /// layout. `available_width` is only used for `TextWrap::Wrap`.
+    #[allow(clippy::too_many_arguments)]
     pub fn shape_and_rasterize(
         &mut self,
         text: &str,
@@ -184,6 +201,7 @@ impl GlyphAtlas {
         wrap: TextWrap,
         anchor: TextAnchor,
         available_width: Option<f32>,
+        color: Color,
     ) -> ShapedRun {
         let line_h = line_height(size);
         let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_h));
@@ -244,6 +262,8 @@ impl GlyphAtlas {
                     x: glyph.x + glyph.x_offset,
                     y: run.line_y + glyph.y_offset,
                     byte_range: glyph.start..glyph.end,
+                    color,
+                    run_index: 0,
                 });
             }
         }
@@ -486,6 +506,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
         assert_eq!(run.glyphs.len(), 3);
         assert_eq!(run.layout.lines.len(), 1);
@@ -502,6 +523,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
         let pages_before = atlas.pages().len();
         let dirty_before: u32 = atlas
@@ -519,6 +541,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
         assert_eq!(atlas.pages().len(), pages_before);
         // No new rasterization — every glyph was already cached, so
@@ -542,6 +565,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
         let r24 = atlas.shape_and_rasterize(
             "A",
@@ -550,6 +574,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
         assert_eq!(r16.glyphs.len(), 1);
         assert_eq!(r24.glyphs.len(), 1);
@@ -570,6 +595,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
         let bold = atlas.shape_and_rasterize(
             "A",
@@ -578,6 +604,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
         let r = atlas.slot(regular.glyphs[0].key).unwrap();
         let b = atlas.slot(bold.glyphs[0].key).unwrap();
@@ -595,6 +622,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
         let dirty = atlas.take_dirty();
         assert_eq!(dirty.len(), 1, "expected one dirty page after first run");
@@ -614,6 +642,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
         // A typical body-text run easily fits on one 512x512 page.
         // The packer is allowed to use multiple shelves; the contract
@@ -634,6 +663,7 @@ mod tests {
                     TextWrap::NoWrap,
                     TextAnchor::Start,
                     None,
+                    Color::rgb(0, 0, 0),
                 );
             }
         }
@@ -657,6 +687,7 @@ mod tests {
             TextWrap::NoWrap,
             TextAnchor::Start,
             None,
+            Color::rgb(0, 0, 0),
         );
     }
 }

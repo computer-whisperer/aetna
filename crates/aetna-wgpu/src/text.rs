@@ -222,7 +222,7 @@ impl TextPaint {
         };
         let shaped =
             self.atlas
-                .shape_and_rasterize(text, physical_size, weight, wrap, anchor, avail);
+                .shape_and_rasterize(text, physical_size, weight, wrap, anchor, avail, color);
 
         let runs_start = self.runs.len();
         if shaped.glyphs.is_empty() {
@@ -238,7 +238,6 @@ impl TextPaint {
         };
         let origin_x = rect.x;
         let origin_y = rect.y + v_offset;
-        let color_linear = rgba_f32(color);
 
         let mut current_page: Option<u32> = None;
         let mut run_first = self.instances.len() as u32;
@@ -296,7 +295,7 @@ impl TextPaint {
             self.instances.push(GlyphInstance {
                 rect: [bx, by, bw, bh],
                 uv,
-                color: color_linear,
+                color: rgba_f32(glyph.color),
             });
         }
         if let Some(p) = current_page {
