@@ -182,6 +182,20 @@ impl<A: App> ApplicationHandler for Host<A> {
         let mut runner = Runner::new(device.clone(), queue.clone(), image_format);
         let extent: [u32; 2] = window.inner_size().into();
         runner.set_surface_size(extent[0], extent[1]);
+        // Register any custom shaders the app declared. Backdrop-
+        // sampling shaders are skipped on vulkano (parked for v0.7
+        // step E); nodes bound to them simply paint nothing on this
+        // backend rather than blowing up at pipeline-build time.
+        for s in self.app.shaders() {
+            if s.samples_backdrop {
+                eprintln!(
+                    "aetna-vulkano: skipping `{}` — backdrop sampling not implemented on this backend yet (v0.7 step E)",
+                    s.name
+                );
+                continue;
+            }
+            runner.register_shader_with(s.name, s.wgsl, s.samples_backdrop);
+        }
         if let Some(init) = self.init_runner.take() {
             init(&mut runner);
         }

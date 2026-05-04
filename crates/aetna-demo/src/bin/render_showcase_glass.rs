@@ -1,0 +1,164 @@
+//! Headless render of the showcase's Glass section through the
+//! end-to-end host path: `App::shaders()` → `register_shader_with` →
+//! `Runner::render()` with backdrop sampling.
+//!
+//! Mirrors what `aetna-demo`'s windowed `showcase` does for one frame,
+//! with `Section::Glass` selected, written to a PNG so we can confirm
+//! the section renders correctly without a display.
+//!
+//! Usage: `cargo run -p aetna-demo --bin render_showcase_glass`
+
+use aetna_core::{AnimationMode, App, Rect};
+use aetna_demo::{Showcase, showcase::Section};
+use aetna_wgpu::Runner;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let logical_width: u32 = 900;
+    let logical_height: u32 = 640;
+    let scale_factor: f32 = 2.0;
+    let width = (logical_width as f32 * scale_factor) as u32;
+    let height = (logical_height as f32 * scale_factor) as u32;
+    let viewport = Rect::new(0.0, 0.0, logical_width as f32, logical_height as f32);
+
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::default(),
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+    .ok_or("no compatible adapter")?;
+
+    let (device, queue) = pollster::block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: Some("aetna_demo::showcase_glass::device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            memory_hints: wgpu::MemoryHints::Performance,
+        },
+        None,
+    ))?;
+
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("aetna_demo::showcase_glass::target"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let unpadded_bytes_per_row = width * 4;
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+    let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(align) * align;
+    let readback_size = (padded_bytes_per_row * height) as u64;
+    let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("aetna_demo::showcase_glass::readback"),
+        size: readback_size,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let mut renderer = Runner::new(&device, &queue, format);
+    renderer.set_animation_mode(AnimationMode::Settled);
+
+    // Build a Showcase with the Glass section selected, then drive it
+    // through the same shader-registration path the windowed harness
+    // uses (`App::shaders()` → `register_shader_with`).
+    let app = Showcase::with_section(Section::Glass);
+    for s in app.shaders() {
+        renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
+    }
+
+    let mut tree = app.build();
+    renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("aetna_demo::showcase_glass::encoder"),
+    });
+    renderer.render(
+        &device,
+        &mut encoder,
+        &target,
+        &target_view,
+        wgpu::LoadOp::Clear(bg_color()),
+    );
+    encoder.copy_texture_to_buffer(
+        wgpu::ImageCopyTexture {
+            texture: &target,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::ImageCopyBuffer {
+            buffer: &readback_buf,
+            layout: wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(padded_bytes_per_row),
+                rows_per_image: Some(height),
+            },
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit(Some(encoder.finish()));
+
+    let buffer_slice = readback_buf.slice(..);
+    let (sender, receiver) = std::sync::mpsc::channel::<Result<(), wgpu::BufferAsyncError>>();
+    buffer_slice.map_async(wgpu::MapMode::Read, move |r| {
+        sender.send(r).ok();
+    });
+    device.poll(wgpu::Maintain::Wait);
+    receiver.recv()??;
+
+    let padded = buffer_slice.get_mapped_range();
+    let mut unpadded = Vec::with_capacity((unpadded_bytes_per_row * height) as usize);
+    for row in 0..height {
+        let start = (row * padded_bytes_per_row) as usize;
+        let end = start + unpadded_bytes_per_row as usize;
+        unpadded.extend_from_slice(&padded[start..end]);
+    }
+    drop(padded);
+    readback_buf.unmap();
+
+    let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
+    std::fs::create_dir_all(&out_dir)?;
+    let out = out_dir.join("showcase_glass.wgpu.png");
+    let file = std::fs::File::create(&out)?;
+    let writer = std::io::BufWriter::new(file);
+    let mut encoder = png::Encoder::new(writer, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header()?.write_image_data(&unpadded)?;
+    println!("wrote {}", out.display());
+
+    Ok(())
+}
+
+fn bg_color() -> wgpu::Color {
+    let c = aetna_core::tokens::BG_APP;
+    wgpu::Color {
+        r: srgb_to_linear(c.r as f64 / 255.0),
+        g: srgb_to_linear(c.g as f64 / 255.0),
+        b: srgb_to_linear(c.b as f64 / 255.0),
+        a: c.a as f64 / 255.0,
+    }
+}
+
+fn srgb_to_linear(c: f64) -> f64 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}

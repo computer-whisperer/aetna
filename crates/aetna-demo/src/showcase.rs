@@ -33,6 +33,7 @@ pub enum Section {
     Palette,
     Picker,
     Settings,
+    Glass,
 }
 
 impl Section {
@@ -43,6 +44,7 @@ impl Section {
             Section::Palette => "Palette",
             Section::Picker => "Picker",
             Section::Settings => "Settings",
+            Section::Glass => "Glass",
         }
     }
 
@@ -53,15 +55,17 @@ impl Section {
             Section::Palette => "nav-palette",
             Section::Picker => "nav-picker",
             Section::Settings => "nav-settings",
+            Section::Glass => "nav-glass",
         }
     }
 
-    const ALL: [Section; 5] = [
+    const ALL: [Section; 6] = [
         Section::Counter,
         Section::List,
         Section::Palette,
         Section::Picker,
         Section::Settings,
+        Section::Glass,
     ];
 }
 
@@ -88,6 +92,14 @@ struct PickerState {
     search_active: bool,
 }
 
+#[derive(Default)]
+struct GlassState {
+    /// Index into `GLASS_PRESETS` — cycles on the "Next preset"
+    /// button so the same fixture exercises a few corners of the
+    /// shader's parameter space.
+    preset: usize,
+}
+
 /// The showcase app. State for every section lives here so switching
 /// sections is non-destructive.
 #[derive(Default)]
@@ -97,11 +109,22 @@ pub struct Showcase {
     list: ListState,
     palette: PaletteState,
     picker: PickerState,
+    glass: GlassState,
 }
 
 impl Showcase {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Construct with a specific starting section. Used by headless
+    /// render bins to pin the showcase on one section without needing
+    /// to drive the navigation through events.
+    pub fn with_section(section: Section) -> Self {
+        Self {
+            section,
+            ..Default::default()
+        }
     }
 }
 
@@ -111,6 +134,11 @@ impl App for Showcase {
             .gap(0.0)
             .width(Size::Fill(1.0))
             .height(Size::Fill(1.0))
+            // Stretch lets the content column claim the full viewport
+            // height regardless of its intrinsic height — important
+            // for the Glass section's backdrop, which would otherwise
+            // collapse to its intrinsic (≈ the glass card height).
+            .align(Align::Stretch)
     }
 
     fn hotkeys(&self) -> Vec<(KeyChord, String)> {
@@ -136,7 +164,19 @@ impl App for Showcase {
             Section::Palette => palette_on_event(&mut self.palette, event),
             Section::Picker => picker_on_event(&mut self.picker, event),
             Section::Settings => {} // static fixture, no events
+            Section::Glass => glass_on_event(&mut self.glass, event),
         }
+    }
+
+    fn shaders(&self) -> Vec<AppShader> {
+        // The Glass section needs the liquid_glass custom shader. The
+        // host harness registers it once at startup; the WGSL ships
+        // bundled in the demo crate alongside the headless fixture.
+        vec![AppShader {
+            name: "liquid_glass",
+            wgsl: include_str!("../shaders/liquid_glass.wgsl"),
+            samples_backdrop: true,
+        }]
     }
 }
 
@@ -166,12 +206,22 @@ fn sidebar(active: Section) -> El {
 }
 
 fn content(app: &Showcase) -> El {
+    // The Glass section needs to paint over a colorful backdrop, so
+    // it manages its own padding/sizing via a `stack(...)` — wrapping
+    // it in the standard padded column would inset the backdrop and
+    // make the glass effect harder to see. Every other section uses
+    // the standard padded layout.
     let body = match app.section {
         Section::Counter => counter_view(&app.counter),
         Section::List => list_view(&app.list),
         Section::Palette => palette_view(&app.palette),
         Section::Picker => picker_view(&app.picker),
         Section::Settings => settings_view(),
+        Section::Glass => {
+            return glass_view(&app.glass)
+                .width(Size::Fill(1.0))
+                .height(Size::Fill(1.0));
+        }
     };
     column([body])
         .padding(tokens::SPACE_XL)
@@ -547,4 +597,212 @@ fn settings_view() -> El {
         ]),
     ])
     .gap(tokens::SPACE_LG)
+}
+
+// ---- Glass section ----
+
+/// One configuration of the `liquid_glass.wgsl` parameter space — the
+/// "Next preset" button cycles through these so a single fixture
+/// covers a meaningful slice of the shader without needing live
+/// sliders.
+#[derive(Clone, Copy)]
+struct GlassPreset {
+    label: &'static str,
+    blurb: &'static str,
+    blur_px: f32,
+    refraction: f32,
+    specular: f32,
+    tint: Color,
+}
+
+const GLASS_PRESETS: &[GlassPreset] = &[
+    GlassPreset {
+        label: "Soft",
+        blurb: "Gentle blur, faint warm tint, soft bevel.",
+        blur_px: 4.0,
+        refraction: 0.45,
+        specular: 0.8,
+        tint: Color {
+            r: 240,
+            g: 240,
+            b: 250,
+            a: 110,
+            token: None,
+        },
+    },
+    GlassPreset {
+        label: "Heavy",
+        blurb: "Wide blur, stronger refraction at the rim.",
+        blur_px: 10.0,
+        refraction: 0.85,
+        specular: 1.1,
+        tint: Color {
+            r: 230,
+            g: 235,
+            b: 250,
+            a: 140,
+            token: None,
+        },
+    },
+    GlassPreset {
+        label: "Cool",
+        blurb: "Cool blue tint, crisp specular bevel.",
+        blur_px: 6.0,
+        refraction: 0.55,
+        specular: 1.4,
+        tint: Color {
+            r: 180,
+            g: 215,
+            b: 255,
+            a: 170,
+            token: None,
+        },
+    },
+    GlassPreset {
+        label: "Crisp",
+        blurb: "Minimal blur, pure refraction lensing.",
+        blur_px: 1.5,
+        refraction: 0.95,
+        specular: 1.6,
+        tint: Color {
+            r: 250,
+            g: 250,
+            b: 255,
+            a: 60,
+            token: None,
+        },
+    },
+];
+
+/// Vivid wallpaper that sits behind the glass card. Four tall stripes
+/// in saturated primaries — chosen so the blur kernel pulls visibly
+/// distinct colors from neighbouring stripes near the glass rim,
+/// proving the snapshot is being read locally rather than re-emitted
+/// as a uniform tint.
+fn glass_backdrop() -> El {
+    fn stripe(c: Color) -> El {
+        column(Vec::<El>::new())
+            .fill(c)
+            .width(Size::Fill(1.0))
+            .height(Size::Fill(1.0))
+    }
+    row([
+        stripe(Color::rgb(220, 60, 60)),
+        stripe(Color::rgb(60, 200, 100)),
+        stripe(Color::rgb(70, 110, 220)),
+        stripe(Color::rgb(240, 200, 60)),
+    ])
+    .gap(0.0)
+    // Stretch lets each Fill(1.0) stripe claim the full cross-axis
+    // height; without it the row's default Center align would
+    // collapse intrinsic-zero children to height 0.
+    .align(Align::Stretch)
+    .height(Size::Fill(1.0))
+    .width(Size::Fill(1.0))
+}
+
+fn glass_card(preset: &GlassPreset) -> El {
+    // Custom-shaded container. The shader binding maps preset values
+    // into the generic vec_a/vec_b/vec_c slots that
+    // `liquid_glass.wgsl` reads. Inner text uses
+    // `text_color(TEXT_ON_SOLID_DARK)` rather than the default
+    // foreground/muted tokens because the latter assume a stable
+    // background; over a refractive glass surface they wash out.
+    column([
+        text("Liquid glass")
+            .bold()
+            .font_size(22.0)
+            .text_color(tokens::TEXT_ON_SOLID_DARK),
+        text(preset.blurb).text_color(tokens::TEXT_ON_SOLID_DARK),
+        spacer(),
+        row([
+            text(format!("preset: {}", preset.label))
+                .bold()
+                .text_color(tokens::TEXT_ON_SOLID_DARK),
+            spacer(),
+            button("Next preset").key("glass-next").secondary(),
+        ])
+        .gap(tokens::SPACE_SM),
+    ])
+    .gap(tokens::SPACE_SM)
+    .padding(tokens::SPACE_LG)
+    .shader(
+        ShaderBinding::custom("liquid_glass")
+            .color("vec_a", preset.tint)
+            .vec4(
+                "vec_b",
+                [preset.blur_px, preset.refraction, preset.specular, 0.0],
+            )
+            .vec4("vec_c", [28.0, 0.0, 0.0, 0.0]),
+    )
+    .width(Size::Fixed(420.0))
+    .height(Size::Fixed(220.0))
+}
+
+fn glass_view(state: &GlassState) -> El {
+    let preset = &GLASS_PRESETS[state.preset % GLASS_PRESETS.len()];
+    stack([
+        glass_backdrop(),
+        // Centering chrome: column of [spacer, row with glass, spacer]
+        // lets the fixed-size glass card float in the middle of the
+        // backdrop. The inner row's height: Hug stops it from
+        // claiming the full column extent.
+        column([
+            spacer(),
+            row([spacer(), glass_card(preset), spacer()]).height(Size::Hug),
+            spacer(),
+        ]),
+    ])
+}
+
+fn glass_on_event(state: &mut GlassState, e: UiEvent) {
+    if matches!(e.kind, UiEventKind::Click | UiEventKind::Activate)
+        && let Some("glass-next") = e.key.as_deref()
+    {
+        state.preset = (state.preset + 1) % GLASS_PRESETS.len();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn click(key: &'static str) -> UiEvent {
+        UiEvent {
+            kind: UiEventKind::Click,
+            key: Some(key.into()),
+            target: None,
+            pointer: None,
+            key_press: None,
+        }
+    }
+
+    #[test]
+    fn glass_next_cycles_through_presets() {
+        let mut s = GlassState::default();
+        assert_eq!(s.preset, 0);
+        glass_on_event(&mut s, click("glass-next"));
+        assert_eq!(s.preset, 1);
+        // Cycle the full length and confirm we wrap back to 0.
+        for _ in 0..GLASS_PRESETS.len() - 1 {
+            glass_on_event(&mut s, click("glass-next"));
+        }
+        assert_eq!(s.preset, 0);
+    }
+
+    #[test]
+    fn glass_section_advertises_liquid_glass_shader() {
+        let app = Showcase::with_section(Section::Glass);
+        let shaders = app.shaders();
+        assert_eq!(shaders.len(), 1);
+        assert_eq!(shaders[0].name, "liquid_glass");
+        assert!(
+            shaders[0].samples_backdrop,
+            "liquid_glass must opt into backdrop sampling"
+        );
+        assert!(
+            shaders[0].wgsl.contains("backdrop_tex"),
+            "shipped wgsl must reference the backdrop binding"
+        );
+    }
 }

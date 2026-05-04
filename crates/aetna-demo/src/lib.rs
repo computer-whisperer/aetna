@@ -120,7 +120,11 @@ impl<A: App> ApplicationHandler for Host<A> {
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            // COPY_SRC is required so backdrop-sampling shaders can
+            // copy the post-Pass-A surface into the runner's snapshot
+            // texture mid-frame. Cost is minimal — most surfaces
+            // already advertise it.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format,
             width: size.width.max(1),
             height: size.height.max(1),
@@ -133,6 +137,11 @@ impl<A: App> ApplicationHandler for Host<A> {
 
         let mut renderer = Runner::new(&device, &queue, format);
         renderer.set_surface_size(config.width, config.height);
+        // Register any custom shaders the app declared. Done once at
+        // startup; pipelines are cached for the runner's lifetime.
+        for s in self.app.shaders() {
+            renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
+        }
 
         self.gfx = Some(Gfx {
             window,
@@ -275,24 +284,18 @@ impl<A: App> ApplicationHandler for Host<A> {
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("aetna_demo::encoder"),
                         });
-                {
-                    let bg = bg_color();
-                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("aetna_demo::pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(bg),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-                    gfx.renderer.draw(&mut pass);
-                }
+                // `render()` owns pass lifetimes itself so it can split
+                // around `BackdropSnapshot` boundaries when the app
+                // uses backdrop-sampling shaders. With no boundary it
+                // collapses to a single pass — same behaviour as the
+                // old `draw(pass)` path.
+                gfx.renderer.render(
+                    &gfx.device,
+                    &mut encoder,
+                    &frame.texture,
+                    &view,
+                    wgpu::LoadOp::Clear(bg_color()),
+                );
                 gfx.queue.submit(Some(encoder.finish()));
                 frame.present();
 

@@ -84,7 +84,9 @@ pub mod text;
 pub use anim::{AnimProp, AnimValue, Animation, SpringConfig, Timing, TweenConfig};
 pub use bundle::{Bundle, render_bundle, render_bundle_with, write_bundle};
 pub use draw_ops::draw_ops;
-pub use event::{App, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget};
+pub use event::{
+    App, AppShader, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget,
+};
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
 pub use inspect::dump_tree;

@@ -219,4 +219,27 @@ pub trait App {
     fn hotkeys(&self) -> Vec<(KeyChord, String)> {
         Vec::new()
     }
+
+    /// Custom shaders this app needs registered. Each tuple is
+    /// `(name, wgsl_source, samples_backdrop)`. The host runner
+    /// registers them once at startup via
+    /// `Runner::register_shader_with(name, wgsl, samples_backdrop)`.
+    ///
+    /// Backends that don't yet support backdrop sampling (e.g.
+    /// vulkano in v0.7) skip entries with `samples_backdrop=true`;
+    /// any node bound to such a shader will draw nothing on those
+    /// backends rather than mis-render.
+    ///
+    /// Default: no shaders.
+    fn shaders(&self) -> Vec<AppShader> {
+        Vec::new()
+    }
+}
+
+/// One custom shader registration, returned from [`App::shaders`].
+#[derive(Clone, Copy, Debug)]
+pub struct AppShader {
+    pub name: &'static str,
+    pub wgsl: &'static str,
+    pub samples_backdrop: bool,
 }
