@@ -14,7 +14,7 @@ A widget is a function (or struct + builder) that returns an [`El`]. To make wid
 
 ### 1. The `El` builder
 
-The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`, `padding`, `gap`, `axis`, `align`, `justify`), visuals (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`), text (`text`, `text_color`, `text_align`, `font_size`, `font_weight`, `mono`, `italic`, `underline`, `strikethrough`, `link`, `wrap_text`), the paint-time transforms (`opacity`, `translate`, `scale`, `animate`), and the cross-cutting flags `clip()` (scissor children to this node's painted rect) and `scrollable()` (route wheel events to this node so it can scroll). `Kind::Scroll` already turns both on; `clip()` and `scrollable()` are the primitives behind it, available to any user widget that wants the same behaviour without claiming the structural variant.
+The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`, `padding`, `gap`, `axis`, `align`, `justify`), visuals (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`, `surface_role`), text (`text`, `text_color`, `text_align`, `text_role`, `font_size`, `font_weight`, `mono`, `italic`, `underline`, `strikethrough`, `link`, `wrap_text`, `text_overflow`, `ellipsis`, `max_lines`), icons (`icon`, `icon_name`, `icon_size`, `icon_stroke_width`), the paint-time transforms (`opacity`, `translate`, `scale`, `animate`), and the cross-cutting flags `clip()` (scissor children to this node's painted rect) and `scrollable()` (route wheel events to this node so it can scroll). `Kind::Scroll` already turns both on; `clip()` and `scrollable()` are the primitives behind it, available to any user widget that wants the same behaviour without claiming the structural variant.
 
 ### 2. Identity & a11y tags
 
@@ -24,11 +24,35 @@ The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`,
 
 The decorative `Kind` variants (`Button`, `Card`, `Badge`, `Heading`, `Modal`, `Scrim`) are inspector tags only. The library does not dispatch behaviour on them. Use them or use `Custom` — the rendered output is the same.
 
-### 3. Style profiles
+### 3. Style profiles + surface roles
 
 `StyleProfile` (`Solid`, `Tinted`, `Surface`, `TextOnly`) controls how the cross-cutting modifiers (`.primary`, `.success`, `.warning`, `.destructive`, `.info`, `.muted`, `.ghost`, `.outline`, `.secondary`) react to your widget. Set it once in your builder; the modifier vocabulary just works.
 
 This is the rule that lets new widgets ship without editing `style.rs`. If your widget should react to `.primary()` like a button (solid fill), use `StyleProfile::Solid`. Like a badge (tinted alpha), use `Tinted`. Like a card (surface tint), use `Surface`. Pure text colour shifts only, use `TextOnly`.
+
+`SurfaceRole` (`Panel`, `Raised`, `Sunken`, `Popover`, `Selected`, `Current`, `Input`, `Danger`) is the theme-facing semantic role for rect-shaped surfaces. Set it with `.surface_role(...)` when the widget's surface should be themed as a panel, input, popover, selected row, current nav item, and so on. The draw-op pass emits both the normal rounded-rect uniforms and a `surface_role` uniform; `Theme` can route different roles to different shaders via `with_role_shader`.
+
+Use roles for meaning and profiles for modifier behavior. A text input, for example, uses `StyleProfile::Surface` so `.invalid()` can affect stroke/fill, and `SurfaceRole::Input` so a theme can render it as an inset/sunken material.
+
+### 3.1 Text overflow policy
+
+Single-line app chrome should choose an overflow policy explicitly. The default is `TextOverflow::Clip`; `.ellipsis()` switches a nowrap text element to truncation with a trailing ellipsis at draw-op construction time, so SVG fallback and GPU renderers see the same shortened string.
+
+Use `.ellipsis()` for table cells, sidebar labels, command palette rows, email/name columns, badges with bounded slots, and any other fixed-width text where clipping would look like a rendering bug. The lint pass reports horizontally overflowing nowrap text as `FindingKind::TextOverflow` and suggests `.ellipsis()`, `wrap_text()`, or a wider box.
+
+For bounded wrapped copy, use `.wrap_text().max_lines(n)`. The draw-op pass clamps the displayed text and ellipsizes the final visible line, so wrapped descriptions can stay inside cards, list rows, and helper panels without silently expanding the layout.
+
+### 3.2 Typography roles
+
+`TextRole` (`Body`, `Caption`, `Label`, `Title`, `Heading`, `Display`, `Code`) is the semantic typography role for text-bearing nodes. Set it with `.text_role(...)`, or use the role modifiers `.body()`, `.caption()`, `.label()`, `.title()`, `.heading()`, `.display()`, and `.code()`.
+
+Roles apply default size/weight/color so product code can say what a text run is before overriding a specific detail. For example, table headers and helper copy should usually be `.caption()`, button/menu labels should be `.label()`, card titles should be `.title()`, page titles should be `.heading()` or `.display()`, and inline code should use `.code()`. Tree dumps show non-body roles as `text_role=...`, which gives the agent loop a semantic handle when tuning density and hierarchy.
+
+### 3.3 Icons
+
+Use `icon("search")` for built-in vector icons, `icon_button("menu")` for the standard 36px icon-only button surface, and `button_with_icon("upload", "Publish")` for label+icon actions. The names intentionally mirror common lucide/shadcn names: `menu`, `search`, `bell`, `layout-dashboard`, `file-text`, `folder`, `users`, `bar-chart`, `git-branch`, `git-commit`, `refresh-cw`, `alert-circle`, `check`, `x`, `plus`, `chevron-right`, and related basics.
+
+Icons are normal `El`s: set `.color(...)`, `.icon_size(...)`, `.icon_stroke_width(...)`, width/height, padding, or put them inside rows the same way as text. Tree dumps show `icon=<name>`, draw-op artifacts include `Icon` records, and the SVG fallback renders the vector path directly. GPU backends currently paint a fallback glyph for icon ops; the dedicated vector icon pipeline is the next backend slice.
 
 ### 4. Focus + interaction
 

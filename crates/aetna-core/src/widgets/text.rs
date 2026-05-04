@@ -9,7 +9,6 @@
 use std::panic::Location;
 
 use crate::style::StyleProfile;
-use crate::tokens;
 use crate::tree::*;
 
 #[track_caller]
@@ -18,8 +17,7 @@ pub fn text(s: impl Into<String>) -> El {
         .at_loc(Location::caller())
         .style_profile(StyleProfile::TextOnly)
         .text(s)
-        .text_color(tokens::TEXT_FOREGROUND)
-        .font_size(tokens::FONT_BASE)
+        .text_role(TextRole::Body)
         .hug()
 }
 
@@ -38,9 +36,7 @@ pub fn h1(s: impl Into<String>) -> El {
         .at_loc(Location::caller())
         .style_profile(StyleProfile::TextOnly)
         .text(s)
-        .text_color(tokens::TEXT_FOREGROUND)
-        .font_size(tokens::FONT_XXL)
-        .font_weight(FontWeight::Bold)
+        .text_role(TextRole::Display)
         .hug()
 }
 
@@ -50,9 +46,7 @@ pub fn h2(s: impl Into<String>) -> El {
         .at_loc(Location::caller())
         .style_profile(StyleProfile::TextOnly)
         .text(s)
-        .text_color(tokens::TEXT_FOREGROUND)
-        .font_size(tokens::FONT_XL)
-        .font_weight(FontWeight::Semibold)
+        .text_role(TextRole::Heading)
         .hug()
 }
 
@@ -62,13 +56,11 @@ pub fn h3(s: impl Into<String>) -> El {
         .at_loc(Location::caller())
         .style_profile(StyleProfile::TextOnly)
         .text(s)
-        .text_color(tokens::TEXT_FOREGROUND)
-        .font_size(tokens::FONT_LG)
-        .font_weight(FontWeight::Semibold)
+        .text_role(TextRole::Title)
         .hug()
 }
 
 #[track_caller]
 pub fn mono(s: impl Into<String>) -> El {
-    text(s).mono()
+    text(s).code()
 }

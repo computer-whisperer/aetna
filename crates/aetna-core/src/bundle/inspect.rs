@@ -41,6 +41,9 @@ fn dump_node(n: &El, ui_state: &UiState, depth: usize, s: &mut String) {
     if !matches!(state, InteractionState::Default) {
         let _ = write!(s, " state={state:?}");
     }
+    if !matches!(n.surface_role, SurfaceRole::None) {
+        let _ = write!(s, " surface_role={}", n.surface_role.name());
+    }
     if n.clip {
         s.push_str(" clip=true");
     }
@@ -59,9 +62,21 @@ fn dump_node(n: &El, ui_state: &UiState, depth: usize, s: &mut String) {
         if !matches!(n.text_wrap, TextWrap::NoWrap) {
             let _ = write!(s, " wrap={:?}", n.text_wrap);
         }
+        if !matches!(n.text_overflow, TextOverflow::Clip) {
+            let _ = write!(s, " overflow={:?}", n.text_overflow);
+        }
+        if !matches!(n.text_role, TextRole::Body) {
+            let _ = write!(s, " text_role={}", n.text_role.name());
+        }
+        if let Some(max_lines) = n.text_max_lines {
+            let _ = write!(s, " max_lines={max_lines}");
+        }
         if !matches!(n.text_align, TextAlign::Start) {
             let _ = write!(s, " text_align={:?}", n.text_align);
         }
+    }
+    if let Some(icon) = n.icon {
+        let _ = write!(s, " icon={}", icon.name());
     }
     if let Some(fill) = n.fill {
         let _ = write!(s, " fill={}", color_label(fill));

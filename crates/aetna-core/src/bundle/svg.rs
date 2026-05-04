@@ -21,6 +21,7 @@
 
 use std::fmt::Write as _;
 
+use crate::icons;
 use crate::ir::*;
 use crate::shader::*;
 use crate::text::metrics as text_metrics;
@@ -96,6 +97,14 @@ fn emit_op(s: &mut String, op: &DrawOp) {
         } => {
             emit_attributed_text(s, id, *rect, *size, *wrap, *anchor, runs, layout);
         }
+        DrawOp::Icon {
+            id,
+            rect,
+            name,
+            color,
+            stroke_width,
+            ..
+        } => emit_icon(s, id, *rect, *name, *color, *stroke_width),
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
 }
@@ -347,6 +356,31 @@ fn emit_attributed_text(
         );
     }
     s.push_str("</text>\n");
+}
+
+fn emit_icon(
+    s: &mut String,
+    id: &str,
+    rect: Rect,
+    name: IconName,
+    color: Color,
+    stroke_width: f32,
+) {
+    let path = icons::icon_path(name);
+    let stroke = (stroke_width * 24.0 / rect.w.max(rect.h).max(1.0)).max(0.5);
+    let _ = writeln!(
+        s,
+        r#"<svg data-node="{}" data-icon="{}" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" viewBox="0 0 24 24" fill="none" stroke="{}" stroke-width="{:.2}" stroke-linecap="round" stroke-linejoin="round">{}</svg>"#,
+        esc(id),
+        name.name(),
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        color_svg(color),
+        stroke,
+        path
+    );
 }
 
 fn as_color(v: &UniformValue) -> Option<Color> {

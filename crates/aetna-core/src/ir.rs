@@ -23,7 +23,7 @@
 use crate::shader::{ShaderHandle, UniformBlock};
 use crate::text::atlas::RunStyle;
 use crate::text::metrics::TextLayout;
-use crate::tree::{Color, FontWeight, Rect, TextWrap};
+use crate::tree::{Color, FontWeight, IconName, Rect, TextWrap};
 
 /// One paint operation in the laid-out frame.
 #[derive(Clone, Debug)]
@@ -76,6 +76,18 @@ pub enum DrawOp {
         anchor: TextAnchor,
         layout: TextLayout,
     },
+    /// A built-in vector icon in a 24x24 coordinate system, scaled into
+    /// `rect`. SVG renders the vector path directly; GPU backends use a
+    /// fallback glyph until the dedicated vector-icon pipeline lands.
+    Icon {
+        id: String,
+        rect: Rect,
+        scissor: Option<Rect>,
+        name: IconName,
+        color: Color,
+        size: f32,
+        stroke_width: f32,
+    },
     /// Mid-frame snapshot of the current target into a sampled texture,
     /// scheduled before any backdrop-sampling pass. Reserved for v2.
     BackdropSnapshot,
@@ -93,7 +105,8 @@ impl DrawOp {
         match self {
             DrawOp::Quad { id, .. }
             | DrawOp::GlyphRun { id, .. }
-            | DrawOp::AttributedText { id, .. } => id,
+            | DrawOp::AttributedText { id, .. }
+            | DrawOp::Icon { id, .. } => id,
             DrawOp::BackdropSnapshot => "<backdrop-snapshot>",
         }
     }
@@ -102,6 +115,7 @@ impl DrawOp {
             DrawOp::Quad { shader, .. }
             | DrawOp::GlyphRun { shader, .. }
             | DrawOp::AttributedText { shader, .. } => Some(shader),
+            DrawOp::Icon { .. } => None,
             DrawOp::BackdropSnapshot => None,
         }
     }
@@ -109,7 +123,8 @@ impl DrawOp {
         match self {
             DrawOp::Quad { scissor, .. }
             | DrawOp::GlyphRun { scissor, .. }
-            | DrawOp::AttributedText { scissor, .. } => *scissor,
+            | DrawOp::AttributedText { scissor, .. }
+            | DrawOp::Icon { scissor, .. } => *scissor,
             DrawOp::BackdropSnapshot => None,
         }
     }

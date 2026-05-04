@@ -21,6 +21,8 @@
 //!
 //! - **Color/status:** `primary`, `success`, `warning`, `destructive`, `info`
 //! - **Surface variants:** `secondary`, `ghost`, `outline`, `muted`
+//! - **Semantic states:** `selected`, `current`, `disabled`, `invalid`, `loading`
+//! - **Typography roles:** `caption`, `label`, `body`, `title`, `heading`, `display`, `code`
 //! - **Text shape:** `bold`, `semibold`, `small`, `xsmall`, `color`
 
 use crate::tokens;
@@ -67,7 +69,7 @@ impl El {
         self.fill = Some(tokens::BG_MUTED);
         self.stroke = Some(tokens::BORDER);
         self.stroke_width = 1.0;
-        self.text_color = Some(tokens::TEXT_FOREGROUND);
+        set_content_color(&mut self, tokens::TEXT_FOREGROUND);
         self.font_weight = FontWeight::Medium;
         self
     }
@@ -78,7 +80,7 @@ impl El {
         self.fill = None;
         self.stroke = None;
         self.stroke_width = 0.0;
-        self.text_color = Some(tokens::TEXT_MUTED_FOREGROUND);
+        set_content_color(&mut self, tokens::TEXT_MUTED_FOREGROUND);
         self
     }
 
@@ -87,7 +89,7 @@ impl El {
         self.fill = None;
         self.stroke = Some(tokens::BORDER_STRONG);
         self.stroke_width = 1.0;
-        self.text_color = Some(tokens::TEXT_FOREGROUND);
+        set_content_color(&mut self, tokens::TEXT_FOREGROUND);
         self
     }
 
@@ -100,13 +102,124 @@ impl El {
                 self.fill = Some(tokens::BG_MUTED);
                 self.stroke = Some(tokens::BORDER);
                 self.stroke_width = 1.0;
-                self.text_color = Some(tokens::TEXT_MUTED_FOREGROUND);
+                set_content_color(&mut self, tokens::TEXT_MUTED_FOREGROUND);
             }
             StyleProfile::TextOnly => {
-                self.text_color = Some(tokens::TEXT_MUTED_FOREGROUND);
+                set_content_color(&mut self, tokens::TEXT_MUTED_FOREGROUND);
             }
         }
         self
+    }
+
+    // ===== Semantic states =====
+
+    /// Selected row/item treatment. Use for the item that is selected
+    /// inside a collection, not for transient keyboard focus.
+    pub fn selected(mut self) -> Self {
+        if text_only_leaf(&self) {
+            self.text_color = Some(tokens::PRIMARY);
+        } else {
+            match self.style_profile {
+                StyleProfile::TextOnly => {}
+                StyleProfile::Solid | StyleProfile::Tinted | StyleProfile::Surface => {}
+            }
+            {
+                self.style_profile = StyleProfile::Surface;
+                self.surface_role = SurfaceRole::Selected;
+                self.fill = Some(tokens::PRIMARY.with_alpha(28));
+                self.stroke = Some(tokens::PRIMARY.with_alpha(90));
+                self.stroke_width = 1.0;
+                set_content_color(&mut self, tokens::TEXT_FOREGROUND);
+            }
+        }
+        self
+    }
+
+    /// Current navigation/page treatment. Slightly quieter than
+    /// [`Self::selected`] so nav chrome does not compete with content.
+    pub fn current(mut self) -> Self {
+        if text_only_leaf(&self) {
+            self.text_color = Some(tokens::TEXT_FOREGROUND);
+            self.font_weight = FontWeight::Semibold;
+        } else {
+            self.style_profile = StyleProfile::Surface;
+            self.surface_role = SurfaceRole::Current;
+            self.fill = Some(tokens::BG_RAISED);
+            self.stroke = Some(tokens::BORDER);
+            self.stroke_width = 1.0;
+            set_content_color(&mut self, tokens::TEXT_FOREGROUND);
+            self.font_weight = FontWeight::Semibold;
+        }
+        self
+    }
+
+    /// Disabled treatment for controls and rows. Also removes the node
+    /// from focus order and blocks pointer hits on this element.
+    pub fn disabled(mut self) -> Self {
+        self.opacity = tokens::DISABLED_ALPHA;
+        self.focusable = false;
+        self.block_pointer = true;
+        if text_only_leaf(&self) {
+            self.text_color = Some(tokens::TEXT_MUTED_FOREGROUND);
+        }
+        self
+    }
+
+    /// Invalid/error treatment for inputs, rows, and validation badges.
+    pub fn invalid(mut self) -> Self {
+        if !text_only_leaf(&self) {
+            self.style_profile = StyleProfile::Surface;
+            self.surface_role = SurfaceRole::Danger;
+        }
+        self.stroke = Some(tokens::DESTRUCTIVE);
+        self.stroke_width = 1.0;
+        if text_only_leaf(&self) {
+            self.text_color = Some(tokens::DESTRUCTIVE);
+        }
+        self
+    }
+
+    /// Loading treatment for a direct text-bearing node. Container
+    /// widgets can still use this for opacity even when they do not
+    /// have their own label text.
+    pub fn loading(mut self) -> Self {
+        self.opacity = self.opacity.min(0.78);
+        if let Some(label) = &mut self.text {
+            label.push_str("...");
+        }
+        self
+    }
+
+    // ===== Typography roles =====
+
+    pub fn text_role(mut self, role: TextRole) -> Self {
+        self.text_role = role;
+        apply_text_role(&mut self);
+        self
+    }
+
+    pub fn caption(self) -> Self {
+        self.text_role(TextRole::Caption)
+    }
+
+    pub fn label(self) -> Self {
+        self.text_role(TextRole::Label)
+    }
+
+    pub fn body(self) -> Self {
+        self.text_role(TextRole::Body)
+    }
+
+    pub fn title(self) -> Self {
+        self.text_role(TextRole::Title)
+    }
+
+    pub fn heading(self) -> Self {
+        self.text_role(TextRole::Heading)
+    }
+
+    pub fn display(self) -> Self {
+        self.text_role(TextRole::Display)
     }
 
     // ===== Text shape =====
@@ -134,32 +247,92 @@ impl El {
     }
 }
 
+fn text_only_leaf(el: &El) -> bool {
+    matches!(el.style_profile, StyleProfile::TextOnly) && el.text.is_some()
+}
+
+fn apply_text_role(el: &mut El) {
+    match el.text_role {
+        TextRole::Body => {
+            el.font_size = tokens::FONT_BASE;
+            el.font_weight = FontWeight::Regular;
+            el.font_mono = false;
+            el.text_color = Some(tokens::TEXT_FOREGROUND);
+        }
+        TextRole::Caption => {
+            el.font_size = tokens::FONT_XS;
+            el.font_weight = FontWeight::Regular;
+            el.font_mono = false;
+            el.text_color = Some(tokens::TEXT_MUTED_FOREGROUND);
+        }
+        TextRole::Label => {
+            el.font_size = tokens::FONT_BASE;
+            el.font_weight = FontWeight::Medium;
+            el.font_mono = false;
+            el.text_color = Some(tokens::TEXT_FOREGROUND);
+        }
+        TextRole::Title => {
+            el.font_size = tokens::FONT_LG;
+            el.font_weight = FontWeight::Semibold;
+            el.font_mono = false;
+            el.text_color = Some(tokens::TEXT_FOREGROUND);
+        }
+        TextRole::Heading => {
+            el.font_size = tokens::FONT_XL;
+            el.font_weight = FontWeight::Semibold;
+            el.font_mono = false;
+            el.text_color = Some(tokens::TEXT_FOREGROUND);
+        }
+        TextRole::Display => {
+            el.font_size = tokens::FONT_XXL;
+            el.font_weight = FontWeight::Bold;
+            el.font_mono = false;
+            el.text_color = Some(tokens::TEXT_FOREGROUND);
+        }
+        TextRole::Code => {
+            el.font_size = tokens::FONT_SM;
+            el.font_weight = FontWeight::Regular;
+            el.font_mono = true;
+            el.text_color = Some(tokens::TEXT_FOREGROUND);
+        }
+    }
+}
+
 fn tint(mut el: El, c: Color) -> El {
     match el.style_profile {
         StyleProfile::Solid => {
             el.fill = Some(c);
             el.stroke = Some(c);
             el.stroke_width = 1.0;
-            el.text_color = Some(text_on_solid(c));
+            set_content_color(&mut el, text_on_solid(c));
             el.font_weight = FontWeight::Semibold;
         }
         StyleProfile::Tinted => {
             el.fill = Some(c.with_alpha(38));
             el.stroke = Some(c.with_alpha(120));
             el.stroke_width = 1.0;
-            el.text_color = Some(c);
+            set_content_color(&mut el, c);
         }
         StyleProfile::Surface => {
             el.fill = Some(c.with_alpha(38));
             el.stroke = Some(c.with_alpha(120));
             el.stroke_width = 1.0;
-            el.text_color = Some(c);
+            set_content_color(&mut el, c);
         }
         StyleProfile::TextOnly => {
-            el.text_color = Some(c);
+            set_content_color(&mut el, c);
         }
     }
     el
+}
+
+fn set_content_color(el: &mut El, color: Color) {
+    el.text_color = Some(color);
+    for child in &mut el.children {
+        if child.text.is_some() || child.icon.is_some() {
+            child.text_color = Some(color);
+        }
+    }
 }
 
 /// Pick a contrasting text color for a solid background fill.
@@ -173,5 +346,80 @@ fn text_on_solid(c: Color) -> Color {
         tokens::TEXT_ON_SOLID_DARK
     } else {
         tokens::TEXT_ON_SOLID_LIGHT
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{button, button_with_icon, icon_button, row, text};
+
+    #[test]
+    fn selected_marks_surface_with_accent_treatment() {
+        let el = row([text("Selected")]).selected();
+        assert_eq!(el.fill, Some(tokens::PRIMARY.with_alpha(28)));
+        assert_eq!(el.stroke, Some(tokens::PRIMARY.with_alpha(90)));
+        assert_eq!(el.stroke_width, 1.0);
+        assert_eq!(el.surface_role, SurfaceRole::Selected);
+    }
+
+    #[test]
+    fn current_marks_container_as_selected_surface_role() {
+        let el = row([text("Current")]).current();
+        assert_eq!(el.fill, Some(tokens::BG_RAISED));
+        assert_eq!(el.stroke, Some(tokens::BORDER));
+        assert_eq!(el.surface_role, SurfaceRole::Current);
+        assert_eq!(el.style_profile, StyleProfile::Surface);
+    }
+
+    #[test]
+    fn disabled_removes_focus_and_dims_control() {
+        let el = button("Disabled").disabled();
+        assert!(!el.focusable);
+        assert!(el.block_pointer);
+        assert_eq!(el.opacity, tokens::DISABLED_ALPHA);
+    }
+
+    #[test]
+    fn icon_button_uses_same_solid_style_surface_as_button() {
+        let el = icon_button("menu").primary();
+        assert_eq!(el.icon, Some(IconName::Menu));
+        assert_eq!(el.fill, Some(tokens::PRIMARY));
+        assert_eq!(el.text_color, Some(tokens::TEXT_ON_SOLID_DARK));
+        assert_eq!(el.surface_role, SurfaceRole::Raised);
+    }
+
+    #[test]
+    fn button_with_icon_propagates_variant_content_color() {
+        let el = button_with_icon("upload", "Publish").primary();
+        assert_eq!(el.fill, Some(tokens::PRIMARY));
+        assert_eq!(el.children[0].icon, Some(IconName::Upload));
+        assert_eq!(el.children[0].text_color, Some(tokens::TEXT_ON_SOLID_DARK));
+        assert_eq!(el.children[1].text.as_deref(), Some("Publish"));
+        assert_eq!(el.children[1].text_color, Some(tokens::TEXT_ON_SOLID_DARK));
+    }
+
+    #[test]
+    fn loading_appends_direct_label_text() {
+        let el = button("Save").loading();
+        assert_eq!(el.text.as_deref(), Some("Save..."));
+        assert_eq!(el.opacity, 0.78);
+    }
+
+    #[test]
+    fn text_roles_apply_inspectable_typographic_defaults() {
+        let caption = text("Caption").caption();
+        assert_eq!(caption.text_role, TextRole::Caption);
+        assert_eq!(caption.font_size, tokens::FONT_XS);
+        assert_eq!(caption.text_color, Some(tokens::TEXT_MUTED_FOREGROUND));
+
+        let label = text("Label").label();
+        assert_eq!(label.text_role, TextRole::Label);
+        assert_eq!(label.font_size, tokens::FONT_BASE);
+        assert_eq!(label.font_weight, FontWeight::Medium);
+
+        let code = text("Code").code();
+        assert_eq!(code.text_role, TextRole::Code);
+        assert!(code.font_mono);
     }
 }

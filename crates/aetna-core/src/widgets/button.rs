@@ -27,22 +27,69 @@ use std::panic::Location;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
+use crate::{IntoIconName, icon, text};
 
 #[track_caller]
 pub fn button(label: impl Into<String>) -> El {
     El::new(Kind::Custom("button"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Solid)
+        .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
         .text(label)
         .text_align(TextAlign::Center)
+        .text_role(TextRole::Label)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
         .text_color(tokens::TEXT_FOREGROUND)
         .radius(tokens::RADIUS_MD)
-        .font_size(tokens::FONT_BASE)
-        .font_weight(FontWeight::Medium)
+        .width(Size::Hug)
+        .height(Size::Fixed(36.0))
+        .padding(Sides::xy(tokens::SPACE_MD, 0.0))
+}
+
+#[track_caller]
+pub fn icon_button(name: impl IntoIconName) -> El {
+    El::new(Kind::Custom("icon_button"))
+        .at_loc(Location::caller())
+        .style_profile(StyleProfile::Solid)
+        .surface_role(SurfaceRole::Raised)
+        .focusable()
+        .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .icon_name(name.into_icon_name())
+        .icon_size(16.0)
+        .icon_stroke_width(2.0)
+        .fill(tokens::BG_MUTED)
+        .stroke(tokens::BORDER)
+        .text_color(tokens::TEXT_FOREGROUND)
+        .radius(tokens::RADIUS_MD)
+        .width(Size::Fixed(36.0))
+        .height(Size::Fixed(36.0))
+}
+
+#[track_caller]
+pub fn button_with_icon(name: impl IntoIconName, label: impl Into<String>) -> El {
+    El::new(Kind::Custom("button_with_icon"))
+        .at_loc(Location::caller())
+        .style_profile(StyleProfile::Solid)
+        .surface_role(SurfaceRole::Raised)
+        .focusable()
+        .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .axis(Axis::Row)
+        .gap(tokens::SPACE_SM)
+        .align(Align::Center)
+        .justify(Justify::Center)
+        .child(
+            icon(name)
+                .icon_size(tokens::FONT_BASE)
+                .color(tokens::TEXT_FOREGROUND),
+        )
+        .child(text(label).label())
+        .fill(tokens::BG_MUTED)
+        .stroke(tokens::BORDER)
+        .text_color(tokens::TEXT_FOREGROUND)
+        .radius(tokens::RADIUS_MD)
         .width(Size::Hug)
         .height(Size::Fixed(36.0))
         .padding(Sides::xy(tokens::SPACE_MD, 0.0))

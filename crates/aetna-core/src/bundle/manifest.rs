@@ -82,6 +82,7 @@ pub fn shader_manifest(ops: &[DrawOp]) -> String {
                     );
                     s.push('\n');
                 }
+                DrawOp::Icon { .. } => {}
                 DrawOp::BackdropSnapshot => {}
             }
         }
@@ -178,6 +179,30 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                     rect.w,
                     rect.h,
                     runs.len(),
+                );
+                if let Some(sci) = scissor {
+                    write_scissor(&mut s, *sci);
+                }
+                s.push('\n');
+            }
+            DrawOp::Icon {
+                id,
+                rect,
+                scissor,
+                name,
+                color,
+                size,
+                stroke_width,
+            } => {
+                let _ = write!(
+                    s,
+                    "Icon   name={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} color={} size={size:.1} stroke_width={stroke_width:.1}",
+                    name.name(),
+                    rect.x,
+                    rect.y,
+                    rect.w,
+                    rect.h,
+                    color_label(*color),
                 );
                 if let Some(sci) = scissor {
                     write_scissor(&mut s, *sci);

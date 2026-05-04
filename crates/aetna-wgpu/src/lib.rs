@@ -73,6 +73,7 @@ use aetna_core::paint::{PhysicalScissor, QuadInstance};
 use aetna_core::runtime::RunnerCore;
 use aetna_core::shader::{ShaderHandle, StockShader, stock_wgsl};
 use aetna_core::state::{AnimationMode, UiState};
+use aetna_core::theme::Theme;
 use aetna_core::tree::{El, Rect};
 
 pub use aetna_core::paint::PaintItem;
@@ -294,6 +295,15 @@ impl Runner {
     /// `set_scissor_rect` validation.
     pub fn set_surface_size(&mut self, width: u32, height: u32) {
         self.core.set_surface_size(width, height);
+    }
+
+    /// Set the theme used to resolve implicit widget surfaces to shaders.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.core.set_theme(theme);
+    }
+
+    pub fn theme(&self) -> &Theme {
+        self.core.theme()
     }
 
     /// Register a custom shader. `name` is the same string passed to

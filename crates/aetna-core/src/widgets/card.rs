@@ -24,6 +24,7 @@ where
     El::new(Kind::Card)
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .surface_role(SurfaceRole::Panel)
         .children(children)
         .fill(tokens::BG_CARD)
         .stroke(tokens::BORDER)

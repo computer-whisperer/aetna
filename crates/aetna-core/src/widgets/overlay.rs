@@ -72,6 +72,7 @@ where
     El::new(Kind::Modal)
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .surface_role(SurfaceRole::Popover)
         .children(children)
         .fill(tokens::BG_CARD)
         .stroke(tokens::BORDER)

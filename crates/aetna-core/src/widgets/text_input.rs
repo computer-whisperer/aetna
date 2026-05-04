@@ -145,6 +145,7 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
     El::new(Kind::Custom("text_input"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .surface_role(SurfaceRole::Input)
         .focusable()
         .capture_keys()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))

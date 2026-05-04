@@ -35,7 +35,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use aetna_core::{
-    AnimationMode, El, KeyChord, KeyModifiers, PointerButton, Rect, UiEvent, UiKey, UiState,
+    AnimationMode, El, KeyChord, KeyModifiers, PointerButton, Rect, Theme, UiEvent, UiKey, UiState,
     shader::{ShaderHandle, StockShader, stock_wgsl},
 };
 use smallvec::smallvec;
@@ -329,6 +329,15 @@ impl Runner {
 
     pub fn set_surface_size(&mut self, width: u32, height: u32) {
         self.core.set_surface_size(width, height);
+    }
+
+    /// Set the theme used to resolve implicit widget surfaces to shaders.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.core.set_theme(theme);
+    }
+
+    pub fn theme(&self) -> &Theme {
+        self.core.theme()
     }
 
     /// Register a custom shader. WGSL → SPIR-V at register time; bad

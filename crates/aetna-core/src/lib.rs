@@ -57,6 +57,7 @@ pub mod draw_ops;
 pub mod event;
 pub mod focus;
 pub mod hit_test;
+pub mod icons;
 pub mod ir;
 pub mod layout;
 pub mod paint;
@@ -65,24 +66,29 @@ pub mod shader;
 pub mod state;
 pub mod style;
 pub mod text;
+pub mod theme;
 pub mod tokens;
 pub mod tree;
 pub mod widgets;
 
 // Prelude — for `use aetna_core::*;`.
 pub use anim::{AnimProp, AnimValue, Animation, SpringConfig, Timing, TweenConfig};
-pub use bundle::artifact::{Bundle, render_bundle, render_bundle_with, write_bundle};
+pub use bundle::artifact::{
+    Bundle, render_bundle, render_bundle_themed, render_bundle_with, render_bundle_with_theme,
+    write_bundle,
+};
 pub use bundle::inspect::dump_tree;
 pub use bundle::lint::{Finding, FindingKind, LintReport, lint};
 pub use bundle::manifest::{draw_ops_text, shader_manifest};
 pub use bundle::svg::svg_from_ops;
-pub use draw_ops::draw_ops;
+pub use draw_ops::{draw_ops, draw_ops_with_theme};
 pub use event::{
     App, AppShader, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind, UiKey,
     UiTarget,
 };
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
+pub use icons::{IntoIconName, icon, icon_path};
 pub use ir::{DrawOp, TextAnchor};
 pub use layout::{LayoutCtx, LayoutFn, VirtualItems, layout};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
@@ -95,14 +101,15 @@ pub use text::metrics::{
     MeasuredText, TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text, line_height,
     line_width, measure_text, selection_rects, wrap_lines,
 };
+pub use theme::Theme;
 pub use tree::{
-    Align, Axis, Color, El, FontWeight, InteractionState, Justify, Kind, Rect, Sides, Size, Source,
-    TextAlign, TextWrap, column, divider, hard_break, row, scroll, spacer, stack, text_runs,
-    virtual_list,
+    Align, Axis, Color, El, FontWeight, IconName, InteractionState, Justify, Kind, Rect, Sides,
+    Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column, divider,
+    hard_break, row, scroll, spacer, stack, text_runs, virtual_list,
 };
 
 pub use widgets::badge::badge;
-pub use widgets::button::button;
+pub use widgets::button::{button, button_with_icon, icon_button};
 pub use widgets::card::card;
 pub use widgets::overlay::{modal, modal_panel, overlay, scrim};
 pub use widgets::popover::{

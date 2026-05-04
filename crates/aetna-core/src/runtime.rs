@@ -65,6 +65,7 @@ use crate::paint::{
 use crate::shader::ShaderHandle;
 use crate::state::{AnimationMode, UiState};
 use crate::text::atlas::RunStyle;
+use crate::theme::Theme;
 use crate::tree::{Color, El, FontWeight, Rect, TextWrap};
 
 /// Reported back from each backend's `prepare(...)` per frame. The
@@ -127,6 +128,9 @@ pub struct RunnerCore {
     /// [`Self::set_surface_size`] from their host's surface-config /
     /// resize hook to keep this in lockstep.
     pub surface_size_override: Option<(u32, u32)>,
+
+    /// Theme used when resolving implicit widget surfaces to shaders.
+    pub theme: Theme,
 }
 
 impl Default for RunnerCore {
@@ -145,7 +149,16 @@ impl RunnerCore {
             paint_items: Vec::new(),
             viewport_px: (1, 1),
             surface_size_override: None,
+            theme: Theme::default(),
         }
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.theme
     }
 
     /// Override the physical viewport size. Call after the host's
@@ -408,7 +421,7 @@ impl RunnerCore {
             )
         });
         let t_after_layout = Instant::now();
-        let ops = draw_ops::draw_ops(root, &self.ui_state);
+        let ops = draw_ops::draw_ops_with_theme(root, &self.ui_state, &self.theme);
         let t_after_draw_ops = Instant::now();
         timings.layout = t_after_layout - t0;
         timings.draw_ops = t_after_draw_ops - t_after_layout;
@@ -558,6 +571,43 @@ impl RunnerCore {
                     }
                     let layers =
                         text.record_runs(*rect, phys, runs, *size, *wrap, *anchor, scale_factor);
+                    for index in layers {
+                        self.paint_items.push(PaintItem::Text(index));
+                    }
+                }
+                DrawOp::Icon {
+                    rect,
+                    scissor,
+                    name,
+                    color,
+                    size,
+                    ..
+                } => {
+                    close_run(
+                        &mut self.runs,
+                        &mut self.paint_items,
+                        current,
+                        run_first,
+                        self.quad_scratch.len() as u32,
+                    );
+                    current = None;
+                    run_first = self.quad_scratch.len() as u32;
+
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        continue;
+                    }
+                    let layers = text.record(
+                        *rect,
+                        phys,
+                        *color,
+                        name.fallback_glyph(),
+                        *size,
+                        FontWeight::Regular,
+                        TextWrap::NoWrap,
+                        TextAnchor::Middle,
+                        scale_factor,
+                    );
                     for index in layers {
                         self.paint_items.push(PaintItem::Text(index));
                     }

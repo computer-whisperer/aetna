@@ -27,6 +27,7 @@ use crate::draw_ops;
 use crate::ir::DrawOp;
 use crate::layout;
 use crate::state::UiState;
+use crate::theme::Theme;
 use crate::tokens;
 use crate::tree::{El, Rect};
 
@@ -59,6 +60,17 @@ pub fn render_bundle(root: &mut El, viewport: Rect, library_marker: Option<&str>
     render_bundle_with(root, &mut UiState::new(), viewport, library_marker)
 }
 
+/// Same as [`render_bundle`], but resolves implicit surfaces through a
+/// caller-supplied [`Theme`].
+pub fn render_bundle_themed(
+    root: &mut El,
+    viewport: Rect,
+    library_marker: Option<&str>,
+    theme: &Theme,
+) -> Bundle {
+    render_bundle_with_theme(root, &mut UiState::new(), viewport, library_marker, theme)
+}
+
 /// Same as [`render_bundle`], but threads a caller-built [`UiState`]
 /// through the pipeline. Use this when the fixture wants to seed
 /// runtime state (scroll offsets, hovered/focused trackers) before
@@ -73,8 +85,20 @@ pub fn render_bundle_with(
     viewport: Rect,
     library_marker: Option<&str>,
 ) -> Bundle {
+    render_bundle_with_theme(root, ui_state, viewport, library_marker, &Theme::default())
+}
+
+/// Same as [`render_bundle_with`], but resolves implicit surfaces through
+/// a caller-supplied [`Theme`].
+pub fn render_bundle_with_theme(
+    root: &mut El,
+    ui_state: &mut UiState,
+    viewport: Rect,
+    library_marker: Option<&str>,
+    theme: &Theme,
+) -> Bundle {
     layout::layout(root, ui_state, viewport);
-    let draw_ops = draw_ops::draw_ops(root, ui_state);
+    let draw_ops = draw_ops::draw_ops_with_theme(root, ui_state, theme);
     let svg = svg_from_ops(viewport.w, viewport.h, &draw_ops, tokens::BG_APP);
     let tree_dump = inspect::dump_tree(root, ui_state);
     let shader_manifest = manifest::shader_manifest(&draw_ops);

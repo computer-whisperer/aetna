@@ -17,19 +17,26 @@ use crate::shader::*;
 use crate::state::{EnvelopeKind, UiState};
 use crate::text::atlas::RunStyle;
 use crate::text::metrics as text_metrics;
+use crate::theme::Theme;
 use crate::tokens;
 use crate::tree::*;
 
 /// Walk the laid-out tree and emit draw ops in paint order.
 pub fn draw_ops(root: &El, ui_state: &UiState) -> Vec<DrawOp> {
+    draw_ops_with_theme(root, ui_state, &Theme::default())
+}
+
+/// Walk the laid-out tree and emit draw ops using a caller-supplied theme.
+pub fn draw_ops_with_theme(root: &El, ui_state: &UiState, theme: &Theme) -> Vec<DrawOp> {
     let mut out = Vec::new();
-    push_node(root, ui_state, &mut out, None, (0.0, 0.0), 1.0, 1.0);
+    push_node(root, ui_state, theme, &mut out, None, (0.0, 0.0), 1.0, 1.0);
     out
 }
 
 fn push_node(
     n: &El,
     ui_state: &UiState,
+    theme: &Theme,
     out: &mut Vec<DrawOp>,
     inherited_scissor: Option<Rect>,
     inherited_translate: (f32, f32),
@@ -138,11 +145,12 @@ fn push_node(
             );
             uniforms.insert("focus_width", UniformValue::F32(tokens::FOCUS_RING_WIDTH));
         }
+        theme.apply_surface_uniforms(n.surface_role, &mut uniforms);
         out.push(DrawOp::Quad {
             id: n.computed_id.clone(),
             rect: painted_rect,
             scissor: own_scissor,
-            shader: ShaderHandle::Stock(StockShader::RoundedRect),
+            shader: theme.surface_handle(n.surface_role),
             uniforms,
         });
     }
@@ -151,6 +159,27 @@ fn push_node(
         let display = match suffix {
             Some(s) => format!("{text}{s}"),
             None => text.clone(),
+        };
+        let display = match (n.text_wrap, n.text_max_lines) {
+            (TextWrap::Wrap, Some(max_lines)) => text_metrics::clamp_text_to_lines(
+                &display,
+                painted_font_size,
+                weight,
+                n.font_mono,
+                inner_painted_rect.w,
+                max_lines,
+            ),
+            _ => display,
+        };
+        let display = match (n.text_wrap, n.text_overflow) {
+            (TextWrap::NoWrap, TextOverflow::Ellipsis) => text_metrics::ellipsize_text(
+                &display,
+                painted_font_size,
+                weight,
+                n.font_mono,
+                inner_painted_rect.w,
+            ),
+            _ => display,
         };
         let anchor = match n.text_align {
             TextAlign::Start => TextAnchor::Start,
@@ -182,6 +211,29 @@ fn push_node(
             wrap: n.text_wrap,
             anchor,
             layout,
+        });
+    }
+
+    if let Some(name) = n.icon {
+        let color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
+        let icon_size = painted_font_size
+            .min(inner_painted_rect.w)
+            .min(inner_painted_rect.h)
+            .max(1.0);
+        let icon_rect = Rect::new(
+            inner_painted_rect.center_x() - icon_size * 0.5,
+            inner_painted_rect.center_y() - icon_size * 0.5,
+            icon_size,
+            icon_size,
+        );
+        out.push(DrawOp::Icon {
+            id: n.computed_id.clone(),
+            rect: icon_rect,
+            scissor: own_scissor,
+            name,
+            color,
+            size: icon_size,
+            stroke_width: n.icon_stroke_width * n.scale,
         });
     }
 
@@ -228,6 +280,7 @@ fn push_node(
         push_node(
             c,
             ui_state,
+            theme,
             out,
             own_scissor,
             total_translate,
@@ -458,6 +511,87 @@ mod tests {
         };
         // 200 * 0.5 = 100
         assert_eq!(c.a, 100, "alpha should be halved by opacity 0.5");
+    }
+
+    #[test]
+    fn theme_can_route_implicit_surfaces_to_custom_shader() {
+        let mut root = button("X").primary();
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+
+        let theme = Theme::default()
+            .with_surface_shader("xp_surface")
+            .with_surface_uniform("theme_strength", UniformValue::F32(0.75));
+        let ops = draw_ops_with_theme(&root, &state, &theme);
+        let DrawOp::Quad {
+            shader, uniforms, ..
+        } = &ops[0]
+        else {
+            panic!("expected themed surface quad");
+        };
+
+        assert_eq!(*shader, ShaderHandle::Custom("xp_surface"));
+        assert_eq!(
+            uniforms.get("theme_strength"),
+            Some(&UniformValue::F32(0.75))
+        );
+        assert!(
+            matches!(uniforms.get("fill"), Some(UniformValue::Color(_))),
+            "familiar rounded-rect uniforms should stay available for manifests"
+        );
+        assert!(
+            matches!(uniforms.get("vec_a"), Some(UniformValue::Color(_))),
+            "custom surface shaders should also receive packed instance slots"
+        );
+        assert_eq!(
+            uniforms.get("vec_c"),
+            Some(&UniformValue::Vec4([
+                1.0,
+                tokens::RADIUS_MD,
+                tokens::SHADOW_SM * 0.5,
+                0.0
+            ]))
+        );
+    }
+
+    #[test]
+    fn theme_can_route_surface_role_to_custom_shader() {
+        let mut root = crate::card("Panel", [crate::text("Body")])
+            .surface_role(SurfaceRole::Popover)
+            .key("panel");
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 240.0, 120.0));
+
+        let theme = Theme::default()
+            .with_role_shader(SurfaceRole::Popover, "popover_surface")
+            .with_role_uniform(SurfaceRole::Popover, "elevation", UniformValue::F32(2.0));
+        let ops = draw_ops_with_theme(&root, &state, &theme);
+        let DrawOp::Quad {
+            shader, uniforms, ..
+        } = &ops[0]
+        else {
+            panic!("expected themed surface quad");
+        };
+
+        assert_eq!(*shader, ShaderHandle::Custom("popover_surface"));
+        assert_eq!(uniforms.get("elevation"), Some(&UniformValue::F32(2.0)));
+        assert_eq!(
+            uniforms.get("surface_role"),
+            Some(&UniformValue::F32(SurfaceRole::Popover.uniform_id()))
+        );
+        assert!(
+            matches!(uniforms.get("vec_a"), Some(UniformValue::Color(_))),
+            "role-routed custom shaders should receive packed rect slots"
+        );
+        assert_eq!(
+            uniforms.get("vec_c"),
+            Some(&UniformValue::Vec4([
+                1.0,
+                tokens::RADIUS_LG,
+                tokens::SHADOW_LG,
+                0.0
+            ]))
+        );
     }
 
     #[test]

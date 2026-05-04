@@ -592,6 +592,13 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
         // it's a no-op layout-wise.
         return apply_min(c, 0.0, 0.0);
     }
+    if c.icon.is_some() {
+        return apply_min(
+            c,
+            c.font_size + c.padding.left + c.padding.right,
+            c.font_size + c.padding.top + c.padding.bottom,
+        );
+    }
     if let Some(text) = &c.text {
         let unwrapped = text_metrics::layout_text(
             text,
@@ -610,8 +617,9 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
                 })
                 .map(|w| (w - c.padding.left - c.padding.right).max(1.0)),
         };
+        let display = display_text_for_measure(c, text, content_available);
         let layout = text_metrics::layout_text(
-            text,
+            &display,
             c.font_size,
             c.font_weight,
             c.font_mono,
@@ -688,14 +696,32 @@ pub(crate) fn text_layout(
             })
             .map(|w| (w - c.padding.left - c.padding.right).max(1.0)),
     };
+    let display = display_text_for_measure(c, text, content_available);
     Some(text_metrics::layout_text(
-        text,
+        &display,
         c.font_size,
         c.font_weight,
         c.font_mono,
         c.text_wrap,
         content_available,
     ))
+}
+
+fn display_text_for_measure(c: &El, text: &str, available_width: Option<f32>) -> String {
+    if let (TextWrap::Wrap, Some(max_lines), Some(width)) =
+        (c.text_wrap, c.text_max_lines, available_width)
+    {
+        text_metrics::clamp_text_to_lines(
+            text,
+            c.font_size,
+            c.font_weight,
+            c.font_mono,
+            width,
+            max_lines,
+        )
+    } else {
+        text.to_string()
+    }
 }
 
 fn apply_min(c: &El, mut w: f32, mut h: f32) -> (f32, f32) {

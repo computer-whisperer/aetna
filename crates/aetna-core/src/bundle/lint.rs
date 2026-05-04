@@ -35,6 +35,7 @@ pub struct Finding {
 pub enum FindingKind {
     RawColor,
     Overflow,
+    TextOverflow,
     DuplicateId,
 }
 
@@ -168,16 +169,41 @@ fn walk(
             if let Some(text_layout) = layout::text_layout(n, available_width) {
                 let text_w = text_layout.width + n.padding.left + n.padding.right;
                 let text_h = text_layout.height + n.padding.top + n.padding.bottom;
-                let overflow_x = (text_w - computed.w).max(0.0);
+                let raw_overflow_x = (text_w - computed.w).max(0.0);
+                let overflow_x = if matches!(
+                    (n.text_wrap, n.text_overflow),
+                    (TextWrap::NoWrap, TextOverflow::Ellipsis)
+                ) {
+                    0.0
+                } else {
+                    raw_overflow_x
+                };
                 let overflow_y = (text_h - computed.h).max(0.0);
                 if overflow_x > 0.5 || overflow_y > 0.5 {
+                    let is_clipped_nowrap = overflow_x > 0.5
+                        && matches!(
+                            (n.text_wrap, n.text_overflow),
+                            (TextWrap::NoWrap, TextOverflow::Clip)
+                        );
+                    let kind = if is_clipped_nowrap {
+                        FindingKind::TextOverflow
+                    } else {
+                        FindingKind::Overflow
+                    };
+                    let message = if kind == FindingKind::TextOverflow {
+                        format!(
+                            "nowrap text exceeds its box by X={overflow_x:.0}; use .ellipsis(), wrap_text(), or a wider box"
+                        )
+                    } else {
+                        format!(
+                            "text content exceeds its box by X={overflow_x:.0} Y={overflow_y:.0}; use paragraph()/wrap_text(), a wider box, or explicit clipping"
+                        )
+                    };
                     r.findings.push(Finding {
-                        kind: FindingKind::Overflow,
+                        kind,
                         node_id: n.computed_id.clone(),
                         source: n.source,
-                        message: format!(
-                            "text content exceeds its box by X={overflow_x:.0} Y={overflow_y:.0}; use paragraph()/wrap_text(), a wider box, or explicit clipping"
-                        ),
+                        message,
                     });
                 }
             }
@@ -225,5 +251,53 @@ fn short_path(p: &str) -> String {
         format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])
     } else {
         p.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lint_one(mut root: El) -> LintReport {
+        let mut ui_state = UiState::new();
+        layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 160.0, 48.0));
+        lint(&root, &ui_state, None)
+    }
+
+    #[test]
+    fn clipped_nowrap_text_reports_text_overflow() {
+        let root = crate::text("A very long dashboard label")
+            .width(Size::Fixed(42.0))
+            .height(Size::Fixed(20.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::TextOverflow),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn ellipsis_nowrap_text_satisfies_horizontal_overflow_policy() {
+        let root = crate::text("A very long dashboard label")
+            .ellipsis()
+            .width(Size::Fixed(42.0))
+            .height(Size::Fixed(20.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::TextOverflow),
+            "{}",
+            report.text()
+        );
     }
 }

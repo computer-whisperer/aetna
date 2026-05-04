@@ -94,6 +94,87 @@ pub fn layout_text(
     build_layout(raw_lines, size, weight, mono)
 }
 
+/// Return a single-line string that fits within `available_width`,
+/// appending an ellipsis when truncation is needed.
+pub fn ellipsize_text(
+    text: &str,
+    size: f32,
+    weight: FontWeight,
+    mono: bool,
+    available_width: f32,
+) -> String {
+    if available_width <= 0.0 || text.is_empty() {
+        return String::new();
+    }
+    let full = layout_text(text, size, weight, mono, TextWrap::NoWrap, None);
+    if full.width <= available_width + 0.5 {
+        return text.to_string();
+    }
+
+    let ellipsis = "…";
+    let ellipsis_w = layout_text(ellipsis, size, weight, mono, TextWrap::NoWrap, None).width;
+    if ellipsis_w > available_width + 0.5 {
+        return ellipsis.to_string();
+    }
+
+    let chars: Vec<char> = text.chars().collect();
+    let mut lo = 0usize;
+    let mut hi = chars.len();
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        let candidate: String = chars[..mid].iter().collect();
+        let candidate = format!("{candidate}{ellipsis}");
+        let width = layout_text(&candidate, size, weight, mono, TextWrap::NoWrap, None).width;
+        if width <= available_width + 0.5 {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+
+    let prefix: String = chars[..lo].iter().collect();
+    format!("{prefix}{ellipsis}")
+}
+
+/// Return wrapped text capped to `max_lines`, ellipsizing the final
+/// visible line when truncation is needed.
+pub fn clamp_text_to_lines(
+    text: &str,
+    size: f32,
+    weight: FontWeight,
+    mono: bool,
+    available_width: f32,
+    max_lines: usize,
+) -> String {
+    if text.is_empty() || available_width <= 0.0 || max_lines == 0 {
+        return String::new();
+    }
+
+    let layout = layout_text(
+        text,
+        size,
+        weight,
+        mono,
+        TextWrap::Wrap,
+        Some(available_width),
+    );
+    if layout.lines.len() <= max_lines {
+        return text.to_string();
+    }
+
+    let mut lines: Vec<String> = layout
+        .lines
+        .iter()
+        .take(max_lines)
+        .map(|line| line.text.clone())
+        .collect();
+    if let Some(last) = lines.last_mut() {
+        let marked = format!("{last}…");
+        *last = ellipsize_text(&marked, size, weight, mono, available_width);
+    }
+    lines.join("\n")
+}
+
 /// Result of a click-to-caret hit-test against a laid-out text run.
 /// Coordinates are in byte units within the source text — convertible
 /// to character indices via `text.char_indices()`.
@@ -843,5 +924,48 @@ mod tests {
         assert_eq!(layout.lines.len(), 1);
         assert!((layout.lines[0].width - layout.width).abs() < 0.01);
         assert!(layout.lines[0].baseline > layout.lines[0].y);
+    }
+
+    #[test]
+    fn ellipsize_text_shortens_to_available_width() {
+        let source = "this is a long branch name";
+        let available = line_width("this is a…", 14.0, FontWeight::Regular, false);
+        let clipped = ellipsize_text(source, 14.0, FontWeight::Regular, false, available);
+        let width = line_width(&clipped, 14.0, FontWeight::Regular, false);
+
+        assert!(clipped.ends_with('…'), "clipped={clipped}");
+        assert!(clipped.len() < source.len());
+        assert!(
+            width <= available + 0.5,
+            "width={width} available={available}"
+        );
+    }
+
+    #[test]
+    fn ellipsize_text_keeps_fitting_text_unchanged() {
+        let source = "short";
+        let available = line_width(source, 14.0, FontWeight::Regular, false) + 4.0;
+        assert_eq!(
+            ellipsize_text(source, 14.0, FontWeight::Regular, false, available),
+            source
+        );
+    }
+
+    #[test]
+    fn clamp_text_to_lines_caps_wrapped_text_with_final_ellipsis() {
+        let source = "alpha beta gamma delta epsilon zeta";
+        let available = line_width("alpha beta", 14.0, FontWeight::Regular, false);
+        let clamped = clamp_text_to_lines(source, 14.0, FontWeight::Regular, false, available, 2);
+        let layout = layout_text(
+            &clamped,
+            14.0,
+            FontWeight::Regular,
+            false,
+            TextWrap::Wrap,
+            Some(available),
+        );
+
+        assert!(clamped.ends_with('…'), "clamped={clamped}");
+        assert!(layout.lines.len() <= 2, "layout={layout:?}");
     }
 }

@@ -184,6 +184,165 @@ pub enum TextWrap {
     Wrap,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TextOverflow {
+    #[default]
+    Clip,
+    Ellipsis,
+}
+
+/// Semantic typography role for text-bearing nodes.
+///
+/// The role is inspectable design intent first, and default styling
+/// second. Builders and modifiers use it so app code can ask for
+/// familiar text primitives (`caption`, `label`, `title`, …) instead
+/// of scattering raw font sizes through product surfaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TextRole {
+    #[default]
+    Body,
+    Caption,
+    Label,
+    Title,
+    Heading,
+    Display,
+    Code,
+}
+
+/// Built-in icon names. The string forms intentionally mirror common
+/// lucide/shadcn names so agents can reach for familiar labels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum IconName {
+    Activity,
+    AlertCircle,
+    BarChart,
+    Bell,
+    Check,
+    ChevronDown,
+    ChevronRight,
+    Command,
+    Download,
+    FileText,
+    Folder,
+    GitBranch,
+    GitCommit,
+    Info,
+    LayoutDashboard,
+    Menu,
+    MoreHorizontal,
+    Plus,
+    RefreshCw,
+    Search,
+    Settings,
+    Upload,
+    Users,
+    X,
+}
+
+impl IconName {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "activity" => Some(Self::Activity),
+            "alert-circle" | "alert" => Some(Self::AlertCircle),
+            "bar-chart" | "chart-bar" => Some(Self::BarChart),
+            "bell" => Some(Self::Bell),
+            "check" => Some(Self::Check),
+            "chevron-down" => Some(Self::ChevronDown),
+            "chevron-right" => Some(Self::ChevronRight),
+            "command" => Some(Self::Command),
+            "download" => Some(Self::Download),
+            "file-text" | "file" => Some(Self::FileText),
+            "folder" => Some(Self::Folder),
+            "git-branch" => Some(Self::GitBranch),
+            "git-commit" => Some(Self::GitCommit),
+            "info" => Some(Self::Info),
+            "layout-dashboard" | "dashboard" => Some(Self::LayoutDashboard),
+            "menu" => Some(Self::Menu),
+            "more-horizontal" | "more" => Some(Self::MoreHorizontal),
+            "plus" => Some(Self::Plus),
+            "refresh-cw" | "refresh" => Some(Self::RefreshCw),
+            "search" => Some(Self::Search),
+            "settings" => Some(Self::Settings),
+            "upload" => Some(Self::Upload),
+            "users" => Some(Self::Users),
+            "x" | "close" => Some(Self::X),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Activity => "activity",
+            Self::AlertCircle => "alert-circle",
+            Self::BarChart => "bar-chart",
+            Self::Bell => "bell",
+            Self::Check => "check",
+            Self::ChevronDown => "chevron-down",
+            Self::ChevronRight => "chevron-right",
+            Self::Command => "command",
+            Self::Download => "download",
+            Self::FileText => "file-text",
+            Self::Folder => "folder",
+            Self::GitBranch => "git-branch",
+            Self::GitCommit => "git-commit",
+            Self::Info => "info",
+            Self::LayoutDashboard => "layout-dashboard",
+            Self::Menu => "menu",
+            Self::MoreHorizontal => "more-horizontal",
+            Self::Plus => "plus",
+            Self::RefreshCw => "refresh-cw",
+            Self::Search => "search",
+            Self::Settings => "settings",
+            Self::Upload => "upload",
+            Self::Users => "users",
+            Self::X => "x",
+        }
+    }
+
+    pub fn fallback_glyph(self) -> &'static str {
+        match self {
+            Self::Activity => "~",
+            Self::AlertCircle => "!",
+            Self::BarChart => "▮",
+            Self::Bell => "•",
+            Self::Check => "✓",
+            Self::ChevronDown => "⌄",
+            Self::ChevronRight => "›",
+            Self::Command => "⌘",
+            Self::Download => "↓",
+            Self::FileText => "□",
+            Self::Folder => "▱",
+            Self::GitBranch => "⑂",
+            Self::GitCommit => "⊙",
+            Self::Info => "i",
+            Self::LayoutDashboard => "▦",
+            Self::Menu => "☰",
+            Self::MoreHorizontal => "…",
+            Self::Plus => "+",
+            Self::RefreshCw => "↻",
+            Self::Search => "⌕",
+            Self::Settings => "⚙",
+            Self::Upload => "↑",
+            Self::Users => "●",
+            Self::X => "×",
+        }
+    }
+}
+
+impl TextRole {
+    pub fn name(self) -> &'static str {
+        match self {
+            TextRole::Body => "body",
+            TextRole::Caption => "caption",
+            TextRole::Label => "label",
+            TextRole::Title => "title",
+            TextRole::Heading => "heading",
+            TextRole::Display => "display",
+            TextRole::Code => "code",
+        }
+    }
+}
+
 /// Semantic identity of an element. Roughly an HTML tag.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -222,6 +381,57 @@ pub enum Kind {
     HardBreak,
     /// Escape hatch for app-defined components.
     Custom(&'static str),
+}
+
+/// Semantic paint role for rect-shaped surfaces.
+///
+/// `Kind` says what a node is structurally; `SurfaceRole` says how a
+/// visual surface should be themed. This lets stock widgets keep a
+/// familiar author API while themes map panels, popovers, inputs, and
+/// selected rows to different shader recipes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum SurfaceRole {
+    /// No special semantic role. Theme fallback applies.
+    #[default]
+    None,
+    Panel,
+    Raised,
+    Sunken,
+    Popover,
+    Selected,
+    Current,
+    Input,
+    Danger,
+}
+
+impl SurfaceRole {
+    pub fn name(self) -> &'static str {
+        match self {
+            SurfaceRole::None => "none",
+            SurfaceRole::Panel => "panel",
+            SurfaceRole::Raised => "raised",
+            SurfaceRole::Sunken => "sunken",
+            SurfaceRole::Popover => "popover",
+            SurfaceRole::Selected => "selected",
+            SurfaceRole::Current => "current",
+            SurfaceRole::Input => "input",
+            SurfaceRole::Danger => "danger",
+        }
+    }
+
+    pub fn uniform_id(self) -> f32 {
+        match self {
+            SurfaceRole::None => 0.0,
+            SurfaceRole::Panel => 1.0,
+            SurfaceRole::Raised => 2.0,
+            SurfaceRole::Sunken => 3.0,
+            SurfaceRole::Popover => 4.0,
+            SurfaceRole::Selected => 5.0,
+            SurfaceRole::Current => 6.0,
+            SurfaceRole::Input => 7.0,
+            SurfaceRole::Danger => 8.0,
+        }
+    }
 }
 
 /// Interaction state, applied as a render-time visual delta.

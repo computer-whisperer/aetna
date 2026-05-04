@@ -31,8 +31,8 @@ use std::panic::Location;
 
 pub use color::Color;
 pub use types::{
-    Align, Axis, FontWeight, InteractionState, Justify, Kind, Rect, Sides, Size, Source, TextAlign,
-    TextWrap,
+    Align, Axis, FontWeight, IconName, InteractionState, Justify, Kind, Rect, Sides, Size, Source,
+    SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap,
 };
 
 use crate::anim::Timing;
@@ -91,6 +91,7 @@ pub struct El {
     pub stroke_width: f32,
     pub radius: f32,
     pub shadow: f32,
+    pub surface_role: SurfaceRole,
     /// Permit this element to paint outside its layout bounds. The
     /// outset enlarges the quad geometry handed to the shader (and
     /// any focus / shadow / glow visuals are positioned in the
@@ -136,6 +137,9 @@ pub struct El {
     pub text_color: Option<Color>,
     pub text_align: TextAlign,
     pub text_wrap: TextWrap,
+    pub text_overflow: TextOverflow,
+    pub text_role: TextRole,
+    pub text_max_lines: Option<usize>,
     pub font_size: f32,
     pub font_weight: FontWeight,
     pub font_mono: bool,
@@ -152,6 +156,10 @@ pub struct El {
     /// sharing a URL group together for hit-test. Author-set via
     /// [`Self::link`].
     pub text_link: Option<String>,
+
+    // Icon
+    pub icon: Option<IconName>,
+    pub icon_stroke_width: f32,
 
     pub children: Vec<El>,
 
@@ -211,6 +219,7 @@ impl Default for El {
             stroke_width: 0.0,
             radius: 0.0,
             shadow: 0.0,
+            surface_role: SurfaceRole::None,
             paint_overflow: Sides::zero(),
             clip: false,
             scrollable: false,
@@ -221,6 +230,9 @@ impl Default for El {
             text_color: None,
             text_align: TextAlign::Start,
             text_wrap: TextWrap::NoWrap,
+            text_overflow: TextOverflow::Clip,
+            text_role: TextRole::Body,
+            text_max_lines: None,
             font_size: crate::tokens::FONT_BASE,
             font_weight: FontWeight::Regular,
             font_mono: false,
@@ -228,6 +240,8 @@ impl Default for El {
             text_underline: false,
             text_strikethrough: false,
             text_link: None,
+            icon: None,
+            icon_stroke_width: 2.0,
             children: Vec::new(),
             opacity: 1.0,
             translate: (0.0, 0.0),
@@ -357,6 +371,10 @@ impl El {
         self.shadow = s;
         self
     }
+    pub fn surface_role(mut self, role: SurfaceRole) -> Self {
+        self.surface_role = role;
+        self
+    }
     /// Permit paint to extend beyond this element's layout bounds by
     /// `outset` on each side. Layout-neutral — siblings don't move and
     /// hit-testing still uses the layout rect — but the shader receives
@@ -460,12 +478,38 @@ impl El {
     pub fn nowrap_text(self) -> Self {
         self.text_wrap(TextWrap::NoWrap)
     }
+    pub fn text_overflow(mut self, overflow: TextOverflow) -> Self {
+        self.text_overflow = overflow;
+        self
+    }
+    pub fn ellipsis(self) -> Self {
+        self.text_overflow(TextOverflow::Ellipsis)
+    }
+    pub fn max_lines(mut self, lines: usize) -> Self {
+        self.text_max_lines = Some(lines.max(1));
+        self
+    }
     pub fn font_size(mut self, s: f32) -> Self {
         self.font_size = s;
         self
     }
     pub fn font_weight(mut self, w: FontWeight) -> Self {
         self.font_weight = w;
+        self
+    }
+    pub fn icon_name(mut self, name: IconName) -> Self {
+        self.icon = Some(name);
+        self
+    }
+    pub fn icon_stroke_width(mut self, width: f32) -> Self {
+        self.icon_stroke_width = width.max(0.25);
+        self
+    }
+    pub fn icon_size(mut self, size: f32) -> Self {
+        let size = size.max(1.0);
+        self.font_size = size;
+        self.width = Size::Fixed(size);
+        self.height = Size::Fixed(size);
         self
     }
     pub fn mono(mut self) -> Self {
@@ -498,7 +542,11 @@ impl El {
     /// theme. Authors who want raw mono without code chrome should
     /// use [`Self::mono`] instead.
     pub fn code(mut self) -> Self {
+        self.text_role = TextRole::Code;
+        self.font_size = crate::tokens::FONT_SM;
+        self.font_weight = FontWeight::Regular;
         self.font_mono = true;
+        self.text_color = Some(crate::tokens::TEXT_FOREGROUND);
         self
     }
 
