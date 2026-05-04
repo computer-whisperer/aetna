@@ -36,7 +36,7 @@ LLMs can write GPU code. The library's contract with its authors is: when stock 
 | Hatch | Purpose | Status |
 |---|---|---|
 | **Custom shader** | Visual ceiling — gradients, frosted glass, noise, shaders that go beyond `rounded_rect`'s uniforms. | Implemented in v0.1; `gradient.wgsl` proof of concept. |
-| **Custom layout** | Structural ceiling — force-directed graphs, commit-graph lanes, timelines, treemaps, anything `column`/`row` can't express. Author registers a `LayoutFn(children, constraints) -> rects`. | Not yet built. |
+| **Custom layout** | Structural ceiling — force-directed graphs, commit-graph lanes, timelines, treemaps, anything `column`/`row` can't express. Author calls `El::layout(f)` with `f: Fn(LayoutCtx) -> Vec<Rect>`. | Implemented in v0.5 (`crates/aetna-core/examples/circular_layout`). |
 
 Together they say: anything an existing GPU UI library can render visually or structurally can be expressed inside this one too, without forking.
 
@@ -53,6 +53,14 @@ The library does not own the device, queue, swapchain, or the larger render flow
 No DSL surface is required. No "library opens a hole; host paints into it" inversion is required. The library inserts into the host's render pass; the host can record any other draws into the same encoder. This is what polychora does to bake egui meshes into its own pass, and what volumetric does via egui's `PaintCallback`. We just have to not stand in the way.
 
 The public surface is intentionally small: after layout, hosts can ask for a keyed region via `UiState::rect_of_key(root, key)` or `Runner::rect_of_key(key)`. That gives the host the rectangle without creating a third escape hatch.
+
+### Stream chrome (`feed` / `chat_log`) is not a primitive
+
+Earlier drafts of the v0.5 slice named `feed` and `chat_log` as stock primitives — like `card` or `button`, but for a stream of posts/messages. As `virtual_list` (the substrate primitive) landed and we considered what a stock `feed` or `chat_log` would actually contain, the cleaner answer surfaced: **a stream of items composed with library primitives is not a library primitive — it is what the author writes.**
+
+The thesis is that an LLM author can compose `virtual_list(items.len(), |i| card([avatar, body, timestamp]))` directly. Shipping a stock chrome for "what a post looks like" or "what a message looks like" puts the library on the wrong side of the LLM-author premise: it adds a fixed visual that ages badly, invites override pressure, and shrinks the surface the author actually controls. The reference application that wants chat-shaped UI (whisper-agent) explicitly renders fused tool-call cards that any default would have to be overridden anyway.
+
+Variable-height virtualization (the substrate work `feed`/`chat_log` would have ridden) is deferred until a real consumer drives the design — there is no in-tree app that wants it today, and the cache / invalidation / append-anchor semantics involve choices that should be made against a real use case rather than guessed.
 
 ## What the library owns vs. doesn't
 
@@ -73,7 +81,7 @@ The public surface is intentionally small: after layout, hosts can ask for a key
 
 - State model. Plain `&mut self`, channels, signals, ECS, redux — host's pick.
 - Persistence. Saving / loading state, undo/redo. The library doesn't keep durable state.
-- Network. `feed`/`chat_log` consume an iterator/channel; the host fills it from whatever source.
+- Network. The library doesn't observe data sources. The host pumps data into state; `App::build` projects state into a tree; `request_redraw` advances frames.
 - Theme runtime. v0.1 ships `const` tokens. Runtime themes can come later if needed.
 - Window management. Single window via winit. Multi-window/menubar/tray are host concerns.
 - Application lifecycle. Main loop, signal handling, graceful shutdown — host owns these.
@@ -130,7 +138,7 @@ Compared to the surface area of React/Iced/SwiftUI, this is a rounding error.
 | **v0.2** | Hit-testing, click events, automatic hover/press, App trait, state-driven rebuild. | Real interactive apps possible; build-from-state shape works. |
 | **v0.3** | Scroll/clip, modal/overlay primitive. (Host-painted regions implicitly supported by the library/host split — see "Host-composed rendering is not an escape hatch".) | Multi-pane apps with host-painted regions possible. |
 | **v0.4** | Animation primitives (springs + tweens, per-(node, prop) tracker, library-owned hover/press/focus envelopes, author-facing `.animate(timing)` + `.opacity` / `.translate` / `.scale` for app-driven prop interpolation), focus traversal, keyboard event routing, hotkey system. | Polished interaction; vim-style apps possible; visual feel competitive with the best React Native apps. |
-| **v0.5** | Custom layout (second escape hatch), virtualized lists, `feed`/`chat_log` primitives. | Domain visualizations possible; large streams render efficiently. |
+| **v0.5** | Custom layout (second escape hatch) + virtualized lists. (`feed`/`chat_log` removed from scope — see "Stream chrome is not a primitive" above.) | Domain visualizations possible; large streams render efficiently. |
 | **v0.6** | Rich text composition (markdown runs, inline highlighting, embedded elements). | Whisper-agent-grade chat, whisper-git-grade diff viewer possible. |
 | **v0.7+** | Stock shader: shadow, focus_ring, divider_line. Backdrop sampling. wgpu-wasm + vulkano backends. Liquid glass. | Visual ceiling reaches the SHADER_VISION premise. |
 
