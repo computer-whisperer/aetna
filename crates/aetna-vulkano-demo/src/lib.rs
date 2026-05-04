@@ -17,8 +17,7 @@ use aetna_vulkano::Runner;
 use vulkano::{
     VulkanLibrary,
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassBeginInfo,
-        SubpassContents, SubpassEndInfo, allocator::StandardCommandBufferAllocator,
+        AutoCommandBufferBuilder, CommandBufferUsage, allocator::StandardCommandBufferAllocator,
     },
     device::{
         Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
@@ -182,18 +181,10 @@ impl<A: App> ApplicationHandler for Host<A> {
         let mut runner = Runner::new(device.clone(), queue.clone(), image_format);
         let extent: [u32; 2] = window.inner_size().into();
         runner.set_surface_size(extent[0], extent[1]);
-        // Register any custom shaders the app declared. Backdrop-
-        // sampling shaders are skipped on vulkano (parked for v0.7
-        // step E); nodes bound to them simply paint nothing on this
-        // backend rather than blowing up at pipeline-build time.
+        // Register every shader the app declared, including backdrop-
+        // sampling ones — `Runner::render` owns the multi-pass /
+        // snapshot dance internally.
         for s in self.app.shaders() {
-            if s.samples_backdrop {
-                eprintln!(
-                    "aetna-vulkano: skipping `{}` — backdrop sampling not implemented on this backend yet (v0.7 step E)",
-                    s.name
-                );
-                continue;
-            }
             runner.register_shader_with(s.name, s.wgsl, s.samples_backdrop);
         }
         if let Some(init) = self.init_runner.take() {
@@ -358,27 +349,16 @@ impl<A: App> ApplicationHandler for Host<A> {
                 )
                 .expect("command builder");
 
-                let bg = clear_color();
-                builder
-                    .begin_render_pass(
-                        RenderPassBeginInfo {
-                            clear_values: vec![Some(bg.into())],
-                            ..RenderPassBeginInfo::framebuffer(
-                                rcx.framebuffers[image_index as usize].clone(),
-                            )
-                        },
-                        SubpassBeginInfo {
-                            contents: SubpassContents::Inline,
-                            ..Default::default()
-                        },
-                    )
-                    .expect("begin render pass");
-
-                rcx.runner.draw(&mut builder);
-
-                builder
-                    .end_render_pass(SubpassEndInfo::default())
-                    .expect("end render pass");
+                // `render()` owns pass lifetimes itself so it can split
+                // around `BackdropSnapshot` boundaries when the app
+                // uses backdrop-sampling shaders. With no boundary it
+                // collapses to a single Clear pass — same behaviour as
+                // the old `begin_render_pass + draw + end_render_pass`
+                // path.
+                let framebuffer = rcx.framebuffers[image_index as usize].clone();
+                let target_image = framebuffer.attachments()[0].image().clone();
+                rcx.runner
+                    .render(&mut builder, framebuffer, target_image, clear_color());
                 let command_buffer = builder.build().expect("build cmd");
 
                 let future = rcx
@@ -454,7 +434,11 @@ fn create_swapchain(
             min_image_count: surface_caps.min_image_count.max(2),
             image_format,
             image_extent: window.inner_size().into(),
-            image_usage: ImageUsage::COLOR_ATTACHMENT,
+            // TRANSFER_SRC is required so `Runner::render` can copy the
+            // post-Pass-A surface into the runner's snapshot image
+            // mid-frame for backdrop-sampling shaders. Cost is minimal
+            // — most surfaces already advertise it.
+            image_usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_SRC,
             composite_alpha: surface_caps
                 .supported_composite_alpha
                 .into_iter()

@@ -33,17 +33,24 @@ use smallvec::smallvec;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        AutoCommandBufferBuilder, PrimaryAutoCommandBuffer,
+        AutoCommandBufferBuilder, CopyImageInfo, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
+        SubpassBeginInfo, SubpassContents, SubpassEndInfo,
         allocator::StandardCommandBufferAllocator,
     },
     descriptor_set::{
-        DescriptorSet, WriteDescriptorSet, allocator::StandardDescriptorSetAllocator,
+        DescriptorSet, DescriptorSetWithOffsets, WriteDescriptorSet,
+        allocator::StandardDescriptorSetAllocator, layout::DescriptorSetLayout,
     },
     device::{Device, Queue},
     format::Format,
+    image::{
+        Image, ImageCreateInfo, ImageType, ImageUsage,
+        sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode},
+        view::ImageView,
+    },
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint, graphics::viewport::Viewport},
-    render_pass::{RenderPass, Subpass},
+    render_pass::{Framebuffer, RenderPass, Subpass},
 };
 
 use aetna_core::paint::{PaintItem, PhysicalScissor, QuadInstance};
@@ -67,12 +74,17 @@ pub struct Runner {
     target_format: Format,
 
     memory_alloc: Arc<StandardMemoryAllocator>,
-    /// Used by `TextPaint` for per-page atlas image descriptor sets and
-    /// to allocate any future descriptor sets the runner introduces.
-    #[allow(dead_code)]
     descriptor_alloc: Arc<StandardDescriptorSetAllocator>,
 
+    /// Render pass with `load_op: Clear` — used for the first (or only)
+    /// pass of a frame. Pipelines are built against subpass 0 of this
+    /// pass.
     render_pass: Arc<RenderPass>,
+    /// Render pass with `load_op: Load` — used for Pass B when the
+    /// frame has a `BackdropSnapshot` boundary, so Pass A's pixels
+    /// remain underneath. Attachment-compatible with `render_pass` so
+    /// the same pipelines work with both.
+    load_render_pass: Arc<RenderPass>,
 
     pipelines: HashMap<ShaderHandle, Arc<GraphicsPipeline>>,
 
@@ -89,12 +101,31 @@ pub struct Runner {
     /// pipeline itself is built lazily on first use.
     registered_shaders: HashMap<&'static str, Vec<u32>>,
 
-    /// Custom shader names registered with `samples_backdrop=true`. The
-    /// paint scheduler queries this to insert pass boundaries before
-    /// the first backdrop-sampling draw. Vulkano backend ignores the
-    /// boundary today (single-pass render pass); v0.7 step E adds
-    /// multi-pass + snapshot.
+    /// Custom shader names registered with `samples_backdrop=true`.
+    /// `prepare_paint` queries this to insert a `BackdropSnapshot`
+    /// marker before the first backdrop-sampling draw, and the inner
+    /// draw loop binds the snapshot descriptor set at set=1 when the
+    /// run's pipeline expects it.
     backdrop_shaders: HashSet<&'static str>,
+
+    /// Linear-filtering sampler bound at `@group(1) @binding(1)` for
+    /// every backdrop-sampling pipeline.
+    backdrop_sampler: Arc<Sampler>,
+
+    /// Set 1's descriptor-set layout for backdrop-sampling pipelines —
+    /// captured from the first backdrop pipeline registered. The same
+    /// layout shape (texture_2d + sampler) is shared across all
+    /// backdrop shaders, so a single descriptor set built against this
+    /// layout binds correctly into any backdrop pipeline.
+    backdrop_set_layout: Option<Arc<DescriptorSetLayout>>,
+
+    /// Lazily-allocated snapshot of the color target. Sized to match
+    /// the current target on each `render()` call; rebuilt when the
+    /// target's extent changes.
+    snapshot: Option<SnapshotImage>,
+    /// Descriptor set binding the snapshot view + `backdrop_sampler` at
+    /// set 1. Rebuilt whenever `snapshot` is recreated.
+    backdrop_descriptor_set: Option<Arc<DescriptorSet>>,
 
     /// Wall-clock origin for the `time` field in `FrameUniforms`.
     start_time: Instant,
@@ -103,6 +134,11 @@ pub struct Runner {
     // paint-stream scratch (quad_scratch / runs / paint_items),
     // viewport_px, last_tree, the 13 input plumbing methods.
     core: RunnerCore,
+}
+
+struct SnapshotImage {
+    image: Arc<Image>,
+    extent: [u32; 3],
 }
 
 impl Runner {
@@ -142,6 +178,26 @@ impl Runner {
             },
         )
         .expect("aetna-vulkano: create render pass");
+        // Pass B (used when there's a BackdropSnapshot boundary)
+        // preserves Pass A's contents — `load_op: Load`. Attachment
+        // layout matches `render_pass`, so pipelines built against the
+        // Clear pass are render-pass-compatible with this Load pass.
+        let load_render_pass = vulkano::single_pass_renderpass!(
+            device.clone(),
+            attachments: {
+                color: {
+                    format: target_format,
+                    samples: 1,
+                    load_op: Load,
+                    store_op: Store,
+                },
+            },
+            pass: {
+                color: [color],
+                depth_stencil: {},
+            },
+        )
+        .expect("aetna-vulkano: create load render pass");
         let subpass = Subpass::from(render_pass.clone(), 0)
             .expect("aetna-vulkano: subpass 0 of single-pass render pass");
 
@@ -220,6 +276,23 @@ impl Runner {
             text_subpass,
         );
 
+        // Filtering sampler bound at @group(1) @binding(1) for every
+        // backdrop-sampling pipeline. Mirrors the wgpu side: linear
+        // mag/min, nearest mipmap (we don't generate mips on the
+        // snapshot), clamp-to-edge so blur kernels at the rim don't
+        // wrap.
+        let backdrop_sampler = Sampler::new(
+            device.clone(),
+            SamplerCreateInfo {
+                mag_filter: Filter::Linear,
+                min_filter: Filter::Linear,
+                mipmap_mode: SamplerMipmapMode::Nearest,
+                address_mode: [SamplerAddressMode::ClampToEdge; 3],
+                ..Default::default()
+            },
+        )
+        .expect("aetna-vulkano: backdrop sampler");
+
         Self {
             device,
             _queue: queue,
@@ -227,6 +300,7 @@ impl Runner {
             memory_alloc,
             descriptor_alloc,
             render_pass,
+            load_render_pass,
             pipelines,
             text_paint,
             quad_vbo,
@@ -236,6 +310,10 @@ impl Runner {
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             registered_shaders: HashMap::new(),
             backdrop_shaders: HashSet::new(),
+            backdrop_sampler,
+            backdrop_set_layout: None,
+            snapshot: None,
+            backdrop_descriptor_set: None,
             start_time: Instant::now(),
             core: {
                 let mut c = RunnerCore::new();
@@ -265,9 +343,10 @@ impl Runner {
     }
 
     /// Register a custom shader with an opt-in backdrop-sampling flag.
-    /// The flag tells the paint scheduler to insert a pass boundary
-    /// before the first draw bound to this shader; the actual
-    /// snapshot/multi-pass plumbing lands in v0.7 step E for vulkano.
+    /// When `samples_backdrop` is true, the paint scheduler inserts a
+    /// pass boundary before the first draw bound to this shader, and
+    /// `Runner::render` arranges Pass A → snapshot copy → Pass B so the
+    /// shader can sample the post-Pass-A target through `@group(1)`.
     pub fn register_shader_with(&mut self, name: &'static str, wgsl: &str, samples_backdrop: bool) {
         // Cache the SPIR-V words too — useful for diagnostics + future
         // re-registration without re-running naga.
@@ -277,12 +356,29 @@ impl Runner {
 
         let subpass = Subpass::from(self.render_pass.clone(), 0).expect("aetna-vulkano: subpass 0");
         let pipeline = build_quad_pipeline(self.device.clone(), subpass, name, wgsl);
-        self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
         if samples_backdrop {
+            // Capture set 1's layout from the first backdrop pipeline
+            // we see. Vulkano builds pipeline layouts via reflection,
+            // so any backdrop shader declaring `@group(1) binding(0)
+            // texture_2d<f32> + @group(1) binding(1) sampler` produces
+            // a structurally-identical layout — one descriptor set
+            // built against this layout binds correctly into all
+            // backdrop pipelines.
+            if self.backdrop_set_layout.is_none() {
+                let layouts = pipeline.layout().set_layouts();
+                let set1 = layouts.get(1).unwrap_or_else(|| {
+                    panic!(
+                        "aetna-vulkano: backdrop shader `{name}` has no @group(1) — \
+                         expected `backdrop_tex` (binding 0) and `backdrop_smp` (binding 1)"
+                    )
+                });
+                self.backdrop_set_layout = Some(set1.clone());
+            }
             self.backdrop_shaders.insert(name);
         } else {
             self.backdrop_shaders.remove(name);
         }
+        self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
     }
 
     pub fn ui_state(&self) -> &UiState {
@@ -412,11 +508,138 @@ impl Runner {
     /// Record draws into the host-managed primary command-buffer
     /// builder. Call inside the host's `begin_render_pass` /
     /// `end_render_pass` scope, with the runner's `render_pass()`.
+    ///
+    /// `BackdropSnapshot` markers in the paint stream are no-ops in
+    /// this entry point — backdrop-sampling shaders need the multi-pass
+    /// scheduling provided by [`Self::render`]. Hosts that want to use
+    /// `liquid_glass`-style shaders should call `render()` instead and
+    /// let the runner own pass lifetimes.
     pub fn draw(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) {
         if self.core.paint_items.is_empty() {
             return;
         }
+        self.set_viewport(builder);
+        self.draw_items(builder, &self.core.paint_items);
+    }
 
+    /// Record draws into a host-supplied command buffer, owning pass
+    /// lifetimes ourselves so backdrop-sampling shaders can sample a
+    /// snapshot of Pass A's content. Mirrors `aetna_wgpu::Runner::render`.
+    ///
+    /// The host hands us:
+    /// - the command-buffer builder (we record into it),
+    /// - the `Framebuffer` matching the current swapchain image,
+    /// - the underlying `Image` (used as `copy_src` when we snapshot
+    ///   the post-Pass-A content; must be created with
+    ///   `ImageUsage::TRANSFER_SRC`),
+    /// - the clear color used on the *first* pass (linear sRGB).
+    ///
+    /// Multi-pass schedule when the paint stream contains a
+    /// `BackdropSnapshot`:
+    ///
+    /// 1. Pass A — every paint item before the snapshot, using the
+    ///    runner's Clear render pass with `clear_color`.
+    /// 2. `copy_image` — target → snapshot.
+    /// 3. Pass B — paint items from the snapshot onward, using the
+    ///    runner's Load render pass so Pass A's pixels remain
+    ///    underneath.
+    ///
+    /// Without a snapshot, this collapses to a single Clear pass and is
+    /// equivalent to the host wrapping [`Self::draw`] in
+    /// `begin_render_pass(Clear) … end_render_pass`.
+    pub fn render(
+        &mut self,
+        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        framebuffer: Arc<Framebuffer>,
+        target_image: Arc<Image>,
+        clear_color: [f32; 4],
+    ) {
+        if self.core.paint_items.is_empty() {
+            // Even with no draws we begin/end the Clear pass so the
+            // attachment is cleared — matches `draw()` semantics when
+            // the host wraps it in begin_render_pass(Clear).
+            self.begin_pass(builder, framebuffer.clone(), Some(clear_color));
+            self.end_pass(builder);
+            return;
+        }
+
+        let split_at = self
+            .core
+            .paint_items
+            .iter()
+            .position(|p| matches!(p, PaintItem::BackdropSnapshot));
+
+        if let Some(idx) = split_at {
+            self.ensure_snapshot(target_image.clone());
+            // Pass A
+            self.begin_pass(builder, framebuffer.clone(), Some(clear_color));
+            self.set_viewport(builder);
+            self.draw_items(builder, &self.core.paint_items[..idx]);
+            self.end_pass(builder);
+            // Snapshot copy. vulkano's auto command buffer inserts the
+            // layout transitions for us (ColorAttachmentOptimal →
+            // TransferSrcOptimal on `target_image`, then back before
+            // Pass B begins).
+            let snapshot = self.snapshot.as_ref().expect("snapshot ensured");
+            builder
+                .copy_image(CopyImageInfo::images(target_image, snapshot.image.clone()))
+                .expect("aetna-vulkano: copy target → snapshot");
+            // Pass B
+            self.begin_pass(builder, framebuffer, None);
+            self.set_viewport(builder);
+            // Skip the BackdropSnapshot marker itself — it's a boundary
+            // only, not a draw.
+            self.draw_items(builder, &self.core.paint_items[idx + 1..]);
+            self.end_pass(builder);
+        } else {
+            self.begin_pass(builder, framebuffer, Some(clear_color));
+            self.set_viewport(builder);
+            self.draw_items(builder, &self.core.paint_items);
+            self.end_pass(builder);
+        }
+    }
+
+    /// Begin a render pass. `clear_color = Some(_)` uses the Clear
+    /// render pass with that color; `None` uses the Load render pass
+    /// to preserve previous contents. Both passes are render-pass
+    /// compatible with the framebuffer (same attachment format), so
+    /// the host's framebuffer (built against `render_pass()`) works
+    /// for either by overriding `render_pass` in `RenderPassBeginInfo`.
+    fn begin_pass(
+        &self,
+        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        framebuffer: Arc<Framebuffer>,
+        clear_color: Option<[f32; 4]>,
+    ) {
+        let (render_pass, clear_values) = match clear_color {
+            Some(c) => (self.render_pass.clone(), vec![Some(c.into())]),
+            // Load render pass declares `load_op: Load` for its sole
+            // attachment, so the matching `clear_values` slot must be
+            // `None`.
+            None => (self.load_render_pass.clone(), vec![None]),
+        };
+        builder
+            .begin_render_pass(
+                RenderPassBeginInfo {
+                    render_pass,
+                    clear_values,
+                    ..RenderPassBeginInfo::framebuffer(framebuffer)
+                },
+                SubpassBeginInfo {
+                    contents: SubpassContents::Inline,
+                    ..Default::default()
+                },
+            )
+            .expect("aetna-vulkano: begin_render_pass");
+    }
+
+    fn end_pass(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) {
+        builder
+            .end_render_pass(SubpassEndInfo::default())
+            .expect("aetna-vulkano: end_render_pass");
+    }
+
+    fn set_viewport(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) {
         let (px_w, px_h) = self.core.viewport_px;
         builder
             .set_viewport(
@@ -428,7 +651,17 @@ impl Runner {
                 }],
             )
             .expect("set_viewport");
+    }
 
+    /// Walk a slice of `PaintItem`s and record per-run draw commands.
+    /// `BackdropSnapshot` is a marker that `render()` splits on; if it
+    /// appears here it's silently skipped (no-op).
+    fn draw_items(
+        &self,
+        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        items: &[PaintItem],
+    ) {
+        let (px_w, px_h) = self.core.viewport_px;
         let full = PhysicalScissor {
             x: 0,
             y: 0,
@@ -436,7 +669,7 @@ impl Runner {
             h: px_h,
         };
 
-        for item in &self.core.paint_items {
+        for item in items {
             match *item {
                 PaintItem::QuadRun(idx) => {
                     let run = &self.core.runs[idx];
@@ -445,15 +678,34 @@ impl Runner {
                         .pipelines
                         .get(&run.handle)
                         .expect("run handle has no pipeline (bug in prepare)");
+                    let is_backdrop_shader = matches!(
+                        run.handle,
+                        ShaderHandle::Custom(name) if self.backdrop_shaders.contains(name)
+                    );
                     builder
                         .bind_pipeline_graphics(pipeline.clone())
                         .expect("bind_pipeline_graphics");
+                    // Backdrop pipelines expect set 0 = FrameUniforms
+                    // and set 1 = (snapshot view + sampler). All
+                    // backdrop shaders share a structurally-identical
+                    // set 1 layout so one descriptor set serves them
+                    // all. If `render()` wasn't used (no snapshot was
+                    // built), the bind is skipped — the pipeline will
+                    // sample undefined memory, which is a no-op visual
+                    // bug rather than a validation error since every
+                    // backdrop shader still has the binding declared.
+                    let sets: Vec<DescriptorSetWithOffsets> =
+                        if is_backdrop_shader && let Some(bg) = &self.backdrop_descriptor_set {
+                            vec![self.frame_descriptor_set.clone().into(), bg.clone().into()]
+                        } else {
+                            vec![self.frame_descriptor_set.clone().into()]
+                        };
                     builder
                         .bind_descriptor_sets(
                             PipelineBindPoint::Graphics,
                             pipeline.layout().clone(),
                             0,
-                            self.frame_descriptor_set.clone(),
+                            sets,
                         )
                         .expect("bind_descriptor_sets");
                     builder
@@ -467,12 +719,14 @@ impl Runner {
                         builder.draw(4, run.count, 0, run.first).expect("draw");
                     }
                 }
-                // Pass boundary — vulkano's single-pass render pass
-                // can't honor it. v0.7 step E adds the multi-pass /
-                // snapshot wiring; until then, backdrop-sampling
-                // shaders against vulkano draw with an undefined
-                // backdrop binding.
-                PaintItem::BackdropSnapshot => {}
+                PaintItem::BackdropSnapshot => {
+                    // Marker only — `render()` splits the slice on
+                    // these and never includes one in a draw range.
+                    // If we're here via `draw()`, the host opted out
+                    // of the multi-pass entry point; the boundary is
+                    // a no-op and any backdrop draws after it sample
+                    // undefined memory.
+                }
                 PaintItem::Text(idx) => {
                     let run = self.text_paint.run(idx);
                     set_scissor(builder, run.scissor, full);
@@ -510,6 +764,54 @@ impl Runner {
                 }
             }
         }
+    }
+
+    /// (Re)allocate the snapshot image to match `target_image`'s
+    /// extent + format. Idempotent when the size matches; rebuilds the
+    /// `backdrop_descriptor_set` whenever the snapshot is recreated.
+    fn ensure_snapshot(&mut self, target_image: Arc<Image>) {
+        let want = target_image.extent();
+        if let Some(s) = &self.snapshot
+            && s.extent == want
+        {
+            return;
+        }
+        let image = Image::new(
+            self.memory_alloc.clone(),
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format: target_image.format(),
+                extent: want,
+                usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+        )
+        .expect("aetna-vulkano: backdrop snapshot image");
+        let view =
+            ImageView::new_default(image.clone()).expect("aetna-vulkano: backdrop snapshot view");
+        let layout = self
+            .backdrop_set_layout
+            .clone()
+            .expect("ensure_snapshot called but no backdrop shader registered");
+        let set = DescriptorSet::new(
+            self.descriptor_alloc.clone(),
+            layout,
+            [
+                WriteDescriptorSet::image_view(0, view),
+                WriteDescriptorSet::sampler(1, self.backdrop_sampler.clone()),
+            ],
+            [],
+        )
+        .expect("aetna-vulkano: backdrop descriptor set");
+        self.snapshot = Some(SnapshotImage {
+            image,
+            extent: want,
+        });
+        self.backdrop_descriptor_set = Some(set);
     }
 }
 

@@ -22,7 +22,7 @@ attempt_3 validated the grammar with a cold-LLM-session test (a fresh sub-agent 
 |---|---|---|
 | wgpu native | yes (primary) | yes |
 | wgpu wasm | not yet | yes — design for this from day 1 |
-| vulkano native | not yet | yes — design for this from day 1 |
+| vulkano native | yes (parity since v0.7 step E, including backdrop sampling) | yes |
 
 We commit to the day-1 architectural constraint that **shader source must cross-target wgpu (wgsl-or-spirv) and vulkano (spirv) from a single source**, even though wgpu native is the only backend wired in v0.1. That constraint shapes the shader-language choice and the host-integration surface: no native-only deps, no wgpu-internals leaking into the public API.
 
@@ -97,7 +97,7 @@ A node opts into backdrop sampling via `ShaderHandle` metadata (the registered s
 
 Multiple backdrop layers (glass on glass) become A → B1 → B2 → C. v0.1 caps depth at 1 (one snapshot, one B pass). Increase when needed.
 
-### v0.7 implementation contract (wgpu)
+### v0.7 implementation contract (wgpu + vulkano)
 
 - **Opt-in at registration.** `Runner::register_shader_with(name, wgsl, samples_backdrop=true)` builds the pipeline against a layout that binds the snapshot at `@group(1)`.
 - **Shader convention.**
@@ -105,8 +105,11 @@ Multiple backdrop layers (glass on glass) become A → B1 → B2 → C. v0.1 cap
   @group(1) @binding(0) var backdrop_tex: texture_2d<f32>;
   @group(1) @binding(1) var backdrop_smp: sampler;
   ```
-  Sample with `textureSample(backdrop_tex, backdrop_smp, uv)` where `uv = clip_pos.xy / vec2<f32>(textureDimensions(backdrop_tex))`.
-- **Multi-pass entry.** `Runner::render(encoder, target_tex, target_view, load_op)` owns pass lifetimes. The host's color target must include `COPY_SRC` in its usage flags so the snapshot copy succeeds. Existing `Runner::draw(pass)` stays for non-backdrop callers.
+  Sample with `textureSample(backdrop_tex, backdrop_smp, uv)` where `uv = clip_pos.xy / vec2<f32>(textureDimensions(backdrop_tex))`. The same WGSL works on both backends — vulkano's pipeline layout is reflected from this declaration via naga.
+- **Multi-pass entry.**
+  - wgpu: `Runner::render(encoder, target_tex, target_view, load_op)`. The host's color target must include `COPY_SRC` in its usage flags so the snapshot copy succeeds.
+  - vulkano: `Runner::render(builder, framebuffer, target_image, clear_color)`. The swapchain image must be created with `ImageUsage::TRANSFER_SRC` for the same reason. Vulkano keeps two render passes (Clear + Load, attachment-compatible) and overrides `RenderPassBeginInfo.render_pass` per pass so the host only builds one framebuffer per swapchain image.
+  - Both: `Runner::draw(pass)` stays for non-backdrop callers (single-pass, host-managed pass).
 - **Time uniform.** `FrameUniforms` carries `viewport: vec2<f32>; time: f32; _pad: f32` (16 bytes). `time` is seconds since the runner was constructed; backdrop shaders use it for shimmer/animation.
 - **Pass C combined with B.** v0.7 doesn't split pass C from B; everything after the snapshot is one pass with `LoadOp::Load`. Stock surfaces (text, foreground rounded_rects) painted after a glass card composite naturally on top because they appear later in the paint stream.
 
