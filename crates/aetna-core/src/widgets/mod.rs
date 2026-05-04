@@ -11,6 +11,7 @@ pub mod badge;
 pub mod button;
 pub mod card;
 pub mod overlay;
+pub mod popover;
 pub mod text;
 pub mod text_area;
 pub mod text_input;

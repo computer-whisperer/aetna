@@ -159,6 +159,13 @@ pub struct UiState {
     /// detect Shift+click / Ctrl+drag can read it without separate
     /// plumbing.
     pub modifiers: KeyModifiers,
+    /// `key → computed_id` map, refreshed at the top of every layout
+    /// pass. Used by [`crate::layout::LayoutCtx::rect_of_key`] so
+    /// custom layouts can position children relative to keyed elements
+    /// elsewhere in the tree (e.g. a popover anchored to a button).
+    /// Populated only for nodes that carry an author-set `key`; the
+    /// duplicate-key case keeps the first entry seen in tree order.
+    pub(crate) layout_key_index: HashMap<String, String>,
 }
 
 impl UiState {

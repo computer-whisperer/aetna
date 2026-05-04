@@ -143,6 +143,13 @@ pub struct LayoutCtx<'a> {
     /// its unwrapped width here; if you need width-dependent wrapping
     /// you'll need to size the child with `Fixed` / `Fill` instead.
     pub measure: &'a dyn Fn(&El) -> (f32, f32),
+    /// Look up any keyed node's laid-out rect. Returns `None` when the
+    /// key is absent from the tree, when the node hasn't been laid out
+    /// yet (siblings later in source order), or when the key was used
+    /// on a node without a recorded rect. Used by widgets like
+    /// [`crate::widgets::popover::popover`] to position children
+    /// relative to elements outside their own subtree.
+    pub rect_of_key: &'a dyn Fn(&str) -> Option<Rect>,
 }
 
 /// Lay out the whole tree into the given viewport rect.
@@ -151,7 +158,27 @@ pub fn layout(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
     ui_state
         .computed_rects
         .insert(root.computed_id.clone(), viewport);
+    rebuild_key_index(root, ui_state);
     layout_children(root, viewport, ui_state);
+}
+
+/// Walk the tree once and refresh `ui_state.layout_key_index` so
+/// `LayoutCtx::rect_of_key` can resolve `key → computed_id` without
+/// re-scanning the tree per lookup. First key wins — duplicate keys
+/// are an author bug, but we don't want to crash layout over it.
+fn rebuild_key_index(root: &El, ui_state: &mut UiState) {
+    ui_state.layout_key_index.clear();
+    fn visit(node: &El, index: &mut std::collections::HashMap<String, String>) {
+        if let Some(key) = &node.key {
+            index
+                .entry(key.clone())
+                .or_insert_with(|| node.computed_id.clone());
+        }
+        for c in &node.children {
+            visit(c, index);
+        }
+    }
+    visit(root, &mut ui_state.layout_key_index);
 }
 
 /// Assign every node's `computed_id` without positioning anything else.
@@ -249,10 +276,21 @@ fn layout_children(node: &mut El, node_rect: Rect, ui_state: &mut UiState) {
 fn layout_custom(node: &mut El, node_rect: Rect, layout_fn: LayoutFn, ui_state: &mut UiState) {
     let inner = node_rect.inset(node.padding);
     let measure = |c: &El| intrinsic(c);
+    // Split-borrow `ui_state` so the `rect_of_key` closure reads the
+    // key index + computed rects while the surrounding function still
+    // holds the mutable borrow needed to insert this node's children
+    // back into `computed_rects` afterwards.
+    let key_index = &ui_state.layout_key_index;
+    let computed_rects = &ui_state.computed_rects;
+    let rect_of_key = |key: &str| -> Option<Rect> {
+        let id = key_index.get(key)?;
+        computed_rects.get(id).copied()
+    };
     let rects = (layout_fn.0)(LayoutCtx {
         container: inner,
         children: &node.children,
         measure: &measure,
+        rect_of_key: &rect_of_key,
     });
     assert_eq!(
         rects.len(),
@@ -917,6 +955,100 @@ mod tests {
         assert_eq!((r0.x, r0.y), (0.0, 0.0));
         assert_eq!((r1.x, r1.y), (30.0, 30.0));
         assert_eq!((r2.x, r2.y), (60.0, 60.0));
+    }
+
+    #[test]
+    fn layout_override_rect_of_key_resolves_earlier_sibling() {
+        // The popover-anchor pattern: a custom-laid-out node positions
+        // its child by reading another keyed node's rect via the new
+        // LayoutCtx::rect_of_key callback. The trigger lives in an
+        // earlier sibling so its rect is already in `computed_rects`
+        // by the time the popover layer's layout_override runs.
+        use crate::tree::stack;
+        let trigger_x = 40.0;
+        let trigger_y = 20.0;
+        let trigger_w = 60.0;
+        let trigger_h = 30.0;
+        let mut root = stack([
+            // Earlier sibling: the trigger.
+            crate::widgets::button::button("Open")
+                .key("trig")
+                .width(Size::Fixed(trigger_w))
+                .height(Size::Fixed(trigger_h)),
+            // Later sibling: a custom-laid-out container that reads
+            // the trigger's rect to position its single child.
+            stack([crate::widgets::text::text("popover")
+                .width(Size::Fixed(80.0))
+                .height(Size::Fixed(20.0))])
+            .width(Size::Fill(1.0))
+            .height(Size::Fill(1.0))
+            .layout(|ctx| {
+                let trig = (ctx.rect_of_key)("trig").expect("trigger laid out");
+                vec![Rect::new(trig.x, trig.bottom() + 4.0, 80.0, 20.0)]
+            }),
+        ])
+        .padding(Sides::xy(trigger_x, trigger_y));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        let popover_layer = &root.children[1];
+        let panel_id = &popover_layer.children[0].computed_id;
+        let panel_rect = state.rect(panel_id);
+        // Anchored to (trigger.x, trigger.bottom() + 4.0). With padding
+        // (40, 20) and trigger height 30 → expect (40, 54).
+        assert!(
+            (panel_rect.x - trigger_x).abs() < 0.01,
+            "popover x = {} (expected {trigger_x})",
+            panel_rect.x,
+        );
+        assert!(
+            (panel_rect.y - (trigger_y + trigger_h + 4.0)).abs() < 0.01,
+            "popover y = {} (expected {})",
+            panel_rect.y,
+            trigger_y + trigger_h + 4.0,
+        );
+    }
+
+    #[test]
+    fn layout_override_rect_of_key_returns_none_for_missing_key() {
+        let mut root = column([crate::widgets::text::text("inner")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))])
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(200.0))
+        .layout(|ctx| {
+            assert!((ctx.rect_of_key)("nope").is_none());
+            vec![Rect::new(ctx.container.x, ctx.container.y, 40.0, 20.0)]
+        });
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+    }
+
+    #[test]
+    fn layout_override_rect_of_key_returns_none_for_later_sibling() {
+        // First-frame contract: a custom layout running before its
+        // target's sibling has been laid out should see `None`, not a
+        // zero rect or a panic. This is what makes the popover pattern
+        // (trigger first, popover layer second in source order) the
+        // supported shape — the reverse direction simply gets `None`.
+        use crate::tree::stack;
+        let mut root = stack([
+            stack([crate::widgets::text::text("panel")
+                .width(Size::Fixed(40.0))
+                .height(Size::Fixed(20.0))])
+            .width(Size::Fill(1.0))
+            .height(Size::Fill(1.0))
+            .layout(|ctx| {
+                assert!(
+                    (ctx.rect_of_key)("later").is_none(),
+                    "later sibling's rect must not be available yet"
+                );
+                vec![Rect::new(ctx.container.x, ctx.container.y, 40.0, 20.0)]
+            }),
+            crate::widgets::button::button("after").key("later"),
+        ]);
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
     }
 
     #[test]
