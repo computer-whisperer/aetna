@@ -10,7 +10,7 @@
 //! [`run`] mirrors `aetna_demo::run`'s contract method-for-method so a
 //! Counter App written for the wgpu side runs unchanged here.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey};
 use aetna_vulkano::Runner;
@@ -36,7 +36,7 @@ use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
     event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
-    event_loop::{ActiveEventLoop, EventLoop},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{Key, NamedKey},
     window::{Window, WindowId},
 };
@@ -62,7 +62,7 @@ pub fn run_with_init<A: App + 'static, F: FnOnce(&mut Runner) + 'static>(
     init_runner: F,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+    event_loop.set_control_flow(ControlFlow::Wait);
 
     let library = VulkanLibrary::new()?;
     let required_extensions = Surface::required_extensions(&event_loop)?;
@@ -84,6 +84,7 @@ pub fn run_with_init<A: App + 'static, F: FnOnce(&mut Runner) + 'static>(
         last_pointer: None,
         rcx: None,
         init_runner: Some(Box::new(init_runner)),
+        next_frame: None,
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -103,6 +104,7 @@ struct Host<A: App> {
     last_pointer: Option<(f32, f32)>,
     rcx: Option<RenderContext>,
     init_runner: Option<InitRunner>,
+    next_frame: Option<Instant>,
 }
 
 struct RenderContext {
@@ -424,6 +426,24 @@ impl<A: App> ApplicationHandler for Host<A> {
             }
             _ => {}
         }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(interval) = self.app.frame_interval() else {
+            self.next_frame = None;
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        };
+        let interval = interval.max(std::time::Duration::from_millis(1));
+        let now = Instant::now();
+        let next = self.next_frame.get_or_insert(now);
+        if now >= *next {
+            if let Some(rcx) = self.rcx.as_ref() {
+                rcx.window.request_redraw();
+            }
+            *next = now + interval;
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(*next));
     }
 }
 

@@ -45,6 +45,8 @@
 //!   [`UiEvent`]s when something is clicked. The host's `App::on_event`
 //!   updates state; the library schedules a redraw.
 
+use std::time::Duration;
+
 use crate::tree::{El, Rect};
 
 /// Hit-test target metadata. `key` is the author-facing route, while
@@ -303,6 +305,15 @@ pub trait App {
     /// material routing without backend-specific calls.
     fn theme(&self) -> crate::Theme {
         crate::Theme::default()
+    }
+
+    /// Optional app-driven redraw cadence. Most apps should leave
+    /// this as `None` so the host sleeps until input or animation.
+    /// Apps with external state that changes without `UiEvent`s, such
+    /// as audio meters, can return a modest interval and read their
+    /// shared state during `build()`.
+    fn frame_interval(&self) -> Option<Duration> {
+        None
     }
 }
 

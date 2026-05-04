@@ -25,14 +25,14 @@ pub use icon_gallery::{GlassIconGallery, IconGallery, ReliefIconGallery};
 pub use liquid_glass_lab::LiquidGlassLab;
 pub use showcase::Showcase;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey};
 use aetna_wgpu::Runner;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
@@ -46,7 +46,7 @@ pub fn run<A: App + 'static>(
     app: A,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+    event_loop.set_control_flow(ControlFlow::Wait);
     let mut host = Host {
         title,
         viewport,
@@ -54,6 +54,7 @@ pub fn run<A: App + 'static>(
         gfx: None,
         last_pointer: None,
         modifiers: KeyModifiers::default(),
+        next_frame: None,
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -68,6 +69,7 @@ struct Host<A: App> {
     /// we divide by the window's scale factor before storing).
     last_pointer: Option<(f32, f32)>,
     modifiers: KeyModifiers,
+    next_frame: Option<Instant>,
 }
 
 struct Gfx {
@@ -348,6 +350,24 @@ impl<A: App> ApplicationHandler for Host<A> {
                 }
             }
         }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(interval) = self.app.frame_interval() else {
+            self.next_frame = None;
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        };
+        let interval = interval.max(std::time::Duration::from_millis(1));
+        let now = Instant::now();
+        let next = self.next_frame.get_or_insert(now);
+        if now >= *next {
+            if let Some(gfx) = self.gfx.as_ref() {
+                gfx.window.request_redraw();
+            }
+            *next = now + interval;
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(*next));
     }
 }
 
