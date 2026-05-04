@@ -13,7 +13,7 @@ Two manifesto documents stand at the repo root — read these before reviewing. 
 
 ## Where we are at
 
-v5.0 is in. Aetna lives under `crates/`:
+v0.6.1 + v5.4 are in. Aetna lives under `crates/`:
 
 | Crate | Role |
 |---|---|
@@ -77,22 +77,18 @@ No JSX, no signals, no `useState`, no retained-mode component identity. Hover, p
 
 ## Roadmap
 
-v0.x slices come from `LIBRARY_VISION.md`; the v5.x slices come from `V5.md` and structure how Aetna grows beyond the v0.4 baseline.
+v0.1–v0.6.1 and the v5.0–v5.4 substrate work are summarized under [Shipped](#shipped) at the bottom of this README. The live roadmap is the work that turns Aetna from "Showcase exercises every primitive" into "you could port a real reference application onto this." It is organized around one invariant: **stock widgets get no APIs that user widgets don't.**
 
 | Slice | Scope | Status |
 |---|---|---|
-| v0.1 | Layout, stock surface, glyphon text, custom shader. | done |
-| v0.2 | Hit-testing, click events, automatic hover/press, App trait, state-driven rebuild. | done |
-| v0.3 | Scroll/clip, modal/overlay primitive. | done |
-| v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. | done |
-| v5.0 | Crate split into `aetna-{core,wgpu,demo}`; module split inside core; `El` side-map refactor. | done |
-| v5.1 | Decouple text from glyphon (cosmic-text + swash + own atlas). | done |
-| v5.2 | wasm target. | done — the consolidated `Showcase` (counter / list / palette / picker / settings) runs in the browser via `aetna-web`'s wasm-pack bundle, with a per-frame timing breakdown logged to the JS console |
-| v5.3 | Vulkano backend; naga WGSL→SPIRV. | done — counter App renders end-to-end through `aetna-vulkano` (rect + text + custom shaders); the v5.0 core/backend boundary holds across two GPU APIs. Native-only; one-fixture scope per `V5_3.md` |
-| v5.4 | Vulkano parity with wgpu. | done — (1) Showcase (sidebar + Counter / List / Palette / Picker / Settings) renders end-to-end through vulkano via `aetna-vulkano-demo --bin showcase`; (2) the cross-backend paint primitives (`QuadInstance` ABI, paint-stream batching, `pack_instance`, `physical_scissor`) live in `aetna_core::paint`; (3) the interaction half + paint-stream loop live in `aetna_core::runtime::RunnerCore` — both backend `Runner`s now hold a `core: RunnerCore` and forward 13 byte-for-byte-identical interaction methods. Each Runner owns only its GPU resources + a thin `prepare()` GPU-upload sequence + `draw()`. A `Painter` trait was considered and declined (see `runtime.rs` module doc): the residual `prepare()` tails + `draw()` walks need backend-typed encoder handles that a trait can't hide without re-fragmenting through generics; the duplication worth abstracting is one layer up (winit + swapchain harness), not at the paint surface. |
-| v0.5 | Custom layout (second escape hatch) + virtualized lists. (`feed`/`chat_log` removed from scope — see `LIBRARY_VISION.md`.) | done — (1) custom-layout escape hatch: `El::layout(f)` takes a `LayoutFn(LayoutCtx) -> Vec<Rect>` that replaces the column/row distribution; hit-test, focus, animation, scroll all keep working off the rects the function produces. (2) Virtualized list: `virtual_list(count, row_height, build_row)` realizes only the visible rows each frame; wheel scroll, hit-test, hover/press/focus all route through the realized rect window; row keys give stable identity across scroll. Both primitives scope-limited (`Hug` sizing panics; row height is fixed). Variable-height virtualization deferred until a real in-tree consumer drives the design. Fixtures in `aetna-core/examples/{circular_layout,virtual_list}` + `aetna-demo --bin {circular_layout,virtual_list}`. |
-| v0.6 | Rich text composition (markdown runs, inline highlighting, embedded elements). | in progress — **v0.6.1 landed**: `text_runs([...])` paragraphs flow through cosmic-text rich-text shaping (wrapping crosses run boundaries) and render via `DrawOp::AttributedText` with per-glyph color, weight, and italic baked in. `hard_break()` produces an in-paragraph line break; the layout / lint passes know to treat Inlines children as paragraph parts (zero-size rects, suppressed overflow). Headless fixture: `crates/aetna-core/examples/inline_runs`; GPU smoke test: `crates/aetna-demo/src/bin/render_inline_runs`. v0.6.2 (semantic / syntax highlighting), v0.6.3 (inline embeds), and v0.6.4 (text selection + clipboard) queued. Markdown integration lives outside core (`aetna-markdown`-style crate, deferred). |
-| v0.7+ | Stock shader: shadow, focus_ring, divider_line. Backdrop sampling. Liquid glass as the architectural acceptance test. | `focus_ring` shared with `rounded_rect` pipeline |
+| **v0.7.5** | **Widget kit.** Audit `Kind` and slim it — styling-only variants (`Button`, `Card`, `Badge`) collapse into `Group` carrying a `SemanticTag`; only structurally-meaningful variants survive. General per-node `UiState::widget_state::<T>` surface, so an app's edit buffer / drag offset / tree-view expanded-set use the same hook the library uses internally. Document the widget-author contract. Rewrite `button` against the public surface. No new author-facing primitives. | next |
+| **v0.7.6** | **Input plumbing.** Mouse-up + drag-extent tracking, secondary-click event, character / IME-text events as their own surface, focused-node-captures-keys priority before hotkey routing, `cosmic-text` `Buffer::hit` exposure. Each piece is a documented widget-kit primitive, not internal-only plumbing. | queued |
+| **v0.8.1** | **`text_input` — single line.** Caret rendering, per-key edit buffer + caret state, char insertion, Backspace/Delete, Left/Right/Home/End, click-to-position. Built using only public widget-kit APIs; if it can't be, the kit isn't done. The fixture ships *two* inputs: the stock `text_input` and a user-crate variant built from the same primitives, as the dogfood proof. | queued |
+| **v0.8.2** | **Selection + clipboard.** `(anchor, caret)` state per text node. Drag-to-select, shift-arrows, Ctrl+A/C/X/V via `arboard`. Works for both editable inputs and read-only display text — fulfills the v0.6.4 promise. Web paste deferred (async clipboard doesn't fit a synchronous event model; revisit in the wasm consumer slice). | queued |
+| **v0.8.3** | **`text_area` — multi-line.** Wrapping caret, preferred-column up/down motion, selection across lines, caret-follows-scroll inside fixed-height areas. Default Enter-inserts-newline; opt-out via `.submit_on_enter(true)` for chat-input shapes. | queued |
+| **v0.8.4** | IME. Decision: **defer**. Latin-1 first; revisit when a CJK-input consumer drives the design. | deferred |
+| **v0.9** | **Anchored popovers.** Two-pass layout positioning a popover relative to a trigger key, with viewport-edge auto-flip. Click-outside / Escape dismissal. Two helpers built on it: `context_menu([items])` (fired by `SecondaryClick`, j/k navigation) and `dropdown(label, options)` (button + popover, single-select). | queued |
+| **v0.10** | **Validation port.** Take the smallest viable whisper-git slice — sidebar + commit list, read-only, no diff viewer, no remotes — and port it onto Aetna in a sibling crate. The point is not to ship a finished port; it is to let the gaps surface from a real app rather than guessing them. Whatever shows up determines v0.11+. | queued |
 
 ## Repository tour
 
@@ -105,76 +101,56 @@ V5_3.md                          v5.3 plan (vulkano backend; naga WGSL→SPIR-V)
 crates/
   aetna-core/                    backend-agnostic core
     src/
-      tree/                        El, builders, types, color
-        mod.rs                       El struct + impls + column/row/scroll/stack/spacer/divider
-        types.rs                     Rect, Sides, Size, Axis, Align, Justify, FontWeight, Kind, …
-        color.rs                     Color + arithmetic
-      tokens.rs                    const tokens (colors, spacing, radii, font sizes)
-      style.rs                     StyleProfile, .primary()/.secondary()/.ghost()/...
-      layout.rs                    column/row/stack/scroll pass; writes UiState side maps. v0.5: LayoutFn / LayoutCtx (custom-layout escape hatch); VirtualItems (virtualized list realization, fixed row height)
-      shader.rs                    ShaderHandle, UniformBlock, UniformValue, ShaderBinding
-      ir.rs                        DrawOp::{Quad, GlyphRun}
+      lib.rs                       prelude
+      tree/                        El, Kind, Rect, Color (the scene description)
+      layout.rs                    column/row/stack/scroll/overlay distribution; LayoutFn / VirtualItems
+
+      ir.rs                        DrawOp::{Quad, GlyphRun, BackdropSnapshot}
       draw_ops.rs                  El + UiState → DrawOp[]; envelope-driven state visuals
-      anim/
-        mod.rs                       AnimValue, Animation, SpringConfig, TweenConfig, Timing
-        tick.rs                      per-node walker that retargets / steps / writes back
+      paint.rs                     v5.4 cross-backend paint ABI: QuadInstance, paint-stream batching, scissor
+      shader.rs                    ShaderHandle, UniformBlock, ShaderBinding
+
+      state.rs                     UiState — side maps, trackers, hotkeys, animations, widget_state::<T>
+      runtime.rs                   v5.4 RunnerCore (shared interaction state + paint-stream loop) + TextRecorder
       event.rs                     App trait, UiEvent, UiEventKind, UiTarget, UiKey, KeyChord
-      state.rs                     UiState — side maps, trackers, hotkeys, animation map
       hit_test.rs                  pointer hit-test + scroll-target routing
       focus.rs                     linear focus traversal
-      overlay.rs                   modal / scrim / overlay primitives
-      svg.rs                       approximate SVG fallback for the agent loop
-      bundle.rs / lint.rs / inspect.rs / manifest.rs   artifact emission
-      button.rs / badge.rs / card.rs / text.rs         component files
-      paint.rs                     v5.4 — cross-backend paint ABI: QuadInstance, InstanceRun, PaintItem, physical_scissor, pack_instance
-      runtime.rs                   v5.4 — RunnerCore (shared interaction state + paint-stream loop) + TextRecorder trait + PrepareResult/Timings
+      anim/                        AnimValue, Animation, SpringConfig, TweenConfig, per-node tick
+
+      style.rs                     StyleProfile dispatch
+      tokens.rs                    const tokens (colors, spacing, radii, font sizes)
+
+      widgets/                     stock vocabulary — pure compositions of the public widget-kit surface
+        button.rs                    button("Save").primary() etc.
+        card.rs                      card("Title", [body])
+        badge.rs                     badge("12")
+        text.rs                      h1/h2/h3/paragraph/mono/text
+        overlay.rs                   overlay/scrim/modal/modal_panel
+
+      text/                        text shaping + atlas infrastructure
+        atlas.rs                     unified RGBA glyph atlas (color emoji + outline glyphs)
+        metrics.rs                   measure_text / wrap_lines / line_height / TextLayout
+
+      bundle/                      artifact pipeline (the agent loop's feedback channel)
+        artifact.rs                  bundle orchestration; render_bundle entry
+        inspect.rs                   tree dump
+        lint.rs                      provenance-tracked findings
+        manifest.rs                  shader manifest + draw-op text
+        svg.rs                       approximate SVG fallback
+
     shaders/
       rounded_rect.wgsl              the load-bearing stock shader
       gradient.wgsl                  custom-shader fixture
-    fonts/                         bundled Roboto (regular/medium/bold)
-    examples/                      headless artifact fixtures (settings, modal, scroll_list, custom_shader, circular_layout, virtual_list)
+      liquid_glass.wgsl              v0.7 backdrop-sampling acceptance test
+    examples/                      headless artifact fixtures
     out/                           rendered artifacts per example
-  aetna-wgpu/                    wgpu backend
-    src/
-      lib.rs                       Runner shell — pipelines, text atlas, GPU upload sequence; wraps aetna_core::runtime::RunnerCore for everything backend-agnostic
-      pipeline.rs                  shared quad pipeline factory
-      instance.rs                  wgpu-shaped set_scissor (the only paint-side function that needs a wgpu::RenderPass)
-      text.rs                      stock::text pipeline + page texture mirror of GlyphAtlas; impls TextRecorder for RunnerCore's paint loop
-  aetna-demo/                    winit harness + bins
-    src/
-      lib.rs                       run<A: App>(title, viewport, app)
-      bin/
-        showcase.rs                  consolidated demo (counter / list / palette / picker / settings) — v5.2 wasm parity target
-        counter.rs                   interactive counter — v0.2 proof point
-        scroll_list.rs               interactive scroll list — v0.3 wheel
-        hotkey_picker.rs             keyboard-only picker — v0.4 keyboard routing
-        animated_palette.rs          selection picker with .animate() — v0.4 proof point
-        settings.rs                  static settings screen (windowed)
-        render_counter.rs          ┐
-        render_png.rs              │ headless artifact generators
-        render_custom.rs           ┘
-    out/                           rendered PNGs
-  aetna-web/                     v5.2 wasm slice — cdylib + rlib
-    src/
-      lib.rs                       re-exports aetna_demo::Showcase + #[wasm_bindgen(start)] start_web; per-frame timing breakdown
-    assets/
-      index.html                   browser harness: <canvas id="aetna_canvas"> + import init from /pkg/aetna_web.js
-  aetna-vulkano/                 v5.3 Vulkan backend (native only)
-    src/
-      lib.rs                       module wiring + public re-exports
-      runner.rs                    Runner shell — pipelines, render pass, frame uniforms, GPU upload sequence; wraps aetna_core::runtime::RunnerCore (v5.4)
-      pipeline.rs                  rect-shaped pipeline factory; FrameUniforms layout
-      instance.rs                  vulkano-shaped set_scissor (the only paint-side function that needs an AutoCommandBufferBuilder)
-      text.rs                      TextPaint — atlas mirror to per-page R8 images, premul-alpha pipeline; impls TextRecorder for RunnerCore's paint loop
-      naga_compile.rs              wgsl_to_spirv helper (pinned naga 23.1)
-  aetna-vulkano-demo/            v5.3 winit + vulkano harness
-    src/
-      lib.rs                       run<A: App>(...) and run_with_init for custom-shader registration
-      bin/
-        counter.rs                   interactive counter — v0.2 proof point through vulkano
-        custom.rs                    custom-shader fixture (gradient.wgsl) — register_shader contract
-        hello.rs                     minimal clear-color smoke test (vulkano + winit bring-up)
-        showcase.rs                  v5.4 — Showcase (sidebar nav + 5 sections) routed through vulkano
+
+  aetna-wgpu/                    wgpu backend (Runner shell + pipelines + atlas mirror)
+  aetna-vulkano/                 vulkano backend (Runner shell + pipelines + naga compile)
+  aetna-demo/                    winit harness + interactive bins (showcase, counter, …)
+  aetna-vulkano-demo/            vulkano sibling of aetna-demo
+  aetna-web/                     wasm browser entry point — cdylib re-exporting Showcase
+  aetna-fonts/                   bundled Roboto + emoji (split out in v0.7)
 attempts/
   attempt_1..4/                  archive — read each directory's top-level docs for lineage
 tools/                           agent-loop scripts (rendering helpers, etc.)
@@ -211,18 +187,39 @@ Same `Showcase` `App` impl runs through `aetna-demo::run` natively (`cargo run -
 
 ## Reviewing this
 
-If you've been pointed here for a fresh review, the highest-value places to push:
+Aetna's rendering thesis is well-defended (liquid glass running on three backends; the v5.4 `RunnerCore` extraction means behavior literally cannot drift between backends). What remains untested is the *application* thesis — that this shape is the right substrate for a polished native app, not just a Showcase. v0.7.5–v0.10 work directly toward that test.
 
-1. **Is `LIBRARY_VISION.md`'s thesis sound?** Specifically: *"a declarative scene that projects time-varying state into a tree, with two escape hatches and zero state model."* Does this shape hold up across the reference applications named in the doc (whisper-git, whisper-agent, whisper-tensor, volumetric), or does it implicitly assume server-streamed UIs?
+The highest-value places to push:
 
-2. **Is the v0.2 API surface load-bearing?** `App` (two methods) + `UiEvent` + `.key("...")` is the entire interactive contract today. Is anything missing that v0.3+ will paint into a corner — e.g., an event identity model that `key`-as-`String` won't extend cleanly to keyboard/focus/drag?
+1. **Does the symmetry invariant survive contact with text input?** v0.7.5 names the rule "stock widgets get no APIs that user widgets don't." v0.8.1 ships `text_input` as the dogfood test. If the implementation ends up with private edit-buffer state in `UiState`, the invariant lost.
 
-3. **Two hatches, not three.** A 2026-05 review of whisper-tensor / polychora / volumetric concluded that "embedded viewport" is not a designed primitive — it falls out of the library/host split (host owns the encoder; the library inserts into its render pass; the host can record any other draws into the same encoder). The remaining hatches are custom shader (done) and custom layout (queued for v0.5). Is there a *fourth* hatch that this design can't grow into, or is one of the remaining two actually redundant?
+2. **Is `Kind` the right place to slim?** The v0.7.5 audit collapses styling-only `Kind` variants (`Button`, `Card`, `Badge`) into `Group` carrying a `SemanticTag`, leaving only structurally-meaningful variants (`Group`, `Text`, `Inlines`, `Scroll`, `VirtualList`, `Overlay` family). Is this the right cut, or should `Kind` shrink further (or grow back)?
 
-4. **Does the library/host split hold?** The library doesn't own device, queue, swapchain, event loop, state model, or persistence. Is that line drawn in the right place — small enough that an LLM holds the whole API in context, large enough to free authors from boilerplate? In particular: is the implicit "host paints whatever else it needs into its own encoder, alongside our pass" contract crisp enough, or does it need a small public accessor (e.g., `Runner::rect_of(key)`) to be usable in practice?
+3. **Is the popover positioning model correct?** v0.9 commits to two-pass layout: layout the main tree, then layout each open popover with the trigger's known rect. The alternative (cache trigger rect from the previous frame) is one frame stale but single-pass. Worth the cost?
 
-5. **Does the v5.0 side-map architecture earn its complexity?** `El` is now the build-closure-produced description; `UiState` carries the per-frame bookkeeping. The wins (a fresh `El` carries no library state; multiple readers read from one place; layout, draw-op, and animation passes don't fight over scratch fields on the tree) come at the cost of `String`-keyed `HashMap` lookups per node per frame. Is the tradeoff right for v5.0, or should id interning come sooner?
+4. **What primitive will v0.10's port reveal as missing?** Best current guesses: drag-resizable splits, variable-height virtualization, a documented async-channel-into-redraw recipe. Likely something we haven't named.
 
-6. **Anything missing you would expect a UI library to claim?** What's a real, polished native application that this design *can't* express, even after v0.7+? If you can name one, that's the most valuable signal.
+5. **Does the library/host split still hold under v0.7's backdrop sampling?** The host now needs to declare `COPY_SRC` / `TRANSFER_SRC` usage on its color target. Is that a clean enough integration cost, or is it too much knowledge leaking through the seam?
 
-This is a young project. Concrete pushback — including "the thesis is wrong, here's why" — is more valuable than incremental polish.
+6. **Anything missing you would expect a UI library to claim?** What's a real, polished native application that this design *can't* express, even after v0.9? If you can name one, that's the most valuable signal.
+
+This is a young project. Concrete pushback — including "the symmetry invariant will fail at X, here's why" — is more valuable than incremental polish.
+
+## Shipped
+
+The slices below have all landed. The capability table at the top of this README documents the resulting user-visible contract; the artifacts are in each crate's `out/`.
+
+| Slice | Scope |
+|---|---|
+| v0.1 | Layout, stock surface, glyphon text, custom shader. |
+| v0.2 | Hit-testing, click events, automatic hover/press, App trait, state-driven rebuild. |
+| v0.3 | Scroll/clip, modal/overlay primitive. |
+| v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. |
+| v0.5 | Custom layout (second escape hatch) + virtualized lists. |
+| v0.6.1 | Rich-text composition (attributed runs, per-glyph color/weight/italic, hard breaks). v0.6.2/v0.6.3 (semantic highlighting, inline embeds) folded into v0.10's port-driven priorities. |
+| v0.7 | Backdrop sampling — multi-pass + snapshot + `@group(1)` on wgpu native, vulkano, and WebGPU. `liquid_glass.wgsl` as the architectural acceptance test from `SHADER_VISION.md`. |
+| v5.0 | Crate split into `aetna-{core,wgpu,demo}`; `El` side-map refactor (build closure produces zero library state; `UiState` carries per-frame bookkeeping). |
+| v5.1 | Text decoupled from glyphon (cosmic-text + swash + own atlas). |
+| v5.2 | wasm target via `aetna-web`; consolidated Showcase runs in the browser. |
+| v5.3 | Vulkano backend; naga WGSL→SPIR-V. |
+| v5.4 | Vulkano parity with wgpu: cross-backend `paint::QuadInstance` ABI, shared `runtime::RunnerCore`. |

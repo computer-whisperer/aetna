@@ -2,7 +2,7 @@
 //!
 //! Every visual fact in the laid-out tree resolves to a [`DrawOp`] bound
 //! to a [`ShaderHandle`] and a uniform block. The wgpu renderer dispatches
-//! by shader handle; the SVG fallback (`crate::svg`) interprets stock
+//! by shader handle; the SVG fallback (`crate::bundle::svg`) interprets stock
 //! shaders best-effort and emits placeholder rects for custom ones.
 //!
 //! `BackdropSnapshot` is a v2 placeholder — committed in the architecture
@@ -21,8 +21,8 @@
 //! shaders or full custom shaders.
 
 use crate::shader::{ShaderHandle, UniformBlock};
-use crate::text_atlas::RunStyle;
-use crate::text_metrics::TextLayout;
+use crate::text::atlas::RunStyle;
+use crate::text::metrics::TextLayout;
 use crate::tree::{Color, FontWeight, Rect, TextWrap};
 
 /// One paint operation in the laid-out frame.
@@ -58,10 +58,10 @@ pub enum DrawOp {
     },
     /// An attributed paragraph: a sequence of styled runs that flow
     /// together inside one `rect`. The runtime hands `runs` straight to
-    /// [`crate::text_atlas::GlyphAtlas::shape_and_rasterize_runs`] so
+    /// [`crate::text::atlas::GlyphAtlas::shape_and_rasterize_runs`] so
     /// wrapping decisions cross run boundaries (real prose, not glued
     /// segments). `layout` is an approximate pre-shaping measurement
-    /// from `text_metrics` — backends shape for accurate placement;
+    /// from `text::metrics` — backends shape for accurate placement;
     /// SVG uses it to lay tspan baselines.
     AttributedText {
         id: String,

@@ -58,50 +58,40 @@ pub mod draw_ops;
 pub mod event;
 pub mod focus;
 pub mod hit_test;
-pub mod inspect;
 pub mod ir;
 pub mod layout;
-pub mod lint;
-pub mod manifest;
 pub mod paint;
 pub mod runtime;
 pub mod shader;
 pub mod state;
 pub mod style;
-pub mod svg;
-pub mod text_atlas;
-pub mod text_metrics;
+pub mod text;
 pub mod tokens;
 pub mod tree;
-
-pub mod badge;
-pub mod button;
-pub mod card;
-pub mod overlay;
-pub mod text;
+pub mod widgets;
 
 // Prelude — for `use aetna_core::*;`.
 pub use anim::{AnimProp, AnimValue, Animation, SpringConfig, Timing, TweenConfig};
-pub use bundle::{Bundle, render_bundle, render_bundle_with, write_bundle};
+pub use bundle::artifact::{Bundle, render_bundle, render_bundle_with, write_bundle};
+pub use bundle::inspect::dump_tree;
+pub use bundle::lint::{Finding, FindingKind, LintReport, lint};
+pub use bundle::manifest::{draw_ops_text, shader_manifest};
+pub use bundle::svg::svg_from_ops;
 pub use draw_ops::draw_ops;
 pub use event::{
     App, AppShader, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget,
 };
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
-pub use inspect::dump_tree;
 pub use ir::{DrawOp, TextAnchor};
 pub use layout::{LayoutCtx, LayoutFn, VirtualItems, layout};
-pub use lint::{Finding, FindingKind, LintReport, lint};
-pub use manifest::{draw_ops_text, shader_manifest};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
 pub use state::{AnimationMode, UiState};
 pub use style::StyleProfile;
-pub use svg::svg_from_ops;
-pub use text_atlas::{
+pub use text::atlas::{
     AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, RunStyle, ShapedGlyph, ShapedRun,
 };
-pub use text_metrics::{
+pub use text::metrics::{
     MeasuredText, TextLayout, TextLine, layout_text, line_height, line_width, measure_text,
     wrap_lines,
 };
@@ -111,8 +101,8 @@ pub use tree::{
     virtual_list,
 };
 
-pub use badge::badge;
-pub use button::button;
-pub use card::card;
-pub use overlay::{modal, modal_panel, overlay, scrim};
-pub use text::{h1, h2, h3, mono, paragraph, text};
+pub use widgets::badge::badge;
+pub use widgets::button::button;
+pub use widgets::card::card;
+pub use widgets::overlay::{modal, modal_panel, overlay, scrim};
+pub use widgets::text::{h1, h2, h3, mono, paragraph, text};

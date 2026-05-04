@@ -1,7 +1,7 @@
 //! Atlas-backed text rendering for `stock::text`.
 //!
 //! Mirrors `aetna_wgpu::text` — owns the core-side
-//! [`aetna_core::text_atlas::GlyphAtlas`] (cosmic-text shaping + swash
+//! [`aetna_core::text::atlas::GlyphAtlas`] (cosmic-text shaping + swash
 //! rasterization) and per-page Vulkan images that mirror the CPU pages.
 //! Per-glyph quads are emitted by `record()`; dirty atlas regions get
 //! copy_buffer_to_image'd to the GPU mirror in `flush()`.
@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use aetna_core::ir::TextAnchor;
 use aetna_core::shader::stock_wgsl;
-use aetna_core::text_atlas::{
+use aetna_core::text::atlas::{
     ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas, RunStyle, ShapedRun,
 };
 use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};

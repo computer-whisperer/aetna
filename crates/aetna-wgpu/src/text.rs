@@ -1,6 +1,6 @@
 //! Atlas-backed text rendering for `stock::text`.
 //!
-//! Owns an [`aetna_core::text_atlas::GlyphAtlas`] (cosmic-text shaping +
+//! Owns an [`aetna_core::text::atlas::GlyphAtlas`] (cosmic-text shaping +
 //! swash rasterization, both backend-agnostic) and mirrors its CPU pages
 //! to one Rgba8UnormSrgb wgpu texture per page (unified atlas — outline
 //! glyphs are stored as `(255,255,255,alpha)`; color emoji as native
@@ -17,7 +17,7 @@ use std::borrow::Cow;
 
 use aetna_core::ir::TextAnchor;
 use aetna_core::shader::stock_wgsl;
-use aetna_core::text_atlas::{
+use aetna_core::text::atlas::{
     ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas, RunStyle, ShapedRun,
 };
 use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};

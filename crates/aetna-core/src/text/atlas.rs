@@ -45,7 +45,7 @@
 //! recent Twitter Twemoji v15+) will fall back to v0 layers if the
 //! font supplies them, otherwise the glyph won't rasterize.
 //!
-//! SVG and layout/measurement keep using [`crate::text_metrics`] — its
+//! SVG and layout/measurement keep using [`crate::text::metrics`] — its
 //! line-level layout is what they consume; the per-glyph artifact here
 //! is for paint only.
 
@@ -59,7 +59,7 @@ use swash::scale::image::{Content as SwashContent, Image as SwashImage};
 use swash::scale::{Render, ScaleContext, Source as SwashSource, StrikeWith};
 
 use crate::ir::TextAnchor;
-use crate::text_metrics::{TextLayout, TextLine, line_height};
+use crate::text::metrics::{TextLayout, TextLine, line_height};
 use crate::tree::{Color, FontWeight, TextWrap};
 
 /// Default page size. Picked so a typical fixture's glyphs fit on a
@@ -1012,7 +1012,7 @@ mod tests {
         // Content::Color — which the unified atlas captures as a color
         // glyph. Verifies that COLRv0 (not just CBDT) flows through the
         // engine.
-        const COLR_FONT: &[u8] = include_bytes!("../tests/fixtures/test_colr.ttf");
+        const COLR_FONT: &[u8] = include_bytes!("../../tests/fixtures/test_colr.ttf");
         let mut atlas = GlyphAtlas::new();
         atlas.register_font(COLR_FONT.to_vec());
         atlas.set_default_family_stack(vec!["AetnaColrTest".into()]);

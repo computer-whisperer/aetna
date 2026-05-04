@@ -19,14 +19,14 @@
 //! likewise read/write [`UiState::scroll_offsets`] directly.
 //!
 //! Text intrinsic measurement uses bundled-font glyph advances via
-//! [`crate::text_metrics`]. Full shaping still belongs to the renderer
+//! [`crate::text::metrics`]. Full shaping still belongs to the renderer
 //! for now; this keeps layout/lint/SVG close enough to glyphon output
 //! without committing to the final text stack.
 
 use std::sync::Arc;
 
 use crate::state::UiState;
-use crate::text_metrics;
+use crate::text::metrics as text_metrics;
 use crate::tree::*;
 
 /// v0.5 — second escape hatch: author-supplied layout function.
@@ -762,7 +762,7 @@ mod tests {
     /// Hug-sized, Justify::Center should split the leftover space.
     #[test]
     fn justify_center_centers_hug_children() {
-        let mut root = column([crate::text::text("hi")
+        let mut root = column([crate::widgets::text::text("hi")
             .width(Size::Fixed(40.0))
             .height(Size::Fixed(20.0))])
         .justify(Justify::Center)
@@ -780,7 +780,7 @@ mod tests {
 
     #[test]
     fn justify_end_pushes_to_bottom() {
-        let mut root = column([crate::text::text("hi")
+        let mut root = column([crate::widgets::text::text("hi")
             .width(Size::Fixed(40.0))
             .height(Size::Fixed(20.0))])
         .justify(Justify::End)
@@ -823,7 +823,7 @@ mod tests {
         // Content height = 6*50 + 5*gap_default = 300 + 5*12 = 360 px.
         // Visible viewport (no padding) = 200 px → max_offset = 160.
         let mut root =
-            scroll((0..6).map(|i| crate::text::text(format!("row {i}")).height(Size::Fixed(50.0))))
+            scroll((0..6).map(|i| crate::widgets::text::text(format!("row {i}")).height(Size::Fixed(50.0))))
                 .key("list")
                 .height(Size::Fixed(200.0));
         let mut state = UiState::new();
@@ -864,7 +864,7 @@ mod tests {
             "overshoot clamped to {stored}"
         );
         // Content fits → offset clamps to 0.
-        let mut tiny = scroll([crate::text::text("just one row").height(Size::Fixed(20.0))])
+        let mut tiny = scroll([crate::widgets::text::text("just one row").height(Size::Fixed(20.0))])
             .height(Size::Fixed(200.0));
         let mut tiny_state = UiState::new();
         assign_ids(&mut tiny);
@@ -890,7 +890,7 @@ mod tests {
     fn layout_override_places_children_at_returned_rects() {
         // A custom layout that just stacks children diagonally inside the container.
         let mut root = column((0..3).map(|i| {
-            crate::text::text(format!("dot {i}"))
+            crate::widgets::text::text(format!("dot {i}"))
                 .width(Size::Fixed(20.0))
                 .height(Size::Fixed(20.0))
         }))
@@ -919,7 +919,7 @@ mod tests {
     #[test]
     fn layout_override_measure_returns_intrinsic() {
         // The custom layout reads `measure` to size each child.
-        let mut root = column([crate::text::text("hi")
+        let mut root = column([crate::widgets::text::text("hi")
             .width(Size::Fixed(40.0))
             .height(Size::Fixed(20.0))])
         .width(Size::Fixed(200.0))
@@ -940,10 +940,10 @@ mod tests {
     #[should_panic(expected = "returned 1 rects for 2 children")]
     fn layout_override_length_mismatch_panics() {
         let mut root = column([
-            crate::text::text("a")
+            crate::widgets::text::text("a")
                 .width(Size::Fixed(10.0))
                 .height(Size::Fixed(10.0)),
-            crate::text::text("b")
+            crate::widgets::text::text("b")
                 .width(Size::Fixed(10.0))
                 .height(Size::Fixed(10.0)),
         ])
@@ -960,7 +960,7 @@ mod tests {
         // Hug check fires when the parent's layout pass measures the
         // custom-layout child for sizing — i.e. when a layout_override
         // node is a child of a column/row, not when it's the root.
-        let mut root = column([column([crate::text::text("c")])
+        let mut root = column([column([crate::widgets::text::text("c")])
             .width(Size::Hug)
             .height(Size::Fixed(200.0))
             .layout(|ctx| vec![Rect::new(ctx.container.x, ctx.container.y, 10.0, 10.0)])])
@@ -976,7 +976,7 @@ mod tests {
         // Visible range: rows whose y in [-50, 200) → start = floor(120/50) = 2,
         // end = ceil((120+200)/50) = ceil(6.4) = 7. Five rows realized.
         let mut root = crate::tree::virtual_list(100, 50.0, |i| {
-            crate::text::text(format!("row {i}")).key(format!("row-{i}"))
+            crate::widgets::text::text(format!("row {i}")).key(format!("row-{i}"))
         });
         let mut state = UiState::new();
         assign_ids(&mut root);
@@ -1005,7 +1005,7 @@ mod tests {
     fn virtual_list_keyed_rows_have_stable_computed_id_across_scroll() {
         let make_root = || {
             crate::tree::virtual_list(50, 50.0, |i| {
-                crate::text::text(format!("row {i}")).key(format!("row-{i}"))
+                crate::widgets::text::text(format!("row {i}")).key(format!("row-{i}"))
             })
         };
 
@@ -1049,7 +1049,7 @@ mod tests {
     #[test]
     fn virtual_list_clamps_overshoot_offset() {
         // 10 rows × 50 = 500 content height; viewport 200; max offset = 300.
-        let mut root = crate::tree::virtual_list(10, 50.0, |i| crate::text::text(format!("r{i}")));
+        let mut root = crate::tree::virtual_list(10, 50.0, |i| crate::widgets::text::text(format!("r{i}")));
         let mut state = UiState::new();
         assign_ids(&mut root);
         state
@@ -1069,7 +1069,7 @@ mod tests {
 
     #[test]
     fn virtual_list_empty_count_realizes_no_children() {
-        let mut root = crate::tree::virtual_list(0, 50.0, |i| crate::text::text(format!("r{i}")));
+        let mut root = crate::tree::virtual_list(0, 50.0, |i| crate::widgets::text::text(format!("r{i}")));
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
         assert_eq!(root.children.len(), 0);
@@ -1078,7 +1078,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "row_height > 0.0")]
     fn virtual_list_zero_row_height_panics() {
-        let _ = crate::tree::virtual_list(10, 0.0, |i| crate::text::text(format!("r{i}")));
+        let _ = crate::tree::virtual_list(10, 0.0, |i| crate::widgets::text::text(format!("r{i}")));
     }
 
     #[test]
@@ -1086,7 +1086,7 @@ mod tests {
     fn virtual_list_hug_panics() {
         let mut root =
             column([
-                crate::tree::virtual_list(10, 50.0, |i| crate::text::text(format!("r{i}")))
+                crate::tree::virtual_list(10, 50.0, |i| crate::widgets::text::text(format!("r{i}")))
                     .height(Size::Hug),
             ])
             .width(Size::Fixed(300.0))
@@ -1098,10 +1098,10 @@ mod tests {
     #[test]
     fn text_runs_constructor_shape_smoke() {
         let el = crate::tree::text_runs([
-            crate::text::text("Hello, "),
-            crate::text::text("world").bold(),
+            crate::widgets::text::text("Hello, "),
+            crate::widgets::text::text("world").bold(),
             crate::tree::hard_break(),
-            crate::text::text("of text").italic(),
+            crate::widgets::text::text("of text").italic(),
         ]);
         assert_eq!(el.kind, Kind::Inlines);
         assert_eq!(el.children.len(), 4);

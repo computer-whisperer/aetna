@@ -15,8 +15,8 @@
 use crate::ir::*;
 use crate::shader::*;
 use crate::state::{EnvelopeKind, UiState};
-use crate::text_atlas::RunStyle;
-use crate::text_metrics;
+use crate::text::atlas::RunStyle;
+use crate::text::metrics as text_metrics;
 use crate::tokens;
 use crate::tree::*;
 

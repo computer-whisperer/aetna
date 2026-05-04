@@ -1,6 +1,6 @@
 //! Font-backed text measurement and simple word wrapping.
 //!
-//! The production wgpu path uses [`crate::text_atlas::GlyphAtlas`] for
+//! The production wgpu path uses [`crate::text::atlas::GlyphAtlas`] for
 //! shaping + rasterization; layout, lint, SVG artifacts, and draw-op IR
 //! all share this core layout artifact for measurement. Proportional
 //! text is shaped through `cosmic-text` using bundled Roboto; the older

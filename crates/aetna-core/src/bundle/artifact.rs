@@ -19,14 +19,14 @@
 
 use std::path::Path;
 
+use super::inspect;
+use super::lint::{LintReport, lint};
+use super::manifest;
+use super::svg::svg_from_ops;
 use crate::draw_ops;
-use crate::inspect;
 use crate::ir::DrawOp;
 use crate::layout;
-use crate::lint::{LintReport, lint};
-use crate::manifest;
 use crate::state::UiState;
-use crate::svg::svg_from_ops;
 use crate::tokens;
 use crate::tree::{El, Rect};
 

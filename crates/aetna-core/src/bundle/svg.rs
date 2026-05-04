@@ -20,7 +20,7 @@ use std::fmt::Write as _;
 
 use crate::ir::*;
 use crate::shader::*;
-use crate::text_metrics;
+use crate::text::metrics as text_metrics;
 use crate::tokens;
 use crate::tree::*;
 
@@ -285,7 +285,7 @@ fn emit_attributed_text(
     size: f32,
     wrap: TextWrap,
     anchor: TextAnchor,
-    runs: &[(String, crate::text_atlas::RunStyle)],
+    runs: &[(String, crate::text::atlas::RunStyle)],
     layout: &text_metrics::TextLayout,
 ) {
     let (x, anchor_attr) = match anchor {

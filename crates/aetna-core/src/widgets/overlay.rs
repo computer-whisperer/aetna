@@ -8,7 +8,7 @@
 use std::panic::Location;
 
 use crate::style::StyleProfile;
-use crate::text::h3;
+use super::text::h3;
 use crate::tokens;
 use crate::tree::*;
 

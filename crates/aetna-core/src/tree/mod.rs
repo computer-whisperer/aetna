@@ -637,16 +637,16 @@ pub fn divider() -> El {
 
 impl From<&str> for El {
     fn from(s: &str) -> Self {
-        crate::text::text(s)
+        crate::widgets::text::text(s)
     }
 }
 impl From<String> for El {
     fn from(s: String) -> Self {
-        crate::text::text(s)
+        crate::widgets::text::text(s)
     }
 }
 impl From<&String> for El {
     fn from(s: &String) -> Self {
-        crate::text::text(s.as_str())
+        crate::widgets::text::text(s.as_str())
     }
 }

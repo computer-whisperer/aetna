@@ -71,7 +71,7 @@ pub enum StockShader {
     /// workhorse — handles ~80% of UI surfaces.
     RoundedRect,
     /// Alpha-mask glyph rendering. Backends sample per-glyph bitmaps
-    /// from a [`crate::text_atlas::GlyphAtlas`] page texture and tint
+    /// from a [`crate::text::atlas::GlyphAtlas`] page texture and tint
     /// by per-glyph color. The historical `TextSdf` name was aspirational;
     /// the actual rasterization is alpha-coverage via swash.
     Text,

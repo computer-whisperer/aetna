@@ -64,7 +64,7 @@ use crate::paint::{
 };
 use crate::shader::ShaderHandle;
 use crate::state::{AnimationMode, UiState};
-use crate::text_atlas::RunStyle;
+use crate::text::atlas::RunStyle;
 use crate::tree::{Color, El, FontWeight, Rect, TextWrap};
 
 /// Reported back from each backend's `prepare(...)` per frame. The
