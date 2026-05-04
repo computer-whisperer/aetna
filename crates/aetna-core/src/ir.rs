@@ -77,8 +77,9 @@ pub enum DrawOp {
         layout: TextLayout,
     },
     /// A built-in vector icon in a 24x24 coordinate system, scaled into
-    /// `rect`. SVG renders the vector path directly; GPU backends use a
-    /// fallback glyph until the dedicated vector-icon pipeline lands.
+    /// `rect`. SVG renders the vector path directly; wgpu backends use
+    /// tessellated SVG geometry; backends without a native vector icon
+    /// painter may fall back to a glyph.
     Icon {
         id: String,
         rect: Rect,

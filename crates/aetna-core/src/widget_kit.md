@@ -52,7 +52,7 @@ Roles apply default size/weight/color so product code can say what a text run is
 
 Use `icon("search")` for built-in vector icons, `icon_button("menu")` for the standard 36px icon-only button surface, and `button_with_icon("upload", "Publish")` for label+icon actions. The names intentionally mirror common lucide/shadcn names: `menu`, `search`, `bell`, `layout-dashboard`, `file-text`, `folder`, `users`, `bar-chart`, `git-branch`, `git-commit`, `refresh-cw`, `alert-circle`, `check`, `x`, `plus`, `chevron-right`, and related basics.
 
-Icons are normal `El`s: set `.color(...)`, `.icon_size(...)`, `.icon_stroke_width(...)`, width/height, padding, or put them inside rows the same way as text. Tree dumps show `icon=<name>`, draw-op artifacts include `Icon` records, and the SVG fallback renders the vector path directly. GPU backends currently paint a fallback glyph for icon ops; the dedicated vector icon pipeline is the next backend slice.
+Icons are normal `El`s: set `.color(...)`, `.icon_size(...)`, `.icon_stroke_width(...)`, width/height, padding, or put them inside rows the same way as text. Tree dumps show `icon=<name>`, draw-op artifacts include `Icon` records, and the SVG fallback renders the vector path directly. The wgpu renderer, including the browser WebGPU path, renders SVG-backed vector geometry; Vulkano currently keeps the fallback glyph path until it gets its own vector painter.
 
 ### 4. Focus + interaction
 
