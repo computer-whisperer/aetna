@@ -57,14 +57,21 @@ fn push_node(
     let opacity = inherited_opacity * n.opacity;
 
     let translated_rect = translated(computed, total_translate);
-    let painted_rect = scaled_around_center(translated_rect, n.scale);
+    // The layout rect, post translate + scale, is the visual boundary the
+    // SDF and clip both anchor to. `painted_rect` extends it by
+    // `paint_overflow` so the quad has room to draw focus rings, drop
+    // shadows, and other halos *outside* the layout box without
+    // affecting sibling positions.
+    let inner_painted_rect = scaled_around_center(translated_rect, n.scale);
+    let painted_rect = inner_painted_rect.outset(n.paint_overflow);
     let painted_font_size = n.font_size * n.scale;
 
-    // Clip is computed in the (already-translated) paint space so
-    // descendants below this clip rect get scissored consistently with
-    // where the surface visually lands.
+    // Clip uses the layout rect, not the overflowed painted rect:
+    // `clip()` is about constraining descendants to the layout box, not
+    // about whether this element's own paint can spill into its
+    // overflow band.
     let own_scissor = if n.clip {
-        intersect_scissor(inherited_scissor, painted_rect)
+        intersect_scissor(inherited_scissor, inner_painted_rect)
     } else {
         inherited_scissor
     };
@@ -72,14 +79,16 @@ fn push_node(
     // Surface paint. Either a custom shader override, or the implicit
     // `stock::rounded_rect` driven by the El's fill/stroke/radius/shadow.
     if let Some(custom) = &n.shader_override {
+        let mut uniforms = custom.uniforms.clone();
+        uniforms.insert("inner_rect", inner_rect_uniform(inner_painted_rect));
         out.push(DrawOp::Quad {
             id: n.computed_id.clone(),
             rect: painted_rect,
             scissor: own_scissor,
             shader: custom.handle,
-            uniforms: custom.uniforms.clone(),
+            uniforms,
         });
-    } else if fill.is_some() || stroke.is_some() {
+    } else if fill.is_some() || stroke.is_some() || focus_ring_alpha > 0.0 {
         let mut uniforms = UniformBlock::new();
         if let Some(c) = fill {
             uniforms.insert("fill", UniformValue::Color(opaque(c, opacity)));
@@ -92,6 +101,27 @@ fn push_node(
         if n.shadow > 0.0 {
             uniforms.insert("shadow", UniformValue::F32(n.shadow));
         }
+        uniforms.insert("inner_rect", inner_rect_uniform(inner_painted_rect));
+        // Focus ring rides on the node's own quad: the library injects a
+        // `focus_color` (with the eased focus alpha already multiplied
+        // into its rgba) plus `focus_width`, and `stock::rounded_rect`
+        // draws the ring in the `paint_overflow` band when alpha > 0.
+        // Custom shaders read the same uniforms and decide for
+        // themselves what to paint — the symmetry rule.
+        if n.focusable && focus_ring_alpha > 0.0 {
+            let base = tokens::FOCUS_RING;
+            let eased_alpha = (base.a as f32 * focus_ring_alpha * opacity)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            uniforms.insert(
+                "focus_color",
+                UniformValue::Color(base.with_alpha(eased_alpha)),
+            );
+            uniforms.insert(
+                "focus_width",
+                UniformValue::F32(tokens::FOCUS_RING_WIDTH),
+            );
+        }
         out.push(DrawOp::Quad {
             id: n.computed_id.clone(),
             rect: painted_rect,
@@ -101,49 +131,15 @@ fn push_node(
         });
     }
 
-    // Focus ring: emit while the per-node alpha (eased by the
-    // animation tracker on focus enter / leave) is non-zero. The ring
-    // colour multiplies `tokens::FOCUS_RING.a` by the alpha so the ring
-    // fades in on focus and fades out after focus moves elsewhere.
-    if focus_ring_alpha > 0.0
-        && (matches!(
-            n.kind,
-            Kind::Button | Kind::Card | Kind::Badge | Kind::Custom(_)
-        ) || stroke.is_some())
-    {
-        let ring_rect = inset_rect(painted_rect, -tokens::FOCUS_RING_WIDTH * 0.5);
-        let mut uniforms = UniformBlock::new();
-        let base = tokens::FOCUS_RING;
-        let eased_alpha = (base.a as f32 * focus_ring_alpha * opacity)
-            .round()
-            .clamp(0.0, 255.0) as u8;
-        uniforms.insert("color", UniformValue::Color(base.with_alpha(eased_alpha)));
-        uniforms.insert("width", UniformValue::F32(tokens::FOCUS_RING_WIDTH));
-        uniforms.insert(
-            "radius",
-            UniformValue::F32(n.radius + tokens::FOCUS_RING_WIDTH * 0.5),
-        );
-        out.push(DrawOp::Quad {
-            id: format!("{}.focus-ring", n.computed_id),
-            rect: ring_rect,
-            scissor: own_scissor,
-            shader: ShaderHandle::Stock(StockShader::FocusRing),
-            uniforms,
-        });
-    }
-
     if let Some(text) = &n.text {
         let display = match suffix {
             Some(s) => format!("{text}{s}"),
             None => text.clone(),
         };
-        let anchor = match n.kind {
-            Kind::Button | Kind::Badge => TextAnchor::Middle,
-            _ => match n.text_align {
-                TextAlign::Start => TextAnchor::Start,
-                TextAlign::Center => TextAnchor::Middle,
-                TextAlign::End => TextAnchor::End,
-            },
+        let anchor = match n.text_align {
+            TextAlign::Start => TextAnchor::Start,
+            TextAlign::Center => TextAnchor::Middle,
+            TextAlign::End => TextAnchor::End,
         };
         let text_color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
         let layout = text_metrics::layout_text(
@@ -154,12 +150,12 @@ fn push_node(
             n.text_wrap,
             match n.text_wrap {
                 TextWrap::NoWrap => None,
-                TextWrap::Wrap => Some(painted_rect.w),
+                TextWrap::Wrap => Some(inner_painted_rect.w),
             },
         );
         out.push(DrawOp::GlyphRun {
             id: n.computed_id.clone(),
-            rect: painted_rect,
+            rect: inner_painted_rect,
             scissor: own_scissor,
             shader: ShaderHandle::Stock(StockShader::Text),
             color: text_color,
@@ -195,12 +191,12 @@ fn push_node(
             n.text_wrap,
             match n.text_wrap {
                 TextWrap::NoWrap => None,
-                TextWrap::Wrap => Some(painted_rect.w),
+                TextWrap::Wrap => Some(inner_painted_rect.w),
             },
         );
         out.push(DrawOp::AttributedText {
             id: n.computed_id.clone(),
-            rect: painted_rect,
+            rect: inner_painted_rect,
             scissor: own_scissor,
             shader: ShaderHandle::Stock(StockShader::Text),
             runs,
@@ -355,8 +351,9 @@ fn apply_state(
     (fill, stroke, text_color, weight, suffix)
 }
 
-fn inset_rect(r: Rect, by: f32) -> Rect {
-    Rect::new(r.x - by, r.y - by, r.w + by * 2.0, r.h + by * 2.0)
+/// Pack a rect as the `inner_rect` uniform value (vec4 of x, y, w, h).
+fn inner_rect_uniform(r: Rect) -> UniformValue {
+    UniformValue::Vec4([r.x, r.y, r.w, r.h])
 }
 
 fn intersect_scissor(current: Option<Rect>, next: Rect) -> Option<Rect> {
@@ -442,16 +439,18 @@ mod tests {
     #[test]
     fn translate_offsets_paint_rect_and_inherits_to_children() {
         // Parent translate of (50, 30) should land child rects at
-        // child.computed + (50, 30).
+        // child.computed + (50, 30). The button widget uses
+        // `paint_overflow` for its focus ring, which grows the painted
+        // rect outward — so we compare against the `inner_rect` uniform
+        // (the post-translate layout rect) rather than the raw quad rect.
         let mut root = column([button("X").key("x")]).translate(50.0, 30.0);
         let mut state = UiState::new();
         crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-        let computed_x = ops_quad_for(&root, &state, "x").expect("x quad rect");
-        // Find the same node's pre-translate computed rect.
+        let inner = inner_rect_quad_for(&root, &state, "x").expect("x quad inner_rect");
         let untranslated = find_computed(&root, &state, "x").expect("x computed");
 
-        assert!((computed_x.x - (untranslated.x + 50.0)).abs() < 0.5);
-        assert!((computed_x.y - (untranslated.y + 30.0)).abs() < 0.5);
+        assert!((inner.x - (untranslated.x + 50.0)).abs() < 0.5);
+        assert!((inner.y - (untranslated.y + 30.0)).abs() < 0.5);
     }
 
     #[test]
@@ -460,7 +459,7 @@ mod tests {
         let mut state = UiState::new();
         crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
         let pre = find_computed(&root, &state, "x").expect("computed");
-        let post = ops_quad_for(&root, &state, "x").expect("painted");
+        let post = inner_rect_quad_for(&root, &state, "x").expect("painted inner_rect");
 
         // 2x scale around centre: w doubles, x shifts left by w/2.
         assert!((post.w - pre.w * 2.0).abs() < 0.5);
@@ -473,17 +472,27 @@ mod tests {
         );
     }
 
-    fn ops_quad_for(root: &El, ui_state: &UiState, key: &str) -> Option<Rect> {
+    /// Read the painted layout rect (== quad's `inner_rect` uniform) for
+    /// the first quad whose id contains `key`. Falls back to the quad's
+    /// `rect` for shaders that don't carry an `inner_rect` uniform.
+    fn inner_rect_quad_for(root: &El, ui_state: &UiState, key: &str) -> Option<Rect> {
+        use crate::shader::UniformValue;
         let ops = draw_ops(root, ui_state);
         for op in ops {
-            if let DrawOp::Quad { id, rect, .. } = op
+            if let DrawOp::Quad {
+                id, rect, uniforms, ..
+            } = op
                 && id.contains(key)
             {
+                if let Some(UniformValue::Vec4(v)) = uniforms.get("inner_rect") {
+                    return Some(Rect::new(v[0], v[1], v[2], v[3]));
+                }
                 return Some(rect);
             }
         }
         None
     }
+
     fn find_computed(node: &El, ui_state: &UiState, key: &str) -> Option<Rect> {
         if node.key.as_deref() == Some(key) {
             return Some(ui_state.rect(&node.computed_id));

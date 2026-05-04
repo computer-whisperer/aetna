@@ -55,6 +55,17 @@ impl Rect {
             (self.h - p.top - p.bottom).max(0.0),
         )
     }
+    /// Inverse of [`Self::inset`]: extend the rect outward by `p` on each
+    /// side. Used by `draw_ops` to produce the painted rect from the
+    /// layout rect when an element opts into `paint_overflow`.
+    pub fn outset(self, p: Sides) -> Self {
+        Self::new(
+            self.x - p.left,
+            self.y - p.top,
+            self.w + p.left + p.right,
+            self.h + p.top + p.bottom,
+        )
+    }
 }
 
 /// Per-side padding/inset values.

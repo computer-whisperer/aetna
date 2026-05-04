@@ -23,22 +23,46 @@ use crate::shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
 use crate::tree::{Color, Rect};
 
 /// One instance of a rect-shaped shader. Layout is shared between
-/// `stock::rounded_rect`, `stock::focus_ring`, and any custom shader
-/// registered via the host's `register_shader`. The fragment shader
-/// interprets the three vec4 slots however it wants; the vertex shader
-/// needs `rect` to place the unit quad in pixel space.
+/// `stock::rounded_rect` and any custom shader registered via the host's
+/// `register_shader`. The fragment shader interprets the slots however
+/// it wants; the vertex shader uses `rect` to place the unit quad in
+/// pixel space.
+///
+/// `inner_rect` is the original layout rect — equal to `rect` when
+/// `paint_overflow` is zero, smaller (set inside `rect`) when the
+/// element has opted into painting outside its bounds. SDF shaders
+/// anchor their geometry to `inner_rect` so the rounded outline stays
+/// where layout placed it; the overflow band is where focus rings,
+/// drop shadows, and other halos render.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub struct QuadInstance {
-    /// xy = top-left px, zw = size px.
+    /// Painted rect — xy = top-left px, zw = size px. Equal to
+    /// `inner_rect` when no `paint_overflow`. Vertex shader reads at
+    /// `@location(1)`.
     pub rect: [f32; 4],
-    /// `vec_a` slot — for stock::rounded_rect, this is `fill`.
+    /// `vec_a` slot — for stock::rounded_rect, this is `fill`. Vertex
+    /// shader reads at `@location(2)`.
     pub slot_a: [f32; 4],
     /// `vec_b` slot — for stock::rounded_rect, this is `stroke`.
+    /// Vertex shader reads at `@location(3)`.
     pub slot_b: [f32; 4],
     /// `vec_c` slot — for stock::rounded_rect, this is
-    /// `(stroke_width, radius, shadow, _)`.
+    /// `(stroke_width, radius, shadow, focus_width)`. Vertex shader
+    /// reads at `@location(4)`.
     pub slot_c: [f32; 4],
+    /// Layout rect (xy = top-left px, zw = size px). SDF shaders use
+    /// this so the rect outline stays anchored to layout bounds even
+    /// when `rect` has been outset for `paint_overflow`. Vertex shader
+    /// reads at `@location(5)` — declared *after* the legacy slots so
+    /// custom shaders that only consume locations 1..=4 keep working
+    /// unchanged.
+    pub inner_rect: [f32; 4],
+    /// `vec_d` slot — for stock::rounded_rect, this is the focus-ring
+    /// color (rgba) with eased alpha already multiplied in. Zero when
+    /// the node isn't focused or isn't focusable. Vertex shader reads
+    /// at `@location(6)`.
+    pub slot_d: [f32; 4],
 }
 
 /// A contiguous run of instances drawn with the same pipeline + scissor.
@@ -127,13 +151,20 @@ pub fn physical_scissor(
 
 /// Pack a quad's uniforms into the shared `QuadInstance` layout. Stock
 /// `rounded_rect` reads its named uniforms; everything else reads the
-/// generic `vec_a`/`vec_b`/`vec_c` slots.
+/// generic `vec_a`/`vec_b`/`vec_c`/`vec_d` slots. `inner_rect` falls
+/// back to `rect` when the uniform isn't supplied — i.e. when the node
+/// has no `paint_overflow`.
 pub fn pack_instance(rect: Rect, shader: ShaderHandle, uniforms: &UniformBlock) -> QuadInstance {
     let rect_arr = [rect.x, rect.y, rect.w, rect.h];
+    let inner_rect = uniforms
+        .get("inner_rect")
+        .map(value_to_vec4)
+        .unwrap_or(rect_arr);
 
     match shader {
         ShaderHandle::Stock(StockShader::RoundedRect) => QuadInstance {
             rect: rect_arr,
+            inner_rect,
             slot_a: uniforms
                 .get("fill")
                 .and_then(as_color)
@@ -148,29 +179,21 @@ pub fn pack_instance(rect: Rect, shader: ShaderHandle, uniforms: &UniformBlock) 
                 uniforms.get("stroke_width").and_then(as_f32).unwrap_or(0.0),
                 uniforms.get("radius").and_then(as_f32).unwrap_or(0.0),
                 uniforms.get("shadow").and_then(as_f32).unwrap_or(0.0),
-                0.0,
+                uniforms.get("focus_width").and_then(as_f32).unwrap_or(0.0),
             ],
-        },
-        ShaderHandle::Stock(StockShader::FocusRing) => QuadInstance {
-            rect: rect_arr,
-            slot_a: [0.0; 4],
-            slot_b: uniforms
-                .get("color")
+            slot_d: uniforms
+                .get("focus_color")
                 .and_then(as_color)
                 .map(rgba_f32)
                 .unwrap_or([0.0; 4]),
-            slot_c: [
-                uniforms.get("width").and_then(as_f32).unwrap_or(0.0),
-                uniforms.get("radius").and_then(as_f32).unwrap_or(0.0),
-                0.0,
-                0.0,
-            ],
         },
         _ => QuadInstance {
             rect: rect_arr,
+            inner_rect,
             slot_a: uniforms.get("vec_a").map(value_to_vec4).unwrap_or([0.0; 4]),
             slot_b: uniforms.get("vec_b").map(value_to_vec4).unwrap_or([0.0; 4]),
             slot_c: uniforms.get("vec_c").map(value_to_vec4).unwrap_or([0.0; 4]),
+            slot_d: uniforms.get("vec_d").map(value_to_vec4).unwrap_or([0.0; 4]),
         },
     }
 }
@@ -230,23 +253,30 @@ mod tests {
     use crate::tokens;
 
     #[test]
-    fn focus_ring_uniforms_pack_into_rounded_rect_layout() {
+    fn focus_uniforms_pack_into_rounded_rect_slots() {
+        // Focus ring rides on the node's own RoundedRect quad: focus_color
+        // packs into slot_d (rgba) and focus_width into slot_c.w (the
+        // params slot's previously-padding lane).
         let mut uniforms = UniformBlock::new();
-        uniforms.insert("color", UniformValue::Color(tokens::FOCUS_RING));
-        uniforms.insert("width", UniformValue::F32(2.0));
-        uniforms.insert("radius", UniformValue::F32(9.0));
+        uniforms.insert("fill", UniformValue::Color(Color::rgba(40, 40, 40, 255)));
+        uniforms.insert("radius", UniformValue::F32(8.0));
+        uniforms.insert("focus_color", UniformValue::Color(tokens::FOCUS_RING));
+        uniforms.insert(
+            "focus_width",
+            UniformValue::F32(tokens::FOCUS_RING_WIDTH),
+        );
 
         let inst = pack_instance(
             Rect::new(1.0, 2.0, 30.0, 40.0),
-            ShaderHandle::Stock(StockShader::FocusRing),
+            ShaderHandle::Stock(StockShader::RoundedRect),
             &uniforms,
         );
 
         assert_eq!(inst.rect, [1.0, 2.0, 30.0, 40.0]);
-        assert_eq!(inst.slot_a, [0.0; 4]);
-        assert!(inst.slot_b[3] > 0.0, "focus ring stroke should be visible");
-        assert_eq!(inst.slot_c[0], 2.0);
-        assert_eq!(inst.slot_c[1], 9.0);
+        assert_eq!(inst.inner_rect, inst.rect, "no inner_rect uniform → fall back to painted rect");
+        assert_eq!(inst.slot_c[1], 8.0, "radius in slot_c.y");
+        assert_eq!(inst.slot_c[3], tokens::FOCUS_RING_WIDTH, "focus_width in slot_c.w");
+        assert!(inst.slot_d[3] > 0.0, "focus_color alpha should be visible");
     }
 
     #[test]

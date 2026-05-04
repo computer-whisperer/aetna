@@ -8,9 +8,12 @@
 //! Stock shaders are interpreted best-effort:
 //!
 //! - `stock::rounded_rect` → `<rect>` with `fill`, `stroke`, `rx` from
-//!   uniforms and an SVG drop-shadow filter.
+//!   uniforms and an SVG drop-shadow filter. When `focus_color` and
+//!   `focus_width` uniforms are present (set by `draw_ops` for any
+//!   focusable node whose focus envelope is active), an additional
+//!   stroke-only `<rect>` is emitted just outside `inner_rect` to
+//!   approximate the focus ring drawn by the GPU shader.
 //! - `stock::text_sdf` → `<text>` element with font + color from the op.
-//! - `stock::focus_ring` → unfilled `<rect>` with stroke from uniforms.
 //! - Custom shaders → labeled placeholder rect with metadata in
 //!   `<title>` and a translucent fill so they're visible during fixture
 //!   rendering. The wgpu renderer is the source of truth for custom
@@ -105,7 +108,17 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
             let stroke_w = uniforms.get("stroke_width").and_then(as_f32).unwrap_or(0.0);
             let radius = uniforms.get("radius").and_then(as_f32).unwrap_or(0.0);
             let shadow = uniforms.get("shadow").and_then(as_f32).unwrap_or(0.0);
-            let r = radius.min(rect.w * 0.5).min(rect.h * 0.5).max(0.0);
+            let focus_color = uniforms.get("focus_color").and_then(as_color);
+            let focus_width = uniforms.get("focus_width").and_then(as_f32).unwrap_or(0.0);
+            // The painted quad's `rect` may be outset for paint_overflow;
+            // SVG draws the rounded-rect border at `inner_rect` so the
+            // outline stays anchored to the layout bounds.
+            let inner = uniforms
+                .get("inner_rect")
+                .and_then(as_vec4)
+                .map(|v| Rect::new(v[0], v[1], v[2], v[3]))
+                .unwrap_or(rect);
+            let r = radius.min(inner.w * 0.5).min(inner.h * 0.5).max(0.0);
             let fill_attr = match fill {
                 Some(c) => format!(r#" fill="{}""#, color_svg(c)),
                 None => r#" fill="none""#.to_string(),
@@ -123,39 +136,36 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
                 s,
                 r#"<rect data-node="{}" data-shader="stock::rounded_rect" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}"{}{}{} />"#,
                 esc(id),
-                rect.x,
-                rect.y,
-                rect.w,
-                rect.h,
+                inner.x,
+                inner.y,
+                inner.w,
+                inner.h,
                 r,
                 fill_attr,
                 stroke_attr,
                 filter
             );
-        }
-        ShaderHandle::Stock(StockShader::FocusRing) => {
-            let color = uniforms
-                .get("color")
-                .and_then(as_color)
-                .unwrap_or(tokens::FOCUS_RING);
-            let width = uniforms
-                .get("width")
-                .and_then(as_f32)
-                .unwrap_or(tokens::FOCUS_RING_WIDTH);
-            let radius = uniforms.get("radius").and_then(as_f32).unwrap_or(0.0);
-            let r = radius.min(rect.w * 0.5).min(rect.h * 0.5).max(0.0);
-            let _ = writeln!(
-                s,
-                r#"<rect data-node="{}" data-shader="stock::focus_ring" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="none" stroke="{}" stroke-width="{:.2}" />"#,
-                esc(id),
-                rect.x,
-                rect.y,
-                rect.w,
-                rect.h,
-                r,
-                color_svg(color),
-                width
-            );
+            // Focus ring rides on the same quad: emit a stroke-only
+            // overlay rect just outside the inner border when the
+            // focus uniforms are set.
+            if focus_width > 0.0
+                && let Some(fc) = focus_color
+                && fc.a > 0
+            {
+                let ring_r = (r + focus_width * 0.5).max(0.0);
+                let _ = writeln!(
+                    s,
+                    r#"<rect data-node="{}.focus-ring" data-shader="stock::rounded_rect" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="none" stroke="{}" stroke-width="{:.2}" />"#,
+                    esc(id),
+                    inner.x - focus_width * 0.5,
+                    inner.y - focus_width * 0.5,
+                    inner.w + focus_width,
+                    inner.h + focus_width,
+                    ring_r,
+                    color_svg(fc),
+                    focus_width
+                );
+            }
         }
         ShaderHandle::Stock(StockShader::SolidQuad) => {
             let fill = uniforms
@@ -348,6 +358,12 @@ fn as_color(v: &UniformValue) -> Option<Color> {
 fn as_f32(v: &UniformValue) -> Option<f32> {
     match v {
         UniformValue::F32(f) => Some(*f),
+        _ => None,
+    }
+}
+fn as_vec4(v: &UniformValue) -> Option<[f32; 4]> {
+    match v {
+        UniformValue::Vec4(a) => Some(*a),
         _ => None,
     }
 }

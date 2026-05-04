@@ -12,7 +12,9 @@
 //! that's also hovered shows the press visual, not the hover visual.
 //! Focus is independent of both — the focus ring is its own envelope.
 
+use std::any::{Any, TypeId};
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 // `web_time::Instant` is API-identical to `std::time::Instant` on
 // native and uses `performance.now()` on wasm32 — std's `Instant::now()`
 // panics in the browser because there is no monotonic clock there.
@@ -48,6 +50,51 @@ pub enum EnvelopeKind {
     FocusRing,
 }
 
+/// Per-instance state owned by a widget. Widget authors define their own
+/// state types (e.g. text-input caret + selection, virtual list scroll
+/// offset, dropdown open/closed) and stash them on [`UiState`] keyed by
+/// node id via [`UiState::widget_state`] / [`UiState::widget_state_mut`].
+///
+/// The library never reads the state itself — it just owns the
+/// storage, wipes entries when a node leaves the tree, and surfaces
+/// `debug_summary()` in the tree dump so the agent loop can see what
+/// the widget thinks.
+///
+/// # Symmetry
+///
+/// This is the storage contract for stateful widgets. Stock widgets get
+/// no privileged shortcuts; everything they do here, an app-defined
+/// widget can do too. See `widget_kit.md`.
+pub trait WidgetState: 'static + Debug + Send + Sync {
+    /// One-line summary for the tree dump. Default empty (the entry's
+    /// type name still shows up via the inspector). Override to surface
+    /// the most useful per-frame state — e.g. a text input might
+    /// return `"caret=12 sel=8..14"`.
+    fn debug_summary(&self) -> String {
+        String::new()
+    }
+}
+
+/// Subtrait combining [`WidgetState`] with [`Any`] so the type-erased
+/// box can both call trait methods and downcast back to `T`.
+trait AnyWidgetState: WidgetState {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn type_name(&self) -> &'static str;
+}
+
+impl<T: WidgetState> AnyWidgetState for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<T>()
+    }
+}
+
 /// Internal UI state — interaction trackers + the side maps the library
 /// writes during layout / state-apply / animation-tick passes. Owned by
 /// the renderer; the host doesn't interact with this directly.
@@ -56,7 +103,7 @@ pub enum EnvelopeKind {
 /// live on `El` (computed rect, interaction state, envelope amounts).
 /// Keying is by `El::computed_id`, the path-shaped string assigned by
 /// the layout pass.
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct UiState {
     /// Last known pointer position in **logical** pixels. `None` until
     /// the pointer enters the window.
@@ -92,6 +139,12 @@ pub struct UiState {
     /// animation tick. `draw_ops` reads these to modulate the surface
     /// visuals; missing entries read as `0.0`.
     pub(crate) envelopes: HashMap<(String, EnvelopeKind), f32>,
+    /// Per-(node, type) widget state buckets. The library owns the
+    /// storage but never reads the values — they're for widget authors
+    /// to stash text-input carets, dropdown open flags, etc. Entries
+    /// are GC'd alongside envelopes/animations when a node leaves the
+    /// tree (see [`Self::tick_visual_animations`]).
+    widget_states: HashMap<(String, TypeId), Box<dyn AnyWidgetState>>,
 }
 
 impl UiState {
@@ -257,10 +310,60 @@ impl UiState {
         );
         // GC: drop animations whose node left the tree this frame.
         self.animations.retain(|key, _| visited.contains(key));
-        // GC envelopes: drop entries for nodes that left the tree.
+        // Build a set of live node ids once — used by both envelope and
+        // widget_state GC. Cheaper than the previous per-entry linear
+        // scan over `visited`, which now matters because widget_state
+        // entries can outnumber envelopes.
+        let live_ids: HashSet<&str> = visited.iter().map(|(id, _)| id.as_str()).collect();
         self.envelopes
-            .retain(|(id, _), _| visited.iter().any(|(visited_id, _)| visited_id == id));
+            .retain(|(id, _), _| live_ids.contains(id.as_str()));
+        self.widget_states
+            .retain(|(id, _), _| live_ids.contains(id.as_str()));
         needs_redraw
+    }
+
+    // ---- widget_state typed bucket ----
+
+    /// Look up the widget state of type `T` for `id`. Returns `None` if
+    /// no entry exists or the entry was inserted as a different type.
+    pub fn widget_state<T: WidgetState>(&self, id: &str) -> Option<&T> {
+        self.widget_states
+            .get(&(id.to_string(), TypeId::of::<T>()))
+            .and_then(|b| b.as_any().downcast_ref::<T>())
+    }
+
+    /// Get a mutable reference to the widget state of type `T` for
+    /// `id`, inserting `T::default()` if no entry exists. Use this in
+    /// the build closure of a stateful widget so the first call after
+    /// the node enters the tree produces a fresh state, and every
+    /// subsequent call returns the live one.
+    pub fn widget_state_mut<T: WidgetState + Default>(&mut self, id: &str) -> &mut T {
+        let key = (id.to_string(), TypeId::of::<T>());
+        let entry = self
+            .widget_states
+            .entry(key)
+            .or_insert_with(|| Box::new(T::default()));
+        entry
+            .as_any_mut()
+            .downcast_mut::<T>()
+            .expect("widget_state TypeId match guarantees downcast succeeds")
+    }
+
+    /// Drop the widget state of type `T` for `id`, if any.
+    pub fn clear_widget_state<T: WidgetState>(&mut self, id: &str) {
+        self.widget_states
+            .remove(&(id.to_string(), TypeId::of::<T>()));
+    }
+
+    /// Iterate `(id, type_name, debug_summary)` for every live widget
+    /// state. Used by the tree dump to surface per-widget state in the
+    /// agent loop's view.
+    pub fn widget_state_summary(&self, id: &str) -> Vec<(&'static str, String)> {
+        self.widget_states
+            .iter()
+            .filter(|((node_id, _), _)| node_id == id)
+            .map(|(_, b)| (b.type_name(), b.debug_summary()))
+            .collect()
     }
 
     /// Switch animation pacing. The default is [`AnimationMode::Live`];
@@ -379,6 +482,33 @@ impl UiState {
         };
         self.focused = Some(self.focus_order[next].clone());
         self.focused.as_ref()
+    }
+}
+
+impl Debug for UiState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UiState")
+            .field("pointer_pos", &self.pointer_pos)
+            .field("hovered", &self.hovered)
+            .field("pressed", &self.pressed)
+            .field("focused", &self.focused)
+            .field("focus_order", &self.focus_order)
+            .field("scroll_offsets", &self.scroll_offsets)
+            .field("hotkeys", &self.hotkeys)
+            .field("animations", &self.animations)
+            .field("animation_mode", &self.animation_mode)
+            .field("computed_rects", &self.computed_rects)
+            .field("node_states", &self.node_states)
+            .field("envelopes", &self.envelopes)
+            .field(
+                "widget_states",
+                &self
+                    .widget_states
+                    .iter()
+                    .map(|((id, _), b)| (id.as_str(), b.type_name(), b.debug_summary()))
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
     }
 }
 
@@ -1057,6 +1187,65 @@ mod tests {
         assert!(
             !state.animations.keys().any(|(id, _)| id == &inc_id_a),
             "stale entries for inc were not GC'd"
+        );
+    }
+
+    #[derive(Default, Debug)]
+    struct TestCaret {
+        position: usize,
+        blink_phase: f32,
+    }
+    impl WidgetState for TestCaret {
+        fn debug_summary(&self) -> String {
+            format!("pos={} blink={:.2}", self.position, self.blink_phase)
+        }
+    }
+
+    #[test]
+    fn widget_state_lazy_inserts_default_and_persists_mutations() {
+        let mut state = UiState::new();
+        // First call inserts the default.
+        let caret = state.widget_state_mut::<TestCaret>("input.0");
+        assert_eq!(caret.position, 0);
+        caret.position = 7;
+        caret.blink_phase = 0.5;
+        // Second call returns the same instance.
+        let caret = state.widget_state::<TestCaret>("input.0").expect("present");
+        assert_eq!(caret.position, 7);
+        assert!((caret.blink_phase - 0.5).abs() < f32::EPSILON);
+        // Different id → independent storage.
+        assert!(state.widget_state::<TestCaret>("input.1").is_none());
+    }
+
+    #[test]
+    fn widget_state_summary_surfaces_debug_for_tree_dump() {
+        let mut state = UiState::new();
+        let caret = state.widget_state_mut::<TestCaret>("input.0");
+        caret.position = 12;
+        caret.blink_phase = 0.25;
+        let summary = state.widget_state_summary("input.0");
+        assert_eq!(summary.len(), 1);
+        let (type_name, debug) = &summary[0];
+        assert!(type_name.ends_with("TestCaret"));
+        assert_eq!(debug, "pos=12 blink=0.25");
+    }
+
+    #[test]
+    fn widget_state_gc_when_node_leaves_tree() {
+        let (mut tree_a, mut state) = lay_out_counter();
+        let inc_id = find_id(&tree_a, "inc").expect("inc id");
+        // Seed widget_state on the inc button.
+        state.widget_state_mut::<TestCaret>(&inc_id).position = 99;
+        state.tick_visual_animations(&mut tree_a, Instant::now());
+        assert!(state.widget_state::<TestCaret>(&inc_id).is_some());
+
+        // Rebuild without inc. The GC sweep on the next tick should drop it.
+        let mut tree_b = column([crate::text("0"), row([button("-").key("dec")])]).padding(20.0);
+        layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.tick_visual_animations(&mut tree_b, Instant::now());
+        assert!(
+            state.widget_state::<TestCaret>(&inc_id).is_none(),
+            "stale widget_state for inc was not GC'd"
         );
     }
 

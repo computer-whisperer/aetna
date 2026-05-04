@@ -16,6 +16,7 @@ pub fn badge(label: impl Into<String>) -> El {
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Tinted)
         .text(label)
+        .text_align(TextAlign::Center)
         .font_size(tokens::FONT_SM)
         .font_weight(FontWeight::Medium)
         .text_color(tokens::INFO)

@@ -75,6 +75,18 @@ fn dump_node(n: &El, ui_state: &UiState, depth: usize, s: &mut String) {
     if n.source.line != 0 {
         let _ = write!(s, " source={}:{}", short_path(n.source.file), n.source.line);
     }
+    // Widget-author state buckets, surfaced for the agent loop's view.
+    // Each entry is `widget_state[short_type]={debug_summary}` — the
+    // type_name is short-form (final `::` segment only) since the
+    // fully-qualified name is noisy.
+    for (type_name, summary) in ui_state.widget_state_summary(&n.computed_id) {
+        let short = type_name.rsplit("::").next().unwrap_or(type_name);
+        if summary.is_empty() {
+            let _ = write!(s, " widget_state[{short}]");
+        } else {
+            let _ = write!(s, " widget_state[{short}]={{{summary}}}");
+        }
+    }
     s.push('\n');
 
     for c in &n.children {

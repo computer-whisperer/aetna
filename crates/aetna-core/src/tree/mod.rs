@@ -73,6 +73,14 @@ pub struct El {
     pub stroke_width: f32,
     pub radius: f32,
     pub shadow: f32,
+    /// Permit this element to paint outside its layout bounds. The
+    /// outset enlarges the quad geometry handed to the shader (and
+    /// any focus / shadow / glow visuals are positioned in the
+    /// overflow band) while leaving the layout rect — and therefore
+    /// sibling positions and hit-testing — unchanged. Subject to
+    /// ancestor clip rects: a focused widget inside a `clip()`ped
+    /// parent has its overflow clipped, same as any other paint.
+    pub paint_overflow: Sides,
     /// Clip this element's own paint and descendants to its computed rect.
     /// Used by scroll panes, host-painted regions, overlays, and any region
     /// where overflow should not leak visually or receive events.
@@ -183,6 +191,7 @@ impl Default for El {
             stroke_width: 0.0,
             radius: 0.0,
             shadow: 0.0,
+            paint_overflow: Sides::zero(),
             clip: false,
             scrollable: false,
             shader_override: None,
@@ -300,6 +309,16 @@ impl El {
     }
     pub fn shadow(mut self, s: f32) -> Self {
         self.shadow = s;
+        self
+    }
+    /// Permit paint to extend beyond this element's layout bounds by
+    /// `outset` on each side. Layout-neutral — siblings don't move and
+    /// hit-testing still uses the layout rect — but the shader receives
+    /// a quad inflated by `outset`. Use for focus rings, drop shadows,
+    /// glow halos, or any visual that should escape the box without
+    /// affecting flow. Clipped by ancestor `clip()` rects.
+    pub fn paint_overflow(mut self, outset: impl Into<Sides>) -> Self {
+        self.paint_overflow = outset.into();
         self
     }
     pub fn clip(mut self) -> Self {

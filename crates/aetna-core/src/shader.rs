@@ -34,11 +34,12 @@
 //!
 //! # v5.1 status
 //!
-//! Only [`StockShader::RoundedRect`], [`StockShader::Text`], and
-//! [`StockShader::FocusRing`] are emitted by the renderer.
-//! [`StockShader::SolidQuad`] and [`StockShader::DividerLine`] are
-//! reserved for when something can't be expressed as uniforms on
-//! `rounded_rect`.
+//! Only [`StockShader::RoundedRect`] and [`StockShader::Text`] are
+//! emitted by the renderer. Focus indicators ride on each focusable
+//! node's own `RoundedRect` quad via `focus_color`/`focus_width`
+//! uniforms — no separate ring shader. [`StockShader::SolidQuad`] and
+//! [`StockShader::DividerLine`] are reserved for when something can't
+//! be expressed as uniforms on `rounded_rect`.
 
 use std::collections::BTreeMap;
 
@@ -67,16 +68,15 @@ impl ShaderHandle {
 pub enum StockShader {
     /// Flat colored rect. Fallback / debug.
     SolidQuad,
-    /// Fill + stroke + radius + shadow (+ optional gradient). The
-    /// workhorse — handles ~80% of UI surfaces.
+    /// Fill + stroke + radius + shadow + focus ring. The workhorse —
+    /// handles ~80% of UI surfaces. Focus indicator is a uniform on
+    /// this shader, not a separate pipeline (see `widget_kit.md`).
     RoundedRect,
     /// Alpha-mask glyph rendering. Backends sample per-glyph bitmaps
     /// from a [`crate::text::atlas::GlyphAtlas`] page texture and tint
     /// by per-glyph color. The historical `TextSdf` name was aspirational;
     /// the actual rasterization is alpha-coverage via swash.
     Text,
-    /// Animated focus indicator (`InteractionState::Focus`).
-    FocusRing,
     /// Antialiased 1px line.
     DividerLine,
 }
@@ -87,7 +87,6 @@ impl StockShader {
             StockShader::SolidQuad => "stock::solid_quad",
             StockShader::RoundedRect => "stock::rounded_rect",
             StockShader::Text => "stock::text",
-            StockShader::FocusRing => "stock::focus_ring",
             StockShader::DividerLine => "stock::divider_line",
         }
     }

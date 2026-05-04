@@ -28,10 +28,9 @@
 //!   visual fact resolves to a `Quad` or `GlyphRun` bound to a
 //!   [`ShaderHandle`] and a [`UniformBlock`].
 //! - **Stock shaders** — the surface paint goes through
-//!   `stock::rounded_rect` (handles fill+stroke+radius+shadow as
-//!   uniforms); text through `stock::text_sdf`; focus rings through
-//!   `stock::focus_ring`. Discipline: uniform proliferation, not shader
-//!   proliferation.
+//!   `stock::rounded_rect` (handles fill+stroke+radius+shadow plus the
+//!   focus ring as uniforms); text through `stock::text_sdf`.
+//!   Discipline: uniform proliferation, not shader proliferation.
 //! - **Custom shader override** ([`El::shader_override`]) — a user crate
 //!   can bind its own shader for the surface paint, replacing the
 //!   implicit `rounded_rect`. v0.1 ships no custom shaders, but the
@@ -86,7 +85,7 @@ pub use hit_test::{hit_test, hit_test_target};
 pub use ir::{DrawOp, TextAnchor};
 pub use layout::{LayoutCtx, LayoutFn, VirtualItems, layout};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
-pub use state::{AnimationMode, UiState};
+pub use state::{AnimationMode, UiState, WidgetState};
 pub use style::StyleProfile;
 pub use text::atlas::{
     AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, RunStyle, ShapedGlyph, ShapedRun,

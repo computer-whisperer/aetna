@@ -1,10 +1,12 @@
 //! Render pipeline construction for the shared rect-shaped layout.
 //!
-//! Stock surfaces (`rounded_rect`, `focus_ring`) and any user-registered
-//! custom shader all use the same vertex layout — a unit-quad strip plus
-//! the [`aetna_core::paint::QuadInstance`] attributes. That means one
+//! Stock `rounded_rect` and any user-registered custom shader all use
+//! the same vertex layout — a unit-quad strip plus the
+//! [`aetna_core::paint::QuadInstance`] attributes. That means one
 //! pipeline-builder function covers the whole catalog; the only thing
-//! that varies is the WGSL source and a label.
+//! that varies is the WGSL source and a label. Focus indicators ride
+//! on each focusable node's own quad via uniforms on `rounded_rect` —
+//! no separate ring pipeline.
 
 use std::borrow::Cow;
 
@@ -34,12 +36,17 @@ pub(crate) struct FrameUniforms {
 
 /// Per-instance vertex attributes — must match the shared
 /// `InstanceInput` struct in `shaders/rounded_rect.wgsl` and any
-/// registered custom shader.
-const INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
-    1 => Float32x4,  // rect (xy=topleft px, zw=size px)
+/// registered custom shader. Order matches `aetna_core::paint::QuadInstance`
+/// field order so byte offsets line up. The legacy locations 1..=4 are
+/// preserved for backward compat; `inner_rect` and `vec_d` slot in at
+/// the end so custom shaders that only declare 1..=4 keep working.
+const INSTANCE_ATTRS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
+    1 => Float32x4,  // rect (xy=topleft px, zw=size px) — painted rect
     2 => Float32x4,  // vec_a (stock::rounded_rect: fill)
     3 => Float32x4,  // vec_b (stock::rounded_rect: stroke)
-    4 => Float32x4,  // vec_c (stock::rounded_rect: stroke_width, radius, shadow, _)
+    4 => Float32x4,  // vec_c (stock::rounded_rect: stroke_width, radius, shadow, focus_width)
+    5 => Float32x4,  // inner_rect (xy=topleft px, zw=size px) — layout rect (NEW)
+    6 => Float32x4,  // vec_d (stock::rounded_rect: focus_color rgba, alpha eased) (NEW)
 ];
 
 pub(crate) fn build_quad_pipeline(

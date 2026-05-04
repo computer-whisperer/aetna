@@ -1,8 +1,10 @@
 //! Aetna — wgpu backend.
 //!
 //! v5.0 scope: paints `stock::rounded_rect` quads + `stock::text_sdf`
-//! glyph runs + `stock::focus_ring` outlines, plus user-registered
-//! custom shaders that share the rounded_rect vertex layout. This is the
+//! glyph runs (focus indicators ride on each focusable node's own quad
+//! via `focus_color`/`focus_width` uniforms — no separate ring pipeline),
+//! plus user-registered custom shaders that share the rounded_rect
+//! vertex layout. This is the
 //! verbatim port of v0.4's `wgpu_render.rs`, refactored into the
 //! `aetna-wgpu` crate with the file split called out in `V5.md`.
 //!
@@ -255,14 +257,6 @@ impl Runner {
             stock_wgsl::ROUNDED_RECT,
         );
         pipelines.insert(ShaderHandle::Stock(StockShader::RoundedRect), rr_pipeline);
-        let focus_pipeline = build_quad_pipeline(
-            device,
-            &pipeline_layout,
-            target_format,
-            "stock::focus_ring",
-            stock_wgsl::ROUNDED_RECT,
-        );
-        pipelines.insert(ShaderHandle::Stock(StockShader::FocusRing), focus_pipeline);
 
         // Text pipeline + atlas (replaces glyphon).
         let text_paint = TextPaint::new(device, target_format, &frame_bind_layout);

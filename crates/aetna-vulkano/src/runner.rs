@@ -6,8 +6,10 @@
 //! - a single-pass render pass with one color attachment (the host
 //!   creates framebuffers against this and exposes its handle so
 //!   pipelines can be subpass-pinned at construction time);
-//! - one `GraphicsPipeline` per registered shader (stock rounded_rect +
-//!   focus_ring up-front, custom shaders added via `register_shader`);
+//! - one `GraphicsPipeline` per registered shader (stock rounded_rect
+//!   up-front, custom shaders added via `register_shader`); focus
+//!   indicators ride on each focusable node's own quad via uniforms
+//!   on `stock::rounded_rect`, no separate ring pipeline;
 //! - a persistent quad VBO (the unit-quad strip), a persistent frame
 //!   uniform buffer (viewport extent), a single descriptor set bound to
 //!   it, and a host-visible instance buffer that grows on demand.
@@ -204,18 +206,11 @@ impl Runner {
         let mut pipelines = HashMap::new();
         let rr = build_quad_pipeline(
             device.clone(),
-            subpass.clone(),
+            subpass,
             "stock::rounded_rect",
             stock_wgsl::ROUNDED_RECT,
         );
         pipelines.insert(ShaderHandle::Stock(StockShader::RoundedRect), rr.clone());
-        let fr = build_quad_pipeline(
-            device.clone(),
-            subpass,
-            "stock::focus_ring",
-            stock_wgsl::ROUNDED_RECT,
-        );
-        pipelines.insert(ShaderHandle::Stock(StockShader::FocusRing), fr);
 
         // Persistent quad VBO — 4 corners of the unit quad as a triangle
         // strip, written once.

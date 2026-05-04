@@ -1,10 +1,12 @@
 //! Render pipeline construction for the shared rect-shaped layout.
 //!
 //! Mirrors `aetna_wgpu::pipeline`: one pipeline-builder factory covers
-//! `stock::rounded_rect`, `stock::focus_ring`, and any custom shader the
-//! host registers. Every such pipeline reads the same `QuadInstance`
-//! ABI (`rect`, `vec_a`, `vec_b`, `vec_c`) and the same `FrameUniforms`
-//! at @group(0) @binding(0).
+//! `stock::rounded_rect` and any custom shader the host registers.
+//! Every such pipeline reads the same `QuadInstance` ABI (`rect`,
+//! `inner_rect`, `vec_a`, `vec_b`, `vec_c`, `vec_d`) and the same
+//! `FrameUniforms` at @group(0) @binding(0). Custom shaders that only
+//! consume the first four locations still bind correctly; the
+//! `inner_rect` and `vec_d` slots are simply unread.
 //!
 //! The vulkano-side wrinkle is that pipelines are tied to a render-pass
 //! subpass at construction time. The Runner owns one render pass with a
@@ -58,7 +60,7 @@ pub(crate) struct FrameUniforms {
 ///
 /// Binding 0 = the unit-quad corner UVs (4 vertices, `[f32; 2]` each,
 /// drawn as a triangle strip). Binding 1 = the instance buffer of
-/// `QuadInstance` (4 × `vec4<f32>` per instance at locations 1..=4).
+/// `QuadInstance` (6 × `vec4<f32>` per instance at locations 1..=6).
 fn vertex_input_state() -> VertexInputState {
     let bind_vertex = VertexInputBindingDescription {
         stride: (2 * std::mem::size_of::<f32>()) as u32,
@@ -82,7 +84,7 @@ fn vertex_input_state() -> VertexInputState {
         .binding(1, bind_instance)
         // location 0 — corner_uv (binding 0)
         .attribute(0, attr(0, 0, Format::R32G32_SFLOAT))
-        // location 1 — rect (binding 1, offset 0)
+        // location 1 — rect (binding 1, offset 0) — painted rect
         .attribute(1, attr(1, 0, Format::R32G32B32A32_SFLOAT))
         // location 2 — vec_a / fill (binding 1, offset 16)
         .attribute(2, attr(1, 16, Format::R32G32B32A32_SFLOAT))
@@ -90,6 +92,10 @@ fn vertex_input_state() -> VertexInputState {
         .attribute(3, attr(1, 32, Format::R32G32B32A32_SFLOAT))
         // location 4 — vec_c / params (binding 1, offset 48)
         .attribute(4, attr(1, 48, Format::R32G32B32A32_SFLOAT))
+        // location 5 — inner_rect (binding 1, offset 64) — layout rect (NEW)
+        .attribute(5, attr(1, 64, Format::R32G32B32A32_SFLOAT))
+        // location 6 — vec_d / focus_color (binding 1, offset 80) (NEW)
+        .attribute(6, attr(1, 80, Format::R32G32B32A32_SFLOAT))
 }
 
 /// Build a pipeline layout from reflection, then broaden every set-0
