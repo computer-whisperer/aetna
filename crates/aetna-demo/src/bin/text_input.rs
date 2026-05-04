@@ -19,17 +19,34 @@
 //!   one grapheme.
 //! - Type while a selection is active — the selection is replaced.
 //! - Ctrl+A selects all in the focused field.
+//! - Ctrl+C / Ctrl+X / Ctrl+V (Cmd on macOS) — copy / cut / paste via
+//!   the system clipboard. Try copying from one field and pasting
+//!   into the other, or pasting text from another application.
 //! - Tab / Shift+Tab moves focus between fields.
 
 use aetna_core::*;
 use aetna_core::widgets::text_input;
 
-#[derive(Default)]
 struct Form {
     name: String,
     name_sel: TextSelection,
     email: String,
     email_sel: TextSelection,
+    clipboard: Option<arboard::Clipboard>,
+}
+
+impl Default for Form {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            name_sel: TextSelection::default(),
+            email: String::new(),
+            email_sel: TextSelection::default(),
+            // arboard fails to initialize on headless / display-less
+            // environments. Treat clipboard as best-effort.
+            clipboard: arboard::Clipboard::new().ok(),
+        }
+    }
 }
 
 impl App for Form {
@@ -69,13 +86,50 @@ impl App for Form {
         }
         // Route input events to the focused field by key.
         match event.target.as_ref().map(|t| t.key.as_str()) {
-            Some("name") => {
-                text_input::apply_event(&mut self.name, &mut self.name_sel, &event);
-            }
-            Some("email") => {
-                text_input::apply_event(&mut self.email, &mut self.email_sel, &event);
-            }
+            Some("name") => apply_with_clipboard(
+                &mut self.name,
+                &mut self.name_sel,
+                &event,
+                self.clipboard.as_mut(),
+            ),
+            Some("email") => apply_with_clipboard(
+                &mut self.email,
+                &mut self.email_sel,
+                &event,
+                self.clipboard.as_mut(),
+            ),
             _ => {}
+        }
+    }
+}
+
+fn apply_with_clipboard(
+    value: &mut String,
+    sel: &mut TextSelection,
+    event: &UiEvent,
+    clipboard: Option<&mut arboard::Clipboard>,
+) {
+    match text_input::clipboard_request(event) {
+        Some(ClipboardKind::Copy) => {
+            if let Some(cb) = clipboard {
+                let _ = cb.set_text(text_input::selected_text(value, *sel).to_string());
+            }
+        }
+        Some(ClipboardKind::Cut) => {
+            if let Some(cb) = clipboard {
+                let _ = cb.set_text(text_input::selected_text(value, *sel).to_string());
+            }
+            text_input::replace_selection(value, sel, "");
+        }
+        Some(ClipboardKind::Paste) => {
+            if let Some(cb) = clipboard
+                && let Ok(text) = cb.get_text()
+            {
+                text_input::replace_selection(value, sel, &text);
+            }
+        }
+        None => {
+            text_input::apply_event(value, sel, event);
         }
     }
 }

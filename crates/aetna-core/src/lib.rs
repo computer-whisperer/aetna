@@ -106,4 +106,4 @@ pub use widgets::button::button;
 pub use widgets::card::card;
 pub use widgets::overlay::{modal, modal_panel, overlay, scrim};
 pub use widgets::text::{h1, h2, h3, mono, paragraph, text};
-pub use widgets::text_input::{TextSelection, text_input};
+pub use widgets::text_input::{ClipboardKind, TextSelection, text_input};

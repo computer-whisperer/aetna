@@ -393,6 +393,69 @@ pub fn select_all(value: &str) -> TextSelection {
     }
 }
 
+/// Which clipboard operation a keypress is requesting. The library
+/// itself never touches the platform clipboard; [`clipboard_request`]
+/// just identifies the keystroke and the app dispatches the actual
+/// `set_text` / `get_text` call against whatever clipboard backend it
+/// uses (`arboard` on native, the web Clipboard API on wasm, etc.).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClipboardKind {
+    /// `Ctrl+C` / `Cmd+C` — copy the current selection.
+    Copy,
+    /// `Ctrl+X` / `Cmd+X` — copy the current selection, then delete it.
+    Cut,
+    /// `Ctrl+V` / `Cmd+V` — replace the selection with clipboard text.
+    Paste,
+}
+
+/// Detect a clipboard keystroke (Ctrl/Cmd + C/X/V) in `event`.
+/// Returns `None` for any other event, including `Ctrl+Shift+C`
+/// (browser dev tools convention) and `Ctrl+Alt+V`.
+///
+/// Apps integrate clipboard by checking this before falling through
+/// to [`apply_event`]:
+///
+/// ```ignore
+/// match text_input::clipboard_request(&event) {
+///     Some(ClipboardKind::Copy) => { clipboard.set_text(text_input::selected_text(&value, sel)); }
+///     Some(ClipboardKind::Cut) => {
+///         clipboard.set_text(text_input::selected_text(&value, sel));
+///         text_input::replace_selection(&mut value, &mut sel, "");
+///     }
+///     Some(ClipboardKind::Paste) => {
+///         if let Ok(text) = clipboard.get_text() {
+///             text_input::replace_selection(&mut value, &mut sel, &text);
+///         }
+///     }
+///     None => { text_input::apply_event(&mut value, &mut sel, &event); }
+/// }
+/// ```
+pub fn clipboard_request(event: &UiEvent) -> Option<ClipboardKind> {
+    if event.kind != UiEventKind::KeyDown {
+        return None;
+    }
+    let kp = event.key_press.as_ref()?;
+    let mods = kp.modifiers;
+    // Reject when Alt or Shift is held — those modifiers select
+    // different bindings (browser dev tools, alternative paste, etc.).
+    if mods.alt || mods.shift {
+        return None;
+    }
+    // Either Ctrl (Linux / Windows) or Logo / Cmd (macOS).
+    if !(mods.ctrl || mods.logo) {
+        return None;
+    }
+    let UiKey::Character(c) = &kp.key else {
+        return None;
+    };
+    match c.to_ascii_lowercase().as_str() {
+        "c" => Some(ClipboardKind::Copy),
+        "x" => Some(ClipboardKind::Cut),
+        "v" => Some(ClipboardKind::Paste),
+        _ => None,
+    }
+}
+
 fn caret_from_x(value: &str, local_x: f32) -> usize {
     if value.is_empty() || local_x <= 0.0 {
         return 0;
@@ -928,6 +991,78 @@ mod tests {
             glyph_runs, 1,
             "value should shape as one run; got {glyph_runs}"
         );
+    }
+
+    #[test]
+    fn clipboard_request_detects_ctrl_c_x_v() {
+        let ctrl = KeyModifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let cases = [
+            ("c", ClipboardKind::Copy),
+            ("C", ClipboardKind::Copy),
+            ("x", ClipboardKind::Cut),
+            ("v", ClipboardKind::Paste),
+        ];
+        for (ch, expected) in cases {
+            let e = ev_key_with_mods(UiKey::Character(ch.into()), ctrl);
+            assert_eq!(clipboard_request(&e), Some(expected), "char {ch:?}");
+        }
+    }
+
+    #[test]
+    fn clipboard_request_accepts_cmd_on_macos() {
+        // winit reports Cmd as Logo. Apps should get the same behavior
+        // on Linux/Windows (Ctrl) and macOS (Logo).
+        let logo = KeyModifiers {
+            logo: true,
+            ..Default::default()
+        };
+        let e = ev_key_with_mods(UiKey::Character("c".into()), logo);
+        assert_eq!(clipboard_request(&e), Some(ClipboardKind::Copy));
+    }
+
+    #[test]
+    fn clipboard_request_rejects_with_shift_or_alt() {
+        // Ctrl+Shift+C is browser devtools, not Copy.
+        let e = ev_key_with_mods(
+            UiKey::Character("c".into()),
+            KeyModifiers {
+                ctrl: true,
+                shift: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(clipboard_request(&e), None);
+
+        let e = ev_key_with_mods(
+            UiKey::Character("v".into()),
+            KeyModifiers {
+                ctrl: true,
+                alt: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(clipboard_request(&e), None);
+    }
+
+    #[test]
+    fn clipboard_request_ignores_other_keys_and_event_kinds() {
+        // Plain "c" without modifiers is just text input.
+        let e = ev_key(UiKey::Character("c".into()));
+        assert_eq!(clipboard_request(&e), None);
+        // Ctrl+A is select-all (handled by apply_event), not clipboard.
+        let e = ev_key_with_mods(
+            UiKey::Character("a".into()),
+            KeyModifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(clipboard_request(&e), None);
+        // TextInput events never report a clipboard request.
+        assert_eq!(clipboard_request(&ev_text("c")), None);
     }
 
     #[test]
