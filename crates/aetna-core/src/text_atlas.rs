@@ -32,8 +32,8 @@ use std::ops::Range;
 use cosmic_text::{
     Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style, Weight, Wrap, fontdb,
 };
+use swash::scale::image::{Content as SwashContent, Image as SwashImage};
 use swash::scale::{Render, ScaleContext, Source as SwashSource, StrikeWith};
-use swash::zeno::Format;
 
 use crate::ir::TextAnchor;
 use crate::text_metrics::{TextLayout, TextLine, line_height};
@@ -147,6 +147,12 @@ pub struct GlyphSlot {
     /// Bitmap top-left in screen space relative to the pen+baseline.
     /// `top_left = (pen_x + offset.0, baseline_y - offset.1)`.
     pub offset: (i32, i32),
+    /// `true` when the glyph carries its own RGB (color emoji from
+    /// CBDT/COLR/sbix sources). Backends pass white as the per-glyph
+    /// modulation color for these so the bitmap RGB passes through
+    /// unmodulated; outline glyphs (`is_color = false`) are stored as
+    /// `(255, 255, 255, alpha)` and modulated by the user's text color.
+    pub is_color: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -166,11 +172,22 @@ impl AtlasRect {
     }
 }
 
+/// Bytes per atlas pixel — RGBA8.
+///
+/// The atlas is unified: outline glyphs are stored as
+/// `(255, 255, 255, alpha)` so the same shader works for monochrome
+/// text and color emoji. Backends bind the page as
+/// `Rgba8UnormSrgb` (or equivalent) and multiply the sampled texel by
+/// the per-glyph color — for color glyphs the per-glyph color is white
+/// so the bitmap RGB passes through unmodulated.
+pub const ATLAS_BYTES_PER_PIXEL: u32 = 4;
+
 /// One CPU-side atlas page. Backends sample from a GPU texture mirror.
 pub struct AtlasPage {
     pub width: u32,
     pub height: u32,
-    /// A8 alpha coverage, row-major, `width * height` bytes.
+    /// RGBA8 pixels, row-major, `width * height *
+    /// ATLAS_BYTES_PER_PIXEL` bytes.
     pub pixels: Vec<u8>,
     /// Bounding box of writes since the last [`take_dirty`](GlyphAtlas::take_dirty)
     /// call. `None` means clean.
@@ -449,6 +466,7 @@ impl GlyphAtlas {
                         h: 0,
                     },
                     offset: (0, 0),
+                    is_color: false,
                 },
             );
             return;
@@ -470,8 +488,12 @@ impl GlyphAtlas {
             SwashSource::ColorBitmap(StrikeWith::BestFit),
             SwashSource::Outline,
         ];
-        let mut render = Render::new(&sources);
-        render.format(Format::Alpha);
+        // No `render.format(...)` call: let swash return native format.
+        // Outline glyphs come back as `Content::Mask` (1 byte/px alpha);
+        // CBDT/COLR/sbix color glyphs come back as `Content::Color`
+        // (4 bytes/px RGBA). The atlas stores both as RGBA so backends
+        // bind a single texture format and run a single shader path.
+        let render = Render::new(&sources);
         let image = render.render(&mut scaler, key.glyph_id)?;
         let width = image.placement.width;
         let height = image.placement.height;
@@ -479,15 +501,18 @@ impl GlyphAtlas {
             return None;
         }
 
+        let (rgba, is_color) = expand_to_rgba(&image)?;
+
         let (page_idx, rect) = self.allocate(width, height)?;
         let page = &mut self.pages[page_idx];
-        copy_bitmap(&mut page.pixels, page.width, &rect, &image.data);
+        copy_rgba_bitmap(&mut page.pixels, page.width, &rect, &rgba);
         merge_dirty(&mut page.dirty, rect);
 
         Some(GlyphSlot {
             page: page_idx as u32,
             rect,
             offset: (image.placement.left, image.placement.top),
+            is_color,
         })
     }
 
@@ -512,7 +537,7 @@ impl AtlasPage {
         Self {
             width,
             height,
-            pixels: vec![0; (width * height) as usize],
+            pixels: vec![0; (width * height * ATLAS_BYTES_PER_PIXEL) as usize],
             dirty: None,
             shelves: Vec::new(),
         }
@@ -570,13 +595,59 @@ impl AtlasPage {
     }
 }
 
-fn copy_bitmap(dst: &mut [u8], dst_stride: u32, rect: &AtlasRect, src: &[u8]) {
-    let stride = dst_stride as usize;
-    let w = rect.w as usize;
+/// Convert a swash glyph image into RGBA pixels for the unified atlas.
+///
+/// Returns `(rgba_bytes, is_color)`. Outline glyphs (`Content::Mask`)
+/// expand to `(255, 255, 255, alpha)`; subpixel masks (rare; only
+/// emitted when the renderer is told to produce them) expand similarly,
+/// taking max(R, G, B) as alpha. Color bitmaps and color outlines come
+/// back as 32-bit RGBA already and pass through.
+fn expand_to_rgba(image: &SwashImage) -> Option<(Vec<u8>, bool)> {
+    let pixels = (image.placement.width * image.placement.height) as usize;
+    match image.content {
+        SwashContent::Mask => {
+            // 1 byte/px alpha → 4 bytes/px RGBA.
+            if image.data.len() < pixels {
+                return None;
+            }
+            let mut rgba = Vec::with_capacity(pixels * 4);
+            for &a in &image.data[..pixels] {
+                rgba.extend_from_slice(&[0xFF, 0xFF, 0xFF, a]);
+            }
+            Some((rgba, false))
+        }
+        SwashContent::Color => {
+            // Already RGBA8.
+            if image.data.len() < pixels * 4 {
+                return None;
+            }
+            Some((image.data[..pixels * 4].to_vec(), true))
+        }
+        SwashContent::SubpixelMask => {
+            // Emitted only when the renderer requests subpixel format
+            // (we don't). Fall back to alpha = max(R, G, B) so we
+            // never produce a black silhouette here.
+            if image.data.len() < pixels * 4 {
+                return None;
+            }
+            let mut rgba = Vec::with_capacity(pixels * 4);
+            for chunk in image.data[..pixels * 4].chunks_exact(4) {
+                let a = chunk[0].max(chunk[1]).max(chunk[2]);
+                rgba.extend_from_slice(&[0xFF, 0xFF, 0xFF, a]);
+            }
+            Some((rgba, false))
+        }
+    }
+}
+
+fn copy_rgba_bitmap(dst: &mut [u8], dst_stride_pixels: u32, rect: &AtlasRect, src_rgba: &[u8]) {
+    let bpp = ATLAS_BYTES_PER_PIXEL as usize;
+    let dst_row_bytes = dst_stride_pixels as usize * bpp;
+    let row_bytes = rect.w as usize * bpp;
     for row in 0..rect.h as usize {
-        let dst_off = (rect.y as usize + row) * stride + rect.x as usize;
-        let src_off = row * w;
-        dst[dst_off..dst_off + w].copy_from_slice(&src[src_off..src_off + w]);
+        let dst_off = (rect.y as usize + row) * dst_row_bytes + rect.x as usize * bpp;
+        let src_off = row * row_bytes;
+        dst[dst_off..dst_off + row_bytes].copy_from_slice(&src_rgba[src_off..src_off + row_bytes]);
     }
 }
 
@@ -907,6 +978,99 @@ mod tests {
         // Empty stack is rejected — primary family stays put.
         atlas.set_default_family_stack(vec![]);
         assert_eq!(atlas.default_family(), "MyBrand");
+    }
+
+    #[cfg(feature = "emoji")]
+    #[test]
+    fn color_emoji_glyph_rasterizes_in_color() {
+        // 😀 GRINNING FACE — present in NotoColorEmoji as a CBDT
+        // bitmap. Outline-only fallback fonts can't render this; we
+        // verify (a) the slot is marked is_color, and (b) at least one
+        // pixel inside the glyph rect carries non-grayscale RGB,
+        // proving the bitmap RGB survived rasterization rather than
+        // being collapsed to a B&W silhouette.
+        let mut atlas = GlyphAtlas::new();
+        let run = atlas.shape_and_rasterize(
+            "😀",
+            32.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            TextAnchor::Start,
+            None,
+            Color::rgb(0, 0, 0),
+        );
+        assert_eq!(run.glyphs.len(), 1, "expected one glyph for 😀");
+        let slot = atlas.slot(run.glyphs[0].key).expect("emoji slot");
+        assert!(
+            slot.is_color,
+            "expected color glyph, got {slot:?} on a font that should be NotoColorEmoji"
+        );
+
+        let page = &atlas.pages()[slot.page as usize];
+        let stride = page.width as usize * ATLAS_BYTES_PER_PIXEL as usize;
+        let mut found_color = false;
+        for row in 0..slot.rect.h as usize {
+            for col in 0..slot.rect.w as usize {
+                let off = (slot.rect.y as usize + row) * stride + (slot.rect.x as usize + col) * 4;
+                let r = page.pixels[off];
+                let g = page.pixels[off + 1];
+                let b = page.pixels[off + 2];
+                let a = page.pixels[off + 3];
+                if a > 0 && (r != g || g != b) {
+                    found_color = true;
+                    break;
+                }
+            }
+            if found_color {
+                break;
+            }
+        }
+        assert!(
+            found_color,
+            "expected at least one pixel with non-grayscale RGB inside 😀 bitmap"
+        );
+    }
+
+    #[test]
+    fn outline_glyph_stores_white_alpha_in_rgba_atlas() {
+        // Sanity check the unified-RGBA migration: an outline glyph
+        // (e.g. 'A') should have R==G==B==255 in every pixel that has
+        // alpha — i.e. the alpha-coverage mask was expanded to
+        // (255, 255, 255, alpha) so the per-glyph color modulation in
+        // the backend shader produces the expected text color.
+        let mut atlas = GlyphAtlas::new();
+        let run = atlas.shape_and_rasterize(
+            "A",
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            TextAnchor::Start,
+            None,
+            Color::rgb(0, 0, 0),
+        );
+        let slot = atlas.slot(run.glyphs[0].key).expect("A slot");
+        assert!(!slot.is_color);
+        let page = &atlas.pages()[slot.page as usize];
+        let stride = page.width as usize * ATLAS_BYTES_PER_PIXEL as usize;
+        let mut sampled_alpha = 0;
+        for row in 0..slot.rect.h as usize {
+            for col in 0..slot.rect.w as usize {
+                let off = (slot.rect.y as usize + row) * stride + (slot.rect.x as usize + col) * 4;
+                let r = page.pixels[off];
+                let g = page.pixels[off + 1];
+                let b = page.pixels[off + 2];
+                let a = page.pixels[off + 3];
+                if a > 0 {
+                    assert_eq!(
+                        (r, g, b),
+                        (255, 255, 255),
+                        "outline glyph rgb should be white"
+                    );
+                    sampled_alpha = sampled_alpha.max(a);
+                }
+            }
+        }
+        assert!(sampled_alpha > 0, "expected at least one covered pixel");
     }
 
     #[test]

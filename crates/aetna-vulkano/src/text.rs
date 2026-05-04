@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use aetna_core::ir::TextAnchor;
 use aetna_core::shader::stock_wgsl;
-use aetna_core::text_atlas::{AtlasPage, AtlasRect, GlyphAtlas};
+use aetna_core::text_atlas::{ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas};
 use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};
 use bytemuck::{Pod, Zeroable};
 use smallvec::smallvec;
@@ -238,10 +238,19 @@ impl TextPaint {
                 current_page = Some(page);
             }
 
+            // Color emoji glyphs carry their own RGB in the atlas;
+            // pass white as the per-glyph modulation color so the
+            // bitmap survives. Outline glyphs use the user's color so
+            // text takes on the requested paint color.
+            let inst_color = if slot.is_color {
+                [1.0, 1.0, 1.0, 1.0]
+            } else {
+                rgba_f32(glyph.color)
+            };
             self.instances.push(GlyphInstance {
                 rect: [bx, by, bw, bh],
                 uv,
-                color: rgba_f32(glyph.color),
+                color: inst_color,
             });
         }
         if let Some(p) = current_page {
@@ -366,7 +375,7 @@ impl TextPaint {
             self.memory_alloc.clone(),
             ImageCreateInfo {
                 image_type: ImageType::Dim2d,
-                format: Format::R8_UNORM,
+                format: Format::R8G8B8A8_SRGB,
                 extent: [width, height, 1],
                 usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
                 ..Default::default()
@@ -438,15 +447,17 @@ impl TextRecorder for TextPaint {
 }
 
 /// Slice the `rect`-bounded subregion out of `page.pixels` (row-major
-/// u8 alpha bitmap) into a tightly-packed Vec for staging-buffer
-/// upload — same shape `aetna_wgpu::text::upload_page_region` uses
-/// when calling `queue.write_texture`.
+/// RGBA8 bitmap, 4 bytes/pixel) into a tightly-packed Vec for
+/// staging-buffer upload — same shape `aetna_wgpu::text::
+/// upload_page_region` uses when calling `queue.write_texture`.
 fn pack_rect_bytes(page: &AtlasPage, rect: AtlasRect) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity((rect.w * rect.h) as usize);
+    let bpp = ATLAS_BYTES_PER_PIXEL as usize;
+    let row_bytes = rect.w as usize * bpp;
+    let mut bytes = Vec::with_capacity(row_bytes * rect.h as usize);
     for row in 0..rect.h {
         let y = rect.y + row;
-        let start = (y * page.width + rect.x) as usize;
-        let end = start + rect.w as usize;
+        let start = (y as usize * page.width as usize + rect.x as usize) * bpp;
+        let end = start + row_bytes;
         bytes.extend_from_slice(&page.pixels[start..end]);
     }
     bytes

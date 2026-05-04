@@ -1,10 +1,18 @@
-// stock::text — alpha-mask glyph rendering.
+// stock::text — unified-RGBA glyph rendering.
 //
 // One pipeline. Each per-instance entry places a glyph quad in logical
-// pixel space (`rect.xy/zw`) and samples a single A8 page texture at
-// (`uv.xy/zw`). The fragment shader multiplies the per-glyph color by
-// the sampled alpha; the pipeline blends premultiplied-alpha onto the
-// surface.
+// pixel space (`rect.xy/zw`) and samples a single Rgba8UnormSrgb page
+// texture at (`uv.xy/zw`). The fragment shader modulates the sampled
+// texel by the per-glyph color and premultiplies for alpha blending.
+//
+// Two glyph kinds share the pipeline:
+//
+// - **Outline glyphs** (Roboto, etc.) are stored in the atlas as
+//   `(255, 255, 255, alpha)`. The per-glyph color carries the user's
+//   text color, so `texel * color` produces colored anti-aliased text.
+// - **Color emoji** (CBDT/COLR/sbix) are stored as native RGBA. Backends
+//   pass white as the per-glyph color so the bitmap RGB passes through
+//   unmodulated; alpha edges still come from the bitmap.
 //
 // The page texture lives in a separate bind group so the pipeline can
 // stay shared across pages — backends just rebind group(1) when the
@@ -55,8 +63,8 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let alpha = textureSample(atlas_tex, atlas_smp, in.uv).r;
-    let a = in.color.a * alpha;
+    let texel = textureSample(atlas_tex, atlas_smp, in.uv);
+    let modulated = texel * in.color;
     // Premultiplied output — pipeline blend state is alpha-blending.
-    return vec4<f32>(in.color.rgb * a, a);
+    return vec4<f32>(modulated.rgb * modulated.a, modulated.a);
 }

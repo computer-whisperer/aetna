@@ -20,11 +20,12 @@ web-time = "1"
 
 [features]
 default = ["default_fonts"]
-# Bundle aetna-fonts' default font set (Roboto + Symbols2 + Math) into
-# the binary. Disable to ship your own fonts via `register_font`.
-default_fonts = ["aetna-fonts/default_fonts"]
-# Forward feature flags so downstream crates control the bundle through
-# aetna-core's Cargo.toml: `aetna-core = { features = ["cjk"] }`.
+# Bundle aetna-fonts' default font set (Roboto + NotoColorEmoji +
+# Symbols2 + Math) into the binary. Disable to ship your own fonts via
+# `register_font`. The per-format features below are activated by
+# `default_fonts` and can also be toggled individually:
+# `aetna-core = { default-features = false, features = ["roboto"] }`.
+default_fonts = ["roboto", "emoji", "symbols"]
 roboto = ["aetna-fonts/roboto"]
 emoji = ["aetna-fonts/emoji"]
 symbols = ["aetna-fonts/symbols"]

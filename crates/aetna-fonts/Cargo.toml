@@ -15,14 +15,14 @@ include = [
 path = "src/lib.rs"
 
 [features]
-# Generous LLM-friendly default: Latin + arrows/math/box-drawing.
-# CJK is opt-in because it adds ~16 MB to the binary. `emoji` is a
-# placeholder feature reserved for NotoEmoji-Regular; not wired yet
-# (color emoji is on the v0.7+ roadmap and the B&W file isn't bundled
-# until we have it from a confirmed source).
+# Generous LLM-friendly default: Latin + color emoji + arrows/math/
+# box-drawing. CJK is opt-in because it adds ~16 MB to the binary.
 default = ["default_fonts"]
-default_fonts = ["roboto", "symbols"]
+default_fonts = ["roboto", "emoji", "symbols"]
 roboto = []
+# NotoColorEmoji (CBDT bitmaps). Requires aetna-core's atlas RGBA path
+# (introduced alongside this feature) to render in color rather than as
+# B&W silhouettes.
 emoji = []
 symbols = []
 cjk = []

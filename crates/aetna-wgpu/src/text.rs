@@ -2,7 +2,9 @@
 //!
 //! Owns an [`aetna_core::text_atlas::GlyphAtlas`] (cosmic-text shaping +
 //! swash rasterization, both backend-agnostic) and mirrors its CPU pages
-//! to one R8Unorm wgpu texture per page. Recording a text run shapes the
+//! to one Rgba8UnormSrgb wgpu texture per page (unified atlas — outline
+//! glyphs are stored as `(255,255,255,alpha)`; color emoji as native
+//! RGBA). Recording a text run shapes the
 //! string, ensures all glyphs are present in the atlas, and emits one
 //! per-glyph quad instance that samples the matching page.
 //!
@@ -15,7 +17,7 @@ use std::borrow::Cow;
 
 use aetna_core::ir::TextAnchor;
 use aetna_core::shader::stock_wgsl;
-use aetna_core::text_atlas::{AtlasPage, AtlasRect, GlyphAtlas};
+use aetna_core::text_atlas::{ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas};
 use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};
 
 use bytemuck::{Pod, Zeroable};
@@ -292,10 +294,19 @@ impl TextPaint {
                 current_page = Some(page);
             }
 
+            // Color emoji glyphs carry their own RGB in the atlas;
+            // pass white as the per-glyph modulation color so the
+            // bitmap survives. Outline glyphs use the user's color so
+            // text takes on the requested paint color.
+            let inst_color = if slot.is_color {
+                [1.0, 1.0, 1.0, 1.0]
+            } else {
+                rgba_f32(glyph.color)
+            };
             self.instances.push(GlyphInstance {
                 rect: [bx, by, bw, bh],
                 uv,
-                color: rgba_f32(glyph.color),
+                color: inst_color,
             });
         }
         if let Some(p) = current_page {
@@ -358,7 +369,7 @@ impl TextPaint {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -433,13 +444,16 @@ fn upload_page_region(
     if rect.w == 0 || rect.h == 0 {
         return;
     }
-    // Slice out just the dirty rect's rows from the page's row-major
-    // pixel buffer so we don't pay to re-upload the whole page.
-    let mut bytes = Vec::with_capacity((rect.w * rect.h) as usize);
+    let bpp = ATLAS_BYTES_PER_PIXEL as usize;
+    // Slice out just the dirty rect's rows (4 bytes/pixel) from the
+    // page's row-major pixel buffer so we don't pay to re-upload the
+    // whole page.
+    let row_bytes = rect.w as usize * bpp;
+    let mut bytes = Vec::with_capacity(row_bytes * rect.h as usize);
     for row in 0..rect.h {
         let y = rect.y + row;
-        let start = (y * page.width + rect.x) as usize;
-        let end = start + rect.w as usize;
+        let start = (y as usize * page.width as usize + rect.x as usize) * bpp;
+        let end = start + row_bytes;
         bytes.extend_from_slice(&page.pixels[start..end]);
     }
     queue.write_texture(
@@ -456,7 +470,7 @@ fn upload_page_region(
         &bytes,
         wgpu::ImageDataLayout {
             offset: 0,
-            bytes_per_row: Some(rect.w),
+            bytes_per_row: Some(rect.w * ATLAS_BYTES_PER_PIXEL),
             rows_per_image: Some(rect.h),
         },
         wgpu::Extent3d {

@@ -11,12 +11,12 @@
 //! | feature         | adds                                                  | size (raw)   |
 //! |-----------------|-------------------------------------------------------|--------------|
 //! | `roboto`        | Roboto Regular / Medium / Bold / Italic               | ~1.8 MB      |
-//! | `emoji`         | NotoEmoji-Regular (B&W) — *placeholder, not wired yet*| ~0.5 MB *    |
+//! | `emoji`         | NotoColorEmoji (CBDT color bitmaps)                   | ~10 MB       |
 //! | `symbols`       | NotoSansSymbols2 + NotoSansMath                       | ~2.2 MB      |
 //! | `cjk` (opt-in)  | NotoSansCJK SC (Simplified Chinese — covers JP/KR)    | ~16 MB       |
 //!
 //! `default = ["default_fonts"]` and `default_fonts = ["roboto",
-//! "symbols"]`. `cjk` is **not** in the default set because of
+//! "emoji", "symbols"]`. `cjk` is **not** in the default set because of
 //! its size; downstream UIs that need CJK rendering opt in explicitly:
 //!
 //! ```toml
@@ -30,12 +30,10 @@
 //! aetna-fonts = { version = "0.1", default-features = false }
 //! ```
 //!
-//! `* ` The `emoji` feature is **reserved but not yet wired**: the B&W
-//! NotoEmoji-Regular byte constant is left out of the bundle until a
-//! confirmed source for the file is checked in. Color emoji (COLR/
-//! CBDT) is on the v0.7+ roadmap — both the engine atlas and the
-//! wgpu/vulkano backends need a color-glyph path before the bundle
-//! would be useful.
+//! Color emoji (NotoColorEmoji) is rendered through aetna-core's
+//! unified RGBA atlas — outline glyphs are stored as
+//! `(255, 255, 255, alpha)` and color emoji as native RGBA, so backends
+//! sample one texture format and run one shader path.
 //!
 //! # API
 //!
@@ -57,9 +55,8 @@ pub static ROBOTO_BOLD: &[u8] = include_bytes!("../fonts/Roboto-Bold.ttf");
 #[cfg(feature = "roboto")]
 pub static ROBOTO_ITALIC: &[u8] = include_bytes!("../fonts/Roboto-Italic.ttf");
 
-// `emoji` feature reserved for NotoEmoji-Regular. The byte constant
-// will land once the file is bundled (color-emoji rasterization is a
-// v0.7+ engine-side prerequisite for it to be useful).
+#[cfg(feature = "emoji")]
+pub static NOTO_COLOR_EMOJI: &[u8] = include_bytes!("../fonts/NotoColorEmoji.ttf");
 
 #[cfg(feature = "symbols")]
 pub static NOTO_SANS_SYMBOLS2_REGULAR: &[u8] =
@@ -86,6 +83,8 @@ pub const DEFAULT_FONTS: &[&[u8]] = &[
     ROBOTO_BOLD,
     #[cfg(feature = "roboto")]
     ROBOTO_ITALIC,
+    #[cfg(feature = "emoji")]
+    NOTO_COLOR_EMOJI,
     #[cfg(feature = "symbols")]
     NOTO_SANS_SYMBOLS2_REGULAR,
     #[cfg(feature = "symbols")]
