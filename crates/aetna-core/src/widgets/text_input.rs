@@ -211,13 +211,24 @@ pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &Ui
             let Some(insert) = event.text.as_deref() else {
                 return false;
             };
-            // winit emits the platform's text representation alongside
-            // the named-key event for several "named" keys: Backspace
-            // → "\u{8}", Delete → "\u{7f}", Enter → "\r"/"\n", Escape →
-            // "\u{1b}", Tab → "\t". Without filtering, the named-key
-            // handler runs (correct edit) AND the text gets inserted
-            // (control char appears in the value). Strip control chars
-            // so only printable input ever reaches the field.
+            // winit emits TextInput alongside named-key / shortcut
+            // KeyDowns. Two filters protect us:
+            //
+            // 1. Strip control characters — winit fires "\u{8}" for
+            //    Backspace, "\u{7f}" for Delete, "\r"/"\n" for Enter,
+            //    "\u{1b}" for Escape, "\t" for Tab. The named-key arm
+            //    handles those correctly; we don't want a duplicate
+            //    insertion of the control byte.
+            //
+            // 2. Drop the event when Ctrl-or-Cmd is held (without Alt
+            //    — AltGr on Windows is reported as Ctrl+Alt and is a
+            //    legitimate text-producing modifier). Ctrl+C / Ctrl+V
+            //    etc. emit TextInput("c"/"v") on some platforms; the
+            //    clipboard side already handled the KeyDown, and we
+            //    don't want the literal letter to land in the field.
+            if (event.modifiers.ctrl && !event.modifiers.alt) || event.modifiers.logo {
+                return false;
+            }
             let filtered: String = insert.chars().filter(|c| !c.is_control()).collect();
             if filtered.is_empty() {
                 return false;
@@ -501,13 +512,17 @@ mod tests {
     use crate::state::UiState;
 
     fn ev_text(s: &str) -> UiEvent {
+        ev_text_with_mods(s, KeyModifiers::default())
+    }
+
+    fn ev_text_with_mods(s: &str, modifiers: KeyModifiers) -> UiEvent {
         UiEvent {
             key: None,
             target: None,
             pointer: None,
             key_press: None,
             text: Some(s.into()),
-            modifiers: KeyModifiers::default(),
+            modifiers,
             kind: UiEventKind::TextInput,
         }
     }
@@ -970,6 +985,50 @@ mod tests {
         assert!(apply_event(&mut value, &mut sel, &ev_text("a\u{8}b")));
         assert_eq!(value, "hiab");
         assert_eq!(sel, TextSelection::caret(4));
+    }
+
+    #[test]
+    fn apply_text_input_drops_when_ctrl_or_cmd_is_held() {
+        // winit emits TextInput("c") alongside KeyDown(Ctrl+C) on some
+        // platforms. The clipboard handler consumes the KeyDown; the
+        // TextInput must be ignored, otherwise the literal 'c'
+        // replaces the selection right after the copy.
+        let mut value = String::from("hello");
+        let mut sel = TextSelection::range(0, 5);
+        let ctrl = KeyModifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let cmd = KeyModifiers {
+            logo: true,
+            ..Default::default()
+        };
+        assert!(!apply_event(
+            &mut value,
+            &mut sel,
+            &ev_text_with_mods("c", ctrl)
+        ));
+        assert_eq!(value, "hello");
+        assert!(!apply_event(
+            &mut value,
+            &mut sel,
+            &ev_text_with_mods("v", cmd)
+        ));
+        assert_eq!(value, "hello");
+        // AltGr (Ctrl+Alt) on Windows still produces text — exempt it.
+        let altgr = KeyModifiers {
+            ctrl: true,
+            alt: true,
+            ..Default::default()
+        };
+        let mut value = String::from("");
+        let mut sel = TextSelection::caret(0);
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_text_with_mods("é", altgr)
+        ));
+        assert_eq!(value, "é");
     }
 
     #[test]

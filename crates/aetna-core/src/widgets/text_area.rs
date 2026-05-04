@@ -188,6 +188,13 @@ pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &Ui
             let Some(insert) = event.text.as_deref() else {
                 return false;
             };
+            // See text_input::apply_event for the rationale: drop
+            // shortcut-side TextInput emissions (Ctrl/Cmd held) so the
+            // 'c' from Ctrl+C doesn't replace the selection after the
+            // clipboard handler has already consumed the keystroke.
+            if (event.modifiers.ctrl && !event.modifiers.alt) || event.modifiers.logo {
+                return false;
+            }
             let filtered: String = insert.chars().filter(|c| !c.is_control()).collect();
             if filtered.is_empty() {
                 return false;
@@ -554,6 +561,32 @@ mod tests {
         ));
         assert_eq!(sel.anchor, 2);
         assert!(sel.head > 2);
+    }
+
+    #[test]
+    fn ctrl_or_cmd_text_input_is_dropped() {
+        // Mirror of the text_input regression: winit can emit
+        // TextInput("c") alongside KeyDown(Ctrl+C) on some platforms,
+        // and the clipboard wrapper consumes the KeyDown. Without the
+        // ctrl/cmd guard, 'c' would replace the selection after the
+        // copy.
+        let mut value = String::from("first\nsecond");
+        let mut sel = TextSelection::range(0, value.len());
+        let ctrl = KeyModifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let ev = UiEvent {
+            key: None,
+            target: None,
+            pointer: None,
+            key_press: None,
+            text: Some("c".into()),
+            modifiers: ctrl,
+            kind: UiEventKind::TextInput,
+        };
+        assert!(!apply_event(&mut value, &mut sel, &ev));
+        assert_eq!(value, "first\nsecond");
     }
 
     #[test]
