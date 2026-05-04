@@ -81,38 +81,69 @@ impl TextSelection {
 /// and `selection` carries the caret + selection state. Both are
 /// owned by the application — pass them in from your state and update
 /// them via [`apply_event`] in your event handler.
+///
+/// # Layout
+///
+/// The value is rendered as **one shaped text leaf** so cosmic-text
+/// applies kerning across the whole string. The caret bar and the
+/// selection band sit on top of the text via overlay layout +
+/// paint-time `translate`, with offsets derived from `line_width` of
+/// the prefix substrings. This means moving the caret never re-shapes
+/// the text — characters don't "jitter" left/right as the caret moves.
+///
+/// # Focus
+///
+/// The caret bar carries `alpha_follows_focused_ancestor()` so it only
+/// paints while the input is focused (and fades in/out via the
+/// library's standard focus animation).
 #[track_caller]
 pub fn text_input(value: &str, selection: TextSelection) -> El {
     let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     let lo = anchor.min(head);
     let hi = anchor.max(head);
+    let line_h = line_height_px();
 
-    let caret_bar = caret_bar();
-    let mut children: Vec<El> = Vec::with_capacity(5);
+    // Pixel offsets along the (single) shaped run. We measure substrings
+    // independently here, which gives positions that are correct to
+    // within sub-pixel kerning differences vs. the full-string layout.
+    // Good enough for caret + selection placement at v0.8 widths.
+    let head_px = prefix_width(value, head);
+    let lo_px = prefix_width(value, lo);
+    let hi_px = prefix_width(value, hi);
 
-    if lo == hi {
-        // Collapsed: [text(prefix), caret, text(suffix)]
-        children.push(text_segment(&value[..head]));
-        children.push(caret_bar);
-        children.push(text_segment(&value[head..]));
-    } else {
-        let prefix = &value[..lo];
-        let selected = &value[lo..hi];
-        let suffix = &value[hi..];
-        children.push(text_segment(prefix));
-        // Caret renders on the side of the selection where `head` sits
-        // — at `lo` if head was the smaller end, otherwise at `hi`. The
-        // selection band always renders the same way regardless.
-        if head == lo {
-            children.push(caret_bar);
-            children.push(selection_segment(selected));
-        } else {
-            children.push(selection_segment(selected));
-            children.push(caret_bar);
-        }
-        children.push(text_segment(suffix));
+    let mut children: Vec<El> = Vec::with_capacity(3);
+
+    // Selection band paints first (behind text, behind caret).
+    if lo < hi {
+        children.push(
+            El::new(Kind::Custom("text_input_selection"))
+                .style_profile(StyleProfile::Solid)
+                .fill(tokens::SELECTION_BG)
+                .radius(2.0)
+                .width(Size::Fixed(hi_px - lo_px))
+                .height(Size::Fixed(line_h))
+                .translate(lo_px, 0.0),
+        );
     }
+
+    // The value as one shaped run. Hug width so the leaf's intrinsic
+    // measure is the actual glyph extent (used for layout).
+    children.push(
+        text(value)
+            .font_size(tokens::FONT_BASE)
+            .width(Size::Hug)
+            .height(Size::Fixed(line_h)),
+    );
+
+    // Caret bar — always present in the tree; the focus-fade flag
+    // hides it when the input isn't focused. This keeps the widget
+    // builder stateless w.r.t. focus.
+    children.push(
+        caret_bar()
+            .translate(head_px, 0.0)
+            .alpha_follows_focused_ancestor(),
+    );
 
     El::new(Kind::Custom("text_input"))
         .at_loc(Location::caller())
@@ -123,25 +154,12 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_MD)
-        .axis(Axis::Row)
-        .align(Align::Center)
-        .gap(0.0)
+        .axis(Axis::Overlay)
+        .align(Align::Start) // children pin to the left edge
+        .justify(Justify::Center) // children center vertically
         .height(Size::Fixed(36.0))
         .padding(Sides::xy(tokens::SPACE_MD, 0.0))
         .children(children)
-}
-
-/// Build a text leaf with a fixed line-height-tall box so every text
-/// segment inside the input has the same cross-axis size. With
-/// `Size::Hug`, cosmic-text-measured heights can drift between
-/// strings (different ascender/descender extents per glyph set), and
-/// the row's `Align::Center` would then place each leaf at a slightly
-/// different y — the suffix appearing to "jump" when the caret moves.
-/// Pinning the leaf's height eliminates the variance.
-fn text_segment(s: &str) -> El {
-    text(s)
-        .font_size(tokens::FONT_BASE)
-        .height(Size::Fixed(line_height_px()))
 }
 
 fn caret_bar() -> El {
@@ -153,18 +171,20 @@ fn caret_bar() -> El {
         .radius(1.0)
 }
 
-fn selection_segment(selected: &str) -> El {
-    let bg = El::new(Kind::Custom("text_input_selection"))
-        .style_profile(StyleProfile::Solid)
-        .fill(tokens::SELECTION_BG)
-        .radius(2.0);
-    crate::tree::stack([bg, text_segment(selected)])
-        .width(Size::Hug)
-        .height(Size::Fixed(line_height_px()))
-}
-
 fn line_height_px() -> f32 {
     metrics::line_height(tokens::FONT_BASE)
+}
+
+fn prefix_width(value: &str, byte_index: usize) -> f32 {
+    if byte_index == 0 {
+        return 0.0;
+    }
+    metrics::line_width(
+        &value[..byte_index],
+        tokens::FONT_BASE,
+        FontWeight::Regular,
+        false,
+    )
 }
 
 /// Fold a routed [`UiEvent`] into `value` and `selection`. Returns
@@ -489,57 +509,132 @@ mod tests {
     }
 
     #[test]
-    fn text_input_collapsed_renders_three_children_with_caret() {
+    fn text_input_collapsed_renders_value_as_single_text_leaf_plus_caret() {
         let el = text_input("hello", TextSelection::caret(2));
         assert!(matches!(el.kind, Kind::Custom("text_input")));
         assert!(el.focusable);
         assert!(el.capture_keys);
-        assert_eq!(el.children.len(), 3);
-        assert_eq!(el.children[0].text.as_deref(), Some("he"));
+        // [0] = text leaf with the full value, [1] = caret bar.
+        assert_eq!(el.children.len(), 2);
+        assert!(matches!(el.children[0].kind, Kind::Text));
+        assert_eq!(el.children[0].text.as_deref(), Some("hello"));
         assert!(matches!(
             el.children[1].kind,
             Kind::Custom("text_input_caret")
         ));
-        assert_eq!(el.children[2].text.as_deref(), Some("llo"));
+        assert!(el.children[1].alpha_follows_focused_ancestor);
     }
 
     #[test]
-    fn text_input_with_selection_emits_four_children_caret_at_head_side() {
+    fn text_input_with_selection_inserts_selection_band_first() {
         // anchor=2, head=4 → selection "ll", head at right edge.
         let el = text_input("hello", TextSelection::range(2, 4));
-        assert_eq!(el.children.len(), 4);
-        assert_eq!(el.children[0].text.as_deref(), Some("he"));
-        // [1] is the selection stack, [2] is the caret bar (head=4=hi).
-        assert!(matches!(el.children[1].kind, Kind::Group)); // stack returns a Group
+        // [0] = selection band, [1] = full-value text leaf, [2] = caret.
+        assert_eq!(el.children.len(), 3);
+        assert!(matches!(
+            el.children[0].kind,
+            Kind::Custom("text_input_selection")
+        ));
+        assert_eq!(el.children[1].text.as_deref(), Some("hello"));
         assert!(matches!(
             el.children[2].kind,
             Kind::Custom("text_input_caret")
         ));
-        assert_eq!(el.children[3].text.as_deref(), Some("o"));
     }
 
     #[test]
-    fn text_input_with_selection_caret_left_when_head_is_min() {
-        // anchor=4, head=2 → selection "ll", head at left edge.
-        let el = text_input("hello", TextSelection::range(4, 2));
-        assert_eq!(el.children.len(), 4);
-        assert_eq!(el.children[0].text.as_deref(), Some("he"));
-        // Caret precedes the selection segment now.
-        assert!(matches!(
-            el.children[1].kind,
-            Kind::Custom("text_input_caret")
-        ));
-        assert!(matches!(el.children[2].kind, Kind::Group));
-        assert_eq!(el.children[3].text.as_deref(), Some("o"));
+    fn text_input_caret_translate_advances_with_head() {
+        // The caret's translate.x grows with the head's byte index.
+        // Use line_width as ground truth; caret should be measured from
+        // the start of the value to head.
+        use crate::text::metrics::line_width;
+        let value = "hello";
+        let head = 3;
+        let el = text_input(value, TextSelection::caret(head));
+        let caret = el
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
+            .expect("caret child");
+        let expected = line_width(&value[..head], tokens::FONT_BASE, FontWeight::Regular, false);
+        assert!(
+            (caret.translate.0 - expected).abs() < 0.01,
+            "caret translate.x = {}, expected {}",
+            caret.translate.0,
+            expected
+        );
     }
 
     #[test]
     fn text_input_clamps_off_utf8_boundary() {
         // 'é' is two bytes; head=1 sits inside the codepoint and must
-        // snap back to 0.
+        // snap back to 0. The single text leaf still renders the whole
+        // value; only the caret offset reflects the snap.
         let el = text_input("é", TextSelection::caret(1));
-        assert_eq!(el.children[0].text.as_deref(), Some(""));
-        assert_eq!(el.children[2].text.as_deref(), Some("é"));
+        assert_eq!(el.children[0].text.as_deref(), Some("é"));
+        let caret = el
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
+            .expect("caret child");
+        // caret head clamped to 0 → translate.x = 0.
+        assert!(caret.translate.0.abs() < 0.01);
+    }
+
+    #[test]
+    fn caret_alpha_follows_focus_envelope() {
+        // The caret bar paints with full alpha when the input is
+        // focused (envelope = 1) and zero alpha when it isn't
+        // (envelope = 0). This is what hides the caret in unfocused
+        // inputs without any app-side focus tracking.
+        use crate::draw_ops::draw_ops;
+        use crate::ir::DrawOp;
+        use crate::shader::UniformValue;
+        use crate::state::AnimationMode;
+        use web_time::Instant;
+
+        let mut tree =
+            crate::column([text_input("hi", TextSelection::caret(0)).key("ti")]).padding(20.0);
+        let mut state = UiState::new();
+        state.set_animation_mode(AnimationMode::Settled);
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.sync_focus_order(&tree);
+
+        // Initially unfocused: focus envelope settles to 0.
+        state.apply_to_state();
+        state.tick_visual_animations(&mut tree, Instant::now());
+        let caret_alpha = caret_fill_alpha(&tree, &state);
+        assert_eq!(caret_alpha, Some(0), "unfocused → caret invisible");
+
+        // Focus the input: focus envelope settles to 1.
+        let target = state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "ti")
+            .expect("ti in focus order")
+            .clone();
+        state.set_focus(Some(target));
+        state.apply_to_state();
+        state.tick_visual_animations(&mut tree, Instant::now());
+        let caret_alpha = caret_fill_alpha(&tree, &state);
+        assert_eq!(
+            caret_alpha,
+            Some(255),
+            "focused → caret fully visible (alpha=255)"
+        );
+
+        fn caret_fill_alpha(tree: &El, state: &UiState) -> Option<u8> {
+            let ops = draw_ops(tree, state);
+            for op in ops {
+                if let DrawOp::Quad { id, uniforms, .. } = op
+                    && id.contains("text_input_caret")
+                    && let Some(UniformValue::Color(c)) = uniforms.get("fill")
+                {
+                    return Some(c.a);
+                }
+            }
+            None
+        }
     }
 
     #[test]
@@ -809,12 +904,12 @@ mod tests {
     }
 
     #[test]
-    fn text_segments_share_y_after_layout_so_glyphs_align() {
-        // A regression test for the v0.8.2 visual bug: in a row with
-        // Align::Center, two text leaves with different intrinsic
-        // heights would land at different y. We pin the height of
-        // every text segment + caret to line_height(FONT_BASE) so all
-        // children get identical cross_off.
+    fn text_input_value_emits_a_single_glyph_run() {
+        // A regression test for the v0.8.2 kerning bug: splitting the
+        // value into [prefix, suffix] across the caret meant cosmic-
+        // text shaped each substring independently, breaking kerning
+        // and causing glyphs to "jump" left/right as the caret moved.
+        // The fix renders the value as one shaped run.
         use crate::draw_ops::draw_ops;
         use crate::ir::DrawOp;
         let mut tree =
@@ -822,26 +917,17 @@ mod tests {
         let mut state = UiState::new();
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
 
-        // Walk the resolved draw ops — each glyph run for the
-        // text_input's prefix/suffix has a `rect` whose y must match.
         let ops = draw_ops(&tree, &state);
-        let glyph_ys: Vec<f32> = ops
+        let glyph_runs = ops
             .iter()
-            .filter_map(|op| match op {
-                DrawOp::GlyphRun { id, rect, .. } if id.contains("text_input[ti]") => {
-                    Some(rect.y)
-                }
-                _ => None,
+            .filter(|op| {
+                matches!(op, DrawOp::GlyphRun { id, .. } if id.contains("text_input[ti]"))
             })
-            .collect();
-        assert!(glyph_ys.len() >= 2, "expected prefix + suffix glyph runs");
-        let first = glyph_ys[0];
-        for y in &glyph_ys {
-            assert!(
-                (y - first).abs() < 0.01,
-                "text segments split at y={glyph_ys:?}; expected all equal"
-            );
-        }
+            .count();
+        assert_eq!(
+            glyph_runs, 1,
+            "value should shape as one run; got {glyph_runs}"
+        );
     }
 
     #[test]

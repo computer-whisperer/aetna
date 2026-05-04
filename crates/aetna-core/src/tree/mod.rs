@@ -60,6 +60,16 @@ pub struct El {
     /// at the runner — the flag only takes effect when the node is
     /// also the focused target.
     pub capture_keys: bool,
+    /// When true, this node's paint opacity is multiplied by the
+    /// nearest focusable ancestor's focus envelope (0..1). The library
+    /// already animates that envelope on focus / blur; flagged nodes
+    /// fade in and out with the same easing without any app-side
+    /// focus tracking.
+    ///
+    /// Used by `text_input`'s caret bar — the caret only paints when
+    /// the input is focused, fading via the standard focus animation.
+    /// Documented in `widget_kit.md` as part of the public surface.
+    pub alpha_follows_focused_ancestor: bool,
     pub source: Source,
 
     // Layout
@@ -187,6 +197,7 @@ impl Default for El {
             block_pointer: false,
             focusable: false,
             capture_keys: false,
+            alpha_follows_focused_ancestor: false,
             source: Source::default(),
             axis: Axis::Overlay,
             gap: 0.0,
@@ -257,6 +268,21 @@ impl El {
     pub fn capture_keys(mut self) -> Self {
         self.capture_keys = true;
         self.focusable = true;
+        self
+    }
+    /// Multiply this element's paint opacity by the nearest focusable
+    /// ancestor's focus envelope (0..1). The library writes that
+    /// envelope on every frame as focus enters / leaves the ancestor;
+    /// flagged elements fade in and out with the same animation
+    /// without any app-side focus tracking. The flag is layout-neutral
+    /// and propagates to descendants via the standard opacity chain.
+    ///
+    /// Used by `text_input`'s caret bar so the caret is only visible
+    /// while the input is focused. Any custom widget can use this for
+    /// the same kind of "this child only renders when my container is
+    /// the focused element" behavior.
+    pub fn alpha_follows_focused_ancestor(mut self) -> Self {
+        self.alpha_follows_focused_ancestor = true;
         self
     }
     pub fn at(mut self, file: &'static str, line: u32) -> Self {

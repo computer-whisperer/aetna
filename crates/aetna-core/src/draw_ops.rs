@@ -23,7 +23,7 @@ use crate::tree::*;
 /// Walk the laid-out tree and emit draw ops in paint order.
 pub fn draw_ops(root: &El, ui_state: &UiState) -> Vec<DrawOp> {
     let mut out = Vec::new();
-    push_node(root, ui_state, &mut out, None, (0.0, 0.0), 1.0);
+    push_node(root, ui_state, &mut out, None, (0.0, 0.0), 1.0, 1.0);
     out
 }
 
@@ -34,6 +34,7 @@ fn push_node(
     inherited_scissor: Option<Rect>,
     inherited_translate: (f32, f32),
     inherited_opacity: f32,
+    inherited_focus_envelope: f32,
 ) {
     let computed = ui_state.rect(&n.computed_id);
     let state = ui_state.node_state(&n.computed_id);
@@ -54,7 +55,25 @@ fn push_node(
         inherited_translate.0 + n.translate.0,
         inherited_translate.1 + n.translate.1,
     );
-    let opacity = inherited_opacity * n.opacity;
+    // Nodes flagged with `alpha_follows_focused_ancestor` fade with
+    // their nearest focusable ancestor's focus envelope. The flag is
+    // layout-neutral; we just multiply the ancestor's envelope into
+    // this node's paint opacity, and the existing alpha modulation in
+    // `opaque(...)` propagates that to fill / stroke / text colors.
+    let focus_alpha_mul = if n.alpha_follows_focused_ancestor {
+        inherited_focus_envelope
+    } else {
+        1.0
+    };
+    let opacity = inherited_opacity * n.opacity * focus_alpha_mul;
+    // Children inherit the *immediate* focusable ancestor's envelope.
+    // When this node is itself focusable, its envelope replaces the
+    // inherited one; otherwise the inherited value passes through.
+    let child_focus_envelope = if n.focusable {
+        focus_ring_alpha
+    } else {
+        inherited_focus_envelope
+    };
 
     let translated_rect = translated(computed, total_translate);
     // The layout rect, post translate + scale, is the visual boundary the
@@ -209,7 +228,15 @@ fn push_node(
     }
 
     for c in &n.children {
-        push_node(c, ui_state, out, own_scissor, total_translate, opacity);
+        push_node(
+            c,
+            ui_state,
+            out,
+            own_scissor,
+            total_translate,
+            opacity,
+            child_focus_envelope,
+        );
     }
 }
 
