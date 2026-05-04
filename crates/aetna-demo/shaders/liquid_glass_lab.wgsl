@@ -63,22 +63,36 @@ fn sdf_rounded_box(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0))) - r;
 }
 
-fn sample_blur(uv: vec2<f32>, texel: vec2<f32>, radius: f32) -> vec3<f32> {
-    var color = textureSample(backdrop_tex, backdrop_smp, uv).rgb * 0.18;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>( radius, 0.0) * texel).rgb * 0.10;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>(-radius, 0.0) * texel).rgb * 0.10;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>(0.0,  radius) * texel).rgb * 0.10;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>(0.0, -radius) * texel).rgb * 0.10;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>( radius,  radius) * texel).rgb * 0.07;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>(-radius,  radius) * texel).rgb * 0.07;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>( radius, -radius) * texel).rgb * 0.07;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>(-radius, -radius) * texel).rgb * 0.07;
-    let wide = radius * 2.1;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>( wide, 0.0) * texel).rgb * 0.035;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>(-wide, 0.0) * texel).rgb * 0.035;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>(0.0,  wide) * texel).rgb * 0.035;
-    color += textureSample(backdrop_tex, backdrop_smp, uv + vec2<f32>(0.0, -wide) * texel).rgb * 0.035;
-    return color / 0.88;
+fn sample_glass(uv: vec2<f32>, warp: vec2<f32>, texel: vec2<f32>, radius: f32, dispersion: f32) -> vec3<f32> {
+    let uv_r = uv + warp * (1.0 + dispersion);
+    let uv_g = uv + warp;
+    let uv_b = uv + warp * (1.0 - dispersion);
+
+    var r = textureSample(backdrop_tex, backdrop_smp, uv_r).r * 0.18;
+    var g = textureSample(backdrop_tex, backdrop_smp, uv_g).g * 0.18;
+    var b = textureSample(backdrop_tex, backdrop_smp, uv_b).b * 0.18;
+
+    let offsets = array<vec2<f32>, 12>(
+        vec2<f32>( 1.0,  0.0), vec2<f32>(-1.0,  0.0),
+        vec2<f32>( 0.0,  1.0), vec2<f32>( 0.0, -1.0),
+        vec2<f32>( 0.72,  0.72), vec2<f32>(-0.72,  0.72),
+        vec2<f32>( 0.72, -0.72), vec2<f32>(-0.72, -0.72),
+        vec2<f32>( 1.85,  0.32), vec2<f32>(-1.85, -0.32),
+        vec2<f32>( 0.32,  1.85), vec2<f32>(-0.32, -1.85),
+    );
+    let weights = array<f32, 12>(
+        0.080, 0.080, 0.080, 0.080,
+        0.058, 0.058, 0.058, 0.058,
+        0.034, 0.034, 0.034, 0.034,
+    );
+
+    for (var i = 0u; i < 12u; i = i + 1u) {
+        let o = offsets[i] * radius * texel;
+        r += textureSample(backdrop_tex, backdrop_smp, uv_r + o).r * weights[i];
+        g += textureSample(backdrop_tex, backdrop_smp, uv_g + o).g * weights[i];
+        b += textureSample(backdrop_tex, backdrop_smp, uv_b + o).b * weights[i];
+    }
+    return vec3<f32>(r, g, b) / 0.876;
 }
 
 @fragment
@@ -96,7 +110,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let d = sdf_rounded_box(in.local_px, in.half_size, radius);
     let aa = max(fwidth(d), 0.5);
     let inside = 1.0 - smoothstep(-aa, 0.0, d);
-    let rim = 1.0 - smoothstep(0.0, 12.0, abs(d));
+    let rim = (1.0 - smoothstep(0.0, 16.0, abs(d))) * rim_strength;
+    let outer_rim = 1.0 - smoothstep(-3.0, 18.0, d);
 
     let normalized = in.local_px / max(in.half_size, vec2<f32>(1.0));
     let normal = normalize(vec2<f32>(
@@ -107,13 +122,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         sin(in.local_px.y * 0.035 + frame.time * 0.55),
         cos(in.local_px.x * 0.028 - frame.time * 0.45),
     ) * 0.18;
-    let warp = (normal + ripple) * (refract * (4.0 + 18.0 * rim)) / snap_size;
-    let base_uv = in.pos_px / snap_size + warp;
-    var rgb = sample_blur(base_uv, texel, blur_px);
+    let warp_px = (normal + ripple) * (refract * (5.0 + 28.0 * rim));
+    let warp = warp_px / frame.viewport;
+    let base_uv = in.pos_px / frame.viewport;
+    var rgb = sample_glass(base_uv, warp, texel, blur_px, 0.36 * rim + 0.05);
 
     let luma = dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-    rgb = mix(rgb, vec3<f32>(luma), frost * 0.26);
-    rgb = mix(rgb, in.tint.rgb, in.tint.a * 0.36);
+    rgb = mix(rgb, vec3<f32>(luma), frost * 0.18);
+    rgb = mix(rgb, in.tint.rgb, in.tint.a * 0.24);
 
     let uv = clamp(normalized * 0.5 + vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(1.0));
     let top = 1.0 - smoothstep(0.03, 0.42, uv.y);
@@ -121,9 +137,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let diagonal = smoothstep(0.18, 0.64, uv.x + (1.0 - uv.y) * 0.65)
         * (1.0 - smoothstep(0.64, 1.16, uv.x + (1.0 - uv.y) * 0.65));
     let hairline = smoothstep(0.0, 0.58, rim) * (1.0 - smoothstep(0.58, 1.0, rim));
-    let accent_glow = in.accent.rgb * in.accent.a * (0.18 * top + 0.30 * diagonal + 0.20 * hairline);
-    let white_glint = vec3<f32>(1.0) * specular * (0.30 * top + 0.22 * diagonal + 0.18 * hairline);
-    let inner_shadow = vec3<f32>(0.02, 0.025, 0.035) * (0.28 * bottom + 0.20 * rim);
+    let caustic = pow(max(0.0, sin((uv.x * 2.1 + uv.y * 1.4) * 8.0 + rim * 2.2)), 8.0);
+    let accent_glow = in.accent.rgb * in.accent.a * (0.14 * top + 0.22 * diagonal + 0.24 * hairline + 0.10 * caustic);
+    let white_glint = vec3<f32>(1.0) * specular * (0.24 * top + 0.18 * diagonal + 0.28 * hairline + 0.08 * caustic);
+    let inner_shadow = vec3<f32>(0.018, 0.024, 0.034) * (0.20 * bottom + 0.24 * outer_rim);
     rgb = clamp(rgb + accent_glow + white_glint - inner_shadow, vec3<f32>(0.0), vec3<f32>(1.0));
 
     return vec4<f32>(rgb, inside * opacity);

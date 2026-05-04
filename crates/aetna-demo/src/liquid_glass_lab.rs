@@ -3,6 +3,7 @@
 use aetna_core::*;
 
 pub const LIQUID_GLASS_LAB_WGSL: &str = include_str!("../shaders/liquid_glass_lab.wgsl");
+pub const LIQUID_BACKDROP_LAB_WGSL: &str = include_str!("../shaders/liquid_backdrop_lab.wgsl");
 
 pub struct LiquidGlassLab;
 
@@ -12,11 +13,18 @@ impl App for LiquidGlassLab {
     }
 
     fn shaders(&self) -> Vec<AppShader> {
-        vec![AppShader {
-            name: "liquid_glass_lab",
-            wgsl: LIQUID_GLASS_LAB_WGSL,
-            samples_backdrop: true,
-        }]
+        vec![
+            AppShader {
+                name: "liquid_backdrop_lab",
+                wgsl: LIQUID_BACKDROP_LAB_WGSL,
+                samples_backdrop: false,
+            },
+            AppShader {
+                name: "liquid_glass_lab",
+                wgsl: LIQUID_GLASS_LAB_WGSL,
+                samples_backdrop: true,
+            },
+        ]
     }
 
     fn theme(&self) -> Theme {
@@ -52,15 +60,7 @@ pub fn liquid_glass_lab() -> El {
 
 fn ambient_backdrop() -> El {
     stack([
-        row([
-            backdrop_band(Color::rgb(19, 30, 66)),
-            backdrop_band(Color::rgb(20, 96, 112)),
-            backdrop_band(Color::rgb(123, 51, 119)),
-            backdrop_band(Color::rgb(196, 92, 54)),
-        ])
-        .gap(0.0)
-        .align(Align::Stretch)
-        .height(Size::Fill(1.0)),
+        backdrop_field(),
         column([
             row([
                 backdrop_chip("north", tokens::PRIMARY.with_alpha(95)),
@@ -83,21 +83,17 @@ fn ambient_backdrop() -> El {
     .fill(Color::rgb(7, 10, 22))
 }
 
-fn backdrop_band(color: Color) -> El {
-    column([
-        spacer(),
-        El::new(Kind::Custom("glow_strip"))
-            .fill(Color::rgba(255, 255, 255, 34))
-            .radius(24.0)
-            .height(Size::Fixed(180.0))
-            .width(Size::Fill(1.0))
-            .opacity(0.72),
-        spacer(),
-    ])
-    .fill(color)
-    .padding(Sides::xy(22.0, 0.0))
-    .width(Size::Fill(1.0))
-    .height(Size::Fill(1.0))
+fn backdrop_field() -> El {
+    El::new(Kind::Custom("liquid_backdrop"))
+        .shader(
+            ShaderBinding::custom("liquid_backdrop_lab")
+                .color("vec_a", Color::rgba(8, 13, 31, 255))
+                .color("vec_b", Color::rgba(37, 210, 208, 190))
+                .color("vec_c", Color::rgba(164, 74, 200, 178))
+                .color("vec_d", Color::rgba(255, 139, 68, 168)),
+        )
+        .width(Size::Fill(1.0))
+        .height(Size::Fill(1.0))
 }
 
 fn backdrop_chip(label: &'static str, color: Color) -> El {
