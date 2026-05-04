@@ -98,6 +98,14 @@ struct GlassState {
     /// button so the same fixture exercises a few corners of the
     /// shader's parameter space.
     preset: usize,
+    /// Index into `DRIFT_OFFSETS` — cycles on the "Drift" button.
+    /// Drives a `.translate(...).animate(SPRING_BOUNCY)` on the
+    /// glass card so it slides horizontally across the colored
+    /// stripes. The interesting bit is that the snapshot is read
+    /// fresh every frame, so as the glass animates between target
+    /// positions the backdrop it samples actually changes mid-flight
+    /// — animation and backdrop sampling cooperating live.
+    drift: usize,
 }
 
 /// The showcase app. State for every section lives here so switching
@@ -701,13 +709,27 @@ fn glass_backdrop() -> El {
     .width(Size::Fill(1.0))
 }
 
-fn glass_card(preset: &GlassPreset) -> El {
+/// Horizontal offsets the "Drift" button cycles through. Index 0 is
+/// the resting position (centered); subsequent stops shift the glass
+/// onto neighbouring stripes. The 420-wide card and 720-wide content
+/// area leave ±150 of safe range from center; ±120 keeps a visible
+/// margin so the rim is never flush with the panel edge.
+const DRIFT_OFFSETS: &[f32] = &[0.0, -120.0, 120.0];
+
+fn glass_card(preset: &GlassPreset, drift_x: f32) -> El {
     // Custom-shaded container. The shader binding maps preset values
     // into the generic vec_a/vec_b/vec_c slots that
     // `liquid_glass.wgsl` reads. Inner text uses
     // `text_color(TEXT_ON_SOLID_DARK)` rather than the default
     // foreground/muted tokens because the latter assume a stable
     // background; over a refractive glass surface they wash out.
+    //
+    // `.translate(drift_x, 0).animate(SPRING_BOUNCY)` lets the card
+    // physically slide between drift stops with a satisfying spring
+    // overshoot. The library tracks the per-(node, prop) target and
+    // interpolates each frame, so the glass visibly accelerates,
+    // overshoots, settles — all while sampling whatever stripes
+    // happen to be under it that frame.
     column([
         text("Liquid glass")
             .bold()
@@ -721,6 +743,7 @@ fn glass_card(preset: &GlassPreset) -> El {
                 .text_color(tokens::TEXT_ON_SOLID_DARK),
             spacer(),
             button("Next preset").key("glass-next").secondary(),
+            button("Drift →").key("glass-drift").primary(),
         ])
         .gap(tokens::SPACE_SM),
     ])
@@ -737,10 +760,13 @@ fn glass_card(preset: &GlassPreset) -> El {
     )
     .width(Size::Fixed(420.0))
     .height(Size::Fixed(220.0))
+    .translate(drift_x, 0.0)
+    .animate(Timing::SPRING_BOUNCY)
 }
 
 fn glass_view(state: &GlassState) -> El {
     let preset = &GLASS_PRESETS[state.preset % GLASS_PRESETS.len()];
+    let drift_x = DRIFT_OFFSETS[state.drift % DRIFT_OFFSETS.len()];
     stack([
         glass_backdrop(),
         // Centering chrome: column of [spacer, row with glass, spacer]
@@ -749,17 +775,20 @@ fn glass_view(state: &GlassState) -> El {
         // claiming the full column extent.
         column([
             spacer(),
-            row([spacer(), glass_card(preset), spacer()]).height(Size::Hug),
+            row([spacer(), glass_card(preset, drift_x), spacer()]).height(Size::Hug),
             spacer(),
         ]),
     ])
 }
 
 fn glass_on_event(state: &mut GlassState, e: UiEvent) {
-    if matches!(e.kind, UiEventKind::Click | UiEventKind::Activate)
-        && let Some("glass-next") = e.key.as_deref()
-    {
-        state.preset = (state.preset + 1) % GLASS_PRESETS.len();
+    if !matches!(e.kind, UiEventKind::Click | UiEventKind::Activate) {
+        return;
+    }
+    match e.key.as_deref() {
+        Some("glass-next") => state.preset = (state.preset + 1) % GLASS_PRESETS.len(),
+        Some("glass-drift") => state.drift = (state.drift + 1) % DRIFT_OFFSETS.len(),
+        _ => {}
     }
 }
 
@@ -788,6 +817,35 @@ mod tests {
             glass_on_event(&mut s, click("glass-next"));
         }
         assert_eq!(s.preset, 0);
+    }
+
+    #[test]
+    fn glass_drift_cycles_horizontal_offsets() {
+        let mut s = GlassState::default();
+        // Default rest position must be 0 — otherwise the glass card
+        // is offset before the user's first click.
+        assert_eq!(DRIFT_OFFSETS[s.drift], 0.0);
+        glass_on_event(&mut s, click("glass-drift"));
+        assert_ne!(DRIFT_OFFSETS[s.drift], 0.0);
+        for _ in 0..DRIFT_OFFSETS.len() - 1 {
+            glass_on_event(&mut s, click("glass-drift"));
+        }
+        // Wrapped back to rest.
+        assert_eq!(DRIFT_OFFSETS[s.drift], 0.0);
+    }
+
+    #[test]
+    fn drift_offsets_stay_inside_content_bounds() {
+        // Glass card is 420 wide; showcase content area is ~720 wide
+        // (900 viewport − 180 sidebar). Half the spare room is 150 —
+        // any drift offset beyond that pushes the card past the
+        // panel edge or into the sidebar.
+        for &offset in DRIFT_OFFSETS {
+            assert!(
+                offset.abs() <= 150.0,
+                "drift offset {offset} exceeds safe range"
+            );
+        }
     }
 
     #[test]
