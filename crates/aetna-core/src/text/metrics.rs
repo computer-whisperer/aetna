@@ -8,7 +8,9 @@
 //! has a bundled mono font.
 
 use crate::tree::{FontWeight, TextWrap};
-use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Weight, Wrap, fontdb};
+use cosmic_text::{
+    Attrs, Buffer, Cursor, Family, FontSystem, Metrics, Shaping, Weight, Wrap, fontdb,
+};
 use std::cell::RefCell;
 
 const LINE_HEIGHT_MULTIPLIER: f32 = 1.4;
@@ -155,6 +157,135 @@ pub fn hit_text(
             byte_index: cursor.index,
         })
     })
+}
+
+/// Pixel position of the caret at byte offset `byte_index` in the
+/// laid-out form of `text`. Coordinates are relative to the layout
+/// origin (top-left of the rect that the layout pass would draw the
+/// text into); `(0.0, 0.0)` is the start of the first line.
+///
+/// Used by multi-line text widgets: the caret bar's `translate()` is
+/// the result of this call. See [`hit_text`] for the inverse.
+///
+/// `byte_index` is interpreted as a byte offset into the source string
+/// where `\n` separates buffer lines. Out-of-range or non-boundary
+/// indices are clamped to the nearest UTF-8 char boundary.
+pub fn caret_xy(
+    text: &str,
+    byte_index: usize,
+    size: f32,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> (f32, f32) {
+    let (target_line, byte_in_line) = byte_to_line_position(text, byte_index);
+    FONT_SYSTEM.with_borrow_mut(|font_system| {
+        let line_h = line_height(size);
+        let buffer = build_buffer(font_system, text, size, weight, wrap, available_width);
+        let cursor = Cursor::new(target_line, byte_in_line);
+        for run in buffer.layout_runs() {
+            if run.line_i != target_line {
+                continue;
+            }
+            if run.glyphs.is_empty() {
+                return (0.0, run.line_top);
+            }
+            if let Some((x, _w)) = run.highlight(cursor, cursor) {
+                return (x, run.line_top);
+            }
+        }
+        // Phantom line beyond the last visible run (e.g. caret right
+        // after a trailing `\n`). Position by line index alone.
+        (0.0, target_line as f32 * line_h)
+    })
+}
+
+/// Per-visual-line highlight rectangles for the byte range `lo..hi`.
+/// Each rect is `(x, y, width, height)` in layout-origin coordinates;
+/// the list is empty when `lo >= hi`.
+///
+/// Used by multi-line text widgets to paint the selection band: a
+/// selection that spans three visual lines yields three rectangles
+/// (partial on the first, full on the middle, partial on the last).
+pub fn selection_rects(
+    text: &str,
+    lo: usize,
+    hi: usize,
+    size: f32,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> Vec<(f32, f32, f32, f32)> {
+    if lo >= hi {
+        return Vec::new();
+    }
+    let (lo_line, lo_in_line) = byte_to_line_position(text, lo);
+    let (hi_line, hi_in_line) = byte_to_line_position(text, hi);
+    FONT_SYSTEM.with_borrow_mut(|font_system| {
+        let buffer = build_buffer(font_system, text, size, weight, wrap, available_width);
+        let c_lo = Cursor::new(lo_line, lo_in_line);
+        let c_hi = Cursor::new(hi_line, hi_in_line);
+        let mut rects = Vec::new();
+        for run in buffer.layout_runs() {
+            if let Some((x, w)) = run.highlight(c_lo, c_hi) {
+                rects.push((x, run.line_top, w, run.line_height));
+            }
+        }
+        rects
+    })
+}
+
+/// Convert a global byte offset in `text` to the (BufferLine index,
+/// byte-in-line) pair that cosmic-text uses for cursors. `\n`
+/// characters are *not* part of any line — they just bump the line
+/// counter.
+fn byte_to_line_position(text: &str, byte_index: usize) -> (usize, usize) {
+    let byte_index = byte_index.min(text.len());
+    let mut line = 0;
+    let mut line_start = 0;
+    for (i, ch) in text.char_indices() {
+        if i >= byte_index {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            line_start = i + ch.len_utf8();
+        }
+    }
+    (line, byte_index - line_start)
+}
+
+fn build_buffer(
+    font_system: &mut FontSystem,
+    text: &str,
+    size: f32,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> Buffer {
+    let line_h = line_height(size);
+    let mut buffer = Buffer::new(font_system, Metrics::new(size, line_h));
+    buffer.set_wrap(
+        font_system,
+        match wrap {
+            TextWrap::NoWrap => Wrap::None,
+            TextWrap::Wrap => Wrap::WordOrGlyph,
+        },
+    );
+    buffer.set_size(
+        font_system,
+        match wrap {
+            TextWrap::NoWrap => None,
+            TextWrap::Wrap => available_width,
+        },
+        None,
+    );
+    let attrs = Attrs::new()
+        .family(Family::Name("Roboto"))
+        .weight(cosmic_weight(weight));
+    buffer.set_text(font_system, text, attrs, Shaping::Advanced);
+    buffer.shape_until_scroll(font_system, false);
+    buffer
 }
 
 /// Word-wrap text into lines whose measured width stays within
@@ -601,6 +732,101 @@ mod tests {
             );
             prev = hit.byte_index;
         }
+    }
+
+    #[test]
+    fn caret_xy_at_origin_is_zero_zero() {
+        let (x, y) = caret_xy(
+            "hello",
+            0,
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            None,
+        );
+        assert!(x.abs() < 0.01, "x={x}");
+        assert_eq!(y, 0.0);
+    }
+
+    #[test]
+    fn caret_xy_at_end_of_line_is_at_line_width() {
+        let text = "hello";
+        let width = line_width(text, 16.0, FontWeight::Regular, false);
+        let (x, y) = caret_xy(
+            text,
+            text.len(),
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            None,
+        );
+        assert!((x - width).abs() < 1.0, "x={x} expected~{width}");
+        assert_eq!(y, 0.0);
+    }
+
+    #[test]
+    fn caret_xy_drops_to_next_line_after_newline() {
+        let text = "foo\nbar";
+        let line_h = line_height(16.0);
+        // Right after the \n: should land at start of line 1.
+        let (x, y) = caret_xy(text, 4, 16.0, FontWeight::Regular, TextWrap::NoWrap, None);
+        assert!(x.abs() < 0.01, "x={x}");
+        assert!((y - line_h).abs() < 0.01, "y={y} expected~{line_h}");
+    }
+
+    #[test]
+    fn caret_xy_on_phantom_trailing_line_falls_below_text() {
+        let text = "foo\n";
+        let line_h = line_height(16.0);
+        let (x, y) = caret_xy(
+            text,
+            text.len(),
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            None,
+        );
+        assert!(x.abs() < 0.01, "x={x}");
+        assert!(y >= line_h - 0.01, "y={y} expected ≥ line_h={line_h}");
+    }
+
+    #[test]
+    fn selection_rects_returns_one_per_visual_line() {
+        let text = "alpha\nbeta\ngamma";
+        let rects = selection_rects(
+            text,
+            0,
+            text.len(),
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            None,
+        );
+        assert_eq!(
+            rects.len(),
+            3,
+            "expected one rect per BufferLine, got {rects:?}"
+        );
+        // Rects are ordered top-down.
+        assert!(rects[0].1 < rects[1].1);
+        assert!(rects[1].1 < rects[2].1);
+        for (_x, _y, w, _h) in &rects {
+            assert!(*w > 0.0, "empty width: {rects:?}");
+        }
+    }
+
+    #[test]
+    fn selection_rects_empty_for_collapsed_range() {
+        let rects = selection_rects(
+            "alpha",
+            2,
+            2,
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            None,
+        );
+        assert!(rects.is_empty());
     }
 
     #[test]

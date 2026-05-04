@@ -92,8 +92,8 @@ pub use text::atlas::{
     AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, RunStyle, ShapedGlyph, ShapedRun,
 };
 pub use text::metrics::{
-    MeasuredText, TextHit, TextLayout, TextLine, hit_text, layout_text, line_height, line_width,
-    measure_text, wrap_lines,
+    MeasuredText, TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text, line_height,
+    line_width, measure_text, selection_rects, wrap_lines,
 };
 pub use tree::{
     Align, Axis, Color, El, FontWeight, InteractionState, Justify, Kind, Rect, Sides, Size, Source,
@@ -106,4 +106,5 @@ pub use widgets::button::button;
 pub use widgets::card::card;
 pub use widgets::overlay::{modal, modal_panel, overlay, scrim};
 pub use widgets::text::{h1, h2, h3, mono, paragraph, text};
+pub use widgets::text_area::text_area;
 pub use widgets::text_input::{ClipboardKind, TextSelection, text_input};
