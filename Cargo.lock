@@ -73,6 +73,7 @@ dependencies = [
  "aetna-core",
  "aetna-demo",
  "aetna-vulkano",
+ "png 0.17.16",
  "vulkano",
  "winit",
 ]
