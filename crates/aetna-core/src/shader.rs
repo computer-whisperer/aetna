@@ -173,4 +173,5 @@ pub mod stock_wgsl {
     pub const ICON_LINE: &str = include_str!("../shaders/icon_line.wgsl");
     pub const VECTOR: &str = include_str!("../shaders/vector.wgsl");
     pub const VECTOR_RELIEF: &str = include_str!("../shaders/vector_relief.wgsl");
+    pub const VECTOR_GLASS: &str = include_str!("../shaders/vector_glass.wgsl");
 }

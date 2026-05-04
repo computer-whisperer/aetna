@@ -89,7 +89,7 @@ pub enum VectorLineJoin {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum VectorIconMaterial {
+pub enum IconMaterial {
     /// Direct premultiplied color. This is the baseline material and
     /// should match ordinary flat SVG rendering.
     #[default]
@@ -99,6 +99,9 @@ pub enum VectorIconMaterial {
     /// the shared mesh carries enough data for shader-controlled icon
     /// treatments.
     Relief,
+    /// A glossy icon material with local-coordinate glints and a soft
+    /// inner shade. Pairs with translucent/glass surfaces.
+    Glass,
 }
 
 #[repr(C)]

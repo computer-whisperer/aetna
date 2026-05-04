@@ -12,7 +12,7 @@ use aetna_core::paint::{IconRun, PhysicalScissor};
 use aetna_core::shader::stock_wgsl;
 use aetna_core::tree::{Color, IconName, Rect};
 use aetna_core::vector::{
-    VectorIconMaterial, VectorMeshOptions, VectorMeshVertex, append_vector_asset_mesh,
+    IconMaterial, VectorMeshOptions, VectorMeshVertex, append_vector_asset_mesh,
 };
 
 const INITIAL_VERTEX_CAPACITY: usize = 1024;
@@ -31,7 +31,8 @@ pub(crate) struct IconPaint {
     runs: Vec<IconRun>,
     flat_pipeline: wgpu::RenderPipeline,
     relief_pipeline: wgpu::RenderPipeline,
-    material: VectorIconMaterial,
+    glass_pipeline: wgpu::RenderPipeline,
+    material: IconMaterial,
 }
 
 impl IconPaint {
@@ -66,6 +67,13 @@ impl IconPaint {
             "stock::vector_relief",
             stock_wgsl::VECTOR_RELIEF,
         );
+        let glass_pipeline = build_vector_pipeline(
+            device,
+            &pipeline_layout,
+            target_format,
+            "stock::vector_glass",
+            stock_wgsl::VECTOR_GLASS,
+        );
 
         Self {
             vertices: Vec::with_capacity(INITIAL_VERTEX_CAPACITY),
@@ -74,15 +82,16 @@ impl IconPaint {
             runs: Vec::new(),
             flat_pipeline,
             relief_pipeline,
-            material: VectorIconMaterial::Flat,
+            glass_pipeline,
+            material: IconMaterial::Flat,
         }
     }
 
-    pub(crate) fn set_material(&mut self, material: VectorIconMaterial) {
+    pub(crate) fn set_material(&mut self, material: IconMaterial) {
         self.material = material;
     }
 
-    pub(crate) fn material(&self) -> VectorIconMaterial {
+    pub(crate) fn material(&self) -> IconMaterial {
         self.material
     }
 
@@ -147,10 +156,11 @@ impl IconPaint {
         self.runs[index]
     }
 
-    pub(crate) fn pipeline(&self, material: VectorIconMaterial) -> &wgpu::RenderPipeline {
+    pub(crate) fn pipeline(&self, material: IconMaterial) -> &wgpu::RenderPipeline {
         match material {
-            VectorIconMaterial::Flat => &self.flat_pipeline,
-            VectorIconMaterial::Relief => &self.relief_pipeline,
+            IconMaterial::Flat => &self.flat_pipeline,
+            IconMaterial::Relief => &self.relief_pipeline,
+            IconMaterial::Glass => &self.glass_pipeline,
         }
     }
 

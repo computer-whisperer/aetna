@@ -18,7 +18,7 @@ impl App for ReliefIconGallery {
     }
 
     fn theme(&self) -> Theme {
-        Theme::default().with_icon_material(VectorIconMaterial::Relief)
+        Theme::default().with_icon_material(IconMaterial::Relief)
     }
 }
 

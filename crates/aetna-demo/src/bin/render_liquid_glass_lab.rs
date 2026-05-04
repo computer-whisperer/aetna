@@ -1,15 +1,14 @@
-//! Headless wgpu render for the SVG-backed vector icon gallery.
+//! Headless render for the polished liquid-glass material lab.
 //!
-//! Usage: `cargo run -p aetna-demo --bin render_icon_gallery [--material=relief|glass]`
-//! Writes: `crates/aetna-demo/out/icon_gallery[.relief|.glass].wgpu.png`
+//! Usage: `cargo run -p aetna-demo --bin render_liquid_glass_lab`
+//! Writes: `crates/aetna-demo/out/liquid_glass_lab.wgpu.png`
 
 use aetna_core::*;
 use aetna_wgpu::Runner;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let material = material_arg()?;
-    let logical_width: u32 = 880;
-    let logical_height: u32 = 620;
+    let logical_width: u32 = 1100;
+    let logical_height: u32 = 760;
     let scale_factor: f32 = 2.0;
     let width = (logical_width as f32 * scale_factor) as u32;
     let height = (logical_height as f32 * scale_factor) as u32;
@@ -30,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
-            label: Some("aetna_demo::icon_gallery::device"),
+            label: Some("aetna_demo::liquid_glass_lab::device"),
             required_features: wgpu::Features::empty(),
             required_limits: wgpu::Limits::default(),
             memory_hints: wgpu::MemoryHints::Performance,
@@ -40,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("aetna_demo::icon_gallery::target"),
+        label: Some("aetna_demo::liquid_glass_lab::target"),
         size: wgpu::Extent3d {
             width,
             height,
@@ -60,38 +59,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(align) * align;
     let readback_size = (padded_bytes_per_row * height) as u64;
     let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("aetna_demo::icon_gallery::readback"),
+        label: Some("aetna_demo::liquid_glass_lab::readback"),
         size: readback_size,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
 
+    let app = aetna_demo::LiquidGlassLab;
     let mut renderer = Runner::new(&device, &queue, format);
-    renderer.set_theme(Theme::default().with_icon_material(material));
+    renderer.set_theme(app.theme());
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
-    let mut tree = aetna_demo::icon_gallery::icon_gallery();
+    for shader in app.shaders() {
+        renderer.register_shader_with(&device, shader.name, shader.wgsl, shader.samples_backdrop);
+    }
+    let mut tree = app.build();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("aetna_demo::icon_gallery::encoder"),
+        label: Some("aetna_demo::liquid_glass_lab::encoder"),
     });
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("aetna_demo::icon_gallery::pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(bg_color()),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        renderer.draw(&mut pass);
-    }
+    renderer.render(
+        &device,
+        &mut encoder,
+        &texture,
+        &view,
+        wgpu::LoadOp::Clear(bg_color()),
+    );
     encoder.copy_texture_to_buffer(
         wgpu::ImageCopyTexture {
             texture: &texture,
@@ -135,11 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     std::fs::create_dir_all(&out_dir)?;
-    let out = out_dir.join(match material {
-        IconMaterial::Flat => "icon_gallery.wgpu.png",
-        IconMaterial::Relief => "icon_gallery.relief.wgpu.png",
-        IconMaterial::Glass => "icon_gallery.glass.wgpu.png",
-    });
+    let out = out_dir.join("liquid_glass_lab.wgpu.png");
     let file = std::fs::File::create(&out)?;
     let writer = std::io::BufWriter::new(file);
     let mut encoder = png::Encoder::new(writer, width, height);
@@ -149,19 +138,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("wrote {}", out.display());
 
     Ok(())
-}
-
-fn material_arg() -> Result<IconMaterial, Box<dyn std::error::Error>> {
-    let mut material = IconMaterial::Flat;
-    for arg in std::env::args().skip(1) {
-        match arg.as_str() {
-            "--material=flat" => material = IconMaterial::Flat,
-            "--material=relief" => material = IconMaterial::Relief,
-            "--material=glass" => material = IconMaterial::Glass,
-            _ => return Err(format!("unknown argument: {arg}").into()),
-        }
-    }
-    Ok(material)
 }
 
 fn bg_color() -> wgpu::Color {

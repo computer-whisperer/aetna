@@ -19,8 +19,10 @@
 //!   button down/up) so hover/press visuals are immediate.
 
 pub mod icon_gallery;
+pub mod liquid_glass_lab;
 pub mod showcase;
 pub use icon_gallery::{IconGallery, ReliefIconGallery};
+pub use liquid_glass_lab::LiquidGlassLab;
 pub use showcase::Showcase;
 
 use std::sync::Arc;

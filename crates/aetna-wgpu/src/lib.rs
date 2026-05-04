@@ -78,7 +78,7 @@ use aetna_core::state::{AnimationMode, UiState};
 use aetna_core::text::atlas::RunStyle;
 use aetna_core::theme::Theme;
 use aetna_core::tree::{Color, El, FontWeight, IconName, Rect, TextWrap};
-use aetna_core::vector::VectorIconMaterial;
+use aetna_core::vector::IconMaterial;
 
 pub use aetna_core::paint::PaintItem;
 pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
@@ -378,11 +378,11 @@ impl Runner {
     /// Select the stock material used by the vector-icon painter.
     /// Prefer [`Theme::with_icon_material`] for app-level routing; this
     /// remains useful for low-level render fixtures.
-    pub fn set_vector_icon_material(&mut self, material: VectorIconMaterial) {
+    pub fn set_icon_material(&mut self, material: IconMaterial) {
         self.icon_paint.set_material(material);
     }
 
-    pub fn vector_icon_material(&self) -> VectorIconMaterial {
+    pub fn icon_material(&self) -> IconMaterial {
         self.icon_paint.material()
     }
 
