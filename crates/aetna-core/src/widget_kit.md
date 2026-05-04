@@ -14,7 +14,7 @@ A widget is a function (or struct + builder) that returns an [`El`]. To make wid
 
 ### 1. The `El` builder
 
-The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`, `padding`, `gap`, `axis`, `align`, `justify`), visuals (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`), text (`text`, `text_color`, `text_align`, `font_size`, `font_weight`, `mono`, `italic`, `underline`, `strikethrough`, `link`, `wrap_text`), and the paint-time transforms (`opacity`, `translate`, `scale`, `animate`).
+The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`, `padding`, `gap`, `axis`, `align`, `justify`), visuals (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`), text (`text`, `text_color`, `text_align`, `font_size`, `font_weight`, `mono`, `italic`, `underline`, `strikethrough`, `link`, `wrap_text`), the paint-time transforms (`opacity`, `translate`, `scale`, `animate`), and the cross-cutting flags `clip()` (scissor children to this node's painted rect) and `scrollable()` (route wheel events to this node so it can scroll). `Kind::Scroll` already turns both on; `clip()` and `scrollable()` are the primitives behind it, available to any user widget that wants the same behaviour without claiming the structural variant.
 
 ### 2. Identity & a11y tags
 
@@ -81,6 +81,17 @@ State is keyed by `(computed_id, TypeId)`, so multiple widgets can stash multipl
 Hotkeys are an app-level concern (`App::hotkeys()` returns `Vec<(KeyChord, String)>`); the library matches them in `key_down` ahead of focus activation. Widget builders that want a hotkey advertise the chord via the host's hotkey registry — there's no widget-private hotkey table.
 
 Focused-node key capture: a widget that wants to consume Tab/Enter/Escape (and arrow keys / Backspace / Delete / Home / End / character keys) opts in with `.capture_keys()`. While that node is the focused target, the library's Tab traversal and Enter/Space activation defaults are bypassed and the raw `KeyDown` is delivered for the widget to interpret. Registered hotkeys still match first — an app's global Ctrl+S beats a text input's local consumption of S.
+
+### 8. Host integration surface (not for widgets)
+
+A handful of `UiState` methods exist for **host code** — backend `Runner` shells, the `aetna-web` wasm entry, port crates that integrate Aetna into a larger app — not for widget builders. Calling them from inside a widget would be a symmetry violation, since user widgets have no access to the runner-side state these talk to. They live in the public API because the host crates that use them are *also* downstream of `aetna-core`, but they aren't part of the widget kit.
+
+- `UiState::rect_of_key(root, key) -> Option<Rect>` and `UiState::target_of_key(root, key) -> Option<UiTarget>` — let a host look up the laid-out rect (or full event-routing target) for a keyed element. Used to anchor native overlays over a reserved viewport region, or to forward a host-side event into an externally-painted region. Widget code looking up another node's rect should use `LayoutCtx::rect_of_key` (§5) instead — that's the kit primitive.
+- `UiState::set_animation_mode(mode)` — switch between real-time and frozen animation evaluation. Used by headless render fixtures and tests to get deterministic output.
+- `UiState::has_animations_in_flight() -> bool` — host's frame-pacing decision: keep ticking the loop or sleep until input. Each backend `Runner::prepare()` already returns a `needs_redraw` derived from this; calling it directly is for hosts that want the signal independent of `prepare()`.
+- `UiState::debug_summary() -> String` — terse per-frame state dump for `console.log`-style instrumentation in browser builds.
+
+These all interact with library-owned bookkeeping (focus tracker, animations, computed-rect map). They aren't backdoors past the kit — they're a different audience's surface. If a widget ever wants one of these, that's a sign the kit is missing a primitive, and the right move is to add it under §1–§7, not to reach for the host method.
 
 ## What you don't get
 

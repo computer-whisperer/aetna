@@ -1,27 +1,34 @@
 //! `aetna-vulkano::Runner` — peer to `aetna_wgpu::Runner`.
 //!
-//! v5.3 step 5 grows the Runner from the GPU-agnostic skeleton (step 4)
-//! to actually rendering rect-shaped surfaces. It now owns:
+//! Through v5.4 + v0.7 the Runner owns:
 //!
-//! - a single-pass render pass with one color attachment (the host
-//!   creates framebuffers against this and exposes its handle so
-//!   pipelines can be subpass-pinned at construction time);
-//! - one `GraphicsPipeline` per registered shader (stock rounded_rect
+//! - a clear-on-begin render pass and a load-on-begin render pass for
+//!   Pass B after a `BackdropSnapshot` boundary; both are
+//!   attachment-compatible so the same pipelines bind into either;
+//! - one `GraphicsPipeline` per registered shader (stock `rounded_rect`
 //!   up-front, custom shaders added via `register_shader`); focus
-//!   indicators ride on each focusable node's own quad via uniforms
-//!   on `stock::rounded_rect`, no separate ring pipeline;
+//!   indicators ride on each focusable node's own quad via uniforms on
+//!   `stock::rounded_rect`, no separate ring pipeline;
+//! - a `TextPaint` that mirrors `aetna-core`'s glyph atlas to a
+//!   per-page sampled image, packs glyph instances into its own buffer,
+//!   and exposes a text pipeline to the draw loop;
 //! - a persistent quad VBO (the unit-quad strip), a persistent frame
-//!   uniform buffer (viewport extent), a single descriptor set bound to
-//!   it, and a host-visible instance buffer that grows on demand.
+//!   uniform buffer (viewport extent + time), a single set-0 descriptor
+//!   set bound to it, and a host-visible instance buffer that grows on
+//!   demand;
+//! - a snapshot color image + set-1 descriptor set for backdrop-sampling
+//!   shaders, lazily sized to the current target;
+//! - a shared `RunnerCore` (from `aetna-core::runtime`) carrying the
+//!   interaction half — paint-stream scratch, hit-test/focus/hotkey
+//!   state, the input plumbing methods — so behaviour matches
+//!   `aetna-wgpu` by construction rather than by convention.
 //!
 //! `prepare()` walks the `DrawOp` stream produced by `aetna-core`,
-//! packs `Quad`s into the instance buffer, and groups consecutive ones
-//! sharing a pipeline + scissor into `InstanceRun`s. `draw()` walks the
-//! resulting paint stream and records vulkano commands into the host's
-//! primary command-buffer builder.
-//!
-//! Text isn't here yet — `DrawOp::GlyphRun` only closes the current
-//! quad run for now. Step 6 wires up the atlas-mirror text path.
+//! packs `QuadInstance`s into the instance buffer and folds
+//! `GlyphRun`s through `TextPaint`, then groups consecutive items
+//! sharing a pipeline + scissor into runs. `draw()` walks the resulting
+//! paint stream and records vulkano commands into the host's primary
+//! command-buffer builder.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -70,10 +77,6 @@ const INITIAL_INSTANCE_CAPACITY: u64 = 1024;
 pub struct Runner {
     device: Arc<Device>,
     _queue: Arc<Queue>,
-    /// Used to build the runner-owned render pass; kept around so step 7's
-    /// `register_shader` hot-reload path can rebuild pipelines if needed.
-    #[allow(dead_code)]
-    target_format: Format,
 
     memory_alloc: Arc<StandardMemoryAllocator>,
     descriptor_alloc: Arc<StandardDescriptorSetAllocator>,
@@ -291,7 +294,6 @@ impl Runner {
         Self {
             device,
             _queue: queue,
-            target_format,
             memory_alloc,
             descriptor_alloc,
             render_pass,
