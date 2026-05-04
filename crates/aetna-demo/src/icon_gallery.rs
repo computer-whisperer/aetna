@@ -22,6 +22,18 @@ impl App for ReliefIconGallery {
     }
 }
 
+pub struct GlassIconGallery;
+
+impl App for GlassIconGallery {
+    fn build(&self) -> El {
+        icon_gallery()
+    }
+
+    fn theme(&self) -> Theme {
+        Theme::default().with_icon_material(IconMaterial::Glass)
+    }
+}
+
 pub fn icon_gallery() -> El {
     let names = all_icon_names();
     let mut rows = Vec::new();
@@ -40,7 +52,7 @@ pub fn icon_gallery() -> El {
         row([
             column([
                 h1("Vector icons"),
-                paragraph("SVG source parsed by usvg, tessellated by lyon, drawn through wgpu.")
+                paragraph("SVG source parsed by usvg, tessellated by lyon, drawn by the active GPU backend.")
                     .muted()
                     .max_lines(2),
             ])

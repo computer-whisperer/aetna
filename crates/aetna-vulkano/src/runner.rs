@@ -12,6 +12,8 @@
 //! - a `TextPaint` that mirrors `aetna-core`'s glyph atlas to a
 //!   per-page sampled image, packs glyph instances into its own buffer,
 //!   and exposes a text pipeline to the draw loop;
+//! - an `IconPaint` that tessellates built-in SVG assets through the
+//!   shared vector mesh and exposes flat/relief/glass icon pipelines;
 //! - a persistent quad VBO (the unit-quad strip), a persistent frame
 //!   uniform buffer (viewport extent + time), a single set-0 descriptor
 //!   set bound to it, and a host-visible instance buffer that grows on
@@ -24,8 +26,8 @@
 //!   `aetna-wgpu` by construction rather than by convention.
 //!
 //! `prepare()` walks the `DrawOp` stream produced by `aetna-core`,
-//! packs `QuadInstance`s into the instance buffer and folds
-//! `GlyphRun`s through `TextPaint`, then groups consecutive items
+//! packs `QuadInstance`s into the instance buffer and folds text/icon
+//! draws through backend painters, then groups consecutive items
 //! sharing a pipeline + scissor into runs. `draw()` walks the resulting
 //! paint stream and records vulkano commands into the host's primary
 //! command-buffer builder.
@@ -37,6 +39,7 @@ use std::time::Instant;
 use aetna_core::{
     AnimationMode, El, KeyChord, KeyModifiers, PointerButton, Rect, Theme, UiEvent, UiKey, UiState,
     shader::{ShaderHandle, StockShader, stock_wgsl},
+    vector::IconMaterial,
 };
 use smallvec::smallvec;
 use vulkano::{
@@ -62,11 +65,15 @@ use vulkano::{
     render_pass::{Framebuffer, RenderPass, Subpass},
 };
 
+use aetna_core::ir::TextAnchor;
 use aetna_core::paint::{PaintItem, PhysicalScissor, QuadInstance};
-use aetna_core::runtime::RunnerCore;
+use aetna_core::runtime::{RecordedPaint, RunnerCore, TextRecorder};
+use aetna_core::text::atlas::RunStyle;
+use aetna_core::tree::{Color, FontWeight, IconName, TextWrap};
 
 pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
 
+use crate::icon::IconPaint;
 use crate::instance::set_scissor;
 use crate::naga_compile::wgsl_to_spirv;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
@@ -94,6 +101,7 @@ pub struct Runner {
     pipelines: HashMap<ShaderHandle, Arc<GraphicsPipeline>>,
 
     text_paint: TextPaint,
+    icon_paint: IconPaint,
 
     quad_vbo: Subbuffer<[f32]>,
     frame_uniform_buf: Subbuffer<FrameUniforms>,
@@ -144,6 +152,65 @@ pub struct Runner {
 struct SnapshotImage {
     image: Arc<Image>,
     extent: [u32; 3],
+}
+
+struct PaintRecorder<'a> {
+    text: &'a mut TextPaint,
+    icons: &'a mut IconPaint,
+}
+
+impl TextRecorder for PaintRecorder<'_> {
+    fn record(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        color: Color,
+        text: &str,
+        size: f32,
+        weight: FontWeight,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.text.record(
+            rect,
+            scissor,
+            color,
+            text,
+            size,
+            weight,
+            wrap,
+            anchor,
+            scale_factor,
+        )
+    }
+
+    fn record_runs(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        runs: &[(String, RunStyle)],
+        size: f32,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.text
+            .record_runs(rect, scissor, runs, size, wrap, anchor, scale_factor)
+    }
+
+    fn record_icon(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        name: IconName,
+        color: Color,
+        _size: f32,
+        stroke_width: f32,
+        _scale_factor: f32,
+    ) -> RecordedPaint {
+        RecordedPaint::Icon(self.icons.record(rect, scissor, name, color, stroke_width))
+    }
 }
 
 impl Runner {
@@ -273,6 +340,9 @@ impl Runner {
             cmd_alloc,
             text_subpass,
         );
+        let icon_subpass =
+            Subpass::from(render_pass.clone(), 0).expect("aetna-vulkano: icon subpass 0");
+        let icon_paint = IconPaint::new(device.clone(), memory_alloc.clone(), icon_subpass);
 
         // Filtering sampler bound at @group(1) @binding(1) for every
         // backdrop-sampling pipeline. Mirrors the wgpu side: linear
@@ -300,6 +370,7 @@ impl Runner {
             load_render_pass,
             pipelines,
             text_paint,
+            icon_paint,
             quad_vbo,
             frame_uniform_buf,
             frame_descriptor_set,
@@ -333,11 +404,23 @@ impl Runner {
 
     /// Set the theme used to resolve implicit widget surfaces to shaders.
     pub fn set_theme(&mut self, theme: Theme) {
+        self.icon_paint.set_material(theme.icon_material());
         self.core.set_theme(theme);
     }
 
     pub fn theme(&self) -> &Theme {
         self.core.theme()
+    }
+
+    /// Select the stock material used by the vector-icon painter.
+    /// Prefer [`Theme::with_icon_material`] for app-level routing; this
+    /// is a low-level fixture/testing override.
+    pub fn set_icon_material(&mut self, material: IconMaterial) {
+        self.icon_paint.set_material(material);
+    }
+
+    pub fn icon_material(&self) -> IconMaterial {
+        self.icon_paint.material()
     }
 
     /// Register a custom shader. WGSL → SPIR-V at register time; bad
@@ -411,8 +494,13 @@ impl Runner {
                 .prepare_layout(root, viewport, scale_factor, &mut timings);
 
         self.text_paint.frame_begin();
+        self.icon_paint.frame_begin();
         let pipelines = &self.pipelines;
         let backdrop_shaders = &self.backdrop_shaders;
+        let mut recorder = PaintRecorder {
+            text: &mut self.text_paint,
+            icons: &mut self.icon_paint,
+        };
         self.core.prepare_paint(
             &ops,
             |shader| pipelines.contains_key(shader),
@@ -420,7 +508,7 @@ impl Runner {
                 ShaderHandle::Custom(name) => backdrop_shaders.contains(name),
                 ShaderHandle::Stock(_) => false,
             },
-            &mut self.text_paint,
+            &mut recorder,
             scale_factor,
             &mut timings,
         );
@@ -445,6 +533,7 @@ impl Runner {
         // Text uploads run through their own one-shot command buffer
         // submitted+waited inside flush().
         self.text_paint.flush();
+        self.icon_paint.flush();
         {
             // FrameUniforms.viewport is the **logical** viewport — the
             // vertex shader divides per-instance positions (which layout
@@ -741,11 +830,27 @@ impl Runner {
                     // a no-op and any backdrop draws after it sample
                     // undefined memory.
                 }
-                PaintItem::IconRun(_) => {
-                    // Vulkano currently records icons through
-                    // TextRecorder's fallback glyph path, so this
-                    // branch should not be reached until a native
-                    // vector-icon painter is added for this backend.
+                PaintItem::IconRun(idx) => {
+                    let run = self.icon_paint.run(idx);
+                    set_scissor(builder, run.scissor, full);
+                    let icon_pipeline = self.icon_paint.pipeline(run.material);
+                    builder
+                        .bind_pipeline_graphics(icon_pipeline.clone())
+                        .expect("bind_pipeline_graphics icon");
+                    builder
+                        .bind_descriptor_sets(
+                            PipelineBindPoint::Graphics,
+                            icon_pipeline.layout().clone(),
+                            0,
+                            self.frame_descriptor_set.clone(),
+                        )
+                        .expect("bind_descriptor_sets icon");
+                    builder
+                        .bind_vertex_buffers(0, self.icon_paint.vertex_buf().clone())
+                        .expect("bind_vertex_buffers icon");
+                    unsafe {
+                        builder.draw(run.count, 1, run.first, 0).expect("draw icon");
+                    }
                 }
                 PaintItem::Text(idx) => {
                     let run = self.text_paint.run(idx);

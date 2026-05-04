@@ -179,6 +179,7 @@ impl<A: App> ApplicationHandler for Host<A> {
         let (swapchain, images, image_format) = create_swapchain(&device, surface, &window);
 
         let mut runner = Runner::new(device.clone(), queue.clone(), image_format);
+        runner.set_theme(self.app.theme());
         let extent: [u32; 2] = window.inner_size().into();
         runner.set_surface_size(extent[0], extent[1]);
         // Register every shader the app declared, including backdrop-
@@ -336,6 +337,7 @@ impl<A: App> ApplicationHandler for Host<A> {
                 }
 
                 let mut tree = self.app.build();
+                rcx.runner.set_theme(self.app.theme());
                 rcx.runner.set_hotkeys(self.app.hotkeys());
                 let scale_factor = rcx.window.scale_factor() as f32;
                 let viewport = Rect::new(

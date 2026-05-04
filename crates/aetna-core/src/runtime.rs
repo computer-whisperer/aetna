@@ -715,9 +715,9 @@ pub trait TextRecorder {
         scale_factor: f32,
     ) -> Range<usize>;
 
-    /// Append a vector icon. The default keeps non-wgpu backends on the
-    /// previous text-symbol fallback until they implement a native
-    /// vector icon painter.
+    /// Append a vector icon. Backends with a native vector painter
+    /// override this; the default keeps experimental/simple backends on
+    /// the previous text-symbol fallback.
     #[allow(clippy::too_many_arguments)]
     fn record_icon(
         &mut self,
