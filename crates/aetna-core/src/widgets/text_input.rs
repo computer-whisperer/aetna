@@ -93,14 +93,14 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
 
     if lo == hi {
         // Collapsed: [text(prefix), caret, text(suffix)]
-        children.push(text(&value[..head]).font_size(tokens::FONT_BASE));
+        children.push(text_segment(&value[..head]));
         children.push(caret_bar);
-        children.push(text(&value[head..]).font_size(tokens::FONT_BASE));
+        children.push(text_segment(&value[head..]));
     } else {
         let prefix = &value[..lo];
         let selected = &value[lo..hi];
         let suffix = &value[hi..];
-        children.push(text(prefix).font_size(tokens::FONT_BASE));
+        children.push(text_segment(prefix));
         // Caret renders on the side of the selection where `head` sits
         // — at `lo` if head was the smaller end, otherwise at `hi`. The
         // selection band always renders the same way regardless.
@@ -111,7 +111,7 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
             children.push(selection_segment(selected));
             children.push(caret_bar);
         }
-        children.push(text(suffix).font_size(tokens::FONT_BASE));
+        children.push(text_segment(suffix));
     }
 
     El::new(Kind::Custom("text_input"))
@@ -131,12 +131,25 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
         .children(children)
 }
 
+/// Build a text leaf with a fixed line-height-tall box so every text
+/// segment inside the input has the same cross-axis size. With
+/// `Size::Hug`, cosmic-text-measured heights can drift between
+/// strings (different ascender/descender extents per glyph set), and
+/// the row's `Align::Center` would then place each leaf at a slightly
+/// different y — the suffix appearing to "jump" when the caret moves.
+/// Pinning the leaf's height eliminates the variance.
+fn text_segment(s: &str) -> El {
+    text(s)
+        .font_size(tokens::FONT_BASE)
+        .height(Size::Fixed(line_height_px()))
+}
+
 fn caret_bar() -> El {
     El::new(Kind::Custom("text_input_caret"))
         .style_profile(StyleProfile::Solid)
         .fill(tokens::TEXT_FOREGROUND)
         .width(Size::Fixed(2.0))
-        .height(Size::Fixed(tokens::FONT_BASE))
+        .height(Size::Fixed(line_height_px()))
         .radius(1.0)
 }
 
@@ -145,9 +158,13 @@ fn selection_segment(selected: &str) -> El {
         .style_profile(StyleProfile::Solid)
         .fill(tokens::SELECTION_BG)
         .radius(2.0);
-    crate::tree::stack([bg, text(selected).font_size(tokens::FONT_BASE)])
+    crate::tree::stack([bg, text_segment(selected)])
         .width(Size::Hug)
-        .height(Size::Hug)
+        .height(Size::Fixed(line_height_px()))
+}
+
+fn line_height_px() -> f32 {
+    metrics::line_height(tokens::FONT_BASE)
 }
 
 /// Fold a routed [`UiEvent`] into `value` and `selection`. Returns
@@ -177,10 +194,18 @@ pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &Ui
             let Some(insert) = event.text.as_deref() else {
                 return false;
             };
-            if insert.is_empty() {
+            // winit emits the platform's text representation alongside
+            // the named-key event for several "named" keys: Backspace
+            // → "\u{8}", Delete → "\u{7f}", Enter → "\r"/"\n", Escape →
+            // "\u{1b}", Tab → "\t". Without filtering, the named-key
+            // handler runs (correct edit) AND the text gets inserted
+            // (control char appears in the value). Strip control chars
+            // so only printable input ever reaches the field.
+            let filtered: String = insert.chars().filter(|c| !c.is_control()).collect();
+            if filtered.is_empty() {
                 return false;
             }
-            replace_selection(value, selection, insert);
+            replace_selection(value, selection, &filtered);
             true
         }
         UiEventKind::KeyDown => {
@@ -760,6 +785,63 @@ mod tests {
         assert_eq!(sel, TextSelection::caret(9));
 
         assert_eq!(select_all(&value), TextSelection::range(0, value.len()));
+    }
+
+    #[test]
+    fn apply_text_input_filters_control_chars() {
+        // winit emits "\u{8}" alongside the named Backspace key event.
+        // The TextInput branch must reject it so only the KeyDown
+        // handler edits the value.
+        let mut value = String::from("hi");
+        let mut sel = TextSelection::caret(2);
+        for ctrl in ["\u{8}", "\u{7f}", "\r", "\n", "\u{1b}", "\t"] {
+            assert!(
+                !apply_event(&mut value, &mut sel, &ev_text(ctrl)),
+                "expected {ctrl:?} to be filtered"
+            );
+            assert_eq!(value, "hi");
+            assert_eq!(sel, TextSelection::caret(2));
+        }
+        // Mixed input — printable parts come through, control parts drop.
+        assert!(apply_event(&mut value, &mut sel, &ev_text("a\u{8}b")));
+        assert_eq!(value, "hiab");
+        assert_eq!(sel, TextSelection::caret(4));
+    }
+
+    #[test]
+    fn text_segments_share_y_after_layout_so_glyphs_align() {
+        // A regression test for the v0.8.2 visual bug: in a row with
+        // Align::Center, two text leaves with different intrinsic
+        // heights would land at different y. We pin the height of
+        // every text segment + caret to line_height(FONT_BASE) so all
+        // children get identical cross_off.
+        use crate::draw_ops::draw_ops;
+        use crate::ir::DrawOp;
+        let mut tree =
+            crate::column([text_input("Type", TextSelection::caret(1)).key("ti")]).padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+
+        // Walk the resolved draw ops — each glyph run for the
+        // text_input's prefix/suffix has a `rect` whose y must match.
+        let ops = draw_ops(&tree, &state);
+        let glyph_ys: Vec<f32> = ops
+            .iter()
+            .filter_map(|op| match op {
+                DrawOp::GlyphRun { id, rect, .. } if id.contains("text_input[ti]") => {
+                    Some(rect.y)
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(glyph_ys.len() >= 2, "expected prefix + suffix glyph runs");
+        let first = glyph_ys[0];
+        for y in &glyph_ys {
+            assert!(
+                (y - first).abs() < 0.01,
+                "text segments split at y={glyph_ys:?}; expected all equal"
+            );
+        }
     }
 
     #[test]
