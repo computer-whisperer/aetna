@@ -78,6 +78,7 @@ use aetna_core::state::{AnimationMode, UiState};
 use aetna_core::text::atlas::RunStyle;
 use aetna_core::theme::Theme;
 use aetna_core::tree::{Color, El, FontWeight, IconName, Rect, TextWrap};
+use aetna_core::vector::VectorIconMaterial;
 
 pub use aetna_core::paint::PaintItem;
 pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
@@ -371,6 +372,19 @@ impl Runner {
 
     pub fn theme(&self) -> &Theme {
         self.core.theme()
+    }
+
+    /// Select the stock material used by the vector-icon painter.
+    ///
+    /// This is deliberately backend-level for now: it lets us validate
+    /// the shared vector mesh's shader hooks before promoting icon
+    /// material routing into the higher-level [`Theme`] API.
+    pub fn set_vector_icon_material(&mut self, material: VectorIconMaterial) {
+        self.icon_paint.set_material(material);
+    }
+
+    pub fn vector_icon_material(&self) -> VectorIconMaterial {
+        self.icon_paint.material()
     }
 
     /// Register a custom shader. `name` is the same string passed to
@@ -860,7 +874,7 @@ impl Runner {
                 PaintItem::IconRun(index) => {
                     let run = self.icon_paint.run(index);
                     set_scissor(pass, run.scissor, full);
-                    pass.set_pipeline(self.icon_paint.pipeline());
+                    pass.set_pipeline(self.icon_paint.pipeline(run.material));
                     pass.set_bind_group(0, &self.quad_bind_group, &[]);
                     pass.set_vertex_buffer(0, self.icon_paint.vertex_buf().slice(..));
                     pass.draw(run.first..run.first + run.count, 0..1);

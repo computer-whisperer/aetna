@@ -172,4 +172,5 @@ pub mod stock_wgsl {
     pub const TEXT: &str = include_str!("../shaders/text.wgsl");
     pub const ICON_LINE: &str = include_str!("../shaders/icon_line.wgsl");
     pub const VECTOR: &str = include_str!("../shaders/vector.wgsl");
+    pub const VECTOR_RELIEF: &str = include_str!("../shaders/vector_relief.wgsl");
 }

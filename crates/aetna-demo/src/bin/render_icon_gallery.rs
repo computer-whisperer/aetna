@@ -1,12 +1,13 @@
 //! Headless wgpu render for the SVG-backed vector icon gallery.
 //!
-//! Usage: `cargo run -p aetna-demo --bin render_icon_gallery`
-//! Writes: `crates/aetna-demo/out/icon_gallery.wgpu.png`
+//! Usage: `cargo run -p aetna-demo --bin render_icon_gallery [--material=relief]`
+//! Writes: `crates/aetna-demo/out/icon_gallery[.relief].wgpu.png`
 
 use aetna_core::*;
 use aetna_wgpu::Runner;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let material = material_arg()?;
     let logical_width: u32 = 880;
     let logical_height: u32 = 620;
     let scale_factor: f32 = 2.0;
@@ -66,6 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut renderer = Runner::new(&device, &queue, format);
+    renderer.set_vector_icon_material(material);
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
     let mut tree = aetna_demo::icon_gallery::icon_gallery();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
@@ -133,7 +135,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     std::fs::create_dir_all(&out_dir)?;
-    let out = out_dir.join("icon_gallery.wgpu.png");
+    let out = out_dir.join(match material {
+        VectorIconMaterial::Flat => "icon_gallery.wgpu.png",
+        VectorIconMaterial::Relief => "icon_gallery.relief.wgpu.png",
+    });
     let file = std::fs::File::create(&out)?;
     let writer = std::io::BufWriter::new(file);
     let mut encoder = png::Encoder::new(writer, width, height);
@@ -143,6 +148,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("wrote {}", out.display());
 
     Ok(())
+}
+
+fn material_arg() -> Result<VectorIconMaterial, Box<dyn std::error::Error>> {
+    let mut material = VectorIconMaterial::Flat;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--material=flat" => material = VectorIconMaterial::Flat,
+            "--material=relief" => material = VectorIconMaterial::Relief,
+            _ => return Err(format!("unknown argument: {arg}").into()),
+        }
+    }
+    Ok(material)
 }
 
 fn bg_color() -> wgpu::Color {

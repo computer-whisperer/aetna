@@ -11,7 +11,9 @@ use aetna_core::icons::icon_vector_asset;
 use aetna_core::paint::{IconRun, PhysicalScissor};
 use aetna_core::shader::stock_wgsl;
 use aetna_core::tree::{Color, IconName, Rect};
-use aetna_core::vector::{VectorMeshOptions, VectorMeshVertex, append_vector_asset_mesh};
+use aetna_core::vector::{
+    VectorIconMaterial, VectorMeshOptions, VectorMeshVertex, append_vector_asset_mesh,
+};
 
 const INITIAL_VERTEX_CAPACITY: usize = 1024;
 
@@ -27,7 +29,9 @@ pub(crate) struct IconPaint {
     vertex_buf: wgpu::Buffer,
     vertex_capacity: usize,
     runs: Vec<IconRun>,
-    pipeline: wgpu::RenderPipeline,
+    flat_pipeline: wgpu::RenderPipeline,
+    relief_pipeline: wgpu::RenderPipeline,
+    material: VectorIconMaterial,
 }
 
 impl IconPaint {
@@ -48,55 +52,38 @@ impl IconPaint {
             bind_group_layouts: &[frame_bind_layout],
             push_constant_ranges: &[],
         });
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("stock::vector"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(stock_wgsl::VECTOR)),
-        });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("stock::vector"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<VectorMeshVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &VERTEX_ATTRS,
-                }],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let flat_pipeline = build_vector_pipeline(
+            device,
+            &pipeline_layout,
+            target_format,
+            "stock::vector",
+            stock_wgsl::VECTOR,
+        );
+        let relief_pipeline = build_vector_pipeline(
+            device,
+            &pipeline_layout,
+            target_format,
+            "stock::vector_relief",
+            stock_wgsl::VECTOR_RELIEF,
+        );
 
         Self {
             vertices: Vec::with_capacity(INITIAL_VERTEX_CAPACITY),
             vertex_buf,
             vertex_capacity: INITIAL_VERTEX_CAPACITY,
             runs: Vec::new(),
-            pipeline,
+            flat_pipeline,
+            relief_pipeline,
+            material: VectorIconMaterial::Flat,
         }
+    }
+
+    pub(crate) fn set_material(&mut self, material: VectorIconMaterial) {
+        self.material = material;
+    }
+
+    pub(crate) fn material(&self) -> VectorIconMaterial {
+        self.material
     }
 
     pub(crate) fn frame_begin(&mut self) {
@@ -135,6 +122,7 @@ impl IconPaint {
             scissor,
             first,
             count,
+            material: self.material,
         });
         start..self.runs.len()
     }
@@ -159,11 +147,64 @@ impl IconPaint {
         self.runs[index]
     }
 
-    pub(crate) fn pipeline(&self) -> &wgpu::RenderPipeline {
-        &self.pipeline
+    pub(crate) fn pipeline(&self, material: VectorIconMaterial) -> &wgpu::RenderPipeline {
+        match material {
+            VectorIconMaterial::Flat => &self.flat_pipeline,
+            VectorIconMaterial::Relief => &self.relief_pipeline,
+        }
     }
 
     pub(crate) fn vertex_buf(&self) -> &wgpu::Buffer {
         &self.vertex_buf
     }
+}
+
+fn build_vector_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    target_format: wgpu::TextureFormat,
+    label: &'static str,
+    wgsl: &'static str,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(label),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(wgsl)),
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<VectorMeshVertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &VERTEX_ATTRS,
+            }],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: target_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None,
+    })
 }

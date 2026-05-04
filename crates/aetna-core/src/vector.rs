@@ -88,6 +88,19 @@ pub enum VectorLineJoin {
     Bevel,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum VectorIconMaterial {
+    /// Direct premultiplied color. This is the baseline material and
+    /// should match ordinary flat SVG rendering.
+    #[default]
+    Flat,
+    /// A proof material that uses local vector coordinates to add a
+    /// subtle top-left highlight and lower shadow. This exists to prove
+    /// the shared mesh carries enough data for shader-controlled icon
+    /// treatments.
+    Relief,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub struct VectorMeshVertex {

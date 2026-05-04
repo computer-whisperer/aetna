@@ -21,6 +21,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
 use crate::tree::{Color, Rect};
+use crate::vector::VectorIconMaterial;
 
 /// One instance of a rect-shaped shader. Layout is shared between
 /// `stock::rounded_rect` and any custom shader registered via the host's
@@ -101,6 +102,7 @@ pub struct IconRun {
     pub scissor: Option<PhysicalScissor>,
     pub first: u32,
     pub count: u32,
+    pub material: VectorIconMaterial,
 }
 
 /// Scissor in **physical pixels** (host swapchain extent), already

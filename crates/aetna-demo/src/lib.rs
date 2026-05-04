@@ -25,7 +25,7 @@ pub use showcase::Showcase;
 
 use std::sync::Arc;
 
-use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey};
+use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey, VectorIconMaterial};
 use aetna_wgpu::Runner;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -43,12 +43,22 @@ pub fn run<A: App + 'static>(
     viewport: Rect,
     app: A,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_icon_material(title, viewport, app, VectorIconMaterial::Flat)
+}
+
+pub fn run_with_icon_material<A: App + 'static>(
+    title: &'static str,
+    viewport: Rect,
+    app: A,
+    icon_material: VectorIconMaterial,
+) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
     let mut host = Host {
         title,
         viewport,
         app,
+        icon_material,
         gfx: None,
         last_pointer: None,
         modifiers: KeyModifiers::default(),
@@ -61,6 +71,7 @@ struct Host<A: App> {
     title: &'static str,
     viewport: Rect,
     app: A,
+    icon_material: VectorIconMaterial,
     gfx: Option<Gfx>,
     /// Last pointer position in logical pixels (winit reports physical;
     /// we divide by the window's scale factor before storing).
@@ -138,6 +149,7 @@ impl<A: App> ApplicationHandler for Host<A> {
         surface.configure(&device, &config);
 
         let mut renderer = Runner::new(&device, &queue, format);
+        renderer.set_vector_icon_material(self.icon_material);
         renderer.set_surface_size(config.width, config.height);
         // Register any custom shaders the app declared. Done once at
         // startup; pipelines are cached for the runner's lifetime.
