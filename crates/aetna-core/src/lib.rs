@@ -89,7 +89,7 @@ pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
 pub use inspect::dump_tree;
 pub use ir::{DrawOp, TextAnchor};
-pub use layout::{LayoutCtx, LayoutFn, layout};
+pub use layout::{LayoutCtx, LayoutFn, VirtualItems, layout};
 pub use lint::{Finding, FindingKind, LintReport, lint};
 pub use manifest::{draw_ops_text, shader_manifest};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
@@ -105,7 +105,7 @@ pub use text_metrics::{
 };
 pub use tree::{
     Align, Axis, Color, El, FontWeight, InteractionState, Justify, Kind, Rect, Sides, Size, Source,
-    TextAlign, TextWrap, column, divider, row, scroll, spacer, stack,
+    TextAlign, TextWrap, column, divider, row, scroll, spacer, stack, virtual_list,
 };
 
 pub use badge::badge;

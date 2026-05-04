@@ -76,6 +76,56 @@ impl std::fmt::Debug for LayoutFn {
     }
 }
 
+/// v0.5 — virtualized list state attached to a [`Kind::VirtualList`]
+/// node. Holds the row count, fixed row height, and the closure that
+/// realizes a row by global index. Set via [`crate::virtual_list`];
+/// the layout pass calls `build_row(i)` only for indices whose rect
+/// intersects the viewport.
+///
+/// ## Scope (v0.5 step 2)
+///
+/// - **Fixed row height** — every row is `row_height` logical pixels
+///   tall. Variable-height rows would require an estimated height +
+///   measure cache; deferred to a later slice.
+/// - **Vertical only** — the v0.5 fixture is feed/chat_log-shaped,
+///   which is always vertical. A horizontal variant can come later.
+/// - **No row pooling** — visible rows are rebuilt from scratch each
+///   layout pass. Fine for thousands of items; if it bottlenecks we
+///   add a pool keyed by stable row keys.
+#[derive(Clone)]
+pub struct VirtualItems {
+    pub count: usize,
+    pub row_height: f32,
+    pub build_row: Arc<dyn Fn(usize) -> El + Send + Sync>,
+}
+
+impl VirtualItems {
+    pub fn new<F>(count: usize, row_height: f32, build_row: F) -> Self
+    where
+        F: Fn(usize) -> El + Send + Sync + 'static,
+    {
+        assert!(
+            row_height > 0.0,
+            "VirtualItems::new requires row_height > 0.0 (got {row_height})"
+        );
+        VirtualItems {
+            count,
+            row_height,
+            build_row: Arc::new(build_row),
+        }
+    }
+}
+
+impl std::fmt::Debug for VirtualItems {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VirtualItems")
+            .field("count", &self.count)
+            .field("row_height", &self.row_height)
+            .field("build_row", &"<fn>")
+            .finish()
+    }
+}
+
 /// Context handed to a [`LayoutFn`]. Marked `#[non_exhaustive]` so
 /// future fields (intrinsic-at-width, scroll context, …) can be added
 /// without breaking author code that currently reads `container` /
@@ -138,11 +188,16 @@ fn role_token(k: &Kind) -> &'static str {
         Kind::Scrim => "scrim",
         Kind::Modal => "modal",
         Kind::Scroll => "scroll",
+        Kind::VirtualList => "virtual_list",
         Kind::Custom(name) => name,
     }
 }
 
 fn layout_children(node: &mut El, node_rect: Rect, ui_state: &mut UiState) {
+    if let Some(items) = node.virtual_items.clone() {
+        layout_virtual(node, node_rect, items, ui_state);
+        return;
+    }
     if let Some(layout_fn) = node.layout_override.clone() {
         layout_custom(node, node_rect, layout_fn, ui_state);
         if node.scrollable {
@@ -191,6 +246,55 @@ fn layout_custom(node: &mut El, node_rect: Rect, layout_fn: LayoutFn, ui_state: 
             .insert(c.computed_id.clone(), c_rect);
         layout_children(c, c_rect, ui_state);
     }
+}
+
+/// v0.5 — virtualized list realization. Reads the stored scroll offset,
+/// clamps it to the available range, computes the visible row index
+/// range, calls `build_row(i)` for each, and lays them out at the
+/// scroll-shifted Y positions. Replaces both the column distribution
+/// and the scroll post-pass for `Kind::VirtualList` nodes.
+fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state: &mut UiState) {
+    let inner = node_rect.inset(node.padding);
+    let total_h = items.count as f32 * items.row_height;
+    let max_offset = (total_h - inner.h).max(0.0);
+    let stored = ui_state
+        .scroll_offsets
+        .get(&node.computed_id)
+        .copied()
+        .unwrap_or(0.0);
+    let offset = stored.clamp(0.0, max_offset);
+    ui_state
+        .scroll_offsets
+        .insert(node.computed_id.clone(), offset);
+
+    if items.count == 0 {
+        node.children.clear();
+        return;
+    }
+
+    // Visible index range — `start` floors, `end` ceils, both clamped.
+    let start = (offset / items.row_height).floor() as usize;
+    let end = (((offset + inner.h) / items.row_height).ceil() as usize).min(items.count);
+
+    let mut realized: Vec<El> = (start..end).map(|i| (items.build_row)(i)).collect();
+    for (vis_i, child) in realized.iter_mut().enumerate() {
+        let global_i = start + vis_i;
+        let role = role_token(&child.kind);
+        let suffix = match (&child.key, role) {
+            (Some(k), r) => format!("{r}[{k}]"),
+            (None, r) => format!("{r}.{global_i}"),
+        };
+        let child_path = format!("{}.{}", node.computed_id, suffix);
+        assign_id(child, &child_path);
+
+        let row_y = inner.y + global_i as f32 * items.row_height - offset;
+        let c_rect = Rect::new(inner.x, row_y, inner.w, items.row_height);
+        ui_state
+            .computed_rects
+            .insert(child.computed_id.clone(), c_rect);
+        layout_children(child, c_rect, ui_state);
+    }
+    node.children = realized;
 }
 
 /// Scrollable post-pass: measure content height from the laid-out
@@ -400,6 +504,20 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
             panic!(
                 "layout_override on {:?} requires Size::Fixed or Size::Fill on both axes; \
                  Size::Hug is not supported for custom layouts in v0.5",
+                c.computed_id,
+            );
+        }
+        return apply_min(c, 0.0, 0.0);
+    }
+    if c.virtual_items.is_some() {
+        // VirtualList sizes the whole viewport (the parent decides) and
+        // realizes only on-screen rows. Hug-sizing it would mean
+        // "shrink to fit all rows", defeating virtualization. Same
+        // shape as the layout_override guard.
+        if matches!(c.width, Size::Hug) || matches!(c.height, Size::Hug) {
+            panic!(
+                "virtual_list on {:?} requires Size::Fixed or Size::Fill on both axes; \
+                 Size::Hug would defeat virtualization",
                 c.computed_id,
             );
         }
@@ -737,6 +855,131 @@ mod tests {
         .height(Size::Fixed(200.0));
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+    }
+
+    #[test]
+    fn virtual_list_realizes_only_visible_rows() {
+        // 100 rows × 50px each in a 200px viewport, offset = 120.
+        // Visible range: rows whose y in [-50, 200) → start = floor(120/50) = 2,
+        // end = ceil((120+200)/50) = ceil(6.4) = 7. Five rows realized.
+        let mut root = crate::tree::virtual_list(100, 50.0, |i| {
+            crate::text::text(format!("row {i}")).key(format!("row-{i}"))
+        });
+        let mut state = UiState::new();
+        assign_ids(&mut root);
+        state.scroll_offsets.insert(root.computed_id.clone(), 120.0);
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        assert_eq!(
+            root.children.len(),
+            5,
+            "expected 5 realized rows, got {}",
+            root.children.len()
+        );
+        // Identity check: the first realized row should be the row keyed "row-2".
+        assert_eq!(root.children[0].key.as_deref(), Some("row-2"));
+        assert_eq!(root.children[4].key.as_deref(), Some("row-6"));
+        // Position check: first realized row's y = inner.y + 2*50 - 120 = -20.
+        let r0 = state.rect(&root.children[0].computed_id);
+        assert!(
+            (r0.y - (-20.0)).abs() < 0.5,
+            "row 2 expected y≈-20, got {}",
+            r0.y
+        );
+    }
+
+    #[test]
+    fn virtual_list_keyed_rows_have_stable_computed_id_across_scroll() {
+        let make_root = || {
+            crate::tree::virtual_list(50, 50.0, |i| {
+                crate::text::text(format!("row {i}")).key(format!("row-{i}"))
+            })
+        };
+
+        let mut state = UiState::new();
+        let mut root_a = make_root();
+        assign_ids(&mut root_a);
+        // Scroll so row 5 is visible.
+        state
+            .scroll_offsets
+            .insert(root_a.computed_id.clone(), 250.0);
+        layout(&mut root_a, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        let id_at_offset_a = root_a
+            .children
+            .iter()
+            .find(|c| c.key.as_deref() == Some("row-5"))
+            .unwrap()
+            .computed_id
+            .clone();
+
+        // Re-layout with a different offset — row 5 is still visible.
+        let mut root_b = make_root();
+        assign_ids(&mut root_b);
+        state
+            .scroll_offsets
+            .insert(root_b.computed_id.clone(), 200.0);
+        layout(&mut root_b, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        let id_at_offset_b = root_b
+            .children
+            .iter()
+            .find(|c| c.key.as_deref() == Some("row-5"))
+            .unwrap()
+            .computed_id
+            .clone();
+
+        assert_eq!(
+            id_at_offset_a, id_at_offset_b,
+            "row-5's computed_id changed when scroll offset moved"
+        );
+    }
+
+    #[test]
+    fn virtual_list_clamps_overshoot_offset() {
+        // 10 rows × 50 = 500 content height; viewport 200; max offset = 300.
+        let mut root = crate::tree::virtual_list(10, 50.0, |i| crate::text::text(format!("r{i}")));
+        let mut state = UiState::new();
+        assign_ids(&mut root);
+        state
+            .scroll_offsets
+            .insert(root.computed_id.clone(), 9999.0);
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        let stored = state
+            .scroll_offsets
+            .get(&root.computed_id)
+            .copied()
+            .unwrap_or(0.0);
+        assert!(
+            (stored - 300.0).abs() < 0.01,
+            "expected clamp to 300, got {stored}"
+        );
+    }
+
+    #[test]
+    fn virtual_list_empty_count_realizes_no_children() {
+        let mut root = crate::tree::virtual_list(0, 50.0, |i| crate::text::text(format!("r{i}")));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        assert_eq!(root.children.len(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "row_height > 0.0")]
+    fn virtual_list_zero_row_height_panics() {
+        let _ = crate::tree::virtual_list(10, 0.0, |i| crate::text::text(format!("r{i}")));
+    }
+
+    #[test]
+    #[should_panic(expected = "Size::Hug would defeat virtualization")]
+    fn virtual_list_hug_panics() {
+        let mut root =
+            column([
+                crate::tree::virtual_list(10, 50.0, |i| crate::text::text(format!("r{i}")))
+                    .height(Size::Hug),
+            ])
+            .width(Size::Fixed(300.0))
+            .height(Size::Fixed(200.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
     }
 
     #[test]

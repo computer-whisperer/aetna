@@ -192,6 +192,11 @@ pub enum Kind {
     /// applied scroll offset, clips overflow, and routes wheel events
     /// to update the offset.
     Scroll,
+    /// v0.5 — vertically scrollable region whose children are produced
+    /// lazily by an author-supplied closure. Only rows whose rect
+    /// intersects the viewport are realized and laid out each frame.
+    /// Always clipping + scrollable.
+    VirtualList,
     /// Escape hatch for app-defined components.
     Custom(&'static str),
 }

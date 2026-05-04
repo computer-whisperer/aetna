@@ -36,7 +36,7 @@ pub use types::{
 };
 
 use crate::anim::Timing;
-use crate::layout::{LayoutCtx, LayoutFn};
+use crate::layout::{LayoutCtx, LayoutFn, VirtualItems};
 use crate::shader::ShaderBinding;
 use crate::style::StyleProfile;
 
@@ -98,6 +98,12 @@ pub struct El {
     /// off the rects the function returns. See [`LayoutFn`] for the
     /// contract.
     pub layout_override: Option<LayoutFn>,
+
+    /// v0.5 — virtualized list state. Set by [`crate::virtual_list`]
+    /// (and only on `Kind::VirtualList` nodes). The layout pass uses
+    /// this to realize only the rows whose rect intersects the
+    /// viewport. The node is automatically `scrollable` + `clip`.
+    pub virtual_items: Option<VirtualItems>,
 
     // Text
     pub text: Option<String>,
@@ -168,6 +174,7 @@ impl Default for El {
             scrollable: false,
             shader_override: None,
             layout_override: None,
+            virtual_items: None,
             text: None,
             text_color: None,
             text_align: TextAlign::Start,
@@ -480,6 +487,31 @@ where
         .axis(Axis::Column)
         .clip()
         .scrollable()
+}
+
+/// v0.5 — virtualized vertical list of `count` rows of fixed height
+/// `row_height`. The library calls `build_row(i)` only for indices
+/// whose rect intersects the visible viewport, then lays them out at
+/// the scroll-shifted Y. Authors typically key rows with a stable
+/// identifier (`button("foo").key("msg-abc")`) so hover/press/focus
+/// state survives scrolling.
+///
+/// The returned El defaults to `Size::Fill(1.0)` on both axes (it's a
+/// viewport — its size is decided by the parent). `Size::Hug` would
+/// defeat virtualization and panics at layout time.
+#[track_caller]
+pub fn virtual_list<F>(count: usize, row_height: f32, build_row: F) -> El
+where
+    F: Fn(usize) -> El + Send + Sync + 'static,
+{
+    let mut el = El::new(Kind::VirtualList)
+        .at_loc(Location::caller())
+        .axis(Axis::Column)
+        .align(Align::Stretch)
+        .clip()
+        .scrollable();
+    el.virtual_items = Some(VirtualItems::new(count, row_height, build_row));
+    el
 }
 
 /// A `Fill(1)` filler. Inside a `row` it pushes siblings to the right;
