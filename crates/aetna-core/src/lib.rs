@@ -78,7 +78,8 @@ pub use bundle::manifest::{draw_ops_text, shader_manifest};
 pub use bundle::svg::svg_from_ops;
 pub use draw_ops::draw_ops;
 pub use event::{
-    App, AppShader, KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget,
+    App, AppShader, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind, UiKey,
+    UiTarget,
 };
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
@@ -91,8 +92,8 @@ pub use text::atlas::{
     AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, RunStyle, ShapedGlyph, ShapedRun,
 };
 pub use text::metrics::{
-    MeasuredText, TextLayout, TextLine, layout_text, line_height, line_width, measure_text,
-    wrap_lines,
+    MeasuredText, TextHit, TextLayout, TextLine, hit_text, layout_text, line_height, line_width,
+    measure_text, wrap_lines,
 };
 pub use tree::{
     Align, Axis, Color, El, FontWeight, InteractionState, Justify, Kind, Rect, Sides, Size, Source,

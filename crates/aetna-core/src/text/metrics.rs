@@ -92,6 +92,71 @@ pub fn layout_text(
     build_layout(raw_lines, size, weight, mono)
 }
 
+/// Result of a click-to-caret hit-test against a laid-out text run.
+/// Coordinates are in byte units within the source text — convertible
+/// to character indices via `text.char_indices()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextHit {
+    /// Logical line within the source text (zero-based). For a
+    /// single-line input always 0; for a wrapped paragraph this is
+    /// the visual line index (line breaks introduced by `\n` or by
+    /// soft wrapping both bump it).
+    pub line: usize,
+    /// Byte offset within that logical line's text. Snaps to the
+    /// nearest grapheme boundary cosmic-text reports.
+    pub byte_index: usize,
+}
+
+/// Hit-test a pixel `(x, y)` against the laid-out form of `text` and
+/// return the cursor position the click would land at. Coordinates
+/// are relative to the layout origin (top-left of the rect that the
+/// layout pass would draw the text into). Returns `None` when the
+/// point is above/left of the first glyph; cosmic-text's clamping
+/// behavior places clicks below the last line at end-of-text.
+///
+/// Used by text-input widgets: clicking inside the rect produces a
+/// caret position by routing the local pointer (pointer minus rect
+/// origin) through this function.
+pub fn hit_text(
+    text: &str,
+    size: f32,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+    x: f32,
+    y: f32,
+) -> Option<TextHit> {
+    FONT_SYSTEM.with_borrow_mut(|font_system| {
+        let line_height = line_height(size);
+        let mut buffer = Buffer::new(font_system, Metrics::new(size, line_height));
+        buffer.set_wrap(
+            font_system,
+            match wrap {
+                TextWrap::NoWrap => Wrap::None,
+                TextWrap::Wrap => Wrap::WordOrGlyph,
+            },
+        );
+        buffer.set_size(
+            font_system,
+            match wrap {
+                TextWrap::NoWrap => None,
+                TextWrap::Wrap => available_width,
+            },
+            None,
+        );
+        let attrs = Attrs::new()
+            .family(Family::Name("Roboto"))
+            .weight(cosmic_weight(weight));
+        buffer.set_text(font_system, text, attrs, Shaping::Advanced);
+        buffer.shape_until_scroll(font_system, false);
+        let cursor = buffer.hit(x, y)?;
+        Some(TextHit {
+            line: cursor.line,
+            byte_index: cursor.index,
+        })
+    })
+}
+
 /// Word-wrap text into lines whose measured width stays within
 /// `max_width` whenever possible. Explicit newlines always split
 /// paragraphs. Oversized words are split by character.
@@ -475,6 +540,43 @@ mod tests {
         assert_eq!(layout.lines[1].y, layout.line_height);
         assert!(layout.lines[0].baseline > layout.lines[0].y);
         assert!(layout.height >= layout.line_height * 2.0);
+    }
+
+    #[test]
+    fn hit_text_at_origin_lands_on_first_byte() {
+        let hit = hit_text("hello world", 16.0, FontWeight::Regular, TextWrap::NoWrap, None, 0.0, 8.0)
+            .expect("hit at origin");
+        assert_eq!(hit.line, 0);
+        assert_eq!(hit.byte_index, 0);
+    }
+
+    #[test]
+    fn hit_text_past_last_glyph_clamps_to_end() {
+        let text = "hello";
+        // y=8 lands inside the line; a huge x clamps to end-of-line.
+        let hit = hit_text(text, 16.0, FontWeight::Regular, TextWrap::NoWrap, None, 1000.0, 8.0)
+            .expect("hit past end");
+        assert_eq!(hit.line, 0);
+        assert_eq!(hit.byte_index, text.len());
+    }
+
+    #[test]
+    fn hit_text_walks_columns_left_to_right() {
+        // Successive x positions inside the same line should produce
+        // monotonically non-decreasing byte indices — the basic contract
+        // a text input relies on for click-to-caret.
+        let text = "abcdefghij";
+        let mut prev = 0usize;
+        for x in [4.0, 16.0, 32.0, 64.0, 96.0] {
+            let hit = hit_text(text, 16.0, FontWeight::Regular, TextWrap::NoWrap, None, x, 8.0);
+            let Some(hit) = hit else { continue };
+            assert!(
+                hit.byte_index >= prev,
+                "byte_index regressed at x={x}: {} < {prev}",
+                hit.byte_index
+            );
+            prev = hit.byte_index;
+        }
     }
 
     #[test]

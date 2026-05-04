@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use aetna_core::{
-    AnimationMode, El, KeyChord, KeyModifiers, Rect, UiEvent, UiKey, UiState,
+    AnimationMode, El, KeyChord, KeyModifiers, PointerButton, Rect, UiEvent, UiKey, UiState,
     shader::{ShaderHandle, StockShader, stock_wgsl},
 };
 use smallvec::smallvec;
@@ -463,7 +463,7 @@ impl Runner {
         }
     }
 
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<&str> {
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<UiEvent> {
         self.core.pointer_moved(x, y)
     }
 
@@ -471,12 +471,12 @@ impl Runner {
         self.core.pointer_left();
     }
 
-    pub fn pointer_down(&mut self, x: f32, y: f32) {
-        self.core.pointer_down(x, y);
+    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) {
+        self.core.pointer_down(x, y, button);
     }
 
-    pub fn pointer_up(&mut self, x: f32, y: f32) -> Option<UiEvent> {
-        self.core.pointer_up(x, y)
+    pub fn pointer_up(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
+        self.core.pointer_up(x, y, button)
     }
 
     pub fn key_down(
@@ -486,6 +486,10 @@ impl Runner {
         repeat: bool,
     ) -> Option<UiEvent> {
         self.core.key_down(key, modifiers, repeat)
+    }
+
+    pub fn text_input(&mut self, text: String) -> Option<UiEvent> {
+        self.core.text_input(text)
     }
 
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {

@@ -56,6 +56,21 @@ pub struct UiTarget {
     pub rect: Rect,
 }
 
+/// Which mouse button (or pointer button) generated a pointer event.
+/// The host backend translates its native button id to one of these
+/// before calling `pointer_down` / `pointer_up`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerButton {
+    /// Left mouse, primary touch, or pen tip. Drives `Click`.
+    Primary,
+    /// Right mouse or two-finger touch. Drives `SecondaryClick` —
+    /// typically opens a context menu.
+    Secondary,
+    /// Middle mouse / scroll-wheel click. No library default; surfaced
+    /// as `MiddleClick` for apps that want it (autoscroll, paste-on-X).
+    Middle,
+}
+
 /// Keyboard key values normalized by the core library. This keeps the
 /// core independent from host/windowing crates while covering the
 /// navigation and activation keys the library owns.
@@ -177,6 +192,8 @@ pub struct UiEvent {
     pub pointer: Option<(f32, f32)>,
     /// Keyboard payload for key events.
     pub key_press: Option<KeyPress>,
+    /// Composed text payload for [`UiEventKind::TextInput`] events.
+    pub text: Option<String>,
     pub kind: UiEventKind,
 }
 
@@ -184,8 +201,13 @@ pub struct UiEvent {
 /// non-breakingly as the library does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UiEventKind {
-    /// Pointer down + up landed on the same node.
+    /// Primary-button pointer down + up landed on the same node.
     Click,
+    /// Secondary-button (right-click) pointer down + up landed on the
+    /// same node. Used for context menus.
+    SecondaryClick,
+    /// Middle-button pointer down + up landed on the same node.
+    MiddleClick,
     /// Focused element was activated by keyboard (Enter/Space).
     Activate,
     /// Escape was pressed. Routed to the focused element when present,
@@ -196,6 +218,25 @@ pub enum UiEventKind {
     Hotkey,
     /// Other keyboard input.
     KeyDown,
+    /// Composed text input — printable characters from the OS, after
+    /// dead-key composition / IME / shift mapping. Routed to the
+    /// focused element. Distinct from `KeyDown(Character(_))`: the
+    /// latter is the raw key event used for shortcuts and navigation;
+    /// `TextInput` is the grapheme stream a text field should consume.
+    TextInput,
+    /// Pointer moved while the primary button was held down. Routed
+    /// to the originally pressed target so a widget can extend a
+    /// selection / scrub a slider / move a draggable. `event.pointer`
+    /// carries the current logical-pixel position; `event.target` is
+    /// the node where the drag began.
+    Drag,
+    /// Primary pointer button released. Fires regardless of whether
+    /// the up landed on the same node as the down — paired with
+    /// `Click` (which only fires on a same-node match), this lets
+    /// drag-aware widgets always observe drag-end.
+    /// `event.target` is the originally pressed node;
+    /// `event.pointer` is the up position.
+    PointerUp,
 }
 
 /// The application contract. Implement this on your state struct and

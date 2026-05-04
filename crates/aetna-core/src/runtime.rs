@@ -54,7 +54,7 @@ use std::time::Duration;
 use web_time::Instant;
 
 use crate::draw_ops;
-use crate::event::{KeyChord, KeyModifiers, UiEvent, UiEventKind, UiKey};
+use crate::event::{KeyChord, KeyModifiers, PointerButton, UiEvent, UiEventKind, UiKey};
 use crate::hit_test;
 use crate::ir::{DrawOp, TextAnchor};
 use crate::layout;
@@ -173,47 +173,119 @@ impl RunnerCore {
 
     // ---- Input plumbing ----
 
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<&str> {
+    /// Pointer moved to `(x, y)` (logical px). Updates the hovered
+    /// node (readable via `ui_state().hovered`) and, if the primary
+    /// button is currently held, returns a `Drag` event routed to the
+    /// originally pressed target.
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<UiEvent> {
         self.ui_state.pointer_pos = Some((x, y));
         let hit = self
             .last_tree
             .as_ref()
             .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
         self.ui_state.hovered = hit;
-        self.ui_state.hovered.as_ref().map(|t| t.key.as_str())
+        // Drag: pointer moved while primary button is down → emit Drag
+        // to the originally pressed target. Cursor escape from the
+        // pressed node is the *normal* drag-extend case (e.g. text
+        // selection); we keep emitting until pointer_up clears `pressed`.
+        self.ui_state.pressed.clone().map(|p| UiEvent {
+            key: Some(p.key.clone()),
+            target: Some(p),
+            pointer: Some((x, y)),
+            key_press: None,
+            text: None,
+            kind: UiEventKind::Drag,
+        })
     }
 
     pub fn pointer_left(&mut self) {
         self.ui_state.pointer_pos = None;
         self.ui_state.hovered = None;
         self.ui_state.pressed = None;
+        self.ui_state.pressed_secondary = None;
     }
 
-    pub fn pointer_down(&mut self, x: f32, y: f32) {
+    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) {
         let hit = self
             .last_tree
             .as_ref()
             .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        self.ui_state.set_focus(hit.clone());
-        self.ui_state.pressed = hit;
-    }
-
-    pub fn pointer_up(&mut self, x: f32, y: f32) -> Option<UiEvent> {
-        let hit = self
-            .last_tree
-            .as_ref()
-            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        let pressed = self.ui_state.pressed.take();
-        match (pressed, hit) {
-            (Some(p), Some(h)) if p.node_id == h.node_id => Some(UiEvent {
-                key: Some(p.key.clone()),
-                target: Some(p),
-                pointer: Some((x, y)),
-                key_press: None,
-                kind: UiEventKind::Click,
-            }),
-            _ => None,
+        // Only the primary button drives focus + the visual press
+        // envelope. Secondary/middle clicks shouldn't yank focus from
+        // the currently-focused element (matches browser/native behavior
+        // where right-clicking a button doesn't take focus).
+        if matches!(button, PointerButton::Primary) {
+            self.ui_state.set_focus(hit.clone());
+            self.ui_state.pressed = hit;
+        } else {
+            // Stash the down-target on the secondary/middle channel so
+            // pointer_up can confirm the click landed on the same node.
+            self.ui_state.pressed_secondary = hit.map(|h| (h, button));
         }
+    }
+
+    /// Pointer released. For the primary button, fires `PointerUp`
+    /// (always, with the originally pressed target so drag-aware
+    /// widgets see drag-end) and additionally `Click` if the release
+    /// landed on the same node as the down. For secondary / middle,
+    /// fires the corresponding click variant when the up landed on the
+    /// same node; no analogue of `PointerUp` since drag is a primary-
+    /// button concept here.
+    pub fn pointer_up(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
+        let hit = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
+        let mut out = Vec::new();
+        match button {
+            PointerButton::Primary => {
+                let pressed = self.ui_state.pressed.take();
+                if let Some(p) = pressed.clone() {
+                    out.push(UiEvent {
+                        key: Some(p.key.clone()),
+                        target: Some(p),
+                        pointer: Some((x, y)),
+                        key_press: None,
+                        text: None,
+                        kind: UiEventKind::PointerUp,
+                    });
+                }
+                if let (Some(p), Some(h)) = (pressed, hit)
+                    && p.node_id == h.node_id
+                {
+                    out.push(UiEvent {
+                        key: Some(p.key.clone()),
+                        target: Some(p),
+                        pointer: Some((x, y)),
+                        key_press: None,
+                        text: None,
+                        kind: UiEventKind::Click,
+                    });
+                }
+            }
+            PointerButton::Secondary | PointerButton::Middle => {
+                let pressed = self.ui_state.pressed_secondary.take();
+                if let (Some((p, b)), Some(h)) = (pressed, hit)
+                    && b == button
+                    && p.node_id == h.node_id
+                {
+                    let kind = match button {
+                        PointerButton::Secondary => UiEventKind::SecondaryClick,
+                        PointerButton::Middle => UiEventKind::MiddleClick,
+                        PointerButton::Primary => unreachable!(),
+                    };
+                    out.push(UiEvent {
+                        key: Some(p.key.clone()),
+                        target: Some(p),
+                        pointer: Some((x, y)),
+                        key_press: None,
+                        text: None,
+                        kind,
+                    });
+                }
+            }
+        }
+        out
     }
 
     pub fn key_down(
@@ -222,7 +294,51 @@ impl RunnerCore {
         modifiers: KeyModifiers,
         repeat: bool,
     ) -> Option<UiEvent> {
+        // Capture path: when the focused node opted into raw key
+        // capture, the library's Tab/Enter/Escape interpretation is
+        // bypassed and the event is delivered as a raw `KeyDown` to
+        // the focused target. Hotkeys still match first — an app's
+        // global Ctrl+S beats a text input's local consumption of S.
+        if self.focused_captures_keys() {
+            if let Some(event) = self.ui_state.try_hotkey(&key, modifiers, repeat) {
+                return Some(event);
+            }
+            return self.ui_state.key_down_raw(key, modifiers, repeat);
+        }
         self.ui_state.key_down(key, modifiers, repeat)
+    }
+
+    /// Look up the focused node in the last laid-out tree and return
+    /// its `capture_keys` flag. False when no node is focused or the
+    /// tree hasn't been built yet.
+    fn focused_captures_keys(&self) -> bool {
+        let Some(focused) = self.ui_state.focused.as_ref() else {
+            return false;
+        };
+        let Some(tree) = self.last_tree.as_ref() else {
+            return false;
+        };
+        find_capture_keys(tree, &focused.node_id).unwrap_or(false)
+    }
+
+    /// OS-composed text input (printable characters after dead-key /
+    /// shift / IME composition). Routed to the focused element as a
+    /// `TextInput` event. Returns `None` if no node has focus, or if
+    /// `text` is empty (some platforms emit empty composition strings
+    /// during IME selection).
+    pub fn text_input(&mut self, text: String) -> Option<UiEvent> {
+        if text.is_empty() {
+            return None;
+        }
+        let target = self.ui_state.focused.clone()?;
+        Some(UiEvent {
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: None,
+            key_press: None,
+            text: Some(text),
+            kind: UiEventKind::TextInput,
+        })
     }
 
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
@@ -459,6 +575,19 @@ impl RunnerCore {
     }
 }
 
+/// Find the `capture_keys` flag of the node whose `computed_id`
+/// equals `id`, walking the laid-out tree. Returns `None` when the id
+/// isn't found (the focused target outlived its node — a one-frame
+/// race after a rebuild).
+fn find_capture_keys(node: &El, id: &str) -> Option<bool> {
+    if node.computed_id == id {
+        return Some(node.capture_keys);
+    }
+    node.children
+        .iter()
+        .find_map(|c| find_capture_keys(c, id))
+}
+
 /// Glyph-recording surface implemented by each backend's `TextPaint`.
 /// `prepare_paint` calls into it exactly the same way wgpu and vulkano
 /// would call their per-backend equivalents.
@@ -531,6 +660,182 @@ mod tests {
         ) -> Range<usize> {
             0..0
         }
+    }
+
+    // ---- input plumbing ----
+
+    /// A tree with one focusable button at (10,10,80,40) keyed "btn",
+    /// plus an optional capture_keys text input at (10,60,80,40) keyed
+    /// "ti". layout() runs against a 200x200 viewport so the rects
+    /// land where we expect.
+    fn lay_out_input_tree(capture: bool) -> RunnerCore {
+        use crate::tree::*;
+        let ti = if capture {
+            crate::widgets::text::text("input").key("ti").capture_keys()
+        } else {
+            crate::widgets::text::text("noop").key("ti").focusable()
+        };
+        let mut tree = crate::column([
+            crate::widgets::button::button("Btn").key("btn"),
+            ti,
+        ])
+        .padding(10.0);
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+        core
+    }
+
+    #[test]
+    fn pointer_up_emits_pointer_up_then_click() {
+        let mut core = lay_out_input_tree(false);
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_moved(cx, cy);
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let events = core.pointer_up(cx, cy, PointerButton::Primary);
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind.clone()).collect();
+        assert_eq!(kinds, vec![UiEventKind::PointerUp, UiEventKind::Click]);
+    }
+
+    #[test]
+    fn pointer_up_off_target_emits_only_pointer_up() {
+        let mut core = lay_out_input_tree(false);
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        // Release off-target (well outside any keyed node).
+        let events = core.pointer_up(180.0, 180.0, PointerButton::Primary);
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind.clone()).collect();
+        assert_eq!(
+            kinds,
+            vec![UiEventKind::PointerUp],
+            "drag-off-target should still surface PointerUp so widgets see drag-end"
+        );
+    }
+
+    #[test]
+    fn pointer_moved_while_pressed_emits_drag() {
+        let mut core = lay_out_input_tree(false);
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let drag = core
+            .pointer_moved(cx + 30.0, cy)
+            .expect("drag while pressed");
+        assert_eq!(drag.kind, UiEventKind::Drag);
+        assert_eq!(drag.target.as_ref().map(|t| t.key.as_str()), Some("btn"));
+        assert_eq!(drag.pointer, Some((cx + 30.0, cy)));
+    }
+
+    #[test]
+    fn pointer_moved_without_press_emits_no_drag() {
+        let mut core = lay_out_input_tree(false);
+        assert!(core.pointer_moved(50.0, 50.0).is_none());
+    }
+
+    #[test]
+    fn secondary_click_does_not_steal_focus_or_press() {
+        let mut core = lay_out_input_tree(false);
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        // Focus elsewhere first via primary click on the input.
+        let ti_rect = core.rect_of_key("ti").expect("ti rect");
+        let tx = ti_rect.x + ti_rect.w * 0.5;
+        let ty = ti_rect.y + ti_rect.h * 0.5;
+        core.pointer_down(tx, ty, PointerButton::Primary);
+        let _ = core.pointer_up(tx, ty, PointerButton::Primary);
+        let focused_before = core.ui_state.focused.as_ref().map(|t| t.key.clone());
+        // Right-click on the button.
+        core.pointer_down(cx, cy, PointerButton::Secondary);
+        let events = core.pointer_up(cx, cy, PointerButton::Secondary);
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind.clone()).collect();
+        assert_eq!(kinds, vec![UiEventKind::SecondaryClick]);
+        let focused_after = core.ui_state.focused.as_ref().map(|t| t.key.clone());
+        assert_eq!(focused_before, focused_after, "right-click must not steal focus");
+        assert!(core.ui_state.pressed.is_none(), "right-click must not set primary press");
+    }
+
+    #[test]
+    fn text_input_routes_to_focused_only() {
+        let mut core = lay_out_input_tree(false);
+        // No focus yet → no event.
+        assert!(core.text_input("a".into()).is_none());
+        // Focus the button via primary click.
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+        let event = core.text_input("hi".into()).expect("focused → event");
+        assert_eq!(event.kind, UiEventKind::TextInput);
+        assert_eq!(event.text.as_deref(), Some("hi"));
+        assert_eq!(event.target.as_ref().map(|t| t.key.as_str()), Some("btn"));
+        // Empty text → no event (some IME paths emit empty composition).
+        assert!(core.text_input(String::new()).is_none());
+    }
+
+    #[test]
+    fn capture_keys_bypasses_tab_traversal_for_focused_node() {
+        // Focus the capture_keys input. Tab should NOT move focus —
+        // it should be delivered as a raw KeyDown to the input.
+        let mut core = lay_out_input_tree(true);
+        let ti_rect = core.rect_of_key("ti").expect("ti rect");
+        let tx = ti_rect.x + ti_rect.w * 0.5;
+        let ty = ti_rect.y + ti_rect.h * 0.5;
+        core.pointer_down(tx, ty, PointerButton::Primary);
+        let _ = core.pointer_up(tx, ty, PointerButton::Primary);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("ti"),
+            "primary click on capture_keys node still focuses it"
+        );
+
+        let event = core
+            .key_down(UiKey::Tab, KeyModifiers::default(), false)
+            .expect("Tab → KeyDown to focused");
+        assert_eq!(event.kind, UiEventKind::KeyDown);
+        assert_eq!(event.target.as_ref().map(|t| t.key.as_str()), Some("ti"));
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("ti"),
+            "Tab inside capture_keys must NOT move focus"
+        );
+    }
+
+    #[test]
+    fn capture_keys_falls_back_to_default_when_focus_off_capturing_node() {
+        // Tree has both a normal-focusable button and a capture_keys
+        // input. Focus the button (normal focusable). Tab should then
+        // do library-default focus traversal.
+        let mut core = lay_out_input_tree(true);
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("btn"),
+            "primary click focuses button"
+        );
+        // Tab should move focus to the next focusable (the input).
+        let _ = core.key_down(UiKey::Tab, KeyModifiers::default(), false);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("ti"),
+            "Tab from non-capturing focused does library-default traversal"
+        );
     }
 
     fn quad(shader: ShaderHandle) -> DrawOp {

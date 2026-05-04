@@ -68,7 +68,7 @@ use web_time::Instant;
 
 use wgpu::util::DeviceExt;
 
-use aetna_core::event::{KeyChord, KeyModifiers, UiEvent, UiKey};
+use aetna_core::event::{KeyChord, KeyModifiers, PointerButton, UiEvent, UiKey};
 use aetna_core::paint::{PhysicalScissor, QuadInstance};
 use aetna_core::runtime::RunnerCore;
 use aetna_core::shader::{ShaderHandle, StockShader, stock_wgsl};
@@ -464,7 +464,11 @@ impl Runner {
     /// Update pointer position and recompute the hovered key.
     /// Returns the new hovered key, if any (host can use it for cursor
     /// styling or to decide whether to call `request_redraw`).
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<&str> {
+    /// Pointer moved to `(x, y)` (logical px). Returns a `Drag` event
+    /// when the primary button is held; the host should dispatch it
+    /// via `App::on_event`. The hovered node is updated on
+    /// `ui_state().hovered` regardless.
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<UiEvent> {
         self.core.pointer_moved(x, y)
     }
 
@@ -473,18 +477,23 @@ impl Runner {
         self.core.pointer_left();
     }
 
-    /// Primary mouse button down at `(x, y)` (logical px). Records the
-    /// pressed key for press-visual feedback; the actual click event
-    /// fires on the matching `pointer_up`.
-    pub fn pointer_down(&mut self, x: f32, y: f32) {
-        self.core.pointer_down(x, y);
+    /// Mouse button down at `(x, y)` (logical px) for the given
+    /// `button`. For `Primary`, records the pressed key for press-
+    /// visual feedback and updates focus; for `Secondary` / `Middle`,
+    /// records on a side channel. The actual click event fires on the
+    /// matching `pointer_up`.
+    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) {
+        self.core.pointer_down(x, y, button);
     }
 
-    /// Primary mouse button up at `(x, y)`. If the release lands on the
-    /// same keyed node as the corresponding `pointer_down`, a `Click`
-    /// event is returned for the host to dispatch via `App::on_event`.
-    pub fn pointer_up(&mut self, x: f32, y: f32) -> Option<UiEvent> {
-        self.core.pointer_up(x, y)
+    /// Mouse button up at `(x, y)` for the given `button`. Returns
+    /// the events the host should dispatch in order: for `Primary`,
+    /// always a `PointerUp` (when there was a corresponding down)
+    /// followed by an optional `Click` (when the up landed on the
+    /// down's node). For `Secondary` / `Middle`, an optional
+    /// `SecondaryClick` / `MiddleClick` on the same-node match.
+    pub fn pointer_up(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
+        self.core.pointer_up(x, y, button)
     }
 
     pub fn key_down(
@@ -494,6 +503,13 @@ impl Runner {
         repeat: bool,
     ) -> Option<UiEvent> {
         self.core.key_down(key, modifiers, repeat)
+    }
+
+    /// Forward an OS-composed text-input string (winit's keyboard event
+    /// `.text` field, or an `Ime::Commit`) to the focused element as a
+    /// `TextInput` event.
+    pub fn text_input(&mut self, text: String) -> Option<UiEvent> {
+        self.core.text_input(text)
     }
 
     /// Replace the hotkey registry. Call once per frame, after `app.build()`,

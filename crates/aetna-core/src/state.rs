@@ -22,7 +22,9 @@ use web_time::Instant;
 
 use crate::anim::tick::{is_in_flight, tick_node};
 use crate::anim::{AnimProp, Animation};
-use crate::event::{KeyChord, KeyModifiers, KeyPress, UiEvent, UiEventKind, UiKey, UiTarget};
+use crate::event::{
+    KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind, UiKey, UiTarget,
+};
 use crate::focus::focus_order;
 use crate::hit_test::scroll_target_at;
 use crate::tree::{El, InteractionState, Rect};
@@ -110,6 +112,12 @@ pub struct UiState {
     pub pointer_pos: Option<(f32, f32)>,
     pub hovered: Option<UiTarget>,
     pub pressed: Option<UiTarget>,
+    /// Secondary / middle button down-target, kept on a separate
+    /// channel so it doesn't fight the primary `pressed` envelope or
+    /// move focus. Carries the button kind so `pointer_up` knows which
+    /// click variant to emit. Cleared by `pointer_up` matching the
+    /// same button.
+    pub(crate) pressed_secondary: Option<(UiTarget, PointerButton)>,
     pub focused: Option<UiTarget>,
     pub(crate) focus_order: Vec<UiTarget>,
     /// Scroll offset (logical pixels) per scrollable node, keyed by
@@ -408,6 +416,60 @@ impl UiState {
         )
     }
 
+    /// Match `key + modifiers` against the registered hotkey chords.
+    /// Returns a `Hotkey` event if any registered chord matches; the
+    /// `event.key` is the chord's registered name. Used by both the
+    /// library-default path and the capture-keys path (hotkeys always
+    /// win over a widget's raw key capture).
+    pub fn try_hotkey(
+        &self,
+        key: &UiKey,
+        modifiers: KeyModifiers,
+        repeat: bool,
+    ) -> Option<UiEvent> {
+        let (_, name) = self
+            .hotkeys
+            .iter()
+            .find(|(chord, _)| chord.matches(key, modifiers))?;
+        Some(UiEvent {
+            key: Some(name.clone()),
+            target: None,
+            pointer: None,
+            key_press: Some(KeyPress {
+                key: key.clone(),
+                modifiers,
+                repeat,
+            }),
+            text: None,
+            kind: UiEventKind::Hotkey,
+        })
+    }
+
+    /// Build a raw `KeyDown` event routed to the focused target,
+    /// bypassing the library's Tab/Enter/Escape interpretation. Used
+    /// by the runner when the focused node has `capture_keys=true`.
+    /// Returns `None` if no node is focused.
+    pub fn key_down_raw(
+        &self,
+        key: UiKey,
+        modifiers: KeyModifiers,
+        repeat: bool,
+    ) -> Option<UiEvent> {
+        let target = self.focused.clone()?;
+        Some(UiEvent {
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: None,
+            key_press: Some(KeyPress {
+                key,
+                modifiers,
+                repeat,
+            }),
+            text: None,
+            kind: UiEventKind::KeyDown,
+        })
+    }
+
     pub fn key_down(
         &mut self,
         key: UiKey,
@@ -427,22 +489,8 @@ impl UiState {
         // with no hotkey on Enter still activates, but Ctrl+Enter (if
         // registered) routes to its hotkey instead. Registration order
         // is precedence — first match wins.
-        if let Some((_, name)) = self
-            .hotkeys
-            .iter()
-            .find(|(chord, _)| chord.matches(&key, modifiers))
-        {
-            return Some(UiEvent {
-                key: Some(name.clone()),
-                target: None,
-                pointer: None,
-                key_press: Some(KeyPress {
-                    key,
-                    modifiers,
-                    repeat,
-                }),
-                kind: UiEventKind::Hotkey,
-            });
+        if let Some(event) = self.try_hotkey(&key, modifiers, repeat) {
+            return Some(event);
         }
 
         let target = self.focused.clone();
@@ -460,6 +508,7 @@ impl UiState {
                 modifiers,
                 repeat,
             }),
+            text: None,
             kind,
         })
     }

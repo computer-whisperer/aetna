@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use aetna_core::{App, KeyModifiers, Rect, UiKey};
+use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey};
 use aetna_vulkano::Runner;
 use vulkano::{
     VulkanLibrary,
@@ -232,7 +232,9 @@ impl<A: App> ApplicationHandler for Host<A> {
                 let lx = position.x as f32 / scale;
                 let ly = position.y as f32 / scale;
                 self.last_pointer = Some((lx, ly));
-                rcx.runner.pointer_moved(lx, ly);
+                if let Some(event) = rcx.runner.pointer_moved(lx, ly) {
+                    self.app.on_event(event);
+                }
                 rcx.window.request_redraw();
             }
 
@@ -242,21 +244,20 @@ impl<A: App> ApplicationHandler for Host<A> {
                 rcx.window.request_redraw();
             }
 
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Left,
-                ..
-            } => {
+            WindowEvent::MouseInput { state, button, .. } => {
+                let Some(button) = pointer_button(button) else {
+                    return;
+                };
                 let Some((lx, ly)) = self.last_pointer else {
                     return;
                 };
                 match state {
                     ElementState::Pressed => {
-                        rcx.runner.pointer_down(lx, ly);
+                        rcx.runner.pointer_down(lx, ly, button);
                         rcx.window.request_redraw();
                     }
                     ElementState::Released => {
-                        if let Some(event) = rcx.runner.pointer_up(lx, ly) {
+                        for event in rcx.runner.pointer_up(lx, ly, button) {
                             self.app.on_event(event);
                         }
                         rcx.window.request_redraw();
@@ -282,18 +283,31 @@ impl<A: App> ApplicationHandler for Host<A> {
             }
 
             WindowEvent::KeyboardInput {
-                event,
+                event:
+                    key_event @ winit::event::KeyEvent {
+                        state: ElementState::Pressed,
+                        ..
+                    },
                 is_synthetic: false,
                 ..
             } => {
-                if event.state == ElementState::Pressed
-                    && let Some(key) = map_key(&event.logical_key)
+                if let Some(key) = map_key(&key_event.logical_key)
+                    && let Some(ev) = rcx.runner.key_down(key, self.modifiers, key_event.repeat)
                 {
-                    if let Some(ev) = rcx.runner.key_down(key, self.modifiers, event.repeat) {
-                        self.app.on_event(ev);
-                    }
-                    rcx.window.request_redraw();
+                    self.app.on_event(ev);
                 }
+                if let Some(text) = &key_event.text
+                    && let Some(ev) = rcx.runner.text_input(text.to_string())
+                {
+                    self.app.on_event(ev);
+                }
+                rcx.window.request_redraw();
+            }
+            WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
+                if let Some(ev) = rcx.runner.text_input(text) {
+                    self.app.on_event(ev);
+                }
+                rcx.window.request_redraw();
             }
 
             WindowEvent::RedrawRequested => {
@@ -483,6 +497,15 @@ fn map_key(key: &Key) -> Option<UiKey> {
         Key::Named(NamedKey::ArrowRight) => Some(UiKey::ArrowRight),
         Key::Character(s) => Some(UiKey::Character(s.to_string())),
         Key::Named(named) => Some(UiKey::Other(format!("{named:?}"))),
+        _ => None,
+    }
+}
+
+fn pointer_button(b: MouseButton) -> Option<PointerButton> {
+    match b {
+        MouseButton::Left => Some(PointerButton::Primary),
+        MouseButton::Right => Some(PointerButton::Secondary),
+        MouseButton::Middle => Some(PointerButton::Middle),
         _ => None,
     }
 }

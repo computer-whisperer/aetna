@@ -140,7 +140,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         find_rect(&tree1, renderer.ui_state(), "inc").ok_or("missing 'inc' button in tree")?;
     let cx = plus.x + plus.w * 0.5;
     let cy = plus.y + plus.h * 0.5;
-    let hovered = renderer.pointer_moved(cx, cy);
+    let _ = renderer.pointer_moved(cx, cy);
+    let hovered = renderer
+        .ui_state()
+        .hovered
+        .as_ref()
+        .map(|t| t.key.as_str());
     println!("simulated pointer at +button center; hover = {hovered:?}");
 
     // Second prepare: fresh tree, library applies the now-set hover

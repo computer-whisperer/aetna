@@ -803,6 +803,7 @@ mod tests {
             target: None,
             pointer: None,
             key_press: None,
+            text: None,
         }
     }
 

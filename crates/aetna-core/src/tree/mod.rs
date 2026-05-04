@@ -52,6 +52,14 @@ pub struct El {
     pub key: Option<String>,
     pub block_pointer: bool,
     pub focusable: bool,
+    /// When true, all key events (other than registered hotkeys) route
+    /// to this node as raw `KeyDown` instead of being interpreted by
+    /// the library's defaults (Tab traversal, Enter/Space activation,
+    /// Escape escape). Used by text-input widgets that need to consume
+    /// Tab/Enter/etc. as text or editing actions. Implies `focusable`
+    /// at the runner — the flag only takes effect when the node is
+    /// also the focused target.
+    pub capture_keys: bool,
     pub source: Source,
 
     // Layout
@@ -178,6 +186,7 @@ impl Default for El {
             key: None,
             block_pointer: false,
             focusable: false,
+            capture_keys: false,
             source: Source::default(),
             axis: Axis::Overlay,
             gap: 0.0,
@@ -236,6 +245,17 @@ impl El {
         self
     }
     pub fn focusable(mut self) -> Self {
+        self.focusable = true;
+        self
+    }
+    /// Opt this node into raw key capture when focused. While this
+    /// node is the focused target, the library's Tab/Enter/Escape
+    /// defaults are bypassed (registered hotkeys still match first)
+    /// and the raw `KeyDown` is delivered for the widget to interpret.
+    /// Use for text inputs and other editors that want full keyboard
+    /// control. Implies `focusable`.
+    pub fn capture_keys(mut self) -> Self {
+        self.capture_keys = true;
         self.focusable = true;
         self
     }
