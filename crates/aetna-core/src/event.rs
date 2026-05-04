@@ -84,6 +84,14 @@ pub enum UiKey {
     ArrowDown,
     ArrowLeft,
     ArrowRight,
+    /// Backspace — deletes the grapheme before the caret.
+    Backspace,
+    /// Forward delete — deletes the grapheme after the caret.
+    Delete,
+    /// Home — caret to start of line.
+    Home,
+    /// End — caret to end of line.
+    End,
     Character(String),
     Other(String),
 }

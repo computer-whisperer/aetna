@@ -80,7 +80,7 @@ State is keyed by `(computed_id, TypeId)`, so multiple widgets can stash multipl
 
 Hotkeys are an app-level concern (`App::hotkeys()` returns `Vec<(KeyChord, String)>`); the library matches them in `key_down` ahead of focus activation. Widget builders that want a hotkey advertise the chord via the host's hotkey registry — there's no widget-private hotkey table.
 
-Focused-node key capture is automatic: the focused node receives `KeyDown(target)` events before any unfocused dispatch. A text input that wants to consume Tab needs to declare so via `App::handles_tab_for(target)` (until v0.7.6 lands focused-key priority).
+Focused-node key capture: a widget that wants to consume Tab/Enter/Escape (and arrow keys / Backspace / Delete / Home / End / character keys) opts in with `.capture_keys()`. While that node is the focused target, the library's Tab traversal and Enter/Space activation defaults are bypassed and the raw `KeyDown` is delivered for the widget to interpret. Registered hotkeys still match first — an app's global Ctrl+S beats a text input's local consumption of S.
 
 ## What you don't get
 
@@ -100,5 +100,7 @@ If you find yourself wanting a feature that requires reaching past this kit, tha
 
 - v0.7.5 — kit defined and dogfooded by stock widgets. `widget_state` typed bucket landed.
 - v0.7.6 — input plumbing (mouse-up, drag, secondary click, character/IME text, focused-key priority).
-- v0.8 — text_input / text_area widgets, dogfooded against this kit. Expect the kit to grow one item: cosmic-text Buffer access for widget-side glyph hit-testing.
+- v0.8.1 — single-line `text_input` widget dogfooded against the kit. App owns `(value, caret)`; widget builder composes `Kind::Custom` + `.focusable()` + `.capture_keys()` + `.paint_overflow()` + `.axis(Row)` over two `text` segments and a caret bar. `apply_event(value, caret, &UiEvent)` folds routed `TextInput`/`KeyDown(Backspace|Delete|Arrow|Home|End)`/`Click` events back into app state. Kit growth: `El::axis()` promoted from `pub(crate)` to `pub` (already documented as part of the kit).
+- v0.8.2 — selection + clipboard.
+- v0.8.3 — multi-line `text_area`.
 - v0.9 — anchored popovers + `context_menu` / `dropdown` helpers. Expect another kit growth: anchor anchoring API.

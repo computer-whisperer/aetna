@@ -505,8 +505,12 @@ impl El {
         self
     }
 
-    // ---- Internal: axis (used by layout primitives below) ----
-    pub(crate) fn axis(mut self, a: Axis) -> Self {
+    /// Set the layout axis directly. The `column` / `row` / `stack`
+    /// constructors set this for you; widget builders that compose a
+    /// `Kind::Custom` container use this to declare row vs. column vs.
+    /// overlay flow without hijacking a stock kind. Documented in
+    /// `widget_kit.md` as part of the public author surface.
+    pub fn axis(mut self, a: Axis) -> Self {
         self.axis = a;
         self
     }
