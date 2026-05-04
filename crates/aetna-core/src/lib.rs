@@ -97,7 +97,7 @@ pub use state::{AnimationMode, UiState};
 pub use style::StyleProfile;
 pub use svg::svg_from_ops;
 pub use text_atlas::{
-    AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, ShapedGlyph, ShapedRun,
+    AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, RunStyle, ShapedGlyph, ShapedRun,
 };
 pub use text_metrics::{
     MeasuredText, TextLayout, TextLine, layout_text, line_height, line_width, measure_text,

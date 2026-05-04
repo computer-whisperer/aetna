@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use cosmic_text::{
-    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Weight, Wrap, fontdb,
+    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style, Weight, Wrap, fontdb,
 };
 use swash::scale::{Render, ScaleContext, Source as SwashSource, StrikeWith};
 use swash::zeno::Format;
@@ -71,6 +71,36 @@ pub struct ShapedGlyph {
 pub struct ShapedRun {
     pub layout: TextLayout,
     pub glyphs: Vec<ShapedGlyph>,
+}
+
+/// v0.6 — per-run styling for attributed text shaping. Used by
+/// [`GlyphAtlas::shape_and_rasterize_runs`] to compose styled runs into
+/// one cosmic-text buffer with rich attributes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunStyle {
+    pub weight: FontWeight,
+    pub italic: bool,
+    pub mono: bool,
+    pub color: Color,
+}
+
+impl RunStyle {
+    pub fn new(weight: FontWeight, color: Color) -> Self {
+        Self {
+            weight,
+            italic: false,
+            mono: false,
+            color,
+        }
+    }
+    pub fn italic(mut self) -> Self {
+        self.italic = true;
+        self
+    }
+    pub fn mono(mut self) -> Self {
+        self.mono = true;
+        self
+    }
 }
 
 /// Identity for a rasterized glyph at a specific pixel size. The `font`
@@ -188,10 +218,9 @@ impl GlyphAtlas {
         out
     }
 
-    /// Shape a logical text run with the given attributes and ensure
-    /// every glyph it produces is present in the atlas. Returns the
-    /// shaped runs (per-glyph keys + positions) and the line-level
-    /// layout. `available_width` is only used for `TextWrap::Wrap`.
+    /// Shape a single styled text run. Convenience wrapper around
+    /// [`Self::shape_and_rasterize_runs`] for the (common) one-style
+    /// case: every emitted glyph receives `color` and `run_index = 0`.
     #[allow(clippy::too_many_arguments)]
     pub fn shape_and_rasterize(
         &mut self,
@@ -202,6 +231,32 @@ impl GlyphAtlas {
         anchor: TextAnchor,
         available_width: Option<f32>,
         color: Color,
+    ) -> ShapedRun {
+        self.shape_and_rasterize_runs(
+            &[(text, RunStyle::new(weight, color))],
+            size,
+            wrap,
+            anchor,
+            available_width,
+        )
+    }
+
+    /// v0.6 — shape an attributed sequence of styled runs into one
+    /// cosmic-text buffer (so wrapping decisions cross run boundaries
+    /// like real prose) and emit a single [`ShapedRun`] whose glyphs
+    /// carry per-run color + `run_index`. Empty `runs` returns an
+    /// empty `ShapedRun`.
+    ///
+    /// `run_index` on each emitted [`ShapedGlyph`] points back into
+    /// the input slice. The `metadata` field of cosmic-text's `Attrs`
+    /// is used to round-trip the index through shaping.
+    pub fn shape_and_rasterize_runs(
+        &mut self,
+        runs: &[(&str, RunStyle)],
+        size: f32,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        available_width: Option<f32>,
     ) -> ShapedRun {
         let line_h = line_height(size);
         let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_h));
@@ -219,10 +274,29 @@ impl GlyphAtlas {
         // buffer unbounded and silently disables centering — single-
         // glyph button labels show up flush-left.
         buffer.set_size(&mut self.font_system, available_width, None);
-        let attrs = Attrs::new()
-            .family(Family::Name("Roboto"))
-            .weight(cosmic_weight(weight));
-        buffer.set_text(&mut self.font_system, text, attrs, Shaping::Advanced);
+
+        let default_attrs = Attrs::new().family(Family::Name("Roboto"));
+        // NOTE: `style.italic` is preserved on `RunStyle` and on
+        // `El.text_italic` for round-tripping but we request
+        // `Style::Normal` from cosmic-text — bundled Roboto has no
+        // italic face, and asking for Italic panics the shaper's font
+        // fallback chain. v0.7+ bundles Roboto-Italic and flips this.
+        // `style.mono` is similarly preserved but doesn't yet route
+        // to a different family.
+        let spans = runs.iter().enumerate().map(|(i, (text, style))| {
+            let attrs = Attrs::new()
+                .family(Family::Name("Roboto"))
+                .weight(cosmic_weight(style.weight))
+                .style(Style::Normal)
+                .metadata(i);
+            (*text, attrs)
+        });
+        buffer.set_rich_text(
+            &mut self.font_system,
+            spans,
+            default_attrs,
+            Shaping::Advanced,
+        );
 
         if let Some(align) = match anchor {
             TextAnchor::Start => None,
@@ -236,7 +310,9 @@ impl GlyphAtlas {
         buffer.shape_until_scroll(&mut self.font_system, false);
 
         // Walk runs in source order, emit per-glyph entries, ensure
-        // each unique CacheKey is rasterized into the atlas.
+        // each unique CacheKey is rasterized into the atlas. Each
+        // glyph's `metadata` carries the run index we packed into Attrs
+        // above; we look up `runs[idx].color` to bake into the glyph.
         let mut lines = Vec::new();
         let mut shaped_glyphs = Vec::new();
         let mut height: f32 = 0.0;
@@ -257,13 +333,18 @@ impl GlyphAtlas {
                 let physical = glyph.physical((0.0, 0.0), 1.0);
                 let key = glyph_key(physical.cache_key);
                 self.ensure(key);
+                let run_idx = glyph.metadata.min(runs.len().saturating_sub(1));
+                let color = runs
+                    .get(run_idx)
+                    .map(|(_, s)| s.color)
+                    .unwrap_or(Color::rgb(0, 0, 0));
                 shaped_glyphs.push(ShapedGlyph {
                     key,
                     x: glyph.x + glyph.x_offset,
                     y: run.line_y + glyph.y_offset,
                     byte_range: glyph.start..glyph.end,
                     color,
-                    run_index: 0,
+                    run_index: run_idx as u32,
                 });
             }
         }
@@ -672,6 +753,35 @@ mod tests {
         // glyph (i.e. didn't panic / drop entries).
         let total_glyphs: usize = atlas.map.len();
         assert!(total_glyphs > 100, "only stored {total_glyphs} glyphs");
+    }
+
+    #[test]
+    fn attributed_runs_bake_per_run_color_and_run_index() {
+        // Three runs with three colors; expect one ShapedRun whose
+        // glyphs carry per-run colors and run_index 0/1/2.
+        let mut atlas = GlyphAtlas::new();
+        let red = Color::rgb(255, 0, 0);
+        let green = Color::rgb(0, 255, 0);
+        let blue = Color::rgb(0, 0, 255);
+        let runs = [
+            ("AA", RunStyle::new(FontWeight::Regular, red)),
+            ("BB", RunStyle::new(FontWeight::Bold, green)),
+            ("CC", RunStyle::new(FontWeight::Regular, blue).italic()),
+        ];
+        let shaped =
+            atlas.shape_and_rasterize_runs(&runs, 16.0, TextWrap::NoWrap, TextAnchor::Start, None);
+        // Six visible glyphs total — one per character in "AABBCC".
+        assert_eq!(shaped.glyphs.len(), 6);
+        // First two glyphs come from run 0 (red), next two from run 1
+        // (green, bold), final two from run 2 (blue, italic).
+        assert_eq!(shaped.glyphs[0].run_index, 0);
+        assert_eq!(shaped.glyphs[0].color, red);
+        assert_eq!(shaped.glyphs[2].run_index, 1);
+        assert_eq!(shaped.glyphs[2].color, green);
+        assert_eq!(shaped.glyphs[4].run_index, 2);
+        assert_eq!(shaped.glyphs[4].color, blue);
+        // Different weights → different glyph keys (font ID differs).
+        assert_ne!(shaped.glyphs[0].key.font, shaped.glyphs[2].key.font);
     }
 
     #[test]
