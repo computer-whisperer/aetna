@@ -10,6 +10,18 @@ impl App for IconGallery {
     }
 }
 
+pub struct ReliefIconGallery;
+
+impl App for ReliefIconGallery {
+    fn build(&self) -> El {
+        icon_gallery()
+    }
+
+    fn theme(&self) -> Theme {
+        Theme::default().with_icon_material(VectorIconMaterial::Relief)
+    }
+}
+
 pub fn icon_gallery() -> El {
     let names = all_icon_names();
     let mut rows = Vec::new();

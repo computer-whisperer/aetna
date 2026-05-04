@@ -297,6 +297,13 @@ pub trait App {
     fn shaders(&self) -> Vec<AppShader> {
         Vec::new()
     }
+
+    /// Runtime paint theme for this app. Hosts apply it to the renderer
+    /// before preparing each frame so stateful apps can switch global
+    /// material routing without backend-specific calls.
+    fn theme(&self) -> crate::Theme {
+        crate::Theme::default()
+    }
 }
 
 /// One custom shader registration, returned from [`App::shaders`].

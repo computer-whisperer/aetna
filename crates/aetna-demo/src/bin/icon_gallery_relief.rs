@@ -6,10 +6,9 @@ use aetna_core::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let viewport = Rect::new(0.0, 0.0, 880.0, 620.0);
-    aetna_demo::run_with_icon_material(
+    aetna_demo::run(
         "Aetna — vector icon relief",
         viewport,
-        aetna_demo::IconGallery,
-        VectorIconMaterial::Relief,
+        aetna_demo::ReliefIconGallery,
     )
 }

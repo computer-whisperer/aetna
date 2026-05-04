@@ -16,12 +16,14 @@ use std::collections::BTreeMap;
 use crate::shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
 use crate::tokens;
 use crate::tree::{Color, SurfaceRole};
+use crate::vector::VectorIconMaterial;
 
 /// Runtime paint theme for implicit widget visuals.
 #[derive(Clone, Debug)]
 pub struct Theme {
     surface: SurfaceTheme,
     roles: BTreeMap<SurfaceRole, SurfaceTheme>,
+    icon_material: VectorIconMaterial,
 }
 
 impl Theme {
@@ -70,6 +72,18 @@ impl Theme {
         self
     }
 
+    /// Select the stock material used by native vector icon painters.
+    /// Backends without vector icon support may ignore this while still
+    /// preserving the theme value for API parity.
+    pub fn with_icon_material(mut self, material: VectorIconMaterial) -> Self {
+        self.icon_material = material;
+        self
+    }
+
+    pub fn icon_material(&self) -> VectorIconMaterial {
+        self.icon_material
+    }
+
     pub(crate) fn surface_handle(&self, role: SurfaceRole) -> ShaderHandle {
         self.role_theme(role).handle
     }
@@ -108,6 +122,7 @@ impl Default for Theme {
                 rounded_rect_slots: false,
             },
             roles: BTreeMap::new(),
+            icon_material: VectorIconMaterial::Flat,
         }
     }
 }
@@ -207,5 +222,16 @@ fn as_f32(value: Option<&UniformValue>) -> Option<f32> {
     match value {
         Some(UniformValue::F32(v)) => Some(*v),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn theme_can_route_icon_material() {
+        let theme = Theme::default().with_icon_material(VectorIconMaterial::Relief);
+        assert_eq!(theme.icon_material(), VectorIconMaterial::Relief);
     }
 }

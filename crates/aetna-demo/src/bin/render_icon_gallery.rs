@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut renderer = Runner::new(&device, &queue, format);
-    renderer.set_vector_icon_material(material);
+    renderer.set_theme(Theme::default().with_icon_material(material));
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
     let mut tree = aetna_demo::icon_gallery::icon_gallery();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);

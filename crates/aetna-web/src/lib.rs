@@ -323,6 +323,7 @@ mod web_entry {
             // pipeline doesn't exist.
             let viewport = self.viewport;
             let shaders = self.app.shaders();
+            let theme = self.app.theme();
             let gfx_slot = self.gfx.clone();
             let window_for_async = window.clone();
             wasm_bindgen_futures::spawn_local(async move {
@@ -397,6 +398,7 @@ mod web_entry {
                 surface.configure(&device, &config);
 
                 let mut renderer = Runner::new(&device, &queue, format);
+                renderer.set_theme(theme);
                 renderer.set_surface_size(config.width, config.height);
                 // Register every shader the App declared. If the
                 // surface doesn't support COPY_SRC (so multi-pass
@@ -553,6 +555,7 @@ mod web_entry {
                         .create_view(&wgpu::TextureViewDescriptor::default());
 
                     let mut tree = self.app.build();
+                    gfx.renderer.set_theme(self.app.theme());
                     gfx.renderer.set_hotkeys(self.app.hotkeys());
                     let t_after_build = Instant::now();
 

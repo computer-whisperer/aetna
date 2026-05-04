@@ -367,6 +367,7 @@ impl Runner {
 
     /// Set the theme used to resolve implicit widget surfaces to shaders.
     pub fn set_theme(&mut self, theme: Theme) {
+        self.icon_paint.set_material(theme.icon_material());
         self.core.set_theme(theme);
     }
 
@@ -375,10 +376,8 @@ impl Runner {
     }
 
     /// Select the stock material used by the vector-icon painter.
-    ///
-    /// This is deliberately backend-level for now: it lets us validate
-    /// the shared vector mesh's shader hooks before promoting icon
-    /// material routing into the higher-level [`Theme`] API.
+    /// Prefer [`Theme::with_icon_material`] for app-level routing; this
+    /// remains useful for low-level render fixtures.
     pub fn set_vector_icon_material(&mut self, material: VectorIconMaterial) {
         self.icon_paint.set_material(material);
     }
