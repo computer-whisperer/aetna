@@ -9,8 +9,17 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::paint::rgba_f32;
 use crate::tree::Color;
 
+use bytemuck::{Pod, Zeroable};
+use lyon_tessellation::geometry_builder::{BuffersBuilder, VertexBuffers};
+use lyon_tessellation::math::point;
+use lyon_tessellation::path::Path as LyonPath;
+use lyon_tessellation::{
+    FillOptions, FillTessellator, FillVertex, LineCap, LineJoin, StrokeOptions, StrokeTessellator,
+    StrokeVertex,
+};
 use usvg::tiny_skia_path;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -79,6 +88,51 @@ pub enum VectorLineJoin {
     Bevel,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub struct VectorMeshVertex {
+    /// Logical-pixel position after fitting the vector asset into its
+    /// destination rect.
+    pub pos: [f32; 2],
+    /// SVG/viewBox-space coordinate. Theme shaders can use this for
+    /// gradients, highlights, bevels, and other icon-local effects.
+    pub local: [f32; 2],
+    pub color: [f32; 4],
+    /// Reserved for material shaders: x = path index, y = primitive
+    /// kind (0 fill, 1 stroke), z/w reserved.
+    pub meta: [f32; 4],
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VectorMesh {
+    pub vertices: Vec<VectorMeshVertex>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VectorMeshRun {
+    pub first: u32,
+    pub count: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VectorMeshOptions {
+    pub rect: crate::tree::Rect,
+    pub current_color: Color,
+    pub stroke_width: f32,
+    pub tolerance: f32,
+}
+
+impl VectorMeshOptions {
+    pub fn icon(rect: crate::tree::Rect, current_color: Color, stroke_width: f32) -> Self {
+        Self {
+            rect,
+            current_color,
+            stroke_width,
+            tolerance: 0.05,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VectorParseError {
     message: String,
@@ -102,6 +156,103 @@ impl Error for VectorParseError {}
 
 pub fn parse_svg_asset(svg: &str) -> Result<VectorAsset, VectorParseError> {
     parse_svg_asset_with_color_mode(svg, false)
+}
+
+pub fn tessellate_vector_asset(asset: &VectorAsset, options: VectorMeshOptions) -> VectorMesh {
+    let mut mesh = VectorMesh::default();
+    append_vector_asset_mesh(asset, options, &mut mesh.vertices);
+    mesh
+}
+
+pub fn append_vector_asset_mesh(
+    asset: &VectorAsset,
+    options: VectorMeshOptions,
+    out: &mut Vec<VectorMeshVertex>,
+) -> VectorMeshRun {
+    let first = out.len() as u32;
+    if options.rect.w <= 0.0 || options.rect.h <= 0.0 {
+        return VectorMeshRun { first, count: 0 };
+    }
+
+    let [vx, vy, vw, vh] = asset.view_box;
+    let sx = options.rect.w / vw.max(1.0);
+    let sy = options.rect.h / vh.max(1.0);
+    let stroke_scale = (sx + sy) * 0.5;
+
+    for (path_index, vector_path) in asset.paths.iter().enumerate() {
+        let path = build_lyon_path(vector_path, options.rect, [vx, vy], [sx, sy]);
+        if let Some(fill) = vector_path.fill {
+            let color = resolve_color(fill.color, options.current_color, fill.opacity);
+            let mut geometry: VertexBuffers<VectorMeshVertex, u16> = VertexBuffers::new();
+            let fill_options =
+                FillOptions::tolerance(options.tolerance).with_fill_rule(match fill.rule {
+                    VectorFillRule::NonZero => lyon_tessellation::FillRule::NonZero,
+                    VectorFillRule::EvenOdd => lyon_tessellation::FillRule::EvenOdd,
+                });
+            let _ = FillTessellator::new().tessellate_path(
+                &path,
+                &fill_options,
+                &mut BuffersBuilder::new(&mut geometry, |v: FillVertex<'_>| {
+                    make_mesh_vertex(
+                        v.position(),
+                        options.rect,
+                        [vx, vy],
+                        [sx, sy],
+                        color,
+                        path_index,
+                        VectorPrimitiveKind::Fill,
+                    )
+                }),
+            );
+            append_indexed(&geometry, out);
+        }
+
+        if let Some(stroke) = vector_path.stroke {
+            let color = resolve_color(stroke.color, options.current_color, stroke.opacity);
+            let width = if matches!(stroke.color, VectorColor::CurrentColor) {
+                options.stroke_width * stroke_scale
+            } else {
+                stroke.width * stroke_scale
+            }
+            .max(0.5);
+            let mut geometry: VertexBuffers<VectorMeshVertex, u16> = VertexBuffers::new();
+            let stroke_options = StrokeOptions::tolerance(options.tolerance)
+                .with_line_width(width)
+                .with_line_cap(match stroke.line_cap {
+                    VectorLineCap::Butt => LineCap::Butt,
+                    VectorLineCap::Round => LineCap::Round,
+                    VectorLineCap::Square => LineCap::Square,
+                })
+                .with_line_join(match stroke.line_join {
+                    VectorLineJoin::Miter => LineJoin::Miter,
+                    VectorLineJoin::MiterClip => LineJoin::MiterClip,
+                    VectorLineJoin::Round => LineJoin::Round,
+                    VectorLineJoin::Bevel => LineJoin::Bevel,
+                })
+                .with_miter_limit(stroke.miter_limit.max(1.0));
+            let _ = StrokeTessellator::new().tessellate_path(
+                &path,
+                &stroke_options,
+                &mut BuffersBuilder::new(&mut geometry, |v: StrokeVertex<'_, '_>| {
+                    make_mesh_vertex(
+                        v.position(),
+                        options.rect,
+                        [vx, vy],
+                        [sx, sy],
+                        color,
+                        path_index,
+                        VectorPrimitiveKind::Stroke,
+                    )
+                }),
+            );
+            append_indexed(&geometry, out);
+        }
+    }
+
+    VectorMeshRun {
+        first,
+        count: out.len() as u32 - first,
+    }
 }
 
 pub(crate) fn parse_current_color_svg_asset(svg: &str) -> Result<VectorAsset, VectorParseError> {
@@ -230,9 +381,124 @@ fn map_point(transform: tiny_skia_path::Transform, mut point: tiny_skia_path::Po
     [point.x, point.y]
 }
 
+#[derive(Clone, Copy)]
+enum VectorPrimitiveKind {
+    Fill,
+    Stroke,
+}
+
+fn build_lyon_path(
+    path: &VectorPath,
+    rect: crate::tree::Rect,
+    view_origin: [f32; 2],
+    scale: [f32; 2],
+) -> LyonPath {
+    let mut builder = LyonPath::builder();
+    let mut open = false;
+    for segment in &path.segments {
+        match *segment {
+            VectorSegment::MoveTo(p) => {
+                if open {
+                    builder.end(false);
+                }
+                builder.begin(map_mesh_point(rect, view_origin, scale, p));
+                open = true;
+            }
+            VectorSegment::LineTo(p) => {
+                builder.line_to(map_mesh_point(rect, view_origin, scale, p));
+            }
+            VectorSegment::QuadTo(c, p) => {
+                builder.quadratic_bezier_to(
+                    map_mesh_point(rect, view_origin, scale, c),
+                    map_mesh_point(rect, view_origin, scale, p),
+                );
+            }
+            VectorSegment::CubicTo(c0, c1, p) => {
+                builder.cubic_bezier_to(
+                    map_mesh_point(rect, view_origin, scale, c0),
+                    map_mesh_point(rect, view_origin, scale, c1),
+                    map_mesh_point(rect, view_origin, scale, p),
+                );
+            }
+            VectorSegment::Close => {
+                if open {
+                    builder.close();
+                    open = false;
+                }
+            }
+        }
+    }
+    if open {
+        builder.end(false);
+    }
+    builder.build()
+}
+
+fn map_mesh_point(
+    rect: crate::tree::Rect,
+    view_origin: [f32; 2],
+    scale: [f32; 2],
+    p: [f32; 2],
+) -> lyon_tessellation::math::Point {
+    point(
+        rect.x + (p[0] - view_origin[0]) * scale[0],
+        rect.y + (p[1] - view_origin[1]) * scale[1],
+    )
+}
+
+fn make_mesh_vertex(
+    p: lyon_tessellation::math::Point,
+    rect: crate::tree::Rect,
+    view_origin: [f32; 2],
+    scale: [f32; 2],
+    color: [f32; 4],
+    path_index: usize,
+    kind: VectorPrimitiveKind,
+) -> VectorMeshVertex {
+    let local = [
+        view_origin[0] + (p.x - rect.x) / scale[0].max(f32::EPSILON),
+        view_origin[1] + (p.y - rect.y) / scale[1].max(f32::EPSILON),
+    ];
+    VectorMeshVertex {
+        pos: [p.x, p.y],
+        local,
+        color,
+        meta: [
+            path_index as f32,
+            match kind {
+                VectorPrimitiveKind::Fill => 0.0,
+                VectorPrimitiveKind::Stroke => 1.0,
+            },
+            0.0,
+            0.0,
+        ],
+    }
+}
+
+fn resolve_color(color: VectorColor, current_color: Color, opacity: f32) -> [f32; 4] {
+    let mut rgba = match color {
+        VectorColor::CurrentColor => rgba_f32(current_color),
+        VectorColor::Solid(color) => rgba_f32(color),
+    };
+    rgba[3] *= opacity.clamp(0.0, 1.0);
+    rgba
+}
+
+fn append_indexed(
+    geometry: &VertexBuffers<VectorMeshVertex, u16>,
+    out: &mut Vec<VectorMeshVertex>,
+) {
+    for index in &geometry.indices {
+        if let Some(vertex) = geometry.vertices.get(*index as usize) {
+            out.push(*vertex);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::icons::{all_icon_names, icon_vector_asset};
 
     #[test]
     fn parses_basic_svg_shapes_into_paths() {
@@ -244,5 +510,24 @@ mod tests {
         assert_eq!(asset.paths.len(), 1);
         assert!(asset.paths[0].stroke.is_some());
         assert!(asset.paths[0].segments.len() > 4);
+    }
+
+    #[test]
+    fn tessellates_every_builtin_icon() {
+        for name in all_icon_names() {
+            let mesh = tessellate_vector_asset(
+                icon_vector_asset(*name),
+                VectorMeshOptions::icon(
+                    crate::tree::Rect::new(0.0, 0.0, 16.0, 16.0),
+                    Color::rgb(15, 23, 42),
+                    2.0,
+                ),
+            );
+            assert!(
+                !mesh.vertices.is_empty(),
+                "{} produced no tessellated vertices",
+                name.name()
+            );
+        }
     }
 }

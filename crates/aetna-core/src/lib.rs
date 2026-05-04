@@ -112,7 +112,9 @@ pub use tree::{
 };
 pub use vector::{
     VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorLineCap, VectorLineJoin,
-    VectorParseError, VectorPath, VectorSegment, VectorStroke, parse_svg_asset,
+    VectorMesh, VectorMeshOptions, VectorMeshRun, VectorMeshVertex, VectorParseError, VectorPath,
+    VectorSegment, VectorStroke, append_vector_asset_mesh, parse_svg_asset,
+    tessellate_vector_asset,
 };
 
 pub use widgets::badge::badge;

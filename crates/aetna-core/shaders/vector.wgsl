@@ -15,12 +15,16 @@ struct FrameUniforms {
 
 struct VertexInput {
     @location(0) pos_px: vec2<f32>,
-    @location(1) color: vec4<f32>,
+    @location(1) local: vec2<f32>,
+    @location(2) color: vec4<f32>,
+    @location(3) data: vec4<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) local: vec2<f32>,
+    @location(2) data: vec4<f32>,
 };
 
 @vertex
@@ -35,6 +39,8 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.clip_pos = clip;
     out.color = in.color;
+    out.local = in.local;
+    out.data = in.data;
     return out;
 }
 

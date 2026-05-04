@@ -1,47 +1,29 @@
 //! GPU vector-icon rendering.
 //!
 //! Built-in icons are parsed from SVG through `usvg` into Aetna's
-//! backend-agnostic vector IR, then tessellated with lyon into triangle
-//! vertices for this backend. This is the canonical geometry path;
-//! shader experimentation can layer on top of these vector vertices.
+//! backend-agnostic vector IR, tessellated into Aetna's shared vector
+//! mesh, then uploaded by this backend.
 
 use std::borrow::Cow;
 use std::ops::Range;
 
 use aetna_core::icons::icon_vector_asset;
-use aetna_core::paint::{IconRun, PhysicalScissor, rgba_f32};
+use aetna_core::paint::{IconRun, PhysicalScissor};
 use aetna_core::shader::stock_wgsl;
 use aetna_core::tree::{Color, IconName, Rect};
-use aetna_core::vector::{
-    VectorAsset, VectorColor, VectorFillRule, VectorLineCap, VectorLineJoin, VectorPath,
-    VectorSegment,
-};
-
-use bytemuck::{Pod, Zeroable};
-use lyon_tessellation::geometry_builder::{BuffersBuilder, VertexBuffers};
-use lyon_tessellation::math::point;
-use lyon_tessellation::path::Path as LyonPath;
-use lyon_tessellation::{
-    FillOptions, FillTessellator, FillVertex, LineCap, LineJoin, StrokeOptions, StrokeTessellator,
-    StrokeVertex,
-};
+use aetna_core::vector::{VectorMeshOptions, VectorMeshVertex, append_vector_asset_mesh};
 
 const INITIAL_VERTEX_CAPACITY: usize = 1024;
 
-const VERTEX_ATTRS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![
+const VERTEX_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
     0 => Float32x2, // position in logical px
-    1 => Float32x4, // linear rgba
+    1 => Float32x2, // local SVG/viewBox coordinate
+    2 => Float32x4, // linear rgba
+    3 => Float32x4, // vector metadata
 ];
 
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable, Debug)]
-pub(crate) struct VectorVertex {
-    pub pos: [f32; 2],
-    pub color: [f32; 4],
-}
-
 pub(crate) struct IconPaint {
-    vertices: Vec<VectorVertex>,
+    vertices: Vec<VectorMeshVertex>,
     vertex_buf: wgpu::Buffer,
     vertex_capacity: usize,
     runs: Vec<IconRun>,
@@ -56,7 +38,7 @@ impl IconPaint {
     ) -> Self {
         let vertex_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("aetna_wgpu::icon::vertex_buf"),
-            size: (INITIAL_VERTEX_CAPACITY * std::mem::size_of::<VectorVertex>()) as u64,
+            size: (INITIAL_VERTEX_CAPACITY * std::mem::size_of::<VectorMeshVertex>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -78,7 +60,7 @@ impl IconPaint {
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<VectorVertex>() as u64,
+                    array_stride: std::mem::size_of::<VectorMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &VERTEX_ATTRS,
                 }],
@@ -137,8 +119,12 @@ impl IconPaint {
         }
 
         let first = self.vertices.len() as u32;
-        tessellate_asset(asset, rect, color, stroke_width, &mut self.vertices);
-        let count = self.vertices.len() as u32 - first;
+        let mesh_run = append_vector_asset_mesh(
+            asset,
+            VectorMeshOptions::icon(rect, color, stroke_width),
+            &mut self.vertices,
+        );
+        let count = mesh_run.count;
         if count == 0 {
             let start = self.runs.len();
             return start..start;
@@ -158,7 +144,7 @@ impl IconPaint {
             let new_cap = self.vertices.len().next_power_of_two();
             self.vertex_buf = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("aetna_wgpu::icon::vertex_buf (resized)"),
-                size: (new_cap * std::mem::size_of::<VectorVertex>()) as u64,
+                size: (new_cap * std::mem::size_of::<VectorMeshVertex>()) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
@@ -179,180 +165,5 @@ impl IconPaint {
 
     pub(crate) fn vertex_buf(&self) -> &wgpu::Buffer {
         &self.vertex_buf
-    }
-}
-
-fn tessellate_asset(
-    asset: &VectorAsset,
-    rect: Rect,
-    current_color: Color,
-    stroke_width: f32,
-    out: &mut Vec<VectorVertex>,
-) {
-    let [vx, vy, vw, vh] = asset.view_box;
-    let sx = rect.w / vw.max(1.0);
-    let sy = rect.h / vh.max(1.0);
-    let stroke_scale = (sx + sy) * 0.5;
-
-    for vector_path in &asset.paths {
-        let path = build_lyon_path(vector_path, rect, [vx, vy], [sx, sy]);
-        if let Some(fill) = vector_path.fill {
-            let color = resolve_color(fill.color, current_color, fill.opacity);
-            let mut geometry: VertexBuffers<VectorVertex, u16> = VertexBuffers::new();
-            let options = FillOptions::tolerance(0.05).with_fill_rule(match fill.rule {
-                VectorFillRule::NonZero => lyon_tessellation::FillRule::NonZero,
-                VectorFillRule::EvenOdd => lyon_tessellation::FillRule::EvenOdd,
-            });
-            let _ = FillTessellator::new().tessellate_path(
-                &path,
-                &options,
-                &mut BuffersBuilder::new(&mut geometry, |v: FillVertex<'_>| {
-                    let p = v.position();
-                    VectorVertex {
-                        pos: [p.x, p.y],
-                        color,
-                    }
-                }),
-            );
-            append_indexed(&geometry, out);
-        }
-
-        if let Some(stroke) = vector_path.stroke {
-            let color = resolve_color(stroke.color, current_color, stroke.opacity);
-            let width = if matches!(stroke.color, VectorColor::CurrentColor) {
-                stroke_width * stroke_scale
-            } else {
-                stroke.width * stroke_scale
-            }
-            .max(0.5);
-            let mut geometry: VertexBuffers<VectorVertex, u16> = VertexBuffers::new();
-            let options = StrokeOptions::tolerance(0.05)
-                .with_line_width(width)
-                .with_line_cap(match stroke.line_cap {
-                    VectorLineCap::Butt => LineCap::Butt,
-                    VectorLineCap::Round => LineCap::Round,
-                    VectorLineCap::Square => LineCap::Square,
-                })
-                .with_line_join(match stroke.line_join {
-                    VectorLineJoin::Miter => LineJoin::Miter,
-                    VectorLineJoin::MiterClip => LineJoin::MiterClip,
-                    VectorLineJoin::Round => LineJoin::Round,
-                    VectorLineJoin::Bevel => LineJoin::Bevel,
-                })
-                .with_miter_limit(stroke.miter_limit.max(1.0));
-            let _ = StrokeTessellator::new().tessellate_path(
-                &path,
-                &options,
-                &mut BuffersBuilder::new(&mut geometry, |v: StrokeVertex<'_, '_>| {
-                    let p = v.position();
-                    VectorVertex {
-                        pos: [p.x, p.y],
-                        color,
-                    }
-                }),
-            );
-            append_indexed(&geometry, out);
-        }
-    }
-}
-
-fn build_lyon_path(
-    path: &VectorPath,
-    rect: Rect,
-    view_origin: [f32; 2],
-    scale: [f32; 2],
-) -> LyonPath {
-    let mut builder = LyonPath::builder();
-    let mut open = false;
-    for segment in &path.segments {
-        match *segment {
-            VectorSegment::MoveTo(p) => {
-                if open {
-                    builder.end(false);
-                }
-                builder.begin(map_point(rect, view_origin, scale, p));
-                open = true;
-            }
-            VectorSegment::LineTo(p) => {
-                builder.line_to(map_point(rect, view_origin, scale, p));
-            }
-            VectorSegment::QuadTo(c, p) => {
-                builder.quadratic_bezier_to(
-                    map_point(rect, view_origin, scale, c),
-                    map_point(rect, view_origin, scale, p),
-                );
-            }
-            VectorSegment::CubicTo(c0, c1, p) => {
-                builder.cubic_bezier_to(
-                    map_point(rect, view_origin, scale, c0),
-                    map_point(rect, view_origin, scale, c1),
-                    map_point(rect, view_origin, scale, p),
-                );
-            }
-            VectorSegment::Close => {
-                if open {
-                    builder.close();
-                    open = false;
-                }
-            }
-        }
-    }
-    if open {
-        builder.end(false);
-    }
-    builder.build()
-}
-
-fn map_point(
-    rect: Rect,
-    view_origin: [f32; 2],
-    scale: [f32; 2],
-    p: [f32; 2],
-) -> lyon_tessellation::math::Point {
-    point(
-        rect.x + (p[0] - view_origin[0]) * scale[0],
-        rect.y + (p[1] - view_origin[1]) * scale[1],
-    )
-}
-
-fn resolve_color(color: VectorColor, current_color: Color, opacity: f32) -> [f32; 4] {
-    let mut rgba = match color {
-        VectorColor::CurrentColor => rgba_f32(current_color),
-        VectorColor::Solid(color) => rgba_f32(color),
-    };
-    rgba[3] *= opacity.clamp(0.0, 1.0);
-    rgba
-}
-
-fn append_indexed(geometry: &VertexBuffers<VectorVertex, u16>, out: &mut Vec<VectorVertex>) {
-    for index in &geometry.indices {
-        if let Some(vertex) = geometry.vertices.get(*index as usize) {
-            out.push(*vertex);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use aetna_core::icons::all_icon_names;
-
-    #[test]
-    fn tessellates_every_builtin_icon() {
-        for name in all_icon_names() {
-            let mut vertices = Vec::new();
-            tessellate_asset(
-                icon_vector_asset(*name),
-                Rect::new(0.0, 0.0, 16.0, 16.0),
-                Color::rgb(15, 23, 42),
-                2.0,
-                &mut vertices,
-            );
-            assert!(
-                !vertices.is_empty(),
-                "{} produced no tessellated vertices",
-                name.name()
-            );
-        }
     }
 }

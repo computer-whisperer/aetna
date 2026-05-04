@@ -14,4 +14,3 @@ wgpu = "23"
 bytemuck = { version = "1.21", features = ["derive"] }
 # Drop-in `Instant::now()` that works on wasm32; std's panics there.
 web-time = "1"
-lyon_tessellation = "1.0.20"
