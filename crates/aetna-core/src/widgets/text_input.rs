@@ -1,33 +1,32 @@
-//! Single-line text input widget.
+//! Single-line text input widget with selection.
 //!
-//! `text_input(value, caret)` renders a focusable, key-capturing input
-//! field with a visible caret bar between the prefix and suffix of the
-//! current value. The application owns both the string and the caret
-//! byte index; routed events are folded back via [`apply_event`] in the
-//! app's `on_event` handler.
+//! `text_input(value, selection)` renders a focusable, key-capturing
+//! input field with a visible caret and (when non-empty) a tinted
+//! selection rectangle behind the selected glyphs. The application
+//! owns both the string and the [`TextSelection`]; routed events are
+//! folded back via [`apply_event`] in the app's `on_event` handler.
 //!
 //! ```ignore
-//! struct App { name: String, name_caret: usize }
+//! struct App { name: String, name_sel: TextSelection }
 //! impl aetna_core::App for App {
 //!     fn build(&self) -> El {
-//!         text_input(&self.name, self.name_caret).key("name")
+//!         text_input(&self.name, self.name_sel).key("name")
 //!     }
 //!     fn on_event(&mut self, e: UiEvent) {
 //!         if e.target.as_ref().map(|t| t.key.as_str()) == Some("name") {
-//!             text_input::apply_event(&mut self.name, &mut self.name_caret, &e);
+//!             text_input::apply_event(&mut self.name, &mut self.name_sel, &e);
 //!         }
 //!     }
 //! }
 //! ```
 //!
-//! # Dogfood note (v0.8.1)
+//! # Dogfood note (v0.8.1 + v0.8.2)
 //!
-//! This widget is the v0.8.1 dogfood proof: it composes only the
-//! public widget-kit surface — `Kind::Custom("text_input")`,
-//! `.focusable() + .capture_keys()`, `.paint_overflow()` for the focus
-//! ring band, `.axis(Row)` for the inline `[prefix, caret, suffix]`
-//! layout, and the `widgets::text` constructor for the two text
-//! segments. No library internals are reached. See `widget_kit.md`.
+//! Composes only the public widget-kit surface. v0.8.1 introduced the
+//! caret + character/IME path; v0.8.2 layers selection semantics on top
+//! of the same builder via [`TextSelection`] (a value type, not stored
+//! in `widget_state`), gaining drag-select, shift-extend, replace-on-
+//! type, and `Ctrl+A`. See `widget_kit.md`.
 
 use std::panic::Location;
 
@@ -38,23 +37,82 @@ use crate::tokens;
 use crate::tree::*;
 use crate::widgets::text::text;
 
-/// Build a single-line text input. `value` is the string to render and
-/// `caret` is the byte offset where the visible caret sits (clamped
-/// to a UTF-8 grapheme boundary at or before the end of `value`). Use
-/// [`apply_event`] in your event handler to fold routed events back
-/// into your app state.
-#[track_caller]
-pub fn text_input(value: &str, caret: usize) -> El {
-    let caret = clamp_to_char_boundary(value, caret.min(value.len()));
-    let prefix = &value[..caret];
-    let suffix = &value[caret..];
+/// A `(anchor, head)` byte-index pair representing the selection in a
+/// text field. `head` is the caret position; the selection covers
+/// `min(anchor, head)..max(anchor, head)`. When `anchor == head` the
+/// selection is collapsed and the field shows just a caret.
+///
+/// Both indices are byte offsets into the source string and are
+/// clamped to a UTF-8 grapheme boundary by every method that reads or
+/// writes them — callers can safely poke them directly.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TextSelection {
+    pub anchor: usize,
+    pub head: usize,
+}
 
-    let caret_bar = El::new(Kind::Custom("text_input_caret"))
-        .style_profile(StyleProfile::Solid)
-        .fill(tokens::TEXT_FOREGROUND)
-        .width(Size::Fixed(2.0))
-        .height(Size::Fixed(tokens::FONT_BASE))
-        .radius(1.0);
+impl TextSelection {
+    /// Collapsed selection at byte offset `head`.
+    pub const fn caret(head: usize) -> Self {
+        Self {
+            anchor: head,
+            head,
+        }
+    }
+
+    /// Selection from `anchor` to `head`. Either order is valid; the
+    /// widget renders `min..max` as the highlighted band.
+    pub const fn range(anchor: usize, head: usize) -> Self {
+        Self { anchor, head }
+    }
+
+    /// `(min, max)` byte offsets, ordered.
+    pub fn ordered(self) -> (usize, usize) {
+        (self.anchor.min(self.head), self.anchor.max(self.head))
+    }
+
+    /// True when the selection is collapsed (anchor == head).
+    pub fn is_collapsed(self) -> bool {
+        self.anchor == self.head
+    }
+}
+
+/// Build a single-line text input. `value` is the string to render
+/// and `selection` carries the caret + selection state. Both are
+/// owned by the application — pass them in from your state and update
+/// them via [`apply_event`] in your event handler.
+#[track_caller]
+pub fn text_input(value: &str, selection: TextSelection) -> El {
+    let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
+    let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
+    let lo = anchor.min(head);
+    let hi = anchor.max(head);
+
+    let caret_bar = caret_bar();
+    let mut children: Vec<El> = Vec::with_capacity(5);
+
+    if lo == hi {
+        // Collapsed: [text(prefix), caret, text(suffix)]
+        children.push(text(&value[..head]).font_size(tokens::FONT_BASE));
+        children.push(caret_bar);
+        children.push(text(&value[head..]).font_size(tokens::FONT_BASE));
+    } else {
+        let prefix = &value[..lo];
+        let selected = &value[lo..hi];
+        let suffix = &value[hi..];
+        children.push(text(prefix).font_size(tokens::FONT_BASE));
+        // Caret renders on the side of the selection where `head` sits
+        // — at `lo` if head was the smaller end, otherwise at `hi`. The
+        // selection band always renders the same way regardless.
+        if head == lo {
+            children.push(caret_bar);
+            children.push(selection_segment(selected));
+        } else {
+            children.push(selection_segment(selected));
+            children.push(caret_bar);
+        }
+        children.push(text(suffix).font_size(tokens::FONT_BASE));
+    }
 
     El::new(Kind::Custom("text_input"))
         .at_loc(Location::caller())
@@ -70,25 +128,50 @@ pub fn text_input(value: &str, caret: usize) -> El {
         .gap(0.0)
         .height(Size::Fixed(36.0))
         .padding(Sides::xy(tokens::SPACE_MD, 0.0))
-        .child(text(prefix).font_size(tokens::FONT_BASE))
-        .child(caret_bar)
-        .child(text(suffix).font_size(tokens::FONT_BASE))
+        .children(children)
 }
 
-/// Fold a routed [`UiEvent`] into `value` and `caret`. Returns `true`
-/// when the event mutated either of them.
+fn caret_bar() -> El {
+    El::new(Kind::Custom("text_input_caret"))
+        .style_profile(StyleProfile::Solid)
+        .fill(tokens::TEXT_FOREGROUND)
+        .width(Size::Fixed(2.0))
+        .height(Size::Fixed(tokens::FONT_BASE))
+        .radius(1.0)
+}
+
+fn selection_segment(selected: &str) -> El {
+    let bg = El::new(Kind::Custom("text_input_selection"))
+        .style_profile(StyleProfile::Solid)
+        .fill(tokens::SELECTION_BG)
+        .radius(2.0);
+    crate::tree::stack([bg, text(selected).font_size(tokens::FONT_BASE)])
+        .width(Size::Hug)
+        .height(Size::Hug)
+}
+
+/// Fold a routed [`UiEvent`] into `value` and `selection`. Returns
+/// `true` when either was mutated.
 ///
 /// Handles:
-/// - [`UiEventKind::TextInput`] — insert `event.text` at the caret.
+/// - [`UiEventKind::TextInput`] — replace the selection with the
+///   composed text (or insert at the caret when collapsed).
 /// - [`UiEventKind::KeyDown`] for Backspace, Delete, ArrowLeft,
-///   ArrowRight, Home, End.
-/// - [`UiEventKind::Click`] — set the caret to the byte index that the
-///   click resolves to via [`metrics::hit_text`].
+///   ArrowRight, Home, End. Without Shift the selection collapses and
+///   moves; with Shift the head extends and the anchor stays.
+/// - [`UiEventKind::KeyDown`] for Ctrl+A — select all.
+/// - [`UiEventKind::PointerDown`] — set the caret to the click position
+///   and the anchor to the same position. With Shift held, only the
+///   head moves (extend selection from the existing anchor).
+/// - [`UiEventKind::Drag`] — extend the head to the dragged position;
+///   the anchor stays where pointer-down placed it.
+/// - [`UiEventKind::Click`] — no-op. The selection was already
+///   established by the prior PointerDown / Drag sequence.
 ///
-/// All caret arithmetic respects UTF-8 grapheme boundaries — arrowing
-/// across a multi-byte codepoint advances by the full encoded width.
-pub fn apply_event(value: &mut String, caret: &mut usize, event: &UiEvent) -> bool {
-    *caret = clamp_to_char_boundary(value, (*caret).min(value.len()));
+/// All caret arithmetic respects UTF-8 grapheme boundaries.
+pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &UiEvent) -> bool {
+    selection.anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
+    selection.head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     match event.kind {
         UiEventKind::TextInput => {
             let Some(insert) = event.text.as_deref() else {
@@ -97,72 +180,171 @@ pub fn apply_event(value: &mut String, caret: &mut usize, event: &UiEvent) -> bo
             if insert.is_empty() {
                 return false;
             }
-            value.insert_str(*caret, insert);
-            *caret += insert.len();
+            replace_selection(value, selection, insert);
             true
         }
         UiEventKind::KeyDown => {
             let Some(kp) = event.key_press.as_ref() else {
                 return false;
             };
+            let mods = kp.modifiers;
+            // Ctrl+A: select all. We test for this before modifier-less
+            // key arms so the "Character('a')" path doesn't reach
+            // KeyDown's no-op fallthrough.
+            if mods.ctrl
+                && !mods.alt
+                && !mods.logo
+                && let UiKey::Character(c) = &kp.key
+                && c.eq_ignore_ascii_case("a")
+            {
+                let len = value.len();
+                if selection.anchor == 0 && selection.head == len {
+                    return false;
+                }
+                *selection = TextSelection {
+                    anchor: 0,
+                    head: len,
+                };
+                return true;
+            }
             match kp.key {
                 UiKey::Backspace => {
-                    if *caret == 0 {
+                    if !selection.is_collapsed() {
+                        replace_selection(value, selection, "");
+                        return true;
+                    }
+                    if selection.head == 0 {
                         return false;
                     }
-                    let prev = prev_char_boundary(value, *caret);
-                    value.replace_range(prev..*caret, "");
-                    *caret = prev;
+                    let prev = prev_char_boundary(value, selection.head);
+                    value.replace_range(prev..selection.head, "");
+                    selection.head = prev;
+                    selection.anchor = prev;
                     true
                 }
                 UiKey::Delete => {
-                    if *caret >= value.len() {
+                    if !selection.is_collapsed() {
+                        replace_selection(value, selection, "");
+                        return true;
+                    }
+                    if selection.head >= value.len() {
                         return false;
                     }
-                    let next = next_char_boundary(value, *caret);
-                    value.replace_range(*caret..next, "");
+                    let next = next_char_boundary(value, selection.head);
+                    value.replace_range(selection.head..next, "");
                     true
                 }
                 UiKey::ArrowLeft => {
-                    if *caret == 0 {
-                        return false;
+                    let target = if selection.is_collapsed() || mods.shift {
+                        if selection.head == 0 {
+                            return false;
+                        }
+                        prev_char_boundary(value, selection.head)
+                    } else {
+                        // Collapse a non-empty selection to its left edge.
+                        selection.ordered().0
+                    };
+                    selection.head = target;
+                    if !mods.shift {
+                        selection.anchor = target;
                     }
-                    *caret = prev_char_boundary(value, *caret);
                     true
                 }
                 UiKey::ArrowRight => {
-                    if *caret >= value.len() {
-                        return false;
+                    let target = if selection.is_collapsed() || mods.shift {
+                        if selection.head >= value.len() {
+                            return false;
+                        }
+                        next_char_boundary(value, selection.head)
+                    } else {
+                        // Collapse a non-empty selection to its right edge.
+                        selection.ordered().1
+                    };
+                    selection.head = target;
+                    if !mods.shift {
+                        selection.anchor = target;
                     }
-                    *caret = next_char_boundary(value, *caret);
                     true
                 }
                 UiKey::Home => {
-                    if *caret == 0 {
+                    if selection.head == 0
+                        && (mods.shift || selection.anchor == 0)
+                    {
                         return false;
                     }
-                    *caret = 0;
+                    selection.head = 0;
+                    if !mods.shift {
+                        selection.anchor = 0;
+                    }
                     true
                 }
                 UiKey::End => {
-                    if *caret >= value.len() {
+                    let end = value.len();
+                    if selection.head == end
+                        && (mods.shift || selection.anchor == end)
+                    {
                         return false;
                     }
-                    *caret = value.len();
+                    selection.head = end;
+                    if !mods.shift {
+                        selection.anchor = end;
+                    }
                     true
                 }
                 _ => false,
             }
         }
-        UiEventKind::Click => {
+        UiEventKind::PointerDown => {
             let (Some((px, _py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
                 return false;
             };
             let local_x = px - target.rect.x - tokens::SPACE_MD;
-            *caret = caret_from_x(value, local_x);
+            let pos = caret_from_x(value, local_x);
+            selection.head = pos;
+            if !event.modifiers.shift {
+                selection.anchor = pos;
+            }
             true
         }
+        UiEventKind::Drag => {
+            let (Some((px, _py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
+                return false;
+            };
+            let local_x = px - target.rect.x - tokens::SPACE_MD;
+            selection.head = caret_from_x(value, local_x);
+            true
+        }
+        UiEventKind::Click => false,
         _ => false,
+    }
+}
+
+/// The currently-selected substring of `value`. Returns `""` when the
+/// selection is collapsed.
+pub fn selected_text(value: &str, selection: TextSelection) -> &str {
+    let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
+    let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
+    &value[anchor.min(head)..anchor.max(head)]
+}
+
+/// Replace the selected substring (or insert at the caret when the
+/// selection is collapsed) with `replacement`. Updates `selection` to
+/// a collapsed caret immediately after the inserted text.
+pub fn replace_selection(value: &mut String, selection: &mut TextSelection, replacement: &str) {
+    selection.anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
+    selection.head = clamp_to_char_boundary(value, selection.head.min(value.len()));
+    let (lo, hi) = selection.ordered();
+    value.replace_range(lo..hi, replacement);
+    let new_caret = lo + replacement.len();
+    selection.anchor = new_caret;
+    selection.head = new_caret;
+}
+
+/// `(0, value.len())` — the selection that spans the whole field.
+pub fn select_all(value: &str) -> TextSelection {
+    TextSelection {
+        anchor: 0,
+        head: value.len(),
     }
 }
 
@@ -170,7 +352,6 @@ fn caret_from_x(value: &str, local_x: f32) -> usize {
     if value.is_empty() || local_x <= 0.0 {
         return 0;
     }
-    // hit_text expects y inside the first line's vertical extent.
     let local_y = metrics::line_height(tokens::FONT_BASE) * 0.5;
     match hit_text(
         value,
@@ -225,39 +406,66 @@ mod tests {
             pointer: None,
             key_press: None,
             text: Some(s.into()),
+            modifiers: KeyModifiers::default(),
             kind: UiEventKind::TextInput,
         }
     }
 
     fn ev_key(key: UiKey) -> UiEvent {
+        ev_key_with_mods(key, KeyModifiers::default())
+    }
+
+    fn ev_key_with_mods(key: UiKey, modifiers: KeyModifiers) -> UiEvent {
         UiEvent {
             key: None,
             target: None,
             pointer: None,
             key_press: Some(KeyPress {
                 key,
-                modifiers: KeyModifiers::default(),
+                modifiers,
                 repeat: false,
             }),
             text: None,
+            modifiers,
             kind: UiEventKind::KeyDown,
         }
     }
 
-    fn ev_click(target: UiTarget, pointer: (f32, f32)) -> UiEvent {
+    fn ev_pointer_down(target: UiTarget, pointer: (f32, f32), modifiers: KeyModifiers) -> UiEvent {
         UiEvent {
             key: Some(target.key.clone()),
             target: Some(target),
             pointer: Some(pointer),
             key_press: None,
             text: None,
-            kind: UiEventKind::Click,
+            modifiers,
+            kind: UiEventKind::PointerDown,
+        }
+    }
+
+    fn ev_drag(target: UiTarget, pointer: (f32, f32)) -> UiEvent {
+        UiEvent {
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: Some(pointer),
+            key_press: None,
+            text: None,
+            modifiers: KeyModifiers::default(),
+            kind: UiEventKind::Drag,
+        }
+    }
+
+    fn ti_target() -> UiTarget {
+        UiTarget {
+            key: "ti".into(),
+            node_id: "root.text_input[ti]".into(),
+            rect: Rect::new(20.0, 20.0, 400.0, 36.0),
         }
     }
 
     #[test]
-    fn text_input_renders_three_children_with_caret_between_segments() {
-        let el = text_input("hello", 2);
+    fn text_input_collapsed_renders_three_children_with_caret() {
+        let el = text_input("hello", TextSelection::caret(2));
         assert!(matches!(el.kind, Kind::Custom("text_input")));
         assert!(el.focusable);
         assert!(el.capture_keys);
@@ -271,161 +479,297 @@ mod tests {
     }
 
     #[test]
-    fn text_input_clamps_caret_to_string_length() {
-        let el = text_input("hi", 99);
-        assert_eq!(el.children[0].text.as_deref(), Some("hi"));
-        assert_eq!(el.children[2].text.as_deref(), Some(""));
+    fn text_input_with_selection_emits_four_children_caret_at_head_side() {
+        // anchor=2, head=4 → selection "ll", head at right edge.
+        let el = text_input("hello", TextSelection::range(2, 4));
+        assert_eq!(el.children.len(), 4);
+        assert_eq!(el.children[0].text.as_deref(), Some("he"));
+        // [1] is the selection stack, [2] is the caret bar (head=4=hi).
+        assert!(matches!(el.children[1].kind, Kind::Group)); // stack returns a Group
+        assert!(matches!(
+            el.children[2].kind,
+            Kind::Custom("text_input_caret")
+        ));
+        assert_eq!(el.children[3].text.as_deref(), Some("o"));
     }
 
     #[test]
-    fn text_input_clamps_caret_off_utf8_boundary() {
-        // 'é' is two bytes; caret=1 sits inside the codepoint and must
-        // snap back to 0 so we never slice across a UTF-8 boundary.
-        let el = text_input("é", 1);
+    fn text_input_with_selection_caret_left_when_head_is_min() {
+        // anchor=4, head=2 → selection "ll", head at left edge.
+        let el = text_input("hello", TextSelection::range(4, 2));
+        assert_eq!(el.children.len(), 4);
+        assert_eq!(el.children[0].text.as_deref(), Some("he"));
+        // Caret precedes the selection segment now.
+        assert!(matches!(
+            el.children[1].kind,
+            Kind::Custom("text_input_caret")
+        ));
+        assert!(matches!(el.children[2].kind, Kind::Group));
+        assert_eq!(el.children[3].text.as_deref(), Some("o"));
+    }
+
+    #[test]
+    fn text_input_clamps_off_utf8_boundary() {
+        // 'é' is two bytes; head=1 sits inside the codepoint and must
+        // snap back to 0.
+        let el = text_input("é", TextSelection::caret(1));
         assert_eq!(el.children[0].text.as_deref(), Some(""));
         assert_eq!(el.children[2].text.as_deref(), Some("é"));
     }
 
     #[test]
-    fn apply_text_input_inserts_at_caret() {
+    fn apply_text_input_inserts_at_caret_when_collapsed() {
         let mut value = String::from("ho");
-        let mut caret = 1;
-        assert!(apply_event(&mut value, &mut caret, &ev_text("i, t")));
+        let mut sel = TextSelection::caret(1);
+        assert!(apply_event(&mut value, &mut sel, &ev_text("i, t")));
         assert_eq!(value, "hi, to");
-        assert_eq!(caret, 5);
+        assert_eq!(sel, TextSelection::caret(5));
     }
 
     #[test]
-    fn apply_text_input_empty_string_is_noop() {
+    fn apply_text_input_replaces_selection() {
+        let mut value = String::from("hello world");
+        let mut sel = TextSelection::range(6, 11); // "world"
+        assert!(apply_event(&mut value, &mut sel, &ev_text("kit")));
+        assert_eq!(value, "hello kit");
+        assert_eq!(sel, TextSelection::caret(9));
+    }
+
+    #[test]
+    fn apply_backspace_removes_selection_when_non_empty() {
+        let mut value = String::from("hello world");
+        let mut sel = TextSelection::range(6, 11);
+        assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::Backspace)));
+        assert_eq!(value, "hello ");
+        assert_eq!(sel, TextSelection::caret(6));
+    }
+
+    #[test]
+    fn apply_delete_removes_selection_when_non_empty() {
+        let mut value = String::from("hello world");
+        let mut sel = TextSelection::range(0, 6); // "hello "
+        assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::Delete)));
+        assert_eq!(value, "world");
+        assert_eq!(sel, TextSelection::caret(0));
+    }
+
+    #[test]
+    fn apply_backspace_collapsed_at_start_is_noop() {
         let mut value = String::from("hi");
-        let mut caret = 1;
-        assert!(!apply_event(&mut value, &mut caret, &ev_text("")));
-        assert_eq!(value, "hi");
-        assert_eq!(caret, 1);
+        let mut sel = TextSelection::caret(0);
+        assert!(!apply_event(&mut value, &mut sel, &ev_key(UiKey::Backspace)));
     }
 
     #[test]
-    fn apply_backspace_removes_preceding_grapheme() {
-        let mut value = String::from("café");
-        let mut caret = value.len();
-        assert!(apply_event(&mut value, &mut caret, &ev_key(UiKey::Backspace)));
-        assert_eq!(value, "caf");
-        assert_eq!(caret, 3);
-    }
-
-    #[test]
-    fn apply_backspace_at_start_is_noop() {
-        let mut value = String::from("hi");
-        let mut caret = 0;
-        assert!(!apply_event(&mut value, &mut caret, &ev_key(UiKey::Backspace)));
-        assert_eq!(value, "hi");
-        assert_eq!(caret, 0);
-    }
-
-    #[test]
-    fn apply_delete_removes_following_grapheme() {
-        let mut value = String::from("hello");
-        let mut caret = 1;
-        assert!(apply_event(&mut value, &mut caret, &ev_key(UiKey::Delete)));
-        assert_eq!(value, "hllo");
-        assert_eq!(caret, 1);
-    }
-
-    #[test]
-    fn apply_arrow_keys_walk_utf8_boundaries() {
+    fn apply_arrow_walks_utf8_boundaries() {
         let mut value = String::from("aé");
-        let mut caret = 0;
-        // Right past 'a'
-        apply_event(&mut value, &mut caret, &ev_key(UiKey::ArrowRight));
-        assert_eq!(caret, 1);
-        // Right past 'é' (2 bytes) — caret jumps by full codepoint
-        apply_event(&mut value, &mut caret, &ev_key(UiKey::ArrowRight));
-        assert_eq!(caret, 3);
-        // ArrowRight past end is a no-op
+        let mut sel = TextSelection::caret(0);
+        apply_event(&mut value, &mut sel, &ev_key(UiKey::ArrowRight));
+        assert_eq!(sel.head, 1);
+        apply_event(&mut value, &mut sel, &ev_key(UiKey::ArrowRight));
+        assert_eq!(sel.head, 3);
         assert!(!apply_event(
             &mut value,
-            &mut caret,
+            &mut sel,
             &ev_key(UiKey::ArrowRight)
         ));
-        // Walk back
-        apply_event(&mut value, &mut caret, &ev_key(UiKey::ArrowLeft));
-        assert_eq!(caret, 1);
-        apply_event(&mut value, &mut caret, &ev_key(UiKey::ArrowLeft));
-        assert_eq!(caret, 0);
+        apply_event(&mut value, &mut sel, &ev_key(UiKey::ArrowLeft));
+        assert_eq!(sel.head, 1);
+    }
+
+    #[test]
+    fn apply_arrow_collapses_selection_without_shift() {
+        let mut value = String::from("hello");
+        let mut sel = TextSelection::range(1, 4); // "ell"
+        // ArrowLeft (no shift) collapses to the LEFT edge of the
+        // selection (the smaller of anchor/head).
+        assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::ArrowLeft)));
+        assert_eq!(sel, TextSelection::caret(1));
+
+        let mut sel = TextSelection::range(1, 4);
+        // ArrowRight (no shift) collapses to the RIGHT edge.
+        assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::ArrowRight)));
+        assert_eq!(sel, TextSelection::caret(4));
+    }
+
+    #[test]
+    fn apply_shift_arrow_extends_selection() {
+        let mut value = String::from("hello");
+        let mut sel = TextSelection::caret(2);
+        let shift = KeyModifiers {
+            shift: true,
+            ..Default::default()
+        };
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_mods(UiKey::ArrowRight, shift)
+        ));
+        assert_eq!(sel, TextSelection::range(2, 3));
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_mods(UiKey::ArrowRight, shift)
+        ));
+        assert_eq!(sel, TextSelection::range(2, 4));
+        // Shift+ArrowLeft retreats the head, anchor stays.
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_mods(UiKey::ArrowLeft, shift)
+        ));
+        assert_eq!(sel, TextSelection::range(2, 3));
+    }
+
+    #[test]
+    fn apply_home_end_collapse_or_extend() {
+        let mut value = String::from("hello");
+        let mut sel = TextSelection::caret(2);
+        assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::End)));
+        assert_eq!(sel, TextSelection::caret(5));
+        assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::Home)));
+        assert_eq!(sel, TextSelection::caret(0));
+
+        // Shift+End extends.
+        let shift = KeyModifiers {
+            shift: true,
+            ..Default::default()
+        };
+        let mut sel = TextSelection::caret(2);
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_mods(UiKey::End, shift)
+        ));
+        assert_eq!(sel, TextSelection::range(2, 5));
+    }
+
+    #[test]
+    fn apply_ctrl_a_selects_all() {
+        let mut value = String::from("hello");
+        let mut sel = TextSelection::caret(2);
+        let ctrl = KeyModifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_mods(UiKey::Character("a".into()), ctrl)
+        ));
+        assert_eq!(sel, TextSelection::range(0, 5));
+        // A second Ctrl+A is a no-op.
         assert!(!apply_event(
             &mut value,
-            &mut caret,
-            &ev_key(UiKey::ArrowLeft)
+            &mut sel,
+            &ev_key_with_mods(UiKey::Character("a".into()), ctrl)
         ));
     }
 
     #[test]
-    fn apply_home_and_end_jump_to_extremes() {
+    fn apply_pointer_down_sets_anchor_and_head() {
         let mut value = String::from("hello");
-        let mut caret = 2;
-        assert!(apply_event(&mut value, &mut caret, &ev_key(UiKey::End)));
-        assert_eq!(caret, 5);
-        assert!(apply_event(&mut value, &mut caret, &ev_key(UiKey::Home)));
-        assert_eq!(caret, 0);
-    }
-
-    #[test]
-    fn apply_unrelated_key_falls_through() {
-        let mut value = String::from("hi");
-        let mut caret = 1;
-        assert!(!apply_event(
-            &mut value,
-            &mut caret,
-            &ev_key(UiKey::Escape)
-        ));
-        assert_eq!(value, "hi");
-        assert_eq!(caret, 1);
-    }
-
-    #[test]
-    fn apply_click_far_left_lands_at_start() {
-        // A click at the input's left edge should put the caret at 0.
-        let target = UiTarget {
-            key: "ti".into(),
-            node_id: "root.text_input[ti]".into(),
-            rect: Rect::new(20.0, 20.0, 200.0, 36.0),
-        };
-        let mut value = String::from("hello");
-        let mut caret = 5;
-        let click = ev_click(target.clone(), (target.rect.x + 1.0, target.rect.y + 18.0));
-        assert!(apply_event(&mut value, &mut caret, &click));
-        assert_eq!(caret, 0);
-    }
-
-    #[test]
-    fn apply_click_far_right_lands_at_end() {
-        // A click well past the rendered text should put the caret at
-        // value.len() (cosmic-text clamps to end-of-line).
-        let target = UiTarget {
-            key: "ti".into(),
-            node_id: "root.text_input[ti]".into(),
-            rect: Rect::new(20.0, 20.0, 400.0, 36.0),
-        };
-        let mut value = String::from("hi");
-        let mut caret = 0;
-        // Click near the right edge of the input — well past the
-        // 2-character text.
-        let click = ev_click(
-            target.clone(),
-            (target.rect.x + target.rect.w - 4.0, target.rect.y + 18.0),
+        let mut sel = TextSelection::range(0, 5);
+        // Click far-left should collapse to caret=0.
+        let down = ev_pointer_down(
+            ti_target(),
+            (ti_target().rect.x + 1.0, ti_target().rect.y + 18.0),
+            KeyModifiers::default(),
         );
-        assert!(apply_event(&mut value, &mut caret, &click));
-        assert_eq!(caret, value.len());
+        assert!(apply_event(&mut value, &mut sel, &down));
+        assert_eq!(sel, TextSelection::caret(0));
     }
 
     #[test]
-    fn end_to_end_click_in_runner_drives_caret() {
-        // Lay out a tree with one text_input keyed "ti", drive a click
-        // through RunnerCore, and verify the resulting Click event's
-        // pointer + target.rect feed apply_event correctly.
+    fn apply_shift_pointer_down_only_moves_head() {
+        let mut value = String::from("hello");
+        let mut sel = TextSelection::caret(2);
+        let shift = KeyModifiers {
+            shift: true,
+            ..Default::default()
+        };
+        // Click far-right with shift: head goes to end, anchor stays.
+        let down = ev_pointer_down(
+            ti_target(),
+            (
+                ti_target().rect.x + ti_target().rect.w - 4.0,
+                ti_target().rect.y + 18.0,
+            ),
+            shift,
+        );
+        assert!(apply_event(&mut value, &mut sel, &down));
+        assert_eq!(sel.anchor, 2);
+        assert_eq!(sel.head, value.len());
+    }
+
+    #[test]
+    fn apply_drag_extends_head_only() {
         let mut value = String::from("hello world");
-        let caret_initial = 0;
-        let mut tree = crate::column([text_input(&value, caret_initial).key("ti")]).padding(20.0);
+        let mut sel = TextSelection::caret(0);
+        // First, pointer-down at the start.
+        let down = ev_pointer_down(
+            ti_target(),
+            (ti_target().rect.x + 1.0, ti_target().rect.y + 18.0),
+            KeyModifiers::default(),
+        );
+        apply_event(&mut value, &mut sel, &down);
+        assert_eq!(sel, TextSelection::caret(0));
+        // Drag to the right edge — head extends, anchor stays at 0.
+        let drag = ev_drag(
+            ti_target(),
+            (
+                ti_target().rect.x + ti_target().rect.w - 4.0,
+                ti_target().rect.y + 18.0,
+            ),
+        );
+        assert!(apply_event(&mut value, &mut sel, &drag));
+        assert_eq!(sel.anchor, 0);
+        assert_eq!(sel.head, value.len());
+    }
+
+    #[test]
+    fn apply_click_is_noop_for_selection() {
+        // Click fires after a drag — handling it would clobber the
+        // selection drag established. We deliberately ignore Click in
+        // text_input.
+        let mut value = String::from("hello");
+        let mut sel = TextSelection::range(0, 5);
+        let click = UiEvent {
+            key: Some("ti".into()),
+            target: Some(ti_target()),
+            pointer: Some((ti_target().rect.x + 1.0, ti_target().rect.y + 18.0)),
+            key_press: None,
+            text: None,
+            modifiers: KeyModifiers::default(),
+            kind: UiEventKind::Click,
+        };
+        assert!(!apply_event(&mut value, &mut sel, &click));
+        assert_eq!(sel, TextSelection::range(0, 5));
+    }
+
+    #[test]
+    fn helpers_selected_text_and_replace_selection() {
+        let value = String::from("hello world");
+        let sel = TextSelection::range(6, 11);
+        assert_eq!(selected_text(&value, sel), "world");
+
+        let mut value = value;
+        let mut sel = sel;
+        replace_selection(&mut value, &mut sel, "kit");
+        assert_eq!(value, "hello kit");
+        assert_eq!(sel, TextSelection::caret(9));
+
+        assert_eq!(select_all(&value), TextSelection::range(0, value.len()));
+    }
+
+    #[test]
+    fn end_to_end_drag_select_through_runner_core() {
+        // Lay out a tree with one text_input keyed "ti". Drive a
+        // pointer_down + drag + pointer_up sequence through RunnerCore;
+        // verify the resulting events fold into a non-empty selection.
+        let mut value = String::from("hello world");
+        let mut sel = TextSelection::default();
+        let mut tree = crate::column([text_input(&value, sel).key("ti")]).padding(20.0);
         let mut core = RunnerCore::new();
         let mut state = UiState::new();
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
@@ -433,20 +777,27 @@ mod tests {
         core.snapshot(&tree, &mut Default::default());
 
         let rect = core.rect_of_key("ti").expect("ti rect");
-        let cx = rect.x + 60.0;
+        let down_x = rect.x + 8.0;
+        let drag_x = rect.x + 80.0;
         let cy = rect.y + rect.h * 0.5;
-        core.pointer_moved(cx, cy);
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        let events = core.pointer_up(cx, cy, PointerButton::Primary);
-        let click = events
-            .into_iter()
-            .find(|e| e.kind == UiEventKind::Click)
-            .expect("click event");
 
-        let mut caret = caret_initial;
-        assert!(apply_event(&mut value, &mut caret, &click));
-        // Clicking 60px into "hello world" should land somewhere
-        // inside the string, well past the start.
-        assert!(caret > 0 && caret < value.len(), "caret={caret}");
+        core.pointer_moved(down_x, cy);
+        let down = core
+            .pointer_down(down_x, cy, PointerButton::Primary)
+            .expect("pointer_down emits PointerDown");
+        assert!(apply_event(&mut value, &mut sel, &down));
+
+        let drag = core
+            .pointer_moved(drag_x, cy)
+            .expect("Drag while pressed");
+        assert!(apply_event(&mut value, &mut sel, &drag));
+
+        let events = core.pointer_up(drag_x, cy, PointerButton::Primary);
+        for e in &events {
+            apply_event(&mut value, &mut sel, e);
+        }
+        assert!(!sel.is_collapsed(), "expected drag-select to leave a non-empty selection");
+        assert_eq!(sel.anchor, 0, "anchor should sit at the down position (caret 0)");
+        assert!(sel.head > 0 && sel.head <= value.len(), "head={} value.len={}", sel.head, value.len());
     }
 }

@@ -176,7 +176,9 @@ impl RunnerCore {
     /// Pointer moved to `(x, y)` (logical px). Updates the hovered
     /// node (readable via `ui_state().hovered`) and, if the primary
     /// button is currently held, returns a `Drag` event routed to the
-    /// originally pressed target.
+    /// originally pressed target. The event's `modifiers` field
+    /// reflects the mask currently tracked on `UiState` (set by the
+    /// host via `set_modifiers`).
     pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<UiEvent> {
         self.ui_state.pointer_pos = Some((x, y));
         let hit = self
@@ -188,12 +190,14 @@ impl RunnerCore {
         // to the originally pressed target. Cursor escape from the
         // pressed node is the *normal* drag-extend case (e.g. text
         // selection); we keep emitting until pointer_up clears `pressed`.
+        let modifiers = self.ui_state.modifiers;
         self.ui_state.pressed.clone().map(|p| UiEvent {
             key: Some(p.key.clone()),
             target: Some(p),
             pointer: Some((x, y)),
             key_press: None,
             text: None,
+            modifiers,
             kind: UiEventKind::Drag,
         })
     }
@@ -205,7 +209,18 @@ impl RunnerCore {
         self.ui_state.pressed_secondary = None;
     }
 
-    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) {
+    /// Primary/secondary/middle pointer button pressed at `(x, y)`.
+    /// For the primary button, focuses the hit target and stashes it
+    /// as the pressed target; returns a `PointerDown` event so widgets
+    /// like text_input can react at down-time (e.g., set the selection
+    /// anchor before any drag extends it). Secondary/middle store on a
+    /// separate channel and never emit a `PointerDown`.
+    pub fn pointer_down(
+        &mut self,
+        x: f32,
+        y: f32,
+        button: PointerButton,
+    ) -> Option<UiEvent> {
         let hit = self
             .last_tree
             .as_ref()
@@ -216,11 +231,22 @@ impl RunnerCore {
         // where right-clicking a button doesn't take focus).
         if matches!(button, PointerButton::Primary) {
             self.ui_state.set_focus(hit.clone());
-            self.ui_state.pressed = hit;
+            self.ui_state.pressed = hit.clone();
+            let modifiers = self.ui_state.modifiers;
+            hit.map(|p| UiEvent {
+                key: Some(p.key.clone()),
+                target: Some(p),
+                pointer: Some((x, y)),
+                key_press: None,
+                text: None,
+                modifiers,
+                kind: UiEventKind::PointerDown,
+            })
         } else {
             // Stash the down-target on the secondary/middle channel so
             // pointer_up can confirm the click landed on the same node.
             self.ui_state.pressed_secondary = hit.map(|h| (h, button));
+            None
         }
     }
 
@@ -236,6 +262,7 @@ impl RunnerCore {
             .last_tree
             .as_ref()
             .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
+        let modifiers = self.ui_state.modifiers;
         let mut out = Vec::new();
         match button {
             PointerButton::Primary => {
@@ -247,6 +274,7 @@ impl RunnerCore {
                         pointer: Some((x, y)),
                         key_press: None,
                         text: None,
+                        modifiers,
                         kind: UiEventKind::PointerUp,
                     });
                 }
@@ -259,6 +287,7 @@ impl RunnerCore {
                         pointer: Some((x, y)),
                         key_press: None,
                         text: None,
+                        modifiers,
                         kind: UiEventKind::Click,
                     });
                 }
@@ -280,6 +309,7 @@ impl RunnerCore {
                         pointer: Some((x, y)),
                         key_press: None,
                         text: None,
+                        modifiers,
                         kind,
                     });
                 }
@@ -331,12 +361,14 @@ impl RunnerCore {
             return None;
         }
         let target = self.ui_state.focused.clone()?;
+        let modifiers = self.ui_state.modifiers;
         Some(UiEvent {
             key: Some(target.key.clone()),
             target: Some(target),
             pointer: None,
             key_press: None,
             text: Some(text),
+            modifiers,
             kind: UiEventKind::TextInput,
         })
     }

@@ -195,7 +195,9 @@ impl<A: App> ApplicationHandler for Host<A> {
                 };
                 match state {
                     ElementState::Pressed => {
-                        gfx.renderer.pointer_down(lx, ly, button);
+                        if let Some(event) = gfx.renderer.pointer_down(lx, ly, button) {
+                            self.app.on_event(event);
+                        }
                         gfx.window.request_redraw();
                     }
                     ElementState::Released => {
@@ -225,6 +227,7 @@ impl<A: App> ApplicationHandler for Host<A> {
 
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = key_modifiers(modifiers.state());
+                gfx.renderer.set_modifiers(self.modifiers);
             }
 
             WindowEvent::KeyboardInput {

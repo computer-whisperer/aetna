@@ -253,7 +253,9 @@ impl<A: App> ApplicationHandler for Host<A> {
                 };
                 match state {
                     ElementState::Pressed => {
-                        rcx.runner.pointer_down(lx, ly, button);
+                        if let Some(event) = rcx.runner.pointer_down(lx, ly, button) {
+                            self.app.on_event(event);
+                        }
                         rcx.window.request_redraw();
                     }
                     ElementState::Released => {
@@ -280,6 +282,7 @@ impl<A: App> ApplicationHandler for Host<A> {
 
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = key_modifiers(modifiers.state());
+                rcx.runner.set_modifiers(self.modifiers);
             }
 
             WindowEvent::KeyboardInput {

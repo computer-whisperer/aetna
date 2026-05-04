@@ -804,6 +804,7 @@ mod tests {
             pointer: None,
             key_press: None,
             text: None,
+            modifiers: aetna_core::KeyModifiers::default(),
         }
     }
 

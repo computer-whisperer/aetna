@@ -479,11 +479,26 @@ impl Runner {
 
     /// Mouse button down at `(x, y)` (logical px) for the given
     /// `button`. For `Primary`, records the pressed key for press-
-    /// visual feedback and updates focus; for `Secondary` / `Middle`,
-    /// records on a side channel. The actual click event fires on the
-    /// matching `pointer_up`.
-    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) {
-        self.core.pointer_down(x, y, button);
+    /// visual feedback, updates focus, and returns a `PointerDown`
+    /// event so widgets that need to react at down-time (text input
+    /// selection anchor, draggable handles) can do so. For
+    /// `Secondary` / `Middle`, records on a side channel and returns
+    /// `None`. The actual click event fires on `pointer_up`.
+    pub fn pointer_down(
+        &mut self,
+        x: f32,
+        y: f32,
+        button: PointerButton,
+    ) -> Option<UiEvent> {
+        self.core.pointer_down(x, y, button)
+    }
+
+    /// Replace the tracked modifier mask. Hosts call this from their
+    /// platform's "modifiers changed" hook so subsequent pointer
+    /// events (PointerDown, Drag, Click, …) stamp the current mask
+    /// into `UiEvent.modifiers`.
+    pub fn set_modifiers(&mut self, modifiers: KeyModifiers) {
+        self.core.ui_state.set_modifiers(modifiers);
     }
 
     /// Mouse button up at `(x, y)` for the given `button`. Returns

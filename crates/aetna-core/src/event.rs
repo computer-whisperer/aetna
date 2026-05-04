@@ -202,6 +202,12 @@ pub struct UiEvent {
     pub key_press: Option<KeyPress>,
     /// Composed text payload for [`UiEventKind::TextInput`] events.
     pub text: Option<String>,
+    /// Modifier mask captured at the moment this event was emitted. For
+    /// keyboard events this duplicates `key_press.modifiers`; for
+    /// pointer events it's the host-tracked modifier state at the time
+    /// of the click / drag (used by widgets like text_input that need
+    /// to detect Shift+click for "extend selection").
+    pub modifiers: KeyModifiers,
     pub kind: UiEventKind,
 }
 
@@ -245,6 +251,14 @@ pub enum UiEventKind {
     /// `event.target` is the originally pressed node;
     /// `event.pointer` is the up position.
     PointerUp,
+    /// Primary pointer button pressed on a hit-test target. Routed
+    /// before the eventual `Click` (which fires on up-on-same-target).
+    /// Used by widgets like text_input that need to react at
+    /// down-time — e.g., to set the selection anchor before any drag
+    /// extends it. `event.target` is the down-target,
+    /// `event.pointer` is the down position, and `event.modifiers`
+    /// carries the modifier mask (Shift+click for extend-selection).
+    PointerDown,
 }
 
 /// The application contract. Implement this on your state struct and

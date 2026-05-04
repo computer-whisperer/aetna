@@ -471,12 +471,21 @@ impl Runner {
         self.core.pointer_left();
     }
 
-    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) {
-        self.core.pointer_down(x, y, button);
+    pub fn pointer_down(
+        &mut self,
+        x: f32,
+        y: f32,
+        button: PointerButton,
+    ) -> Option<UiEvent> {
+        self.core.pointer_down(x, y, button)
     }
 
     pub fn pointer_up(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
         self.core.pointer_up(x, y, button)
+    }
+
+    pub fn set_modifiers(&mut self, modifiers: KeyModifiers) {
+        self.core.ui_state.set_modifiers(modifiers);
     }
 
     pub fn key_down(

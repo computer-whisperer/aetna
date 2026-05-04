@@ -153,6 +153,12 @@ pub struct UiState {
     /// are GC'd alongside envelopes/animations when a node leaves the
     /// tree (see [`Self::tick_visual_animations`]).
     widget_states: HashMap<(String, TypeId), Box<dyn AnyWidgetState>>,
+    /// Last known keyboard modifier mask. Updated by the host runner
+    /// from winit's `ModifiersChanged`; pointer events stamp this
+    /// value into their `UiEvent.modifiers` so widgets that need to
+    /// detect Shift+click / Ctrl+drag can read it without separate
+    /// plumbing.
+    pub modifiers: KeyModifiers,
 }
 
 impl UiState {
@@ -290,6 +296,16 @@ impl UiState {
     /// `App::hotkeys()` once per build cycle.
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
         self.hotkeys = hotkeys;
+    }
+
+    /// Update the tracked modifier mask. Hosts call this from their
+    /// platform's "modifiers changed" hook (e.g. winit's
+    /// `WindowEvent::ModifiersChanged`); the value is stamped into
+    /// `UiEvent.modifiers` for every subsequent pointer event so
+    /// widgets can detect Shift+click / Ctrl+drag without needing a
+    /// per-call modifier parameter.
+    pub fn set_modifiers(&mut self, modifiers: KeyModifiers) {
+        self.modifiers = modifiers;
     }
 
     /// Walk the laid-out tree, retarget per-(node, prop) animations to
@@ -441,6 +457,7 @@ impl UiState {
                 repeat,
             }),
             text: None,
+            modifiers,
             kind: UiEventKind::Hotkey,
         })
     }
@@ -466,6 +483,7 @@ impl UiState {
                 repeat,
             }),
             text: None,
+            modifiers,
             kind: UiEventKind::KeyDown,
         })
     }
@@ -509,6 +527,7 @@ impl UiState {
                 repeat,
             }),
             text: None,
+            modifiers,
             kind,
         })
     }
@@ -549,6 +568,7 @@ impl Debug for UiState {
             .field("computed_rects", &self.computed_rects)
             .field("node_states", &self.node_states)
             .field("envelopes", &self.envelopes)
+            .field("modifiers", &self.modifiers)
             .field(
                 "widget_states",
                 &self

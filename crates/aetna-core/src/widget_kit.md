@@ -101,6 +101,7 @@ If you find yourself wanting a feature that requires reaching past this kit, tha
 - v0.7.5 — kit defined and dogfooded by stock widgets. `widget_state` typed bucket landed.
 - v0.7.6 — input plumbing (mouse-up, drag, secondary click, character/IME text, focused-key priority).
 - v0.8.1 — single-line `text_input` widget dogfooded against the kit. App owns `(value, caret)`; widget builder composes `Kind::Custom` + `.focusable()` + `.capture_keys()` + `.paint_overflow()` + `.axis(Row)` over two `text` segments and a caret bar. `apply_event(value, caret, &UiEvent)` folds routed `TextInput`/`KeyDown(Backspace|Delete|Arrow|Home|End)`/`Click` events back into app state. Kit growth: `El::axis()` promoted from `pub(crate)` to `pub` (already documented as part of the kit).
-- v0.8.2 — selection + clipboard.
-- v0.8.3 — multi-line `text_area`.
+- v0.8.2 — selection. `TextSelection { anchor, head }` replaces the bare caret index; widget renders a tinted selection rectangle behind the selected glyphs. New surface: `UiEventKind::PointerDown` (so widgets see down-time before any drag), `UiEvent.modifiers` (Shift+click / Ctrl+drag), `UiState::set_modifiers` (host stamps the current mask). `apply_event` adds drag-select, Shift+arrow extension, Ctrl+A select-all, and replace-on-type / replace-on-backspace. Helpers: `selected_text`, `replace_selection`, `select_all`. Token: `SELECTION_BG`. Clipboard deferred to v0.8.3 where it gets platform plumbing.
+- v0.8.3 — clipboard wiring (cut/copy/paste with platform clipboard via `arboard` on native and the web clipboard API on wasm).
+- v0.8.4 — multi-line `text_area`.
 - v0.9 — anchored popovers + `context_menu` / `dropdown` helpers. Expect another kit growth: anchor anchoring API.

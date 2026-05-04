@@ -88,3 +88,7 @@ pub const DISABLED_ALPHA: f32 = 0.5;
 pub const FOCUS_RING: Color = Color::token("focus-ring", 92, 170, 255, 200);
 /// Focus ring outset (additional stroke beyond the element bounds).
 pub const FOCUS_RING_WIDTH: f32 = 2.0;
+/// Background tint for selected text in `text_input` / `text_area`.
+/// Tinted accent at low alpha so glyphs stay readable through the
+/// selection rectangle.
+pub const SELECTION_BG: Color = Color::token("selection-bg", 92, 170, 255, 96);
