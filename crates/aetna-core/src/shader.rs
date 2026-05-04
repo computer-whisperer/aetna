@@ -170,4 +170,5 @@ impl ShaderBinding {
 pub mod stock_wgsl {
     pub const ROUNDED_RECT: &str = include_str!("../shaders/rounded_rect.wgsl");
     pub const TEXT: &str = include_str!("../shaders/text.wgsl");
+    pub const ICON_LINE: &str = include_str!("../shaders/icon_line.wgsl");
 }

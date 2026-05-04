@@ -56,6 +56,7 @@
 //! Stock `rounded_rect` reuses the same layout but reads its own named
 //! uniforms (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`).
 
+mod icon;
 mod instance;
 mod pipeline;
 mod text;
@@ -69,16 +70,19 @@ use web_time::Instant;
 use wgpu::util::DeviceExt;
 
 use aetna_core::event::{KeyChord, KeyModifiers, PointerButton, UiEvent, UiKey};
+use aetna_core::ir::TextAnchor;
 use aetna_core::paint::{PhysicalScissor, QuadInstance};
-use aetna_core::runtime::RunnerCore;
+use aetna_core::runtime::{RecordedPaint, RunnerCore, TextRecorder};
 use aetna_core::shader::{ShaderHandle, StockShader, stock_wgsl};
 use aetna_core::state::{AnimationMode, UiState};
+use aetna_core::text::atlas::RunStyle;
 use aetna_core::theme::Theme;
-use aetna_core::tree::{El, Rect};
+use aetna_core::tree::{Color, El, FontWeight, IconName, Rect, TextWrap};
 
 pub use aetna_core::paint::PaintItem;
 pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
 
+use crate::icon::IconPaint;
 use crate::instance::set_scissor;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
 use crate::text::TextPaint;
@@ -117,6 +121,8 @@ pub struct Runner {
 
     // stock::text resources — atlas, page textures, glyph instances.
     text_paint: TextPaint,
+    // stock::icon_line resources — vector icon stroke instances.
+    icon_paint: IconPaint,
 
     /// Lazily-allocated snapshot of the color target, sized to match
     /// the current target on each `render()`. Backdrop-sampling
@@ -139,6 +145,65 @@ pub struct Runner {
 struct SnapshotTexture {
     texture: wgpu::Texture,
     extent: (u32, u32),
+}
+
+struct PaintRecorder<'a> {
+    text: &'a mut TextPaint,
+    icons: &'a mut IconPaint,
+}
+
+impl TextRecorder for PaintRecorder<'_> {
+    fn record(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        color: Color,
+        text: &str,
+        size: f32,
+        weight: FontWeight,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.text.record(
+            rect,
+            scissor,
+            color,
+            text,
+            size,
+            weight,
+            wrap,
+            anchor,
+            scale_factor,
+        )
+    }
+
+    fn record_runs(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        runs: &[(String, RunStyle)],
+        size: f32,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.text
+            .record_runs(rect, scissor, runs, size, wrap, anchor, scale_factor)
+    }
+
+    fn record_icon(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        name: IconName,
+        color: Color,
+        _size: f32,
+        stroke_width: f32,
+        _scale_factor: f32,
+    ) -> RecordedPaint {
+        RecordedPaint::Icon(self.icons.record(rect, scissor, name, color, stroke_width))
+    }
 }
 
 impl Runner {
@@ -261,6 +326,7 @@ impl Runner {
 
         // Text pipeline + atlas (replaces glyphon).
         let text_paint = TextPaint::new(device, target_format, &frame_bind_layout);
+        let icon_paint = IconPaint::new(device, target_format, &frame_bind_layout);
 
         let mut core = RunnerCore::new();
         core.quad_scratch = Vec::with_capacity(INITIAL_INSTANCE_CAPACITY);
@@ -279,6 +345,7 @@ impl Runner {
             pipelines,
             backdrop_shaders: HashSet::new(),
             text_paint,
+            icon_paint,
             snapshot: None,
             backdrop_bind_group: None,
             start_time: Instant::now(),
@@ -411,8 +478,13 @@ impl Runner {
         // query (different pipeline types per backend prevent moving the
         // check itself into core).
         self.text_paint.frame_begin();
+        self.icon_paint.frame_begin();
         let pipelines = &self.pipelines;
         let backdrop_shaders = &self.backdrop_shaders;
+        let mut recorder = PaintRecorder {
+            text: &mut self.text_paint,
+            icons: &mut self.icon_paint,
+        };
         self.core.prepare_paint(
             &ops,
             |shader| pipelines.contains_key(shader),
@@ -420,7 +492,7 @@ impl Runner {
                 ShaderHandle::Custom(name) => backdrop_shaders.contains(name),
                 ShaderHandle::Stock(_) => false,
             },
-            &mut self.text_paint,
+            &mut recorder,
             scale_factor,
             &mut timings,
         );
@@ -447,6 +519,7 @@ impl Runner {
             );
         }
         self.text_paint.flush(device, queue);
+        self.icon_paint.flush(device, queue);
         let time = (Instant::now() - self.start_time).as_secs_f32();
         let frame = FrameUniforms {
             viewport: [viewport.w, viewport.h],
@@ -782,6 +855,15 @@ impl Runner {
                     pass.set_bind_group(1, self.text_paint.page_bind_group(run.page), &[]);
                     pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
                     pass.set_vertex_buffer(1, self.text_paint.instance_buf().slice(..));
+                    pass.draw(0..4, run.first..run.first + run.count);
+                }
+                PaintItem::IconRun(index) => {
+                    let run = self.icon_paint.run(index);
+                    set_scissor(pass, run.scissor, full);
+                    pass.set_pipeline(self.icon_paint.pipeline());
+                    pass.set_bind_group(0, &self.quad_bind_group, &[]);
+                    pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
+                    pass.set_vertex_buffer(1, self.icon_paint.instance_buf().slice(..));
                     pass.draw(0..4, run.first..run.first + run.count);
                 }
                 PaintItem::BackdropSnapshot => {

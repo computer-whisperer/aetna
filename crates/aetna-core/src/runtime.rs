@@ -581,6 +581,7 @@ impl RunnerCore {
                     name,
                     color,
                     size,
+                    stroke_width,
                     ..
                 } => {
                     close_run(
@@ -597,19 +598,26 @@ impl RunnerCore {
                     if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
                         continue;
                     }
-                    let layers = text.record(
+                    let recorded = text.record_icon(
                         *rect,
                         phys,
+                        *name,
                         *color,
-                        name.fallback_glyph(),
                         *size,
-                        FontWeight::Regular,
-                        TextWrap::NoWrap,
-                        TextAnchor::Middle,
+                        *stroke_width,
                         scale_factor,
                     );
-                    for index in layers {
-                        self.paint_items.push(PaintItem::Text(index));
+                    match recorded {
+                        RecordedPaint::Text(layers) => {
+                            for index in layers {
+                                self.paint_items.push(PaintItem::Text(index));
+                            }
+                        }
+                        RecordedPaint::Icon(runs) => {
+                            for index in runs {
+                                self.paint_items.push(PaintItem::IconRun(index));
+                            }
+                        }
                     }
                 }
                 DrawOp::BackdropSnapshot => {
@@ -663,6 +671,13 @@ fn find_capture_keys(node: &El, id: &str) -> Option<bool> {
     node.children.iter().find_map(|c| find_capture_keys(c, id))
 }
 
+/// Recorded output from an icon draw op. Backends without a vector-icon
+/// path use `Text` fallback layers; wgpu can return dedicated icon runs.
+pub enum RecordedPaint {
+    Text(Range<usize>),
+    Icon(Range<usize>),
+}
+
 /// Glyph-recording surface implemented by each backend's `TextPaint`.
 /// `prepare_paint` calls into it exactly the same way wgpu and vulkano
 /// would call their per-backend equivalents.
@@ -699,6 +714,33 @@ pub trait TextRecorder {
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> Range<usize>;
+
+    /// Append a vector icon. The default keeps non-wgpu backends on the
+    /// previous text-symbol fallback until they implement a native
+    /// vector icon painter.
+    #[allow(clippy::too_many_arguments)]
+    fn record_icon(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        name: crate::tree::IconName,
+        color: Color,
+        size: f32,
+        _stroke_width: f32,
+        scale_factor: f32,
+    ) -> RecordedPaint {
+        RecordedPaint::Text(self.record(
+            rect,
+            scissor,
+            color,
+            name.fallback_glyph(),
+            size,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            TextAnchor::Middle,
+            scale_factor,
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -952,6 +994,7 @@ mod tests {
             .iter()
             .map(|p| match p {
                 PaintItem::QuadRun(_) => "Q",
+                PaintItem::IconRun(_) => "I",
                 PaintItem::Text(_) => "T",
                 PaintItem::BackdropSnapshot => "S",
             })

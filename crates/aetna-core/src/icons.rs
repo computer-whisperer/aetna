@@ -44,6 +44,278 @@ pub fn icon(name: impl IntoIconName) -> El {
         .text_color(tokens::TEXT_FOREGROUND)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct IconStroke {
+    pub from: [f32; 2],
+    pub to: [f32; 2],
+}
+
+const fn stroke(x0: f32, y0: f32, x1: f32, y1: f32) -> IconStroke {
+    IconStroke {
+        from: [x0, y0],
+        to: [x1, y1],
+    }
+}
+
+const ACTIVITY: &[IconStroke] = &[
+    stroke(3.0, 12.0, 7.0, 12.0),
+    stroke(7.0, 12.0, 10.0, 4.0),
+    stroke(10.0, 4.0, 14.0, 20.0),
+    stroke(14.0, 20.0, 17.0, 12.0),
+    stroke(17.0, 12.0, 21.0, 12.0),
+];
+const ALERT_CIRCLE: &[IconStroke] = &[
+    stroke(12.0, 3.0, 16.5, 4.2),
+    stroke(16.5, 4.2, 19.8, 7.5),
+    stroke(19.8, 7.5, 21.0, 12.0),
+    stroke(21.0, 12.0, 19.8, 16.5),
+    stroke(19.8, 16.5, 16.5, 19.8),
+    stroke(16.5, 19.8, 12.0, 21.0),
+    stroke(12.0, 21.0, 7.5, 19.8),
+    stroke(7.5, 19.8, 4.2, 16.5),
+    stroke(4.2, 16.5, 3.0, 12.0),
+    stroke(3.0, 12.0, 4.2, 7.5),
+    stroke(4.2, 7.5, 7.5, 4.2),
+    stroke(7.5, 4.2, 12.0, 3.0),
+    stroke(12.0, 7.0, 12.0, 13.0),
+    stroke(12.0, 17.0, 12.2, 17.0),
+];
+const BAR_CHART: &[IconStroke] = &[
+    stroke(4.0, 20.0, 4.0, 10.0),
+    stroke(12.0, 20.0, 12.0, 4.0),
+    stroke(20.0, 20.0, 20.0, 13.0),
+];
+const BELL: &[IconStroke] = &[
+    stroke(6.0, 17.0, 18.0, 17.0),
+    stroke(6.0, 17.0, 6.0, 8.0),
+    stroke(6.0, 8.0, 8.0, 5.0),
+    stroke(8.0, 5.0, 12.0, 3.0),
+    stroke(12.0, 3.0, 16.0, 5.0),
+    stroke(16.0, 5.0, 18.0, 8.0),
+    stroke(18.0, 8.0, 18.0, 17.0),
+    stroke(10.0, 21.0, 14.0, 21.0),
+];
+const CHECK: &[IconStroke] = &[stroke(20.0, 6.0, 9.0, 17.0), stroke(9.0, 17.0, 4.0, 12.0)];
+const CHEVRON_DOWN: &[IconStroke] = &[stroke(6.0, 9.0, 12.0, 15.0), stroke(12.0, 15.0, 18.0, 9.0)];
+const CHEVRON_RIGHT: &[IconStroke] = &[stroke(9.0, 6.0, 15.0, 12.0), stroke(15.0, 12.0, 9.0, 18.0)];
+const COMMAND: &[IconStroke] = &[
+    stroke(9.0, 9.0, 15.0, 9.0),
+    stroke(15.0, 9.0, 15.0, 15.0),
+    stroke(15.0, 15.0, 9.0, 15.0),
+    stroke(9.0, 15.0, 9.0, 9.0),
+    stroke(9.0, 9.0, 6.0, 9.0),
+    stroke(6.0, 9.0, 6.0, 4.0),
+    stroke(6.0, 4.0, 9.0, 4.0),
+    stroke(9.0, 4.0, 9.0, 9.0),
+    stroke(15.0, 9.0, 15.0, 4.0),
+    stroke(15.0, 4.0, 18.0, 4.0),
+    stroke(18.0, 4.0, 18.0, 9.0),
+    stroke(18.0, 9.0, 15.0, 9.0),
+    stroke(15.0, 15.0, 18.0, 15.0),
+    stroke(18.0, 15.0, 18.0, 20.0),
+    stroke(18.0, 20.0, 15.0, 20.0),
+    stroke(15.0, 20.0, 15.0, 15.0),
+    stroke(9.0, 15.0, 9.0, 20.0),
+    stroke(9.0, 20.0, 6.0, 20.0),
+    stroke(6.0, 20.0, 6.0, 15.0),
+    stroke(6.0, 15.0, 9.0, 15.0),
+];
+const DOWNLOAD: &[IconStroke] = &[
+    stroke(12.0, 3.0, 12.0, 15.0),
+    stroke(7.0, 10.0, 12.0, 15.0),
+    stroke(12.0, 15.0, 17.0, 10.0),
+    stroke(5.0, 21.0, 19.0, 21.0),
+];
+const FILE_TEXT: &[IconStroke] = &[
+    stroke(6.0, 3.0, 14.0, 3.0),
+    stroke(14.0, 3.0, 18.0, 7.0),
+    stroke(18.0, 7.0, 18.0, 21.0),
+    stroke(18.0, 21.0, 6.0, 21.0),
+    stroke(6.0, 21.0, 6.0, 3.0),
+    stroke(14.0, 3.0, 14.0, 7.0),
+    stroke(14.0, 7.0, 18.0, 7.0),
+    stroke(8.0, 12.0, 16.0, 12.0),
+    stroke(8.0, 16.0, 14.0, 16.0),
+];
+const FOLDER: &[IconStroke] = &[
+    stroke(3.0, 6.0, 10.0, 6.0),
+    stroke(10.0, 6.0, 12.0, 8.0),
+    stroke(12.0, 8.0, 21.0, 8.0),
+    stroke(21.0, 8.0, 21.0, 18.0),
+    stroke(21.0, 18.0, 19.0, 20.0),
+    stroke(19.0, 20.0, 5.0, 20.0),
+    stroke(5.0, 20.0, 3.0, 18.0),
+    stroke(3.0, 18.0, 3.0, 6.0),
+];
+const GIT_BRANCH: &[IconStroke] = &[
+    stroke(4.0, 5.0, 6.0, 3.0),
+    stroke(6.0, 3.0, 8.0, 5.0),
+    stroke(8.0, 5.0, 6.0, 7.0),
+    stroke(6.0, 7.0, 4.0, 5.0),
+    stroke(4.0, 19.0, 6.0, 17.0),
+    stroke(6.0, 17.0, 8.0, 19.0),
+    stroke(8.0, 19.0, 6.0, 21.0),
+    stroke(6.0, 21.0, 4.0, 19.0),
+    stroke(16.0, 19.0, 18.0, 17.0),
+    stroke(18.0, 17.0, 20.0, 19.0),
+    stroke(20.0, 19.0, 18.0, 21.0),
+    stroke(18.0, 21.0, 16.0, 19.0),
+    stroke(6.0, 7.0, 6.0, 17.0),
+    stroke(8.0, 5.0, 12.0, 5.0),
+    stroke(12.0, 5.0, 18.0, 11.0),
+    stroke(18.0, 11.0, 18.0, 17.0),
+];
+const GIT_COMMIT: &[IconStroke] = &[
+    stroke(3.0, 12.0, 9.0, 12.0),
+    stroke(15.0, 12.0, 21.0, 12.0),
+    stroke(12.0, 9.0, 15.0, 12.0),
+    stroke(15.0, 12.0, 12.0, 15.0),
+    stroke(12.0, 15.0, 9.0, 12.0),
+    stroke(9.0, 12.0, 12.0, 9.0),
+];
+const INFO: &[IconStroke] = &[
+    stroke(12.0, 3.0, 16.5, 4.2),
+    stroke(16.5, 4.2, 19.8, 7.5),
+    stroke(19.8, 7.5, 21.0, 12.0),
+    stroke(21.0, 12.0, 19.8, 16.5),
+    stroke(19.8, 16.5, 16.5, 19.8),
+    stroke(16.5, 19.8, 12.0, 21.0),
+    stroke(12.0, 21.0, 7.5, 19.8),
+    stroke(7.5, 19.8, 4.2, 16.5),
+    stroke(4.2, 16.5, 3.0, 12.0),
+    stroke(3.0, 12.0, 4.2, 7.5),
+    stroke(4.2, 7.5, 7.5, 4.2),
+    stroke(7.5, 4.2, 12.0, 3.0),
+    stroke(12.0, 11.0, 12.0, 17.0),
+    stroke(12.0, 7.0, 12.2, 7.0),
+];
+const LAYOUT_DASHBOARD: &[IconStroke] = &[
+    stroke(3.0, 3.0, 10.0, 3.0),
+    stroke(10.0, 3.0, 10.0, 11.0),
+    stroke(10.0, 11.0, 3.0, 11.0),
+    stroke(3.0, 11.0, 3.0, 3.0),
+    stroke(14.0, 3.0, 21.0, 3.0),
+    stroke(21.0, 3.0, 21.0, 8.0),
+    stroke(21.0, 8.0, 14.0, 8.0),
+    stroke(14.0, 8.0, 14.0, 3.0),
+    stroke(14.0, 12.0, 21.0, 12.0),
+    stroke(21.0, 12.0, 21.0, 21.0),
+    stroke(21.0, 21.0, 14.0, 21.0),
+    stroke(14.0, 21.0, 14.0, 12.0),
+    stroke(3.0, 15.0, 10.0, 15.0),
+    stroke(10.0, 15.0, 10.0, 21.0),
+    stroke(10.0, 21.0, 3.0, 21.0),
+    stroke(3.0, 21.0, 3.0, 15.0),
+];
+const MENU: &[IconStroke] = &[
+    stroke(4.0, 6.0, 20.0, 6.0),
+    stroke(4.0, 12.0, 20.0, 12.0),
+    stroke(4.0, 18.0, 20.0, 18.0),
+];
+const MORE_HORIZONTAL: &[IconStroke] = &[
+    stroke(6.0, 12.0, 6.2, 12.0),
+    stroke(12.0, 12.0, 12.2, 12.0),
+    stroke(18.0, 12.0, 18.2, 12.0),
+];
+const PLUS: &[IconStroke] = &[stroke(12.0, 5.0, 12.0, 19.0), stroke(5.0, 12.0, 19.0, 12.0)];
+const REFRESH_CW: &[IconStroke] = &[
+    stroke(20.0, 12.0, 18.0, 17.0),
+    stroke(18.0, 17.0, 14.0, 20.0),
+    stroke(14.0, 20.0, 9.0, 19.0),
+    stroke(9.0, 19.0, 5.5, 16.0),
+    stroke(4.0, 12.0, 6.0, 7.0),
+    stroke(6.0, 7.0, 10.0, 4.0),
+    stroke(10.0, 4.0, 15.0, 5.0),
+    stroke(15.0, 5.0, 18.5, 8.0),
+    stroke(18.0, 3.0, 18.0, 7.0),
+    stroke(18.0, 7.0, 14.0, 7.0),
+    stroke(6.0, 21.0, 6.0, 17.0),
+    stroke(6.0, 17.0, 10.0, 17.0),
+];
+const SEARCH: &[IconStroke] = &[
+    stroke(11.0, 4.0, 14.5, 5.0),
+    stroke(14.5, 5.0, 17.0, 7.5),
+    stroke(17.0, 7.5, 18.0, 11.0),
+    stroke(18.0, 11.0, 17.0, 14.5),
+    stroke(17.0, 14.5, 14.5, 17.0),
+    stroke(14.5, 17.0, 11.0, 18.0),
+    stroke(11.0, 18.0, 7.5, 17.0),
+    stroke(7.5, 17.0, 5.0, 14.5),
+    stroke(5.0, 14.5, 4.0, 11.0),
+    stroke(4.0, 11.0, 5.0, 7.5),
+    stroke(5.0, 7.5, 7.5, 5.0),
+    stroke(7.5, 5.0, 11.0, 4.0),
+    stroke(16.0, 16.0, 21.0, 21.0),
+];
+const SETTINGS: &[IconStroke] = &[
+    stroke(12.0, 9.0, 15.0, 12.0),
+    stroke(15.0, 12.0, 12.0, 15.0),
+    stroke(12.0, 15.0, 9.0, 12.0),
+    stroke(9.0, 12.0, 12.0, 9.0),
+    stroke(12.0, 3.0, 12.0, 6.0),
+    stroke(12.0, 18.0, 12.0, 21.0),
+    stroke(3.0, 12.0, 6.0, 12.0),
+    stroke(18.0, 12.0, 21.0, 12.0),
+    stroke(5.6, 5.6, 7.8, 7.8),
+    stroke(16.2, 16.2, 18.4, 18.4),
+    stroke(18.4, 5.6, 16.2, 7.8),
+    stroke(7.8, 16.2, 5.6, 18.4),
+];
+const UPLOAD: &[IconStroke] = &[
+    stroke(12.0, 21.0, 12.0, 9.0),
+    stroke(7.0, 14.0, 12.0, 9.0),
+    stroke(12.0, 9.0, 17.0, 14.0),
+    stroke(5.0, 3.0, 19.0, 3.0),
+];
+const USERS: &[IconStroke] = &[
+    stroke(6.0, 8.0, 9.0, 5.0),
+    stroke(9.0, 5.0, 12.0, 8.0),
+    stroke(12.0, 8.0, 9.0, 11.0),
+    stroke(9.0, 11.0, 6.0, 8.0),
+    stroke(3.0, 21.0, 5.0, 17.0),
+    stroke(5.0, 17.0, 9.0, 15.0),
+    stroke(9.0, 15.0, 13.0, 17.0),
+    stroke(13.0, 17.0, 15.0, 21.0),
+    stroke(16.0, 5.0, 18.5, 8.0),
+    stroke(18.5, 8.0, 16.0, 11.0),
+    stroke(16.0, 16.0, 19.0, 17.5),
+    stroke(19.0, 17.5, 21.0, 21.0),
+];
+const X: &[IconStroke] = &[stroke(18.0, 6.0, 6.0, 18.0), stroke(6.0, 6.0, 18.0, 18.0)];
+
+/// Flattened line strokes in the same 24x24 coordinate system as
+/// [`icon_path`]. This is the first GPU-native icon vocabulary: it is
+/// deliberately line-segment based so shader theming can own stroke
+/// treatment without parsing SVG paths at frame time.
+pub fn icon_strokes(name: IconName) -> &'static [IconStroke] {
+    match name {
+        IconName::Activity => ACTIVITY,
+        IconName::AlertCircle => ALERT_CIRCLE,
+        IconName::BarChart => BAR_CHART,
+        IconName::Bell => BELL,
+        IconName::Check => CHECK,
+        IconName::ChevronDown => CHEVRON_DOWN,
+        IconName::ChevronRight => CHEVRON_RIGHT,
+        IconName::Command => COMMAND,
+        IconName::Download => DOWNLOAD,
+        IconName::FileText => FILE_TEXT,
+        IconName::Folder => FOLDER,
+        IconName::GitBranch => GIT_BRANCH,
+        IconName::GitCommit => GIT_COMMIT,
+        IconName::Info => INFO,
+        IconName::LayoutDashboard => LAYOUT_DASHBOARD,
+        IconName::Menu => MENU,
+        IconName::MoreHorizontal => MORE_HORIZONTAL,
+        IconName::Plus => PLUS,
+        IconName::RefreshCw => REFRESH_CW,
+        IconName::Search => SEARCH,
+        IconName::Settings => SETTINGS,
+        IconName::Upload => UPLOAD,
+        IconName::Users => USERS,
+        IconName::X => X,
+    }
+}
+
 /// SVG path markup in a 24x24 coordinate system. Paths deliberately use
 /// `currentColor`; the SVG fallback supplies colour/stroke externally.
 pub fn icon_path(name: IconName) -> &'static str {
@@ -123,5 +395,42 @@ mod tests {
         assert_eq!(el.width, Size::Fixed(16.0));
         assert_eq!(el.height, Size::Fixed(16.0));
         assert_eq!(el.text_color, Some(tokens::TEXT_FOREGROUND));
+    }
+
+    #[test]
+    fn every_builtin_icon_has_gpu_strokes() {
+        let names = [
+            IconName::Activity,
+            IconName::AlertCircle,
+            IconName::BarChart,
+            IconName::Bell,
+            IconName::Check,
+            IconName::ChevronDown,
+            IconName::ChevronRight,
+            IconName::Command,
+            IconName::Download,
+            IconName::FileText,
+            IconName::Folder,
+            IconName::GitBranch,
+            IconName::GitCommit,
+            IconName::Info,
+            IconName::LayoutDashboard,
+            IconName::Menu,
+            IconName::MoreHorizontal,
+            IconName::Plus,
+            IconName::RefreshCw,
+            IconName::Search,
+            IconName::Settings,
+            IconName::Upload,
+            IconName::Users,
+            IconName::X,
+        ];
+        for name in names {
+            assert!(
+                !icon_strokes(name).is_empty(),
+                "{} has no GPU strokes",
+                name.name()
+            );
+        }
     }
 }

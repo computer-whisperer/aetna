@@ -65,12 +65,39 @@ pub struct QuadInstance {
     pub slot_d: [f32; 4],
 }
 
+/// One line-segment primitive in a vector icon. The instance renders a
+/// single antialiased stroke into `rect`; higher-level icon paths are
+/// flattened into runs of these records by the backend recorder.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable, Debug)]
+pub struct IconInstance {
+    /// Painted bounds for the segment, outset for stroke width and AA.
+    /// Vertex shader reads at `@location(1)`.
+    pub rect: [f32; 4],
+    /// Segment endpoints in logical px: `(x0, y0, x1, y1)`.
+    /// Fragment shader reads at `@location(2)`.
+    pub line: [f32; 4],
+    /// Linear rgba color. Fragment shader reads at `@location(3)`.
+    pub color: [f32; 4],
+    /// `(stroke_width, reserved, reserved, reserved)`.
+    /// Fragment shader reads at `@location(4)`.
+    pub params: [f32; 4],
+}
+
 /// A contiguous run of instances drawn with the same pipeline + scissor.
 /// Built in tree order so a custom shader sandwiched between two stock
 /// surfaces is drawn at the right z-position.
 #[derive(Clone, Copy)]
 pub struct InstanceRun {
     pub handle: ShaderHandle,
+    pub scissor: Option<PhysicalScissor>,
+    pub first: u32,
+    pub count: u32,
+}
+
+/// A contiguous run of vector-icon line segments sharing a scissor.
+#[derive(Clone, Copy)]
+pub struct IconRun {
     pub scissor: Option<PhysicalScissor>,
     pub first: u32,
     pub count: u32,
@@ -89,6 +116,9 @@ pub struct PhysicalScissor {
 /// Sequencing entry for the recorded paint stream.
 ///
 /// - `QuadRun(idx)` — a contiguous instance run (indexed into `runs`).
+/// - `IconRun(idx)` — a vector icon line-segment run (backend-owned
+///   storage, indexed by the wgpu icon painter; other backends may keep
+///   using text fallback and never emit this item).
 /// - `Text(idx)` — a glyph layer (indexed into the backend's
 ///   `TextLayer` vector).
 /// - `BackdropSnapshot` — a pass boundary. The backend ends the
@@ -101,6 +131,7 @@ pub struct PhysicalScissor {
 #[derive(Clone, Copy)]
 pub enum PaintItem {
     QuadRun(usize),
+    IconRun(usize),
     Text(usize),
     BackdropSnapshot,
 }

@@ -88,7 +88,7 @@ pub use event::{
 };
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
-pub use icons::{IntoIconName, icon, icon_path};
+pub use icons::{IconStroke, IntoIconName, icon, icon_path, icon_strokes};
 pub use ir::{DrawOp, TextAnchor};
 pub use layout::{LayoutCtx, LayoutFn, VirtualItems, layout};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};

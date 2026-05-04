@@ -741,6 +741,12 @@ impl Runner {
                     // a no-op and any backdrop draws after it sample
                     // undefined memory.
                 }
+                PaintItem::IconRun(_) => {
+                    // Vulkano currently records icons through
+                    // TextRecorder's fallback glyph path, so this
+                    // branch should not be reached until a native
+                    // vector-icon painter is added for this backend.
+                }
                 PaintItem::Text(idx) => {
                     let run = self.text_paint.run(idx);
                     set_scissor(builder, run.scissor, full);
