@@ -21,7 +21,7 @@
 //! Text isn't here yet — `DrawOp::GlyphRun` only closes the current
 //! quad run for now. Step 6 wires up the atlas-mirror text path.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -88,6 +88,13 @@ pub struct Runner {
     /// SPIR-V words cached per registered custom shader name. The
     /// pipeline itself is built lazily on first use.
     registered_shaders: HashMap<&'static str, Vec<u32>>,
+
+    /// Custom shader names registered with `samples_backdrop=true`. The
+    /// paint scheduler queries this to insert pass boundaries before
+    /// the first backdrop-sampling draw. Vulkano backend ignores the
+    /// boundary today (single-pass render pass); v0.7 step E adds
+    /// multi-pass + snapshot.
+    backdrop_shaders: HashSet<&'static str>,
 
     // Backend-agnostic state shared with aetna-wgpu: interaction state,
     // paint-stream scratch (quad_scratch / runs / paint_items),
@@ -225,6 +232,7 @@ impl Runner {
             instance_buf,
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             registered_shaders: HashMap::new(),
+            backdrop_shaders: HashSet::new(),
             core: {
                 let mut c = RunnerCore::new();
                 c.quad_scratch = Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize);
@@ -249,6 +257,14 @@ impl Runner {
     /// eagerly so a shader registered for a `key` is ready to draw
     /// immediately.
     pub fn register_shader(&mut self, name: &'static str, wgsl: &str) {
+        self.register_shader_with(name, wgsl, false);
+    }
+
+    /// Register a custom shader with an opt-in backdrop-sampling flag.
+    /// The flag tells the paint scheduler to insert a pass boundary
+    /// before the first draw bound to this shader; the actual
+    /// snapshot/multi-pass plumbing lands in v0.7 step E for vulkano.
+    pub fn register_shader_with(&mut self, name: &'static str, wgsl: &str, samples_backdrop: bool) {
         // Cache the SPIR-V words too — useful for diagnostics + future
         // re-registration without re-running naga.
         let spirv = wgsl_to_spirv(name, wgsl)
@@ -258,6 +274,11 @@ impl Runner {
         let subpass = Subpass::from(self.render_pass.clone(), 0).expect("aetna-vulkano: subpass 0");
         let pipeline = build_quad_pipeline(self.device.clone(), subpass, name, wgsl);
         self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
+        if samples_backdrop {
+            self.backdrop_shaders.insert(name);
+        } else {
+            self.backdrop_shaders.remove(name);
+        }
     }
 
     pub fn ui_state(&self) -> &UiState {
@@ -285,9 +306,14 @@ impl Runner {
 
         self.text_paint.frame_begin();
         let pipelines = &self.pipelines;
+        let backdrop_shaders = &self.backdrop_shaders;
         self.core.prepare_paint(
             &ops,
             |shader| pipelines.contains_key(shader),
+            |shader| match shader {
+                ShaderHandle::Custom(name) => backdrop_shaders.contains(name),
+                ShaderHandle::Stock(_) => false,
+            },
             &mut self.text_paint,
             scale_factor,
             &mut timings,
@@ -435,6 +461,12 @@ impl Runner {
                         builder.draw(4, run.count, 0, run.first).expect("draw");
                     }
                 }
+                // Pass boundary — vulkano's single-pass render pass
+                // can't honor it. v0.7 step E adds the multi-pass /
+                // snapshot wiring; until then, backdrop-sampling
+                // shaders against vulkano draw with an undefined
+                // backdrop binding.
+                PaintItem::BackdropSnapshot => {}
                 PaintItem::Text(idx) => {
                     let run = self.text_paint.run(idx);
                     set_scissor(builder, run.scissor, full);

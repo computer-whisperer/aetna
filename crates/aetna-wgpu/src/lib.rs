@@ -58,7 +58,7 @@ mod instance;
 mod pipeline;
 mod text;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 // `web_time::Instant` is API-identical to `std::time::Instant` on
 // native and uses `performance.now()` on wasm32 — std's `Instant::now()`
 // panics in the browser because there is no monotonic clock there.
@@ -102,6 +102,10 @@ pub struct Runner {
 
     // One pipeline per registered shader (stock + custom).
     pipelines: HashMap<ShaderHandle, wgpu::RenderPipeline>,
+    // Custom shader names registered with `samples_backdrop=true`. The
+    // paint scheduler queries this to insert pass boundaries before the
+    // first backdrop-sampling draw.
+    backdrop_shaders: HashSet<&'static str>,
 
     // stock::text resources — atlas, page textures, glyph instances.
     text_paint: TextPaint,
@@ -207,6 +211,7 @@ impl Runner {
             instance_buf,
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             pipelines,
+            backdrop_shaders: HashSet::new(),
             text_paint,
             core,
         }
@@ -236,6 +241,27 @@ impl Runner {
     /// Re-registering the same name replaces the previous pipeline
     /// (useful for hot-reload during development).
     pub fn register_shader(&mut self, device: &wgpu::Device, name: &'static str, wgsl: &str) {
+        self.register_shader_with(device, name, wgsl, false);
+    }
+
+    /// Register a custom shader, with an opt-in flag for backdrop
+    /// sampling. When `samples_backdrop` is true, the renderer schedules
+    /// the shader's draws into Pass B (after a snapshot of Pass A's
+    /// rendered content) and binds the snapshot texture as
+    /// `@group(2) binding=0` (`backdrop_tex`) plus a sampler at
+    /// `binding=1` (`backdrop_smp`). See `SHADER_VISION.md`
+    /// §"Backdrop sampling architecture".
+    ///
+    /// v0.7 caps backdrop depth at 1: glass-on-glass shows the same
+    /// underlying content, not a second snapshot of the first glass
+    /// composited.
+    pub fn register_shader_with(
+        &mut self,
+        device: &wgpu::Device,
+        name: &'static str,
+        wgsl: &str,
+        samples_backdrop: bool,
+    ) {
         let label = format!("custom::{name}");
         let pipeline = build_quad_pipeline(
             device,
@@ -245,6 +271,11 @@ impl Runner {
             wgsl,
         );
         self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
+        if samples_backdrop {
+            self.backdrop_shaders.insert(name);
+        } else {
+            self.backdrop_shaders.remove(name);
+        }
     }
 
     /// Borrow the internal [`UiState`] — primarily for headless fixtures
@@ -304,9 +335,14 @@ impl Runner {
         // check itself into core).
         self.text_paint.frame_begin();
         let pipelines = &self.pipelines;
+        let backdrop_shaders = &self.backdrop_shaders;
         self.core.prepare_paint(
             &ops,
             |shader| pipelines.contains_key(shader),
+            |shader| match shader {
+                ShaderHandle::Custom(name) => backdrop_shaders.contains(name),
+                ShaderHandle::Stock(_) => false,
+            },
             &mut self.text_paint,
             scale_factor,
             &mut timings,
@@ -448,6 +484,14 @@ impl Runner {
                     pass.set_vertex_buffer(1, self.text_paint.instance_buf().slice(..));
                     pass.draw(0..4, run.first..run.first + run.count);
                 }
+                // Pass boundary — the single-pass `draw()` entry can't
+                // honor it (you can't end+restart a host-owned pass
+                // mid-recording). Step B introduces a `render(encoder,
+                // ...)` entry point that owns pass lifetimes and copies
+                // the target into the snapshot texture here. Until then,
+                // backdrop-sampling shaders draw against an undefined
+                // backdrop binding; step A is just the scheduler.
+                PaintItem::BackdropSnapshot => {}
             }
         }
     }

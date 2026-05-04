@@ -282,14 +282,18 @@ impl RunnerCore {
     /// invoking this — `prepare_paint` does not call it for them
     /// because backends often want to clear other per-frame text
     /// scratch in the same step.
-    pub fn prepare_paint<F: Fn(&ShaderHandle) -> bool>(
+    pub fn prepare_paint<F1, F2>(
         &mut self,
         ops: &[DrawOp],
-        is_registered: F,
+        is_registered: F1,
+        samples_backdrop: F2,
         text: &mut dyn TextRecorder,
         scale_factor: f32,
         timings: &mut PrepareTimings,
-    ) {
+    ) where
+        F1: Fn(&ShaderHandle) -> bool,
+        F2: Fn(&ShaderHandle) -> bool,
+    {
         let t0 = Instant::now();
         self.quad_scratch.clear();
         self.runs.clear();
@@ -297,6 +301,9 @@ impl RunnerCore {
 
         let mut current: Option<(ShaderHandle, Option<PhysicalScissor>)> = None;
         let mut run_first: u32 = 0;
+        // v0.7: at most one snapshot per frame. Auto-inserted before
+        // the first paint that samples the backdrop.
+        let mut snapshot_emitted = false;
 
         for op in ops {
             match op {
@@ -313,6 +320,19 @@ impl RunnerCore {
                     let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
                     if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
                         continue;
+                    }
+                    if !snapshot_emitted && samples_backdrop(shader) {
+                        close_run(
+                            &mut self.runs,
+                            &mut self.paint_items,
+                            current,
+                            run_first,
+                            self.quad_scratch.len() as u32,
+                        );
+                        current = None;
+                        run_first = self.quad_scratch.len() as u32;
+                        self.paint_items.push(PaintItem::BackdropSnapshot);
+                        snapshot_emitted = true;
                     }
                     let inst = pack_instance(*rect, *shader, uniforms);
 
@@ -409,6 +429,12 @@ impl RunnerCore {
                     );
                     current = None;
                     run_first = self.quad_scratch.len() as u32;
+                    // v0.7 caps at one snapshot per frame; an explicit
+                    // op only lands if the auto-emitter hasn't fired yet.
+                    if !snapshot_emitted {
+                        self.paint_items.push(PaintItem::BackdropSnapshot);
+                        snapshot_emitted = true;
+                    }
                 }
             }
         }
@@ -469,4 +495,134 @@ pub trait TextRecorder {
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> Range<usize>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shader::{ShaderHandle, StockShader, UniformBlock};
+
+    /// Minimal recorder for tests that don't exercise the text path.
+    struct NoText;
+    impl TextRecorder for NoText {
+        fn record(
+            &mut self,
+            _rect: Rect,
+            _scissor: Option<PhysicalScissor>,
+            _color: Color,
+            _text: &str,
+            _size: f32,
+            _weight: FontWeight,
+            _wrap: TextWrap,
+            _anchor: TextAnchor,
+            _scale_factor: f32,
+        ) -> Range<usize> {
+            0..0
+        }
+        fn record_runs(
+            &mut self,
+            _rect: Rect,
+            _scissor: Option<PhysicalScissor>,
+            _runs: &[(String, RunStyle)],
+            _size: f32,
+            _wrap: TextWrap,
+            _anchor: TextAnchor,
+            _scale_factor: f32,
+        ) -> Range<usize> {
+            0..0
+        }
+    }
+
+    fn quad(shader: ShaderHandle) -> DrawOp {
+        DrawOp::Quad {
+            id: "q".into(),
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            scissor: None,
+            shader,
+            uniforms: UniformBlock::new(),
+        }
+    }
+
+    #[test]
+    fn samples_backdrop_inserts_snapshot_before_first_glass_quad() {
+        let mut core = RunnerCore::new();
+        core.set_surface_size(100, 100);
+        let ops = vec![
+            quad(ShaderHandle::Stock(StockShader::RoundedRect)),
+            quad(ShaderHandle::Stock(StockShader::RoundedRect)),
+            quad(ShaderHandle::Custom("liquid_glass")),
+            quad(ShaderHandle::Custom("liquid_glass")),
+            quad(ShaderHandle::Stock(StockShader::RoundedRect)),
+        ];
+        let mut timings = PrepareTimings::default();
+        core.prepare_paint(
+            &ops,
+            |_| true,
+            |s| matches!(s, ShaderHandle::Custom(name) if *name == "liquid_glass"),
+            &mut NoText,
+            1.0,
+            &mut timings,
+        );
+
+        let kinds: Vec<&'static str> = core
+            .paint_items
+            .iter()
+            .map(|p| match p {
+                PaintItem::QuadRun(_) => "Q",
+                PaintItem::Text(_) => "T",
+                PaintItem::BackdropSnapshot => "S",
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec!["Q", "S", "Q", "Q"],
+            "expected one stock run, snapshot, then a glass run, then a foreground stock run"
+        );
+    }
+
+    #[test]
+    fn no_snapshot_when_no_glass_drawn() {
+        let mut core = RunnerCore::new();
+        core.set_surface_size(100, 100);
+        let ops = vec![
+            quad(ShaderHandle::Stock(StockShader::RoundedRect)),
+            quad(ShaderHandle::Stock(StockShader::RoundedRect)),
+        ];
+        let mut timings = PrepareTimings::default();
+        core.prepare_paint(&ops, |_| true, |_| false, &mut NoText, 1.0, &mut timings);
+        assert!(
+            !core
+                .paint_items
+                .iter()
+                .any(|p| matches!(p, PaintItem::BackdropSnapshot)),
+            "no glass shader registered → no snapshot"
+        );
+    }
+
+    #[test]
+    fn at_most_one_snapshot_per_frame() {
+        let mut core = RunnerCore::new();
+        core.set_surface_size(100, 100);
+        let ops = vec![
+            quad(ShaderHandle::Stock(StockShader::RoundedRect)),
+            quad(ShaderHandle::Custom("g")),
+            quad(ShaderHandle::Stock(StockShader::RoundedRect)),
+            quad(ShaderHandle::Custom("g")),
+        ];
+        let mut timings = PrepareTimings::default();
+        core.prepare_paint(
+            &ops,
+            |_| true,
+            |s| matches!(s, ShaderHandle::Custom("g")),
+            &mut NoText,
+            1.0,
+            &mut timings,
+        );
+        let snapshots = core
+            .paint_items
+            .iter()
+            .filter(|p| matches!(p, PaintItem::BackdropSnapshot))
+            .count();
+        assert_eq!(snapshots, 1, "v0.7 caps backdrop depth at 1");
+    }
 }

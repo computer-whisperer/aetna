@@ -62,13 +62,23 @@ pub struct PhysicalScissor {
     pub h: u32,
 }
 
-/// Sequencing entry for the recorded paint stream — either a quad-run
-/// (indexed into the runner's `runs` vector) or a text layer (indexed
-/// into the runner's per-backend `TextLayer` vector).
+/// Sequencing entry for the recorded paint stream.
+///
+/// - `QuadRun(idx)` — a contiguous instance run (indexed into `runs`).
+/// - `Text(idx)` — a glyph layer (indexed into the backend's
+///   `TextLayer` vector).
+/// - `BackdropSnapshot` — a pass boundary. The backend ends the
+///   current render pass, copies the current target into its managed
+///   snapshot texture, and begins a new pass with `LoadOp::Load` so
+///   subsequent quads can sample the snapshot via the `backdrop` bind
+///   group. v0.7 emits at most one of these per frame, inserted by
+///   [`crate::runtime::RunnerCore::prepare_paint`] immediately before
+///   the first quad bound to a `samples_backdrop` shader.
 #[derive(Clone, Copy)]
 pub enum PaintItem {
     QuadRun(usize),
     Text(usize),
+    BackdropSnapshot,
 }
 
 /// Close the current run and append it to `runs` + `paint_items`. No-op
