@@ -1,12 +1,26 @@
 //! Glyph rasterization + atlas, backend-agnostic.
 //!
-//! [`GlyphAtlas`] owns the cosmic-text `FontSystem` (bundled Roboto) and
-//! a swash `ScaleContext`. It shapes a logical text run to per-glyph
-//! positions, rasterizes any glyphs it has not seen at this size, and
-//! packs the alpha-coverage bitmaps onto one or more CPU-side
-//! [`AtlasPage`]s. Backends mirror dirty regions of those pages to a GPU
-//! texture and draw textured quads at the positions returned in
-//! [`ShapedRun`].
+//! [`GlyphAtlas`] owns the cosmic-text `FontSystem` and a swash
+//! `ScaleContext`. It shapes a logical text run to per-glyph positions,
+//! rasterizes any glyphs it has not seen at this size, and packs the
+//! alpha-coverage bitmaps onto one or more CPU-side [`AtlasPage`]s.
+//! Backends mirror dirty regions of those pages to a GPU texture and
+//! draw textured quads at the positions returned in [`ShapedRun`].
+//!
+//! ## Fonts
+//!
+//! The font bundle lives in the sibling [`aetna-fonts`](aetna_fonts)
+//! crate (so the asset bytes don't bloat the engine source tree). At
+//! construction the atlas loads every byte slice in
+//! [`aetna_fonts::DEFAULT_FONTS`] into its `fontdb`. Callers that need
+//! a custom bundle (their own brand typeface, full pan-CJK, color
+//! emoji once that lands) use [`GlyphAtlas::register_font`] to push
+//! more fonts into the database, or build with
+//! `default-features = false` on aetna-core to drop the bundled assets
+//! entirely.
+//!
+//! cosmic-text walks fontdb when a primary face lacks a glyph, so any
+//! font in the database participates in fallback automatically.
 //!
 //! SVG and layout/measurement keep using [`crate::text_metrics`] — its
 //! line-level layout is what they consume; the per-glyph artifact here
@@ -25,13 +39,16 @@ use crate::ir::TextAnchor;
 use crate::text_metrics::{TextLayout, TextLine, line_height};
 use crate::tree::{Color, FontWeight, TextWrap};
 
-const ROBOTO_REGULAR: &[u8] = include_bytes!("../fonts/Roboto-Regular.ttf");
-const ROBOTO_MEDIUM: &[u8] = include_bytes!("../fonts/Roboto-Medium.ttf");
-const ROBOTO_BOLD: &[u8] = include_bytes!("../fonts/Roboto-Bold.ttf");
-
 /// Default page size. Picked so a typical fixture's glyphs fit on a
 /// single page; larger UIs allocate a second page on demand.
 const PAGE_SIZE: u32 = 512;
+
+/// Family name passed to cosmic-text for the proportional sans-serif
+/// stack. Faces with this family name are matched against `RunStyle`'s
+/// weight + italic flags through fontdb. cosmic-text falls back to
+/// other families in the database (e.g. Noto Sans Symbols 2) when this
+/// one lacks the requested codepoint.
+const DEFAULT_SANS_FAMILY: &str = "Roboto";
 
 /// One shaped glyph carrying its atlas key, pen position, paint color,
 /// and the index of the run that produced it. Positions are in
@@ -175,6 +192,14 @@ pub struct GlyphAtlas {
     scale_ctx: ScaleContext,
     pages: Vec<AtlasPage>,
     map: HashMap<GlyphKey, GlyphSlot>,
+    /// Family names tried in priority order when shaping text. The
+    /// **first** entry is the family name passed to cosmic-text's
+    /// `Attrs::family`; cosmic-text then walks `fontdb` for
+    /// per-codepoint fallback regardless of this list. Subsequent
+    /// entries record intent (and let future versions of the library
+    /// implement explicit per-codepoint stack walking if cosmic-text's
+    /// implicit fallback proves inadequate).
+    default_family_stack: Vec<String>,
 }
 
 impl Default for GlyphAtlas {
@@ -184,6 +209,11 @@ impl Default for GlyphAtlas {
 }
 
 impl GlyphAtlas {
+    /// Build an atlas with the bundled font set
+    /// ([`aetna_fonts::DEFAULT_FONTS`]) loaded into the font database.
+    /// To skip the bundled fonts, build with
+    /// `aetna-core = { default-features = false }` and supply your own
+    /// via [`Self::register_font`].
     pub fn new() -> Self {
         let font_system = bundled_font_system();
         Self {
@@ -191,7 +221,43 @@ impl GlyphAtlas {
             scale_ctx: ScaleContext::new(),
             pages: vec![AtlasPage::new(PAGE_SIZE, PAGE_SIZE)],
             map: HashMap::new(),
+            default_family_stack: vec![DEFAULT_SANS_FAMILY.to_string()],
         }
+    }
+
+    /// Register a font's raw bytes with the atlas's font database. The
+    /// font's family, weight, and style are auto-detected from its
+    /// metadata, so registering `Roboto-Bold.ttf` joins the existing
+    /// `"Roboto"` family at weight 700.
+    ///
+    /// cosmic-text walks the database for per-codepoint fallback, so a
+    /// registered emoji, CJK, or symbol font automatically participates
+    /// in fallback for any glyph the primary family lacks. Use this to
+    /// add color emoji once it's bundled, swap in a brand typeface, or
+    /// extend coverage to scripts not in the default bundle.
+    pub fn register_font(&mut self, bytes: Vec<u8>) {
+        self.font_system.db_mut().load_font_data(bytes);
+    }
+
+    /// Replace the default font-family stack used when shaping text.
+    /// The first entry is the primary family name passed to cosmic-text.
+    /// Pass `["MyBrand", "Roboto"]` to make `MyBrand` the primary face
+    /// and treat Roboto as documentation of the expected fallback —
+    /// cosmic-text's own fallback walks the full font database, so
+    /// every registered font remains available regardless of order.
+    pub fn set_default_family_stack(&mut self, stack: Vec<String>) {
+        if !stack.is_empty() {
+            self.default_family_stack = stack;
+        }
+    }
+
+    /// The primary font family used when shaping, i.e. the first entry
+    /// of the family stack. Defaults to `"Roboto"`.
+    pub fn default_family(&self) -> &str {
+        self.default_family_stack
+            .first()
+            .map(String::as_str)
+            .unwrap_or(DEFAULT_SANS_FAMILY)
     }
 
     pub fn pages(&self) -> &[AtlasPage] {
@@ -275,19 +341,22 @@ impl GlyphAtlas {
         // glyph button labels show up flush-left.
         buffer.set_size(&mut self.font_system, available_width, None);
 
-        let default_attrs = Attrs::new().family(Family::Name("Roboto"));
-        // NOTE: `style.italic` is preserved on `RunStyle` and on
-        // `El.text_italic` for round-tripping but we request
-        // `Style::Normal` from cosmic-text — bundled Roboto has no
-        // italic face, and asking for Italic panics the shaper's font
-        // fallback chain. v0.7+ bundles Roboto-Italic and flips this.
-        // `style.mono` is similarly preserved but doesn't yet route
-        // to a different family.
+        // Clone to a local so the immutable borrow on self.default_family
+        // doesn't conflict with the mutable font_system borrow below.
+        let primary_family = self.default_family().to_string();
+        let default_attrs = Attrs::new().family(Family::Name(&primary_family));
+        // `style.mono` is preserved on RunStyle but doesn't yet route
+        // to a different family — that arrives with the monospace
+        // bundle slice.
         let spans = runs.iter().enumerate().map(|(i, (text, style))| {
             let attrs = Attrs::new()
-                .family(Family::Name("Roboto"))
+                .family(Family::Name(&primary_family))
                 .weight(cosmic_weight(style.weight))
-                .style(Style::Normal)
+                .style(if style.italic {
+                    Style::Italic
+                } else {
+                    Style::Normal
+                })
                 .metadata(i);
             (*text, attrs)
         });
@@ -557,10 +626,10 @@ fn line_slice(run: &cosmic_text::LayoutRun<'_>, start: usize, end: usize) -> Str
 
 fn bundled_font_system() -> FontSystem {
     let mut db = fontdb::Database::new();
-    db.set_sans_serif_family("Roboto");
-    db.load_font_data(ROBOTO_REGULAR.to_vec());
-    db.load_font_data(ROBOTO_MEDIUM.to_vec());
-    db.load_font_data(ROBOTO_BOLD.to_vec());
+    db.set_sans_serif_family(DEFAULT_SANS_FAMILY);
+    for bytes in aetna_fonts::DEFAULT_FONTS {
+        db.load_font_data(bytes.to_vec());
+    }
     FontSystem::new_with_locale_and_db("en-US".to_string(), db)
 }
 
@@ -782,6 +851,62 @@ mod tests {
         assert_eq!(shaped.glyphs[4].color, blue);
         // Different weights → different glyph keys (font ID differs).
         assert_ne!(shaped.glyphs[0].key.font, shaped.glyphs[2].key.font);
+        // Italic resolves to the Roboto-Italic face — distinct from
+        // both Regular (run 0) and Bold (run 1). Before Roboto-Italic
+        // was bundled, asking cosmic-text for Style::Italic panicked
+        // its font fallback chain; this assertion guards the regression.
+        assert_ne!(shaped.glyphs[4].key.font, shaped.glyphs[0].key.font);
+        assert_ne!(shaped.glyphs[4].key.font, shaped.glyphs[2].key.font);
+    }
+
+    #[test]
+    fn fallback_face_resolves_math_arrow() {
+        // U+2192 RIGHTWARDS ARROW lives in NotoSansSymbols2, not in
+        // Roboto. Shaping should still produce a non-zero glyph (i.e.
+        // not a tofu replacement) because cosmic-text walks fontdb to
+        // find the codepoint in the bundled symbols face.
+        let mut atlas = GlyphAtlas::new();
+        let run = atlas.shape_and_rasterize(
+            "→",
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            TextAnchor::Start,
+            None,
+            Color::rgb(0, 0, 0),
+        );
+        assert_eq!(run.glyphs.len(), 1, "expected one glyph for arrow");
+        let slot = atlas.slot(run.glyphs[0].key).expect("arrow slot");
+        // Non-zero slot rect proves the glyph was rasterized rather
+        // than missing.
+        assert!(
+            slot.rect.w > 0 && slot.rect.h > 0,
+            "expected real bitmap, got {slot:?}"
+        );
+    }
+
+    #[test]
+    fn register_font_adds_to_database() {
+        // Re-register Roboto-Regular as a sanity check: load_font_data
+        // accepting our bytes proves the path is wired. (Verifying
+        // *novel* coverage requires a font with a glyph the bundle
+        // lacks — that's the symbols-fallback test above.)
+        let mut atlas = GlyphAtlas::new();
+        let before = atlas.font_system.db().faces().count();
+        atlas.register_font(aetna_fonts::ROBOTO_REGULAR.to_vec());
+        let after = atlas.font_system.db().faces().count();
+        assert!(after > before, "register_font should add a face");
+    }
+
+    #[test]
+    fn set_default_family_stack_changes_primary_family() {
+        let mut atlas = GlyphAtlas::new();
+        assert_eq!(atlas.default_family(), "Roboto");
+        atlas.set_default_family_stack(vec!["MyBrand".into(), "Roboto".into()]);
+        assert_eq!(atlas.default_family(), "MyBrand");
+        // Empty stack is rejected — primary family stays put.
+        atlas.set_default_family_stack(vec![]);
+        assert_eq!(atlas.default_family(), "MyBrand");
     }
 
     #[test]

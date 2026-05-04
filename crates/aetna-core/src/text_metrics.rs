@@ -11,9 +11,6 @@ use crate::tree::{FontWeight, TextWrap};
 use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Weight, Wrap, fontdb};
 use std::cell::RefCell;
 
-const ROBOTO_REGULAR: &[u8] = include_bytes!("../fonts/Roboto-Regular.ttf");
-const ROBOTO_MEDIUM: &[u8] = include_bytes!("../fonts/Roboto-Medium.ttf");
-const ROBOTO_BOLD: &[u8] = include_bytes!("../fonts/Roboto-Bold.ttf");
 const LINE_HEIGHT_MULTIPLIER: f32 = 1.4;
 const MONO_CHAR_WIDTH_FACTOR: f32 = 0.62;
 
@@ -328,9 +325,9 @@ thread_local! {
 fn roboto_font_system() -> FontSystem {
     let mut db = fontdb::Database::new();
     db.set_sans_serif_family("Roboto");
-    db.load_font_data(ROBOTO_REGULAR.to_vec());
-    db.load_font_data(ROBOTO_MEDIUM.to_vec());
-    db.load_font_data(ROBOTO_BOLD.to_vec());
+    for bytes in aetna_fonts::DEFAULT_FONTS {
+        db.load_font_data(bytes.to_vec());
+    }
     FontSystem::new_with_locale_and_db("en-US".to_string(), db)
 }
 
@@ -403,10 +400,25 @@ fn kern(face: &ttf_parser::Face<'_>, left: ttf_parser::GlyphId, right: ttf_parse
 }
 
 fn font_bytes(weight: FontWeight) -> &'static [u8] {
-    match weight {
-        FontWeight::Regular => ROBOTO_REGULAR,
-        FontWeight::Medium => ROBOTO_MEDIUM,
-        FontWeight::Semibold | FontWeight::Bold => ROBOTO_BOLD,
+    // ttf-parser fallback path (used only when cosmic-text is bypassed
+    // for monospace measurement, etc.). Sourced from aetna-fonts so we
+    // share one bundle with the cosmic-text path.
+    #[cfg(feature = "roboto")]
+    {
+        match weight {
+            FontWeight::Regular => aetna_fonts::ROBOTO_REGULAR,
+            FontWeight::Medium => aetna_fonts::ROBOTO_MEDIUM,
+            FontWeight::Semibold | FontWeight::Bold => aetna_fonts::ROBOTO_BOLD,
+        }
+    }
+    #[cfg(not(feature = "roboto"))]
+    {
+        let _ = weight;
+        // No bundled face — caller must use the fallback width
+        // estimator below. Returning an empty slice keeps the type
+        // signature identical; any reader that touches it with an
+        // empty slice falls through to the heuristic.
+        &[]
     }
 }
 

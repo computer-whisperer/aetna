@@ -1,0 +1,28 @@
+[package]
+name = "aetna-fonts"
+version = "0.1.0"
+edition = "2024"
+description = "Bundled font assets for Aetna (Roboto + Noto fallback faces)"
+license = "(MIT OR Apache-2.0) AND Apache-2.0 AND OFL-1.1"
+include = [
+    "src/**/*.rs",
+    "fonts/**",
+    "Cargo.toml",
+    "README.md",
+]
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Generous LLM-friendly default: Latin + arrows/math/box-drawing.
+# CJK is opt-in because it adds ~16 MB to the binary. `emoji` is a
+# placeholder feature reserved for NotoEmoji-Regular; not wired yet
+# (color emoji is on the v0.7+ roadmap and the B&W file isn't bundled
+# until we have it from a confirmed source).
+default = ["default_fonts"]
+default_fonts = ["roboto", "symbols"]
+roboto = []
+emoji = []
+symbols = []
+cjk = []

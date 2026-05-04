@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 path = "src/lib.rs"
 
 [dependencies]
+aetna-fonts = { path = "../aetna-fonts", default-features = false }
 bytemuck = { version = "1", features = ["derive"] }
 cosmic-text = "0.12.1"
 swash = "0.1.19"
@@ -16,6 +17,18 @@ ttf-parser = "0.25.1"
 # `Instant` that works on wasm32 (browser has no monotonic clock; std's
 # Instant::now() panics). API-identical to std::time::Instant on native.
 web-time = "1"
+
+[features]
+default = ["default_fonts"]
+# Bundle aetna-fonts' default font set (Roboto + Symbols2 + Math) into
+# the binary. Disable to ship your own fonts via `register_font`.
+default_fonts = ["aetna-fonts/default_fonts"]
+# Forward feature flags so downstream crates control the bundle through
+# aetna-core's Cargo.toml: `aetna-core = { features = ["cjk"] }`.
+roboto = ["aetna-fonts/roboto"]
+emoji = ["aetna-fonts/emoji"]
+symbols = ["aetna-fonts/symbols"]
+cjk = ["aetna-fonts/cjk"]
 
 [[example]]
 name = "settings"
