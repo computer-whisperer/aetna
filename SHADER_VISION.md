@@ -97,6 +97,19 @@ A node opts into backdrop sampling via `ShaderHandle` metadata (the registered s
 
 Multiple backdrop layers (glass on glass) become A → B1 → B2 → C. v0.1 caps depth at 1 (one snapshot, one B pass). Increase when needed.
 
+### v0.7 implementation contract (wgpu)
+
+- **Opt-in at registration.** `Runner::register_shader_with(name, wgsl, samples_backdrop=true)` builds the pipeline against a layout that binds the snapshot at `@group(1)`.
+- **Shader convention.**
+  ```wgsl
+  @group(1) @binding(0) var backdrop_tex: texture_2d<f32>;
+  @group(1) @binding(1) var backdrop_smp: sampler;
+  ```
+  Sample with `textureSample(backdrop_tex, backdrop_smp, uv)` where `uv = clip_pos.xy / vec2<f32>(textureDimensions(backdrop_tex))`.
+- **Multi-pass entry.** `Runner::render(encoder, target_tex, target_view, load_op)` owns pass lifetimes. The host's color target must include `COPY_SRC` in its usage flags so the snapshot copy succeeds. Existing `Runner::draw(pass)` stays for non-backdrop callers.
+- **Time uniform.** `FrameUniforms` carries `viewport: vec2<f32>; time: f32; _pad: f32` (16 bytes). `time` is seconds since the runner was constructed; backdrop shaders use it for shimmer/animation.
+- **Pass C combined with B.** v0.7 doesn't split pass C from B; everything after the snapshot is one pass with `LoadOp::Load`. Stock surfaces (text, foreground rounded_rects) painted after a glass card composite naturally on top because they appear later in the paint stream.
+
 ## Host integration surface
 
 ```rust

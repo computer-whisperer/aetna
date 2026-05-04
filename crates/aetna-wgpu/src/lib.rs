@@ -732,9 +732,7 @@ impl Runner {
                         run.handle,
                         ShaderHandle::Custom(name) if self.backdrop_shaders.contains(name)
                     );
-                    if is_backdrop_shader
-                        && let Some(bg) = &self.backdrop_bind_group
-                    {
+                    if is_backdrop_shader && let Some(bg) = &self.backdrop_bind_group {
                         pass.set_bind_group(1, bg, &[]);
                     }
                     pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
