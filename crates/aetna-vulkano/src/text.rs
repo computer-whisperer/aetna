@@ -58,7 +58,6 @@ use vulkano::{
             },
             viewport::ViewportState,
         },
-        layout::PipelineDescriptorSetLayoutCreateInfo,
     },
     render_pass::Subpass,
     shader::{ShaderModule, ShaderModuleCreateInfo},
@@ -558,13 +557,7 @@ fn build_text_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPip
         PipelineShaderStageCreateInfo::new(vs),
         PipelineShaderStageCreateInfo::new(fs),
     ];
-    let layout = vulkano::pipeline::PipelineLayout::new(
-        device.clone(),
-        PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-            .into_pipeline_layout_create_info(device.clone())
-            .expect("aetna-vulkano: text pipeline layout from stages"),
-    )
-    .expect("aetna-vulkano: text pipeline layout new");
+    let layout = crate::pipeline::build_shared_pipeline_layout(device.clone(), &stages);
 
     let bind_vertex = VertexInputBindingDescription {
         stride: (2 * std::mem::size_of::<f32>()) as u32,

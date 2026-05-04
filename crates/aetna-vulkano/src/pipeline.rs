@@ -35,7 +35,7 @@ use vulkano::{
         layout::PipelineDescriptorSetLayoutCreateInfo,
     },
     render_pass::Subpass,
-    shader::{ShaderModule, ShaderModuleCreateInfo},
+    shader::{ShaderModule, ShaderModuleCreateInfo, ShaderStages},
 };
 
 use aetna_core::paint::QuadInstance;
@@ -92,6 +92,41 @@ fn vertex_input_state() -> VertexInputState {
         .attribute(4, attr(1, 48, Format::R32G32B32A32_SFLOAT))
 }
 
+/// Build a pipeline layout from reflection, then broaden every set-0
+/// binding to be visible from both vertex and fragment stages.
+///
+/// Reflection-derived stage flags differ across our shaders: stock
+/// `rounded_rect` and `text` read `frame.viewport` only in the vertex
+/// stage, while `liquid_glass` reads `frame.time` in the fragment
+/// stage. That gives them non-identical set-0 layouts (`VERTEX` vs
+/// `VERTEX | FRAGMENT`), and the runner's single `frame_descriptor_set`
+/// is incompatible with whichever pipeline was built later (Vulkan
+/// VUID-vkCmdBindDescriptorSets-pDescriptorSets-00358).
+///
+/// Forcing every set-0 binding to `VERTEX | FRAGMENT` produces a
+/// structurally-identical set-0 layout across all pipelines, so the
+/// shared frame descriptor set binds correctly into all of them. Set 1
+/// (backdrop / atlas) is left at whatever the reflection produced —
+/// those layouts are per-shader-family already and don't need to match
+/// across stock and custom pipelines.
+pub(crate) fn build_shared_pipeline_layout(
+    device: Arc<Device>,
+    stages: &[PipelineShaderStageCreateInfo],
+) -> Arc<PipelineLayout> {
+    let mut info = PipelineDescriptorSetLayoutCreateInfo::from_stages(stages);
+    if let Some(set0) = info.set_layouts.get_mut(0) {
+        for binding in set0.bindings.values_mut() {
+            binding.stages |= ShaderStages::VERTEX | ShaderStages::FRAGMENT;
+        }
+    }
+    PipelineLayout::new(
+        device.clone(),
+        info.into_pipeline_layout_create_info(device)
+            .expect("aetna-vulkano: pipeline layout from stages"),
+    )
+    .expect("aetna-vulkano: pipeline layout new")
+}
+
 /// Compile WGSL → SPIR-V and build a graphics pipeline against the
 /// shared rect-shaped vertex layout, alpha blending, and the given
 /// render-pass subpass. Panics if the WGSL fails to compile.
@@ -121,13 +156,7 @@ pub(crate) fn build_quad_pipeline(
         PipelineShaderStageCreateInfo::new(fs),
     ];
 
-    let layout = PipelineLayout::new(
-        device.clone(),
-        PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-            .into_pipeline_layout_create_info(device.clone())
-            .expect("pipeline layout from stages"),
-    )
-    .expect("pipeline layout new");
+    let layout = build_shared_pipeline_layout(device.clone(), &stages);
 
     GraphicsPipeline::new(
         device.clone(),
