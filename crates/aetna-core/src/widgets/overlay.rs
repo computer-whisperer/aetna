@@ -31,6 +31,32 @@ where
         .clip()
 }
 
+/// Compose a main view with optional floating layers, filtering out
+/// `None`s. A thin sugar wrapper over [`crate::stack`] for the
+/// recurring "main + maybe-modal + maybe-popover" pattern at the El
+/// root:
+///
+/// ```ignore
+/// overlays(main_view, [
+///     self.modal_open.then(|| modal("confirm", "Delete?", [...])),
+///     self.menu_open.then(|| dropdown("menu", "trigger", [...])),
+/// ])
+/// ```
+///
+/// Equivalent to building a `Vec<El>` by hand and pushing only when
+/// each `Option` is `Some`. Layers paint in the order given (last on
+/// top); hit-testing visits them in reverse.
+#[track_caller]
+pub fn overlays<I>(main: impl Into<El>, layers: I) -> El
+where
+    I: IntoIterator<Item = Option<El>>,
+{
+    let mut children: Vec<El> = Vec::new();
+    children.push(main.into());
+    children.extend(layers.into_iter().flatten());
+    crate::stack(children)
+}
+
 /// A full-size modal scrim. The key should route to dismiss behavior in
 /// the app's event handler.
 #[track_caller]
@@ -85,4 +111,31 @@ where
         .axis(Axis::Column)
         .align(Align::Stretch)
         .clip()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widgets::button::button;
+
+    #[test]
+    fn overlays_filters_none_layers_in_order() {
+        let main = button("main").key("main");
+        let one = button("one").key("one");
+        let two = button("two").key("two");
+        let stacked = overlays(main, [None, Some(one), None, Some(two)]);
+        let keys: Vec<_> = stacked
+            .children
+            .iter()
+            .map(|c| c.key.clone().unwrap_or_default())
+            .collect();
+        assert_eq!(keys, vec!["main", "one", "two"]);
+    }
+
+    #[test]
+    fn overlays_with_no_layers_is_just_main_in_a_stack() {
+        let stacked = overlays(button("main").key("main"), std::iter::empty::<Option<El>>());
+        assert_eq!(stacked.children.len(), 1);
+        assert_eq!(stacked.children[0].key.as_deref(), Some("main"));
+    }
 }
