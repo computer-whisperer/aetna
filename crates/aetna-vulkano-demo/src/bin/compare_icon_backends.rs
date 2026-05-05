@@ -151,7 +151,7 @@ fn read_png(path: &Path) -> Result<Image, Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path)?;
     let decoder = png::Decoder::new(std::io::BufReader::new(file));
     let mut reader = decoder.read_info()?;
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![0; reader.output_buffer_size().ok_or("PNG dimensions overflow usize")?];
     let info = reader.next_frame(&mut buf)?;
     if info.color_type != png::ColorType::Rgba || info.bit_depth != png::BitDepth::Eight {
         return Err(format!(

@@ -52,7 +52,7 @@ dependencies = [
  "aetna-wgpu",
  "arboard",
  "cosmic-text",
- "png 0.17.16",
+ "png",
  "pollster",
  "ttf-parser 0.25.1",
  "wgpu",
@@ -83,7 +83,7 @@ dependencies = [
  "aetna-core",
  "aetna-demo",
  "aetna-vulkano",
- "png 0.17.16",
+ "png",
  "vulkano",
  "winit",
 ]
@@ -1064,7 +1064,7 @@ dependencies = [
  "byteorder-lite",
  "moxcms",
  "num-traits",
- "png 0.18.1",
+ "png",
  "tiff",
 ]
 
@@ -1964,19 +1964,6 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
-
-[[package]]
-name = "png"
-version = "0.17.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82151a2fc869e011c153adc57cf2789ccb8d9906ce52c0b39a6b5697749d7526"
-dependencies = [
- "bitflags 1.3.2",
- "crc32fast",
- "fdeflate",
- "flate2",
- "miniz_oxide",
-]
 
 [[package]]
 name = "png"
