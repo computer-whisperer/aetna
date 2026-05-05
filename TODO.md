@@ -57,9 +57,12 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 
 ### Slice 3 — slider keyboard
 
-- [ ] **`slider::apply_event(&mut value, &event, step)`.** Up / Down
-      adjust by `step`; PageUp / PageDown by a coarse step. Pure
-      controlled-state addition; matches the kit invariant.
+- [x] **`slider::apply_event(&mut value, &event, step, page_step)`** and
+      `slider::classify_event` returning a `SliderAction`. ArrowUp /
+      ArrowRight + ArrowDown / ArrowLeft step by `step`; PageUp / PageDown
+      by `page_step`; Home / End jump to 0 / 1. Wired into `aetna-volume`
+      so the volume sliders take focused-keyboard input alongside the
+      existing pointer scrub.
 
 ### Slice 4 — tooltips
 
