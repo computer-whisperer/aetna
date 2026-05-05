@@ -11,8 +11,8 @@ documentation = "https://docs.rs/aetna-winit-wgpu"
 path = "src/lib.rs"
 
 [dependencies]
-aetna-core = { path = "../aetna-core" }
-aetna-wgpu = { path = "../aetna-wgpu" }
+aetna-core = { version = "0.1.0", path = "../aetna-core" }
+aetna-wgpu = { version = "0.1.0", path = "../aetna-wgpu" }
 pollster = "0.4"
 wgpu = "29"
 winit = "0.30"

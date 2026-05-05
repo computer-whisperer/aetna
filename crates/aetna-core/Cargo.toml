@@ -11,7 +11,7 @@ documentation = "https://docs.rs/aetna-core"
 path = "src/lib.rs"
 
 [dependencies]
-aetna-fonts = { path = "../aetna-fonts", default-features = false }
+aetna-fonts = { version = "0.1.0", path = "../aetna-fonts", default-features = false }
 bytemuck = { version = "1", features = ["derive"] }
 cosmic-text = "0.19"
 fdsm = "0.8"

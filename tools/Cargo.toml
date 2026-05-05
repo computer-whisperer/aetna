@@ -9,9 +9,9 @@ publish = false
 # Binaries auto-discovered from `src/bin/*.rs`.
 
 [dependencies]
-aetna-core = { path = "../crates/aetna-core" }
-aetna-fixtures = { path = "../crates/aetna-fixtures" }
-aetna-fonts = { path = "../crates/aetna-fonts" }
+aetna-core = { version = "0.1.0", path = "../crates/aetna-core" }
+aetna-fixtures = { version = "0.1.0", path = "../crates/aetna-fixtures" }
+aetna-fonts = { version = "0.1.0", path = "../crates/aetna-fonts" }
 cosmic-text = "0.19"
 png = "0.18"
 ttf-parser = "0.25.1"

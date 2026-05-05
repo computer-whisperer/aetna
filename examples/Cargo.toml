@@ -9,9 +9,9 @@ publish = false
 # Binaries auto-discovered from `src/bin/*.rs`.
 
 [dependencies]
-aetna-core = { path = "../crates/aetna-core" }
-aetna-fixtures = { path = "../crates/aetna-fixtures" }
-aetna-winit-wgpu = { path = "../crates/aetna-winit-wgpu" }
+aetna-core = { version = "0.1.0", path = "../crates/aetna-core" }
+aetna-fixtures = { version = "0.1.0", path = "../crates/aetna-fixtures" }
+aetna-winit-wgpu = { version = "0.1.0", path = "../crates/aetna-winit-wgpu" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 arboard = "3"

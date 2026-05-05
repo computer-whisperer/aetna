@@ -12,9 +12,9 @@ path = "src/lib.rs"
 # Binaries auto-discovered from `src/bin/*.rs`.
 
 [dependencies]
-aetna-core = { path = "../aetna-core" }
-aetna-fixtures = { path = "../aetna-fixtures" }
-aetna-vulkano = { path = "../aetna-vulkano" }
+aetna-core = { version = "0.1.0", path = "../aetna-core" }
+aetna-fixtures = { version = "0.1.0", path = "../aetna-fixtures" }
+aetna-vulkano = { version = "0.1.0", path = "../aetna-vulkano" }
 png = "0.18"
 vulkano = "0.35"
 winit = "0.30"

@@ -11,7 +11,7 @@ documentation = "https://docs.rs/aetna-wgpu"
 path = "src/lib.rs"
 
 [dependencies]
-aetna-core = { path = "../aetna-core" }
+aetna-core = { version = "0.1.0", path = "../aetna-core" }
 wgpu = "29"
 bytemuck = { version = "1.21", features = ["derive"] }
 cosmic-text = "0.19"
@@ -20,6 +20,6 @@ ttf-parser = "0.25.1"
 web-time = "1"
 
 [dev-dependencies]
-aetna-fixtures = { path = "../aetna-fixtures" }
+aetna-fixtures = { version = "0.1.0", path = "../aetna-fixtures" }
 png = "0.18"
 pollster = "0.4"

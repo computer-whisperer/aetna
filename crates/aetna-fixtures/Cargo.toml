@@ -11,4 +11,4 @@ documentation = "https://docs.rs/aetna-fixtures"
 path = "src/lib.rs"
 
 [dependencies]
-aetna-core = { path = "../aetna-core" }
+aetna-core = { version = "0.1.0", path = "../aetna-core" }
