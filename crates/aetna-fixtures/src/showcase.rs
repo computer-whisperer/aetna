@@ -7,7 +7,8 @@
 //! end up with — and exercises:
 //!
 //! - **Buttons + click routing** in both the sidebar and the Counter
-//!   section.
+//!   section. The Counter buttons also carry `.tooltip(text)` so the
+//!   library-driven tooltip layer is visible on hover.
 //! - **Scroll viewport** with persistent offset in the List section.
 //! - **Animated props** (`scale` / `translate` / `opacity` / `fill`) in
 //!   the Palette section, including spring overshoot on selection.
@@ -244,14 +245,26 @@ fn content(app: &Showcase) -> El {
 fn counter_view(state: &CounterState) -> El {
     column([
         h1(format!("{}", state.value)),
+        // Hover any of the three for ~500ms to see the runtime-driven
+        // tooltip layer appear. The `.tooltip(text)` modifier is the
+        // entire app-side surface; the rest is library-owned.
         row([
-            button("−").key("counter-dec").secondary(),
-            button("Reset").key("counter-reset").ghost(),
-            button("+").key("counter-inc").primary(),
+            button("−")
+                .key("counter-dec")
+                .secondary()
+                .tooltip("Decrement"),
+            button("Reset")
+                .key("counter-reset")
+                .ghost()
+                .tooltip("Set count to 0"),
+            button("+")
+                .key("counter-inc")
+                .primary()
+                .tooltip("Increment"),
         ])
         .gap(tokens::SPACE_MD),
         text(if state.value == 0 {
-            "Click + or − to change the count.".to_string()
+            "Click + or −, or hover for a tooltip.".to_string()
         } else {
             format!("You have clicked +/− a net {} times.", state.value)
         })
