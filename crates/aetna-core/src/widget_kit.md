@@ -150,6 +150,42 @@ app-level widgets. If a stock widget needs hidden state that an app
 widget cannot express with controlled state, the kit is missing a public
 primitive and should grow one instead.
 
+### 6.1 Optimistic overrides for externally-driven state
+
+The controlled pattern in §6 assumes the *app* owns state. When the
+truth lives in an external system (an audio server, a network peer, a
+database) and the app sees it through periodic snapshots, naïvely
+binding `build()` to the snapshot makes user input feel sluggish: the
+slider snaps back to the snapshot value while the side effect is in
+flight, then jumps to the new value the next time the snapshot ticks.
+
+The pattern: **keep a `HashMap<Id, Override>` of pending values
+alongside the snapshot**, render `override.unwrap_or(snapshot)`, fire
+the side effect immediately on user input, and clear the entry on the
+next snapshot whose value matches (within a small epsilon for floats).
+
+```rust
+fn percent_for(&self, node: &AudioNode) -> u32 {
+    let snapshot_pct = node.volume.as_ref().map(Volume::percent);
+    let override_pct = self.volume_overrides.borrow().get(&node.id).copied();
+    match (override_pct, snapshot_pct) {
+        // Snapshot caught up — drop the override.
+        (Some(o), Some(s)) if o.abs_diff(s) <= 1 => {
+            self.volume_overrides.borrow_mut().remove(&node.id);
+            s
+        }
+        (Some(o), _) => o,            // override wins until reconciled
+        (None, Some(s)) => s,         // pure snapshot
+        (None, None) => 100,          // safe default before first snapshot
+    }
+}
+```
+
+`aetna-volume` uses this for volume, mute, and active-profile state.
+The widget builder remains "controlled" — `build()` reads
+`percent_for(node)` and projects that into the slider — but the value
+behind it now reconciles two sources without flicker.
+
 ### 7. Hotkeys & key delivery
 
 Hotkeys are an app-level concern (`App::hotkeys()` returns `Vec<(KeyChord, String)>`); the library matches them in `key_down` ahead of focus activation. Widget builders that want a hotkey advertise the chord via the host's hotkey registry — there's no widget-private hotkey table.

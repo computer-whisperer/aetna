@@ -92,13 +92,13 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 
 ### Slice 7 — recipes + helpers
 
-- [ ] **Document the optimistic-override pattern** (HashMap of overrides
-      reconciled against snapshot equality on the next frame) in the
-      widget kit / under `examples/`. Pattern repeated three times in
-      `aetna-volume`.
-- [ ] **`overlays(main, [Option<El>, …])` helper.** Thin `stack`
-      wrapper that filters `None`s; tidies root-level layer composition
-      when nesting depth grows. Pure sugar over the existing pattern.
+- [x] **Document the optimistic-override pattern** in `widget_kit.md`
+      §6.1, with the volume app's `percent_for` as the worked example.
+      Apps that need to reflect external snapshots while keeping user
+      input feel responsive can copy the shape directly.
+- [x] **`overlays(main, [Option<El>, …])` helper** in
+      `widgets/overlay.rs`. Filters `None`s; tidies the root-level
+      layer composition pattern. Volume uses it for the profile menu.
 
 ## Pre-release housekeeping
 
