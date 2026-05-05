@@ -19,8 +19,11 @@
 //! Things to try in the window:
 //!
 //! - Click "Color" to open the top dropdown; click an item to select.
+//!   Focus auto-moves to the first menu item when the menu opens, and
+//!   `ArrowUp` / `ArrowDown` / `Home` / `End` walk the items.
 //! - Click "Edit" near the bottom — the menu opens above the trigger.
-//! - Click anywhere outside an open menu to dismiss; or press `Escape`.
+//! - Click anywhere outside an open menu to dismiss; or press `Escape`
+//!   — focus returns to the trigger that opened the menu.
 //! - Right-click in the gray "context region" panel to open a context
 //!   menu at the click position. Right-click near the bottom-right
 //!   corner — the menu clamps inside the viewport.
@@ -75,40 +78,39 @@ impl App for Demo {
         .padding(tokens::SPACE_XL)
         .gap(tokens::SPACE_MD);
 
-        let mut layers: Vec<El> = vec![main];
-
-        if self.color_open {
-            layers.push(dropdown(
-                "color-menu",
-                "color-trigger",
-                COLORS
-                    .iter()
-                    .map(|c| menu_item(*c).key(format!("color:{c}"))),
-            ));
-        }
-        if self.edit_open {
-            layers.push(dropdown(
-                "edit-menu",
-                "edit-trigger",
-                EDIT_ACTIONS
-                    .iter()
-                    .map(|a| menu_item(*a).key(format!("edit:{a}"))),
-            ));
-        }
-        if self.context_open {
-            layers.push(context_menu(
-                "ctx-menu",
-                self.context_point,
-                CTX_ACTIONS
-                    .iter()
-                    .map(|a| menu_item(*a).key(format!("ctx:{a}"))),
-            ));
-        }
-        if self.tooltip_open {
-            layers.push(tooltip_layer());
-        }
-
-        stack(layers)
+        overlays(
+            main,
+            [
+                self.color_open.then(|| {
+                    dropdown(
+                        "color-menu",
+                        "color-trigger",
+                        COLORS
+                            .iter()
+                            .map(|c| menu_item(*c).key(format!("color:{c}"))),
+                    )
+                }),
+                self.edit_open.then(|| {
+                    dropdown(
+                        "edit-menu",
+                        "edit-trigger",
+                        EDIT_ACTIONS
+                            .iter()
+                            .map(|a| menu_item(*a).key(format!("edit:{a}"))),
+                    )
+                }),
+                self.context_open.then(|| {
+                    context_menu(
+                        "ctx-menu",
+                        self.context_point,
+                        CTX_ACTIONS
+                            .iter()
+                            .map(|a| menu_item(*a).key(format!("ctx:{a}"))),
+                    )
+                }),
+                self.tooltip_open.then(tooltip_layer),
+            ],
+        )
     }
 
     fn on_event(&mut self, event: UiEvent) {
