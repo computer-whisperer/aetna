@@ -2,10 +2,9 @@
 #
 # Build the aetna-web wasm bundle and (optionally) serve it locally.
 #
-# Mirrors whisper-agent's wasm-pack invocation. Output lands in
-# crates/aetna-web/pkg/ — the same path the assets/index.html
-# script tag imports from (`/pkg/aetna_web.js` when the static
-# server's root is crates/aetna-web/).
+# Output lands in crates/aetna-web/pkg/ — the same path the
+# assets/index.html script tag imports from (`/pkg/aetna_web.js` when
+# the static server's root is crates/aetna-web/).
 #
 # Usage:
 #   tools/build_web.sh             # release build (default — dev wasm is too
@@ -43,9 +42,8 @@ fi
 
 echo "==> building aetna-web (wasm, $PROFILE)"
 cd "$REPO_ROOT"
-# `--target web` produces the same module shape as whisper-agent uses:
-# pkg/aetna_web.js exposes `default` (init) which returns a Promise; the
-# index.html harness imports and calls it.
+# `--target web` makes pkg/aetna_web.js expose `default` (init), which
+# returns a Promise. The index.html harness imports and calls it.
 wasm-pack build crates/aetna-web --target web "$PROFILE_FLAG"
 
 echo

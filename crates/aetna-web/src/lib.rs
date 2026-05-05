@@ -1,9 +1,10 @@
-//! aetna-web — wasm browser entry point for the shared [`Showcase`] App.
+//! Browser wasm entry point for the shared [`Showcase`] app.
 //!
-//! "One UI crate, two backends" split — same shape as whisper-agent-webui
-//! at `../../whisper-agent`. The [`Showcase`] App impl lives in
-//! `aetna-fixtures` (so native, vulkano, and browser demos drive the
-//! same type); this crate provides only the wasm entry path:
+//! This crate is a host/demo package, not the general app-author API.
+//! Write normal UI code against `aetna_core::prelude::*` and use
+//! `aetna-winit-wgpu` for a native desktop window. Use this crate when
+//! you want the browser path for the backend-neutral [`Showcase`]
+//! fixture from `aetna-fixtures`.
 //!
 //! - **Wasm:** `wasm-pack build --target web` ships this crate as a
 //!   `cdylib`. The `#[wasm_bindgen(start)]` entry below opens a wgpu
@@ -11,19 +12,18 @@
 //!   and drives [`Showcase`] through a winit event loop tailored for
 //!   the browser (`spawn_app` rather than `run_app`, async adapter
 //!   request).
-//! - **Native:** run the same App via `cargo run -p aetna-examples --bin
+//! - **Native parity:** run the same app via `cargo run -p aetna-examples --bin
 //!   showcase`. There's no separate native bin in this crate — the
 //!   reusable native host lives in `aetna-winit-wgpu`, with
 //!   `aetna-examples` providing the demo binary.
 //!
-//! See `assets/index.html` for the minimal browser harness; see
-//! `tools/build_web.sh` for the wasm-pack invocation.
+//! The package includes `assets/index.html` as a minimal browser
+//! harness for the generated wasm bundle.
 //!
 //! Runtime parity check: both targets render the same fixture, accept
 //! click + hover + scroll + keyboard input, and exercise the live
-//! `aetna-wgpu` paint path (including the v5.1 atlas-backed text).
-//! Animation is the same code; only the time source differs (browser
-//! raf vs. winit redraw).
+//! `aetna-wgpu` paint path. Animation is the same code; only the time
+//! source differs (browser raf vs. winit redraw).
 
 use aetna_core::Rect;
 pub use aetna_fixtures::Showcase;
