@@ -4,46 +4,96 @@ Tracked items, ordered by current priority. Architectural framing lives in
 `docs/LIBRARY_VISION.md`, `docs/SHADER_VISION.md`, and
 `docs/POLISH_CALIBRATION.md`; this file is just the punch list.
 
-## From the first validation port
+## Floating-layer architecture
 
-The first real port (`aetna-volume`, a PipeWire control panel) surfaced these
-gaps. Items are loosely ranked by friction observed in the port.
+Three categories, three treatments. The architectural commitment from
+`crates/aetna-core/src/widgets/popover.rs` — *no portal hoist; floating
+layers live where they paint at the root* — is load-bearing. Everything
+below leans into that rule rather than working around it.
 
-- [ ] **Controlled `select` widget mirroring `text_input`'s shape.** App owns
-      `(value, open)`; one builder returns one `El`;
-      `select::apply_event(&mut value, &mut open, &event, &options)` folds
-      clicks / dismiss / option-pick. Internally anchor the popover at the
-      trigger's keyed rect — no app-side root hoist, no manual
-      `parse_*_event` for routed key suffixes. Today the volume profile
-      picker spends ~75 lines on glue that should be ~10.
+1. **Modals** — app-owned, root-stacked. Already works.
+2. **Popovers / dropdowns / context menus** — app-owned, root-stacked.
+   A dropdown opened from inside a modal is a *second* overlay layer
+   appended to the root stack; the "from inside" relationship is an
+   app-state fact (modal open AND dropdown open), not a tree fact.
+   Click-outside semantics already nest correctly: each scrim emits
+   `{key}:dismiss` for that key only, topmost scrim eats the click.
+3. **Tooltips** — library-owned, runtime-appended. Hover state lives in
+   `UiState`; the runtime synthesizes tooltip layers from a `.tooltip()`
+   modifier on the trigger and appends them to the root tree after
+   `build()` returns. Same pattern as focus rings (library writes from
+   envelope state); the user's `El` tree is never mutated, so this is
+   an extension, not a portal.
 
-- [ ] **`UiState::request_focus_key(&str)` + arrow-nav inside `menu_item`
-      lists.** Auto-focus the panel on popover open; Up/Down/Home/End
-      navigate sibling menu items; Escape returns focus to the trigger.
-      Couples naturally with the controlled `select` above; doing them as
-      one slice is cheaper than three.
+Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 
-- [ ] **`slider::apply_event(&mut value, &event, step)` for keyboard.** Up
-      / Down adjust by `step`; PageUp / PageDown by a coarse step. Pure
+## Slices
+
+### Slice 1 — controlled `select` helpers
+
+- [ ] **`select::apply_event(&mut value, &mut open, &event, key, parse)`
+      and `select::classify_event(event, key) -> Option<SelectAction>`.**
+      Absorb the toggle / dismiss / option-pick dispatch so apps stop
+      hand-parsing `{key}:option:{value}` and `{key}:dismiss` suffixes.
+      Trigger / popover-layer split stays (root mount per the
+      architectural rule). Rewrite the volume profile picker in the
+      same slice so the helper signature is exercised by a real call
+      site (~75 lines → ~15).
+
+### Slice 2 — keyboard reach into popovers
+
+- [ ] **Focus stack on `UiState`.** Push current focus when an overlay
+      opens, pop on close. Single `request_focus_key` slot isn't enough
+      for nested cases (modal → dropdown): closing the inner layer must
+      return focus to the trigger inside the modal, not to the trigger
+      that opened the modal.
+- [ ] **Arrow-nav inside `menu_item` lists.** Up / Down / Home / End
+      navigate siblings inside a `popover_panel`; handled inside the
+      widget via `capture_keys`. Tab traversal is unchanged.
+- [ ] **Auto-focus on popover open + Escape returns focus.** Builds on
+      the focus stack.
+
+### Slice 3 — slider keyboard
+
+- [ ] **`slider::apply_event(&mut value, &event, step)`.** Up / Down
+      adjust by `step`; PageUp / PageDown by a coarse step. Pure
       controlled-state addition; matches the kit invariant.
 
-- [ ] **List-row primitive + dense list/table calibration fixture.**
-      `list_row` with leading slot / title+subtitle slot / trailing slots,
-      density-token driven. Add a fixture in `aetna-fixtures` exercising
-      ellipsis with realistic long names. The pavucontrol-style row is a
-      missing reference shape from `docs/POLISH_CALIBRATION.md`.
+### Slice 4 — tooltips
 
-- [ ] **Documented async-into-redraw recipe.** Host-agnostic story for
-      backend threads to wake the UI loop (e.g. winit `EventLoopProxy`
-      exposed through a `HostConfig::with_external_wakeup` hook). Use
-      `aetna-volume`'s PipeWire meters as the worked example. Today the
-      volume app polls at 33 ms via `HostConfig::with_redraw_interval`.
+- [ ] **`.tooltip(text)` modifier on `El`.** Library-side runtime
+      synthesizes the tooltip layer from hover envelope state, anchored
+      to the trigger's rect, and appends it to the root tree after
+      `build()` returns. No author-side overlay composition. Slice
+      delivers the runtime synthesis, hover-delay timing, and the
+      `popover_panel`-styled visual. Volume doesn't need this; a real
+      desktop shell will.
+
+### Slice 5 — list-row primitive
+
+- [ ] **`list_row` with leading slot / title+subtitle slot / trailing
+      slots, density-token driven.** Add a calibration fixture in
+      `aetna-fixtures` exercising ellipsis with realistic long names.
+      The pavucontrol-style row is a missing reference shape from
+      `docs/POLISH_CALIBRATION.md`.
+
+### Slice 6 — async-into-redraw
+
+- [ ] **Documented host-agnostic story for backend threads waking the
+      UI loop** (e.g. winit `EventLoopProxy` exposed through a
+      `HostConfig::with_external_wakeup` hook). Use `aetna-volume`'s
+      PipeWire meters as the worked example. Today the volume app
+      polls at 33 ms via `HostConfig::with_redraw_interval`.
+
+### Slice 7 — recipes + helpers
 
 - [ ] **Document the optimistic-override pattern** (HashMap of overrides
       reconciled against snapshot equality on the next frame) in the
       widget kit / under `examples/`. Pattern repeated three times in
-      `aetna-volume`; not a library change, but worth a recipe so the
-      next port doesn't reinvent it.
+      `aetna-volume`.
+- [ ] **`overlays(main, [Option<El>, …])` helper.** Thin `stack`
+      wrapper that filters `None`s; tidies root-level layer composition
+      when nesting depth grows. Pure sugar over the existing pattern.
 
 ## Pre-release housekeeping
 

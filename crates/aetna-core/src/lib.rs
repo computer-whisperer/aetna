@@ -178,7 +178,7 @@ pub use widgets::overlay::{modal, modal_panel, overlay, scrim};
 pub use widgets::popover::{
     Anchor, Side, anchor_rect, context_menu, dropdown, menu_item, popover, popover_panel,
 };
-pub use widgets::select::{select_menu, select_option_key, select_trigger};
+pub use widgets::select::{SelectAction, select_menu, select_option_key, select_trigger};
 pub use widgets::slider::slider;
 pub use widgets::text::{h1, h2, h3, mono, paragraph, text};
 pub use widgets::text_area::text_area;

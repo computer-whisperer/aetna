@@ -46,7 +46,9 @@ pub use crate::widgets::overlay::{modal, modal_panel, overlay, scrim};
 pub use crate::widgets::popover::{
     Anchor, Side, anchor_rect, context_menu, dropdown, menu_item, popover, popover_panel,
 };
-pub use crate::widgets::select::{select_menu, select_option_key, select_trigger};
+pub use crate::widgets::select::{
+    self, SelectAction, select_menu, select_option_key, select_trigger,
+};
 pub use crate::widgets::slider::{self, slider};
 pub use crate::widgets::text::{h1, h2, h3, mono, paragraph, text};
 pub use crate::widgets::text_area::{self, text_area};

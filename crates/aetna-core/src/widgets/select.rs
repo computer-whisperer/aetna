@@ -65,11 +65,119 @@
 
 use std::panic::Location;
 
+use crate::event::{UiEvent, UiEventKind};
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
 use crate::widgets::popover::{Anchor, menu_item, popover, popover_panel};
 use crate::{icon, text};
+
+/// What a routed [`UiEvent`] means for a controlled select keyed `key`.
+///
+/// Returned by [`classify_event`]; [`apply_event`] is the convenience
+/// wrapper that folds the action straight into `(value, open)` state.
+///
+/// The action variants cover the three routed keys [`select_trigger`]
+/// + [`select_menu`] emit:
+///
+/// - `{key}` — toggle (trigger click / activate).
+/// - `{key}:dismiss` — dismiss (scrim click).
+/// - `{key}:option:{value}` — pick an option; the carried `&str` is
+///   the same `{value}` token passed to [`select_option_key`]. Apps
+///   convert it back to their value type (`&str` → `String`,
+///   `s.parse::<u32>()`, an enum lookup, …).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectAction<'a> {
+    /// The trigger was clicked or activated. Toggle the open flag.
+    Toggle,
+    /// The dismiss scrim was clicked. Close the menu.
+    Dismiss,
+    /// An option was picked. The string is the raw value token from
+    /// the option key.
+    Pick(&'a str),
+}
+
+/// Classify a routed [`UiEvent`] against a controlled select keyed
+/// `key`. Returns `None` for events that aren't for this select.
+///
+/// Only `Click` / `Activate` event kinds qualify — pointer-move,
+/// hover, and other non-activating events return `None` even when
+/// they target a select sub-key. That means an app can call
+/// [`classify_event`] unconditionally inside its event handler
+/// without filtering on `event.kind` first.
+///
+/// The returned [`SelectAction::Pick`] borrows from the event's
+/// routed key, so apps that want to keep the value beyond the match
+/// arm should `.to_string()` or `.parse()` it inline.
+pub fn classify_event<'a>(event: &'a UiEvent, key: &str) -> Option<SelectAction<'a>> {
+    if !matches!(event.kind, UiEventKind::Click | UiEventKind::Activate) {
+        return None;
+    }
+    let routed = event.route()?;
+    if routed == key {
+        return Some(SelectAction::Toggle);
+    }
+    let rest = routed.strip_prefix(key)?.strip_prefix(':')?;
+    if rest == "dismiss" {
+        return Some(SelectAction::Dismiss);
+    }
+    if let Some(value) = rest.strip_prefix("option:") {
+        return Some(SelectAction::Pick(value));
+    }
+    None
+}
+
+/// Fold a routed [`UiEvent`] into `(value, open)` state for a
+/// controlled select keyed `key`. Returns `true` if the event was a
+/// select event for this `key` (so the caller can short-circuit
+/// further dispatch), `false` otherwise.
+///
+/// `parse` converts the raw option-value token back to the app's
+/// value type. Returning `None` from `parse` ignores the option pick
+/// silently (useful when the option list and the value type can drift
+/// — e.g. a stale event arriving after the underlying data changed).
+///
+/// ```ignore
+/// use aetna_core::prelude::*;
+///
+/// // App owns (value, open) per select.
+/// struct Picker { color: String, color_open: bool }
+///
+/// impl App for Picker {
+///     fn on_event(&mut self, event: UiEvent) {
+///         widgets::select::apply_event(
+///             &mut self.color,
+///             &mut self.color_open,
+///             &event,
+///             "color",
+///             |s| Some(s.to_string()),
+///         );
+///     }
+///     // ...
+/// }
+/// ```
+pub fn apply_event<V>(
+    value: &mut V,
+    open: &mut bool,
+    event: &UiEvent,
+    key: &str,
+    parse: impl FnOnce(&str) -> Option<V>,
+) -> bool {
+    let Some(action) = classify_event(event, key) else {
+        return false;
+    };
+    match action {
+        SelectAction::Toggle => *open = !*open,
+        SelectAction::Dismiss => *open = false,
+        SelectAction::Pick(s) => {
+            if let Some(v) = parse(s) {
+                *value = v;
+                *open = false;
+            }
+        }
+    }
+    true
+}
 
 /// Format the routed key emitted when an option is clicked. Apps that
 /// match against the `:option:` suffix can use this helper to produce
@@ -185,6 +293,157 @@ mod tests {
             select_option_key("profile:7", &42u32),
             "profile:7:option:42"
         );
+    }
+
+    fn click_event(key: &str) -> UiEvent {
+        UiEvent {
+            kind: UiEventKind::Click,
+            key: Some(key.to_string()),
+            target: None,
+            pointer: None,
+            key_press: None,
+            text: None,
+            modifiers: Default::default(),
+        }
+    }
+
+    #[test]
+    fn classify_event_routes_trigger_dismiss_and_option() {
+        // The same three keys `parse_profile_event` used to decode in
+        // the volume app. classify_event collapses that boilerplate.
+        assert_eq!(
+            classify_event(&click_event("color"), "color"),
+            Some(SelectAction::Toggle),
+        );
+        assert_eq!(
+            classify_event(&click_event("color:dismiss"), "color"),
+            Some(SelectAction::Dismiss),
+        );
+        assert_eq!(
+            classify_event(&click_event("color:option:red"), "color"),
+            Some(SelectAction::Pick("red")),
+        );
+
+        // Compound keys (the volume app uses `profile:{card_id}` as the
+        // select key) work the same way — the helper compares against
+        // the full select key, not just a prefix.
+        assert_eq!(
+            classify_event(&click_event("profile:7"), "profile:7"),
+            Some(SelectAction::Toggle),
+        );
+        assert_eq!(
+            classify_event(&click_event("profile:7:dismiss"), "profile:7"),
+            Some(SelectAction::Dismiss),
+        );
+        assert_eq!(
+            classify_event(&click_event("profile:7:option:42"), "profile:7"),
+            Some(SelectAction::Pick("42")),
+        );
+
+        // Non-matching keys fall through.
+        assert_eq!(classify_event(&click_event("mute:7"), "profile:7"), None);
+        // Even when a key shares a prefix with the select key, the
+        // separator-after-prefix check rejects events that aren't this
+        // select's own children.
+        assert_eq!(
+            classify_event(&click_event("profile:7-other"), "profile:7"),
+            None,
+        );
+        // Malformed option suffix isn't a Pick.
+        assert_eq!(
+            classify_event(&click_event("profile:7:option"), "profile:7"),
+            None,
+        );
+    }
+
+    #[test]
+    fn classify_event_ignores_non_activating_kinds() {
+        // Pointer-down / drag / hotkey events that target the same key
+        // shouldn't toggle the menu — only Click and Activate qualify.
+        let mut ev = click_event("color");
+        ev.kind = UiEventKind::PointerDown;
+        assert_eq!(classify_event(&ev, "color"), None);
+        ev.kind = UiEventKind::Drag;
+        assert_eq!(classify_event(&ev, "color"), None);
+        ev.kind = UiEventKind::Activate;
+        assert_eq!(
+            classify_event(&ev, "color"),
+            Some(SelectAction::Toggle),
+            "keyboard activation should toggle like a click",
+        );
+    }
+
+    #[test]
+    fn apply_event_folds_actions_into_value_and_open() {
+        let mut value = String::from("red");
+        let mut open = false;
+
+        // Trigger click flips open.
+        assert!(apply_event(
+            &mut value,
+            &mut open,
+            &click_event("color"),
+            "color",
+            |s| Some(s.to_string()),
+        ));
+        assert!(open);
+        assert_eq!(value, "red");
+
+        // Pick replaces value and closes the menu.
+        assert!(apply_event(
+            &mut value,
+            &mut open,
+            &click_event("color:option:blue"),
+            "color",
+            |s| Some(s.to_string()),
+        ));
+        assert_eq!(value, "blue");
+        assert!(!open);
+
+        // Reopen, then dismiss.
+        apply_event(&mut value, &mut open, &click_event("color"), "color", |s| {
+            Some(s.to_string())
+        });
+        assert!(open);
+        assert!(apply_event(
+            &mut value,
+            &mut open,
+            &click_event("color:dismiss"),
+            "color",
+            |s| Some(s.to_string()),
+        ));
+        assert!(!open);
+        assert_eq!(value, "blue", "dismiss must not alter the value");
+
+        // Non-select event returns false; state unchanged.
+        let mut value = String::from("v");
+        let mut open = true;
+        assert!(!apply_event(
+            &mut value,
+            &mut open,
+            &click_event("unrelated"),
+            "color",
+            |s| Some(s.to_string()),
+        ));
+        assert_eq!((value.as_str(), open), ("v", true));
+    }
+
+    #[test]
+    fn apply_event_silently_ignores_unparseable_picks() {
+        // The volume app uses u32 profile indices; a stale option key
+        // that doesn't parse should leave state untouched rather than
+        // panic.
+        let mut value: u32 = 3;
+        let mut open = true;
+        assert!(apply_event(
+            &mut value,
+            &mut open,
+            &click_event("profile:7:option:not-a-number"),
+            "profile:7",
+            |s| s.parse::<u32>().ok(),
+        ));
+        assert_eq!(value, 3, "value preserved when parse returns None");
+        assert!(open, "open preserved when parse returns None");
     }
 
     #[test]
