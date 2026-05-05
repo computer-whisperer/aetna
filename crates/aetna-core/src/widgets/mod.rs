@@ -12,6 +12,7 @@ pub mod button;
 pub mod card;
 pub mod overlay;
 pub mod popover;
+pub mod select;
 pub mod slider;
 pub mod text;
 pub mod text_area;
