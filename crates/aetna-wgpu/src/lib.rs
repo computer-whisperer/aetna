@@ -434,7 +434,7 @@ impl Runner {
     /// the shader's draws into Pass B (after a snapshot of Pass A's
     /// rendered content) and binds the snapshot texture as
     /// `@group(2) binding=0` (`backdrop_tex`) plus a sampler at
-    /// `binding=1` (`backdrop_smp`). See `SHADER_VISION.md`
+    /// `binding=1` (`backdrop_smp`). See `docs/SHADER_VISION.md`
     /// §"Backdrop sampling architecture".
     ///
     /// v0.7 caps backdrop depth at 1: glass-on-glass shows the same

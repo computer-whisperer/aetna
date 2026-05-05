@@ -1,24 +1,20 @@
-//! Draw-op IR — gpu-shaped, replaces attempt_3's `RenderCmd::Rect/Text`.
+//! Backend-neutral draw-op IR.
 //!
 //! Every visual fact in the laid-out tree resolves to a [`DrawOp`] bound
 //! to a [`ShaderHandle`] and a uniform block. The wgpu renderer dispatches
 //! by shader handle; the SVG fallback (`crate::bundle::svg`) interprets stock
 //! shaders best-effort and emits placeholder rects for custom ones.
 //!
-//! `BackdropSnapshot` is a v2 placeholder — committed in the architecture
-//! (see `SHADER_VISION.md` §"Backdrop sampling architecture") but not
-//! emitted by the v0.1 renderer.
+//! `BackdropSnapshot` is emitted by [`crate::runner_core::RunnerCore`] when
+//! the resolved paint stream first needs a backdrop-sampling shader. See
+//! `docs/SHADER_VISION.md` for the backend contract.
 //!
 //! # Why DrawOp over RenderCmd
 //!
-//! attempt_3's `RenderCmd::Rect { fill, stroke, radius, shadow }` was a
-//! backend-portable least-common-denominator — every visual property had
-//! to compile down to *something* on every target. Dropping the
-//! abstract-portability constraint (we target wgpu/vulkano only) lets the
-//! IR mirror what the GPU actually consumes: a shader handle + a uniform
-//! block, dispatched into a render pass. CSS-style concerns (gradients,
-//! shadows, frosted glass, custom shapes) become uniforms on stock
-//! shaders or full custom shaders.
+//! Aetna keeps visual material decisions in shader handles and uniform blocks
+//! instead of baking CSS-shaped fields into the IR. Rect colors, gradients,
+//! shadows, focus rings, and glass effects resolve to stock shader uniforms or
+//! custom shader bindings before a backend records GPU commands.
 
 use crate::shader::{ShaderHandle, UniformBlock};
 use crate::text::atlas::RunStyle;
@@ -37,16 +33,15 @@ pub enum DrawOp {
         shader: ShaderHandle,
         uniforms: UniformBlock,
     },
-    /// A run of text. v0.1 emits the unshaped string + font properties;
-    /// glyph shaping happens at render time. v0.2 will replace `text`
-    /// with a pre-shaped `Arc<[GlyphInstance]>`.
+    /// A run of text. The draw op carries the author text and measured layout;
+    /// backends shape/rasterize through the shared glyph atlas path.
     GlyphRun {
         id: String,
         rect: Rect,
         scissor: Option<Rect>,
         shader: ShaderHandle,
-        /// Carried explicitly on the op for the SVG fallback's
-        /// convenience; will move to uniforms when wgpu lands.
+        /// Carried explicitly on the op for SVG fallback and backend text
+        /// shaping.
         color: Color,
         text: String,
         size: f32,
@@ -90,7 +85,7 @@ pub enum DrawOp {
         stroke_width: f32,
     },
     /// Mid-frame snapshot of the current target into a sampled texture,
-    /// scheduled before any backdrop-sampling pass. Reserved for v2.
+    /// scheduled before any backdrop-sampling pass.
     BackdropSnapshot,
 }
 

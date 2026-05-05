@@ -1,8 +1,8 @@
 //! Event types and the [`App`] trait.
 //!
-//! The v0.2 application layer: state-driven rebuild + click events +
-//! automatic hover/press visuals. See `LIBRARY_VISION.md` for the
-//! shape this fits into.
+//! State-driven rebuilds, routed events, keyboard input, and automatic
+//! hover/press/focus visuals. See `docs/LIBRARY_VISION.md` for the application
+//! model this fits into.
 //!
 //! This module owns the *types* — what the host's `App::on_event` sees
 //! and what gets registered as hotkeys. The state machine that produces

@@ -815,7 +815,7 @@ mod tests {
         core.pointer_moved(cx, cy);
         core.pointer_down(cx, cy, PointerButton::Primary);
         let events = core.pointer_up(cx, cy, PointerButton::Primary);
-        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind.clone()).collect();
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         assert_eq!(kinds, vec![UiEventKind::PointerUp, UiEventKind::Click]);
     }
 
@@ -828,7 +828,7 @@ mod tests {
         core.pointer_down(cx, cy, PointerButton::Primary);
         // Release off-target (well outside any keyed node).
         let events = core.pointer_up(180.0, 180.0, PointerButton::Primary);
-        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind.clone()).collect();
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         assert_eq!(
             kinds,
             vec![UiEventKind::PointerUp],
@@ -873,7 +873,7 @@ mod tests {
         // Right-click on the button.
         core.pointer_down(cx, cy, PointerButton::Secondary);
         let events = core.pointer_up(cx, cy, PointerButton::Secondary);
-        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind.clone()).collect();
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         assert_eq!(kinds, vec![UiEventKind::SecondaryClick]);
         let focused_after = core.ui_state.focused.as_ref().map(|t| t.key.clone());
         assert_eq!(

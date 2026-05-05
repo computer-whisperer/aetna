@@ -4,12 +4,12 @@ A thin UI rendering library that can insert into an existing Vulkan or wgpu rend
 
 Aetna is shaped around how **an LLM** authors UI, not how a human web developer does. The thesis: when the author is a model, the load-bearing constraints flip — vocabulary parity with the training distribution matters more than configurability, the *minimum* output should be the *correct* output, and the visual ceiling is set by what shaders the model can write, not by what the framework's CSS-shaped surface exposes.
 
-Two manifesto documents stand at the repo root — read these before reviewing. They are deliberately independent:
+Two architecture notes live under `docs/` — read these before reviewing. They are deliberately independent:
 
-- **`SHADER_VISION.md`** — the *rendering* layer. Why we paint UI through wgpu pipelines, why CSS-shaped concerns (gradients, shadows, frosted glass) become shader concerns here, why the library inserts into the host's existing render pass rather than owning the device/queue/swapchain. Argues that LLMs writing shaders is the ceiling-raiser.
-- **`LIBRARY_VISION.md`** — the *application* layer. The shape: a declarative scene library that projects time-varying state into a tree, with **two escape hatches** (custom shader, custom layout) and **zero state model**. The library is a thin helper over wgpu/vulkano; host-painted regions (3D viewports, video panes, custom canvases) fall out of the library/host split rather than needing a designed primitive. Sets out what the library owns (layout, paint, hit-test, visual lifecycle, scroll/clip, animation, modal stacks, rich text) vs. doesn't (state model, persistence, network, theme runtime, window management).
+- **`docs/SHADER_VISION.md`** — the *rendering* layer. Current backend boundaries, paint-stream contract, shader/material model, backdrop-sampling contract, and host-integration split.
+- **`docs/LIBRARY_VISION.md`** — the *application* layer. Current app/widget model, public surfaces an LLM author should see after crates.io packaging, crate layering, controlled-widget policy, and stability questions before serious app ports.
 
-`V5.md` documents the v5.0 slice — the cargo workspace split + the side-map refactor that landed under the `crates/` tree. `attempts/attempt_1..4` remain in the repo as the lineage that settled the load-bearing premises before this code existed.
+`attempts/attempt_1..4` remain in the repo as the lineage that settled the load-bearing premises before this code existed.
 
 ## Where we are at
 
@@ -97,10 +97,9 @@ The v0.7.5 widget kit, the v0.8.x text-input track, and the v0.9 popover track a
 ## Repository tour
 
 ```
-SHADER_VISION.md                 rendering-layer manifesto
-LIBRARY_VISION.md                application-layer manifesto
-V5.md                            v5.0 plan (crate split, side-map refactor)
-V5_3.md                          v5.3 plan (vulkano backend; naga WGSL→SPIR-V)
+docs/SHADER_VISION.md                 rendering-layer architecture
+docs/LIBRARY_VISION.md                application/widget-layer architecture
+docs/POLISH_CALIBRATION.md            visual-quality calibration plan
 
 crates/
   aetna-core/                    backend-agnostic core
@@ -229,7 +228,7 @@ The slices below have all landed. The capability table at the top of this README
 | v0.4 | Animation primitives, focus traversal, keyboard event routing, hotkey system. |
 | v0.5 | Custom layout (second escape hatch) + virtualized lists. |
 | v0.6.1 | Rich-text composition (attributed runs, per-glyph color/weight/italic, hard breaks). v0.6.2/v0.6.3 (semantic highlighting, inline embeds) folded into v0.10's port-driven priorities. |
-| v0.7 | Backdrop sampling — multi-pass + snapshot + `@group(1)` on wgpu native, vulkano, and WebGPU. `liquid_glass.wgsl` as the architectural acceptance test from `SHADER_VISION.md`. |
+| v0.7 | Backdrop sampling — multi-pass + snapshot + `@group(1)` on wgpu native, vulkano, and WebGPU. `liquid_glass.wgsl` as the architectural acceptance test from `docs/SHADER_VISION.md`. |
 | v0.7.5 | Widget kit. Documented author contract at `crates/aetna-core/src/widget_kit.md`. Stock `button`/`card`/`badge`/`text` rewritten as pure compositions of public surface — symmetry invariant established. `UiState::widget_state` remains an advanced typed bucket for host/diagnostic experiments, not the normal app-widget state model. |
 | v0.7.6 | Input plumbing. `PointerDown`, `SecondaryClick`, drag tracking, `KeyModifiers` mask on every event, focused-node key capture (`.capture_keys()`) ahead of hotkey routing, character / IME `TextInput` events, `metrics::hit_text` exposing cosmic-text's `Buffer::hit`. Each piece a kit-public primitive. |
 | v0.8.1 | `text_input` — single-line. `(value, caret)` lives in app state; widget composes `Kind::Custom("text_input")` + `.focusable()` + `.capture_keys()` + `.paint_overflow()` over `text` segments + a caret bar. `apply_event(value, caret, &UiEvent)` folds events back into app state. `El::axis()` promoted from `pub(crate)` to `pub`. |

@@ -108,7 +108,7 @@ The library handles `Hover` / `Press` / `Focus` envelopes automatically once `fo
 
 ### 5. Custom shaders & custom layout
 
-The two **escape hatches** documented in `SHADER_VISION.md`:
+The two **escape hatches** documented in `docs/SHADER_VISION.md`:
 
 - `.shader(ShaderBinding)` — bind your own shader for the surface paint, replacing `stock::rounded_rect`. The library injects `inner_rect` and `focus_color` / `focus_width` (when focusable + focused) uniforms into your binding — your shader can use them or ignore them.
 - `.layout(F)` — supply your own positioning function for direct children. The library still recurses into each child and drives hit-test / focus / animation off the rects you return. The `LayoutCtx` handed to your function carries `container` (your inner rect), `children` (read-only), `measure` (intrinsic for any child), and `rect_of_key(&str) → Option<Rect>` (look up any keyed element's laid-out rect — used by anchored popovers and any cross-tree positioning).

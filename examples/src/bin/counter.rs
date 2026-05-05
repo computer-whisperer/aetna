@@ -1,6 +1,6 @@
 //! Counter — the v0.2 proof point.
 //!
-//! Validates the load-bearing claim from `LIBRARY_VISION.md`: a real
+//! Validates the load-bearing claim from `docs/LIBRARY_VISION.md`: a real
 //! interactive native app fits in an [`App`] impl with a pure `build`
 //! and a plain `&mut self` event handler. Hover and press visuals are
 //! applied automatically by the library; the author never writes

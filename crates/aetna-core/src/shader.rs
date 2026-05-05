@@ -21,25 +21,22 @@
 //! The SVG fallback renderer interprets stock shaders best-effort and
 //! emits placeholder rects for custom ones.
 //!
-//! See `SHADER_VISION.md` for v0.1 inventory and discipline.
+//! See `docs/SHADER_VISION.md` for the rendering-layer contract.
 //!
 //! # Uniform packing
 //!
 //! [`UniformBlock`] is a `BTreeMap` keyed by `&'static str` for stable
 //! iteration order — important so that the bundle's
 //! `shader_manifest.txt` artifact is deterministic and grep-friendly.
-//! At wgpu-record time the block will be packed to a `Vec<u8>` using
-//! a per-shader layout descriptor; in v0.1 the SVG fallback consumes
-//! the typed map directly.
+//! Backend runners pack the block to the target GPU ABI using their
+//! per-shader layout metadata. Bundle/SVG paths consume the typed map
+//! directly when producing diagnostics.
 //!
-//! # v5.1 status
+//! # Stock-shader status
 //!
-//! Only [`StockShader::RoundedRect`] and [`StockShader::Text`] are
-//! emitted by the renderer. Focus indicators ride on each focusable
-//! node's own `RoundedRect` quad via `focus_color`/`focus_width`
-//! uniforms — no separate ring shader. [`StockShader::SolidQuad`] and
-//! [`StockShader::DividerLine`] are reserved for when something can't
-//! be expressed as uniforms on `rounded_rect`.
+//! Focus indicators ride on each focusable node's own `RoundedRect` quad via
+//! `focus_color`/`focus_width` uniforms. Most surface variation should remain
+//! uniform/theme driven rather than creating more stock shaders.
 
 use std::collections::BTreeMap;
 
@@ -49,8 +46,8 @@ use crate::tree::Color;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ShaderHandle {
     Stock(StockShader),
-    /// User-registered shader. The string is the name passed to
-    /// `UiRenderer::register_shader` at host-integration time.
+    /// User-registered shader. The string is the name passed to the backend
+    /// runner at host-integration time.
     Custom(&'static str),
 }
 
@@ -63,7 +60,7 @@ impl ShaderHandle {
     }
 }
 
-/// Shipped shader inventory. See `SHADER_VISION.md` §"Stock shaders".
+/// Shipped shader inventory. See `docs/SHADER_VISION.md` for the shader model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StockShader {
     /// Flat colored rect. Fallback / debug.

@@ -1,7 +1,7 @@
 //! Headless demo: render a fixture that exercises the custom-shader
 //! escape hatch.
 //!
-//! Validates the load-bearing premise from `SHADER_VISION.md` — that a
+//! Validates the load-bearing premise from `docs/SHADER_VISION.md` — that a
 //! user crate can register its own WGSL shader and bind it on a node,
 //! producing visuals stock shaders can't (here: vertical linear gradient
 //! with rounded corners). Three buttons in a row use the same custom

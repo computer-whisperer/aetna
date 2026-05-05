@@ -5,8 +5,8 @@
 //! refracts + tints, and the runner orchestrates Pass A → snapshot →
 //! Pass B around it.
 //!
-//! Validates `SHADER_VISION.md` §"Liquid glass as forcing function":
-//! a single .wgsl shader, registered by a user crate via
+//! Validates the backdrop contract in `docs/SHADER_VISION.md`: a single .wgsl
+//! shader, registered by a user crate via
 //! `Runner::register_shader_with(name, wgsl, samples_backdrop=true)`,
 //! produces a glass surface that visibly samples what was painted
 //! beneath it.

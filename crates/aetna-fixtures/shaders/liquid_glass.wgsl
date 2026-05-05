@@ -1,7 +1,7 @@
 // liquid_glass — backdrop-sampling custom shader.
 //
-// The acceptance test for `SHADER_VISION.md` §"Liquid glass as forcing
-// function": a single .wgsl, registered by a user crate via
+// The acceptance test for the backdrop contract in `docs/SHADER_VISION.md`:
+// a single .wgsl, registered by a user crate via
 // `Runner::register_shader_with(name, wgsl, samples_backdrop=true)`,
 // expressing a glass surface that refracts + blurs + tints whatever was
 // painted under it in Pass A.

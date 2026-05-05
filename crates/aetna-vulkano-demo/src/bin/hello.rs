@@ -3,8 +3,8 @@
 //! No `aetna-vulkano::Runner` involvement yet; the only goal is to
 //! confirm vulkano 0.35 + winit 0.30 + the host's Vulkan loader bring
 //! up a window that paints `tokens::BG_APP` every frame. Once this
-//! works the platform-compat risks V5_3.md flagged are off the table
-//! and step 4 can wire up the Runner skeleton.
+//! works the platform-compat risks from the early v5.3 backend plan are
+//! off the table and step 4 can wire up the Runner skeleton.
 //!
 //! Structure mirrors the native winit host shape — same
 //! `ApplicationHandler` skeleton, same `gfx: Option<…>` lazy-init

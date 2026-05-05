@@ -8,10 +8,9 @@
 //   vec_b (location 3) — bottom color (rgba 0..1)
 //   vec_c (location 4) — params: x = corner radius (px), yzw reserved
 //
-// Authored as one of the proof-of-concept shaders for attempt_4 v0.1
-// (see SHADER_VISION.md §"Custom shader override"). Not "stock" — it
-// lives outside the shipped inventory and is registered by the host
-// crate via `UiRenderer::register_shader`.
+// Demonstrates the shader model described in docs/SHADER_VISION.md. Not
+// "stock" — it lives outside the shipped inventory and is registered by the
+// host crate through a backend runner.
 
 struct FrameUniforms {
     viewport: vec2<f32>,
