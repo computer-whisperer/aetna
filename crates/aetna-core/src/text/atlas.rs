@@ -153,6 +153,10 @@ pub struct GlyphKey {
     pub glyph_id: u16,
     /// `font_size.to_bits()` — same encoding cosmic-text uses internally.
     pub size_bits: u32,
+    /// Weight at which cosmic-text resolved this face. Threaded through
+    /// to `FontSystem::get_font` so synthetic-bold faces rasterize at
+    /// the same weight they were laid out with.
+    pub weight: fontdb::Weight,
 }
 
 impl GlyphKey {
@@ -460,20 +464,17 @@ impl GlyphAtlas {
     ) -> ShapedRun {
         let line_h = line_height(size);
         let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_h));
-        buffer.set_wrap(
-            &mut self.font_system,
-            match wrap {
-                TextWrap::NoWrap => Wrap::None,
-                TextWrap::Wrap => Wrap::WordOrGlyph,
-            },
-        );
+        buffer.set_wrap(match wrap {
+            TextWrap::NoWrap => Wrap::None,
+            TextWrap::Wrap => Wrap::WordOrGlyph,
+        });
         // cosmic-text uses the buffer width for both wrapping AND
         // alignment. For Wrap mode it's the wrap width; for NoWrap with
         // Middle/End anchors it's the box that line-alignment positions
         // glyphs within. Passing None for NoWrap+Middle leaves the
         // buffer unbounded and silently disables centering — single-
         // glyph button labels show up flush-left.
-        buffer.set_size(&mut self.font_system, available_width, None);
+        buffer.set_size(available_width, None);
 
         // Clone to a local so the immutable borrow on self.default_family
         // doesn't conflict with the mutable font_system borrow below.
@@ -494,22 +495,12 @@ impl GlyphAtlas {
                 .metadata(i);
             (*text, attrs)
         });
-        buffer.set_rich_text(
-            &mut self.font_system,
-            spans,
-            default_attrs,
-            Shaping::Advanced,
-        );
-
-        if let Some(align) = match anchor {
+        let alignment = match anchor {
             TextAnchor::Start => None,
             TextAnchor::Middle => Some(cosmic_text::Align::Center),
             TextAnchor::End => Some(cosmic_text::Align::End),
-        } {
-            for line in buffer.lines.iter_mut() {
-                line.set_align(Some(align));
-            }
-        }
+        };
+        buffer.set_rich_text(spans, &default_attrs, Shaping::Advanced, alignment);
         buffer.shape_until_scroll(&mut self.font_system, false);
 
         // Walk runs in source order, emit per-glyph entries, ensure
@@ -594,7 +585,7 @@ impl GlyphAtlas {
     }
 
     fn rasterize_and_pack(&mut self, key: GlyphKey) -> Option<GlyphSlot> {
-        let font = self.font_system.get_font(key.font)?;
+        let font = self.font_system.get_font(key.font, key.weight)?;
         let mut scaler = self
             .scale_ctx
             .builder(font.as_swash())
@@ -797,6 +788,7 @@ fn glyph_key(cache_key: CacheKey) -> GlyphKey {
         font: cache_key.font_id,
         glyph_id: cache_key.glyph_id,
         size_bits: cache_key.font_size_bits,
+        weight: cache_key.font_weight,
     }
 }
 

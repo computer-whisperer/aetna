@@ -411,7 +411,7 @@ impl TextPaint {
                     font: font_id,
                     glyph_id: glyph.key.glyph_id,
                 };
-                let Some(slot) = self.ensure_msdf(mkey, font_id) else {
+                let Some(slot) = self.ensure_msdf(mkey, font_id, glyph.key.weight) else {
                     // Whitespace or .notdef without outline — no quad,
                     // advance is already baked into cosmic-text positions.
                     continue;
@@ -554,7 +554,12 @@ impl TextPaint {
         });
     }
 
-    fn ensure_msdf(&mut self, key: MsdfGlyphKey, font_id: fontdb::ID) -> Option<MsdfSlot> {
+    fn ensure_msdf(
+        &mut self,
+        key: MsdfGlyphKey,
+        font_id: fontdb::ID,
+        weight: fontdb::Weight,
+    ) -> Option<MsdfSlot> {
         if let Some(slot) = self.msdf_atlas.slot(key) {
             return Some(slot);
         }
@@ -563,7 +568,7 @@ impl TextPaint {
         // mutably (for get_font) and immutably (for db().face()) at
         // once, so we hop: get_font yields an Arc that owns the bytes,
         // then a separate immutable borrow for the face_index lookup.
-        let font = self.atlas.font_system_mut().get_font(font_id)?;
+        let font = self.atlas.font_system_mut().get_font(font_id, weight)?;
         let face_index = self.atlas.font_system().db().face(font_id)?.index;
         let face = Face::parse(font.data(), face_index).ok()?;
         self.msdf_atlas.ensure(key, &face)

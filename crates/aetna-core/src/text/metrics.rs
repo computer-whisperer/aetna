@@ -212,15 +212,11 @@ pub fn hit_text(
     FONT_SYSTEM.with_borrow_mut(|font_system| {
         let line_height = line_height(size);
         let mut buffer = Buffer::new(font_system, Metrics::new(size, line_height));
-        buffer.set_wrap(
-            font_system,
-            match wrap {
-                TextWrap::NoWrap => Wrap::None,
-                TextWrap::Wrap => Wrap::WordOrGlyph,
-            },
-        );
+        buffer.set_wrap(match wrap {
+            TextWrap::NoWrap => Wrap::None,
+            TextWrap::Wrap => Wrap::WordOrGlyph,
+        });
         buffer.set_size(
-            font_system,
             match wrap {
                 TextWrap::NoWrap => None,
                 TextWrap::Wrap => available_width,
@@ -230,7 +226,7 @@ pub fn hit_text(
         let attrs = Attrs::new()
             .family(Family::Name("Roboto"))
             .weight(cosmic_weight(weight));
-        buffer.set_text(font_system, text, attrs, Shaping::Advanced);
+        buffer.set_text(text, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(font_system, false);
         let cursor = buffer.hit(x, y)?;
         Some(TextHit {
@@ -264,16 +260,11 @@ pub fn caret_xy(
         let line_h = line_height(size);
         let buffer = build_buffer(font_system, text, size, weight, wrap, available_width);
         let cursor = Cursor::new(target_line, byte_in_line);
-        for run in buffer.layout_runs() {
-            if run.line_i != target_line {
-                continue;
-            }
-            if run.glyphs.is_empty() {
-                return (0.0, run.line_top);
-            }
-            if let Some((x, _w)) = run.highlight(cursor, cursor) {
-                return (x, run.line_top);
-            }
+        // cosmic-text's Buffer::cursor_position handles the past-end case
+        // (caret after the last glyph on a line) which highlight() omits
+        // because zero-width segments are filtered out.
+        if let Some((x, y)) = buffer.cursor_position(&cursor) {
+            return (x, y);
         }
         // Phantom line beyond the last visible run (e.g. caret right
         // after a trailing `\n`). Position by line index alone.
@@ -308,7 +299,7 @@ pub fn selection_rects(
         let c_hi = Cursor::new(hi_line, hi_in_line);
         let mut rects = Vec::new();
         for run in buffer.layout_runs() {
-            if let Some((x, w)) = run.highlight(c_lo, c_hi) {
+            for (x, w) in run.highlight(c_lo, c_hi) {
                 rects.push((x, run.line_top, w, run.line_height));
             }
         }
@@ -346,15 +337,11 @@ fn build_buffer(
 ) -> Buffer {
     let line_h = line_height(size);
     let mut buffer = Buffer::new(font_system, Metrics::new(size, line_h));
-    buffer.set_wrap(
-        font_system,
-        match wrap {
-            TextWrap::NoWrap => Wrap::None,
-            TextWrap::Wrap => Wrap::WordOrGlyph,
-        },
-    );
+    buffer.set_wrap(match wrap {
+        TextWrap::NoWrap => Wrap::None,
+        TextWrap::Wrap => Wrap::WordOrGlyph,
+    });
     buffer.set_size(
-        font_system,
         match wrap {
             TextWrap::NoWrap => None,
             TextWrap::Wrap => available_width,
@@ -364,7 +351,7 @@ fn build_buffer(
     let attrs = Attrs::new()
         .family(Family::Name("Roboto"))
         .weight(cosmic_weight(weight));
-    buffer.set_text(font_system, text, attrs, Shaping::Advanced);
+    buffer.set_text(text, &attrs, Shaping::Advanced, None);
     buffer.shape_until_scroll(font_system, false);
     buffer
 }
@@ -550,15 +537,11 @@ fn layout_text_cosmic_with(
 ) -> Option<TextLayout> {
     let line_height = line_height(size);
     let mut buffer = Buffer::new(font_system, Metrics::new(size, line_height));
-    buffer.set_wrap(
-        font_system,
-        match wrap {
-            TextWrap::NoWrap => Wrap::None,
-            TextWrap::Wrap => Wrap::WordOrGlyph,
-        },
-    );
+    buffer.set_wrap(match wrap {
+        TextWrap::NoWrap => Wrap::None,
+        TextWrap::Wrap => Wrap::WordOrGlyph,
+    });
     buffer.set_size(
-        font_system,
         match wrap {
             TextWrap::NoWrap => None,
             TextWrap::Wrap => available_width,
@@ -568,7 +551,7 @@ fn layout_text_cosmic_with(
     let attrs = Attrs::new()
         .family(Family::Name("Roboto"))
         .weight(cosmic_weight(weight));
-    buffer.set_text(font_system, text, attrs, Shaping::Advanced);
+    buffer.set_text(text, &attrs, Shaping::Advanced, None);
     buffer.shape_until_scroll(font_system, false);
 
     let mut lines = Vec::new();
