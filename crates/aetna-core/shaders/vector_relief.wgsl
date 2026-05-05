@@ -6,7 +6,7 @@
 struct FrameUniforms {
     viewport: vec2<f32>,
     time: f32,
-    _pad: f32,
+    scale_factor: f32,
 };
 
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
@@ -16,6 +16,7 @@ struct VertexInput {
     @location(1) local: vec2<f32>,
     @location(2) color: vec4<f32>,
     @location(3) data: vec4<f32>,
+    @location(4) aa: vec2<f32>,
 };
 
 struct VertexOutput {
@@ -23,13 +24,16 @@ struct VertexOutput {
     @location(0) color: vec4<f32>,
     @location(1) local: vec2<f32>,
     @location(2) data: vec4<f32>,
+    @location(3) coverage: f32,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
+    let px_in_logical = 1.0 / max(frame.scale_factor, 0.001);
+    let pos_extruded = in.pos_px + in.aa * px_in_logical;
     let clip = vec4<f32>(
-        in.pos_px.x / frame.viewport.x * 2.0 - 1.0,
-        1.0 - in.pos_px.y / frame.viewport.y * 2.0,
+        pos_extruded.x / frame.viewport.x * 2.0 - 1.0,
+        1.0 - pos_extruded.y / frame.viewport.y * 2.0,
         0.0,
         1.0,
     );
@@ -39,6 +43,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.color = in.color;
     out.local = in.local;
     out.data = in.data;
+    out.coverage = select(0.0, 1.0, all(in.aa == vec2<f32>(0.0, 0.0)));
     return out;
 }
 
@@ -55,5 +60,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     rgb = rgb * (1.0 - 0.22 * lower_shade - stroke_bias * uv.y);
     rgb = clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0));
 
-    return vec4<f32>(rgb * in.color.a, in.color.a);
+    let alpha = in.color.a * in.coverage;
+    return vec4<f32>(rgb * alpha, alpha);
 }

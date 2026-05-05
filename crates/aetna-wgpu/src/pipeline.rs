@@ -19,19 +19,21 @@ use aetna_core::paint::QuadInstance;
 /// Layout matches the shared WGSL convention:
 /// ```wgsl
 /// struct FrameUniforms {
-///     viewport: vec2<f32>,  // logical px (width, height)
-///     time:     f32,        // seconds since runner start
-///     _pad:     f32,
+///     viewport:     vec2<f32>,  // logical px (width, height)
+///     time:         f32,        // seconds since runner start
+///     scale_factor: f32,        // physical px per logical px (1, 1.5, 2…)
 /// };
 /// ```
-/// Existing custom shaders that declared `_pad: vec2<f32>` continue
-/// to work — same 16-byte slab; only field naming differs.
+/// Custom shaders that previously declared `_pad: vec2<f32>` keep
+/// working — the byte layout is unchanged; the trailing `_pad.y` slot
+/// is now `scale_factor` and shaders can either ignore it or rename
+/// the field to consume it.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub(crate) struct FrameUniforms {
     pub viewport: [f32; 2],
     pub time: f32,
-    pub _pad: f32,
+    pub scale_factor: f32,
 }
 
 /// Per-instance vertex attributes — must match the shared

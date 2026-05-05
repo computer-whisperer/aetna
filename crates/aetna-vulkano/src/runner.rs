@@ -550,7 +550,7 @@ impl Runner {
             *write = FrameUniforms {
                 viewport: [viewport.w, viewport.h],
                 time,
-                _pad: 0.0,
+                scale_factor,
             };
         }
         timings.gpu_upload = Instant::now() - t_paint_end;

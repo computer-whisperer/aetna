@@ -537,7 +537,7 @@ impl Runner {
         let frame = FrameUniforms {
             viewport: [viewport.w, viewport.h],
             time,
-            _pad: 0.0,
+            scale_factor,
         };
         queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
         timings.gpu_upload = Instant::now() - t_paint_end;

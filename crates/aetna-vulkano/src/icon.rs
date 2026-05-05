@@ -221,6 +221,8 @@ fn vector_vertex_input_state() -> VertexInputState {
         .attribute(2, attr(16, Format::R32G32B32A32_SFLOAT))
         // location 3 — material metadata
         .attribute(3, attr(32, Format::R32G32B32A32_SFLOAT))
+        // location 4 — analytic-AA fringe normal (logical px; (0,0) interior)
+        .attribute(4, attr(48, Format::R32G32_SFLOAT))
 }
 
 fn build_vector_pipeline(
