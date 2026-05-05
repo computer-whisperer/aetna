@@ -164,7 +164,10 @@ mod tests {
         // Apps decoding routed events should use the same helper to
         // avoid format drift.
         assert_eq!(select_option_key("color", &"red"), "color:option:red");
-        assert_eq!(select_option_key("profile:7", &42u32), "profile:7:option:42");
+        assert_eq!(
+            select_option_key("profile:7", &42u32),
+            "profile:7:option:42"
+        );
     }
 
     #[test]

@@ -9,8 +9,7 @@ use aetna_core::icons::icon_vector_asset;
 use aetna_core::tree::IconName;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let out_dir: PathBuf = std::env::current_dir()?
-        .join("crates/aetna-demo/out/icon_msdf");
+    let out_dir: PathBuf = std::env::current_dir()?.join("crates/aetna-demo/out/icon_msdf");
     std::fs::create_dir_all(&out_dir)?;
 
     // 64-px icons (lucide is 24-unit) with a 6-px spread on each side.

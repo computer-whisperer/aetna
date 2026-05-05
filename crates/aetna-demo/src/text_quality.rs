@@ -23,8 +23,13 @@ fn size_row(size: f32) -> El {
     let label = format!("{}px", size as u32);
     column([
         row([
-            text(&label).font_size(11.0).muted().width(Size::Fixed(56.0)),
-            text(SAMPLE).font_size(size).font_weight(FontWeight::Regular),
+            text(&label)
+                .font_size(11.0)
+                .muted()
+                .width(Size::Fixed(56.0)),
+            text(SAMPLE)
+                .font_size(size)
+                .font_weight(FontWeight::Regular),
         ])
         .gap(tokens::SPACE_SM)
         .align(Align::End),
@@ -38,7 +43,10 @@ fn size_row(size: f32) -> El {
         .gap(tokens::SPACE_SM)
         .align(Align::End),
         row([
-            text("bold").font_size(11.0).muted().width(Size::Fixed(56.0)),
+            text("bold")
+                .font_size(11.0)
+                .muted()
+                .width(Size::Fixed(56.0)),
             text(SAMPLE).font_size(size).font_weight(FontWeight::Bold),
         ])
         .gap(tokens::SPACE_SM)
@@ -68,7 +76,9 @@ fn light_panel() -> El {
         text("light surface")
             .caption()
             .text_color(Color::rgb(80, 80, 80)),
-        text(SAMPLE).font_size(14.0).text_color(Color::rgb(20, 20, 20)),
+        text(SAMPLE)
+            .font_size(14.0)
+            .text_color(Color::rgb(20, 20, 20)),
         text(SAMPLE)
             .font_size(14.0)
             .font_weight(FontWeight::Bold)

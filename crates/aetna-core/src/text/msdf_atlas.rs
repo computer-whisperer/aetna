@@ -315,8 +315,7 @@ fn copy_rgba_into_rgba(dst: &mut [u8], stride_pixels: u32, rect: &MsdfRect, src_
             + rect.x as usize * MSDF_BYTES_PER_PIXEL as usize;
         let src_off = row * src_row_bytes;
         let row_bytes = rect.w as usize * 4;
-        dst[dst_off..dst_off + row_bytes]
-            .copy_from_slice(&src_rgba[src_off..src_off + row_bytes]);
+        dst[dst_off..dst_off + row_bytes].copy_from_slice(&src_rgba[src_off..src_off + row_bytes]);
     }
 }
 

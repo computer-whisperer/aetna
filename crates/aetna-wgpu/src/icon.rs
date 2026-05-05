@@ -105,12 +105,11 @@ impl IconPaint {
             mapped_at_creation: false,
         });
 
-        let tess_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("aetna_wgpu::icon::tess_pipeline_layout"),
-                bind_group_layouts: &[Some(frame_bind_layout)],
-                immediate_size: 0,
-            });
+        let tess_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("aetna_wgpu::icon::tess_pipeline_layout"),
+            bind_group_layouts: &[Some(frame_bind_layout)],
+            immediate_size: 0,
+        });
         let flat_pipeline = build_tess_pipeline(
             device,
             &tess_pipeline_layout,
@@ -157,12 +156,11 @@ impl IconPaint {
                 ],
             });
 
-        let msdf_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("aetna_wgpu::icon::msdf_pipeline_layout"),
-                bind_group_layouts: &[Some(frame_bind_layout), Some(&msdf_page_bind_layout)],
-                immediate_size: 0,
-            });
+        let msdf_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("aetna_wgpu::icon::msdf_pipeline_layout"),
+            bind_group_layouts: &[Some(frame_bind_layout), Some(&msdf_page_bind_layout)],
+            immediate_size: 0,
+        });
         let msdf_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stock::text_msdf (icon)"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(stock_wgsl::TEXT_MSDF)),
@@ -296,10 +294,7 @@ impl IconPaint {
         let start = self.runs.len();
         match self.material {
             IconMaterial::Flat => {
-                if let Some(slot) = self
-                    .msdf_atlas
-                    .ensure(IconMsdfKey::new(name, stroke_width))
-                {
+                if let Some(slot) = self.msdf_atlas.ensure(IconMsdfKey::new(name, stroke_width)) {
                     let (page_w, page_h) = self.msdf_page_dims(slot.page);
                     let instance = msdf_instance_for_icon(rect, color, &slot, page_w, page_h);
                     let first = self.msdf_instances.len() as u32;
@@ -361,7 +356,11 @@ impl IconPaint {
             self.tess_vertex_capacity = new_cap;
         }
         if !self.tess_vertices.is_empty() {
-            queue.write_buffer(&self.tess_vertex_buf, 0, bytemuck::cast_slice(&self.tess_vertices));
+            queue.write_buffer(
+                &self.tess_vertex_buf,
+                0,
+                bytemuck::cast_slice(&self.tess_vertices),
+            );
         }
 
         // MSDF pages: create GPU textures for any newly-allocated atlas

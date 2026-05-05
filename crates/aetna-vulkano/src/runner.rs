@@ -855,10 +855,7 @@ impl Runner {
                                 )
                                 .expect("bind_descriptor_sets icon tess");
                             builder
-                                .bind_vertex_buffers(
-                                    0,
-                                    self.icon_paint.tess_vertex_buf().clone(),
-                                )
+                                .bind_vertex_buffers(0, self.icon_paint.tess_vertex_buf().clone())
                                 .expect("bind_vertex_buffers icon tess");
                             unsafe {
                                 builder
@@ -878,9 +875,7 @@ impl Runner {
                                     0,
                                     (
                                         self.frame_descriptor_set.clone(),
-                                        self.icon_paint
-                                            .msdf_page_descriptor(run.page)
-                                            .clone(),
+                                        self.icon_paint.msdf_page_descriptor(run.page).clone(),
                                     ),
                                 )
                                 .expect("bind_descriptor_sets icon msdf");

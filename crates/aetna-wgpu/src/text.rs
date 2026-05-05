@@ -241,12 +241,11 @@ impl TextPaint {
                 ],
             });
 
-        let msdf_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("aetna_wgpu::text::msdf_pipeline_layout"),
-                bind_group_layouts: &[Some(frame_bind_layout), Some(&msdf_page_bind_layout)],
-                immediate_size: 0,
-            });
+        let msdf_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("aetna_wgpu::text::msdf_pipeline_layout"),
+            bind_group_layouts: &[Some(frame_bind_layout), Some(&msdf_page_bind_layout)],
+            immediate_size: 0,
+        });
 
         let msdf_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stock::text_msdf"),
@@ -339,6 +338,7 @@ impl TextPaint {
         self.runs.clear();
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn record_inner(
         &mut self,
         rect: Rect,
@@ -358,9 +358,7 @@ impl TextPaint {
             .iter()
             .map(|(text, style)| (text.as_str(), style.clone()))
             .collect();
-        let shaped = self
-            .atlas
-            .shape_runs(&runs_ref, size, wrap, anchor, avail);
+        let shaped = self.atlas.shape_runs(&runs_ref, size, wrap, anchor, avail);
         self.emit_shaped_glyphs(rect, scissor, &shaped, wrap, scale_factor)
     }
 
@@ -523,7 +521,13 @@ impl TextPaint {
         });
     }
 
-    fn push_msdf_glyph(&mut self, glyph: &ShapedGlyph, slot: MsdfSlot, origin_x: f32, origin_y: f32) {
+    fn push_msdf_glyph(
+        &mut self,
+        glyph: &ShapedGlyph,
+        slot: MsdfSlot,
+        origin_x: f32,
+        origin_y: f32,
+    ) {
         // MSDF slot metrics are in **base-em pixels**. Multiply by the
         // ratio of logical-em / base-em to get logical px.
         let logical_em = glyph.key.size();
@@ -581,8 +585,13 @@ impl TextPaint {
         while self.color_pages.len() < self.atlas.pages().len() {
             let i = self.color_pages.len();
             let page = &self.atlas.pages()[i];
-            self.color_pages
-                .push(create_color_page(device, &self.color_page_bind_layout, &self.color_sampler, page.width, page.height));
+            self.color_pages.push(create_color_page(
+                device,
+                &self.color_page_bind_layout,
+                &self.color_sampler,
+                page.width,
+                page.height,
+            ));
         }
         for (page_idx, rect) in color_dirty {
             let page = &self.atlas.pages()[page_idx];
@@ -594,8 +603,13 @@ impl TextPaint {
         while self.msdf_pages.len() < self.msdf_atlas.pages().len() {
             let i = self.msdf_pages.len();
             let page = &self.msdf_atlas.pages()[i];
-            self.msdf_pages
-                .push(create_msdf_page(device, &self.msdf_page_bind_layout, &self.msdf_sampler, page.width, page.height));
+            self.msdf_pages.push(create_msdf_page(
+                device,
+                &self.msdf_page_bind_layout,
+                &self.msdf_sampler,
+                page.width,
+                page.height,
+            ));
         }
         for (page_idx, rect) in msdf_dirty {
             let page = &self.msdf_atlas.pages()[page_idx];

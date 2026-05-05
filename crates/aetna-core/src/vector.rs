@@ -530,7 +530,16 @@ fn make_mesh_vertex(
     path_index: usize,
     kind: VectorPrimitiveKind,
 ) -> VectorMeshVertex {
-    make_mesh_vertex_with_aa(p, rect, view_origin, scale, color, path_index, kind, [0.0, 0.0])
+    make_mesh_vertex_with_aa(
+        p,
+        rect,
+        view_origin,
+        scale,
+        color,
+        path_index,
+        kind,
+        [0.0, 0.0],
+    )
 }
 
 #[allow(clippy::too_many_arguments)]

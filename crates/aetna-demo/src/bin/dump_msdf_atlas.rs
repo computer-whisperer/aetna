@@ -20,7 +20,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let phrase = "The quick brown fox jumps over the lazy dog 0123456789";
     for ch in phrase.chars() {
         let gid = face.glyph_index(ch).map(|g| g.0).unwrap_or(0);
-        atlas.ensure(MsdfGlyphKey { font: id, glyph_id: gid }, &face);
+        atlas.ensure(
+            MsdfGlyphKey {
+                font: id,
+                glyph_id: gid,
+            },
+            &face,
+        );
     }
 
     let page = &atlas.pages()[0];

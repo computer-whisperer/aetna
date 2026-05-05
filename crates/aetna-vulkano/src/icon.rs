@@ -214,10 +214,7 @@ impl IconPaint {
         let start = self.runs.len();
         match self.material {
             IconMaterial::Flat => {
-                if let Some(slot) = self
-                    .msdf_atlas
-                    .ensure(IconMsdfKey::new(name, stroke_width))
-                {
+                if let Some(slot) = self.msdf_atlas.ensure(IconMsdfKey::new(name, stroke_width)) {
                     let (page_w, page_h) = self.msdf_page_dims(slot.page);
                     let instance = msdf_instance_for_icon(rect, color, &slot, page_w, page_h);
                     let first = self.msdf_instances.len() as u32;
@@ -382,8 +379,8 @@ impl IconPaint {
             },
         )
         .expect("aetna-vulkano: icon msdf atlas page image");
-        let view = ImageView::new_default(image.clone())
-            .expect("aetna-vulkano: icon msdf page view");
+        let view =
+            ImageView::new_default(image.clone()).expect("aetna-vulkano: icon msdf page view");
         let descriptor_set = DescriptorSet::new(
             self.descriptor_alloc.clone(),
             self.msdf_pipeline.layout().set_layouts()[1].clone(),

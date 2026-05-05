@@ -405,28 +405,8 @@ impl GlyphAtlas {
         self.shape_runs_inner(runs, size, wrap, anchor, available_width, false)
     }
 
-    /// Shape a single styled text run without rasterizing.
-    pub fn shape(
-        &mut self,
-        text: &str,
-        size: f32,
-        weight: FontWeight,
-        wrap: TextWrap,
-        anchor: TextAnchor,
-        available_width: Option<f32>,
-        color: Color,
-    ) -> ShapedRun {
-        self.shape_runs(
-            &[(text, RunStyle::new(weight, color))],
-            size,
-            wrap,
-            anchor,
-            available_width,
-        )
-    }
-
     /// Rasterize a glyph into the colour-bitmap atlas. Idempotent. Use
-    /// after [`Self::shape`] / [`Self::shape_runs`] when the recorder
+    /// after [`Self::shape_runs`] when the recorder
     /// has decided this glyph belongs on the colour path (its source
     /// font is a colour font per [`Self::is_color_font`]).
     pub fn ensure_color_glyph(&mut self, key: GlyphKey) {

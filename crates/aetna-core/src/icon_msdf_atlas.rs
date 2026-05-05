@@ -279,8 +279,8 @@ fn copy_rgba_into_rgba(dst: &mut [u8], stride_pixels: u32, rect: &IconRect, src_
     let dst_row_bytes = stride_pixels as usize * BYTES_PER_PIXEL as usize;
     let src_row_bytes = rect.w as usize * 4;
     for row in 0..rect.h as usize {
-        let dst_off = (rect.y as usize + row) * dst_row_bytes
-            + rect.x as usize * BYTES_PER_PIXEL as usize;
+        let dst_off =
+            (rect.y as usize + row) * dst_row_bytes + rect.x as usize * BYTES_PER_PIXEL as usize;
         let src_off = row * src_row_bytes;
         dst[dst_off..dst_off + src_row_bytes]
             .copy_from_slice(&src_rgba[src_off..src_off + src_row_bytes]);

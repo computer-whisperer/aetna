@@ -215,6 +215,7 @@ impl TextPaint {
         self.runs.clear();
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn record_inner(
         &mut self,
         rect: Rect,
@@ -508,7 +509,9 @@ impl TextPaint {
                 );
             }
 
-            let cb = builder.build().expect("aetna-vulkano: text upload cmd build");
+            let cb = builder
+                .build()
+                .expect("aetna-vulkano: text upload cmd build");
             let future = sync::now(self.queue.device().clone())
                 .then_execute(self.queue.clone(), cb)
                 .expect("aetna-vulkano: text upload then_execute")
@@ -550,9 +553,7 @@ impl TextPaint {
 
     fn append_buffer_to_image_copy(
         &self,
-        builder: &mut AutoCommandBufferBuilder<
-            vulkano::command_buffer::PrimaryAutoCommandBuffer,
-        >,
+        builder: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
         target: Arc<Image>,
         bytes: Vec<u8>,
         rect: [u32; 4],
@@ -608,8 +609,8 @@ impl TextPaint {
             },
         )
         .expect("aetna-vulkano: text colour atlas page image");
-        let view = ImageView::new_default(image.clone())
-            .expect("aetna-vulkano: text colour page view");
+        let view =
+            ImageView::new_default(image.clone()).expect("aetna-vulkano: text colour page view");
         let descriptor_set = DescriptorSet::new(
             self.descriptor_alloc.clone(),
             self.color_pipeline.layout().set_layouts()[1].clone(),
@@ -644,8 +645,8 @@ impl TextPaint {
             },
         )
         .expect("aetna-vulkano: text msdf atlas page image");
-        let view = ImageView::new_default(image.clone())
-            .expect("aetna-vulkano: text msdf page view");
+        let view =
+            ImageView::new_default(image.clone()).expect("aetna-vulkano: text msdf page view");
         let descriptor_set = DescriptorSet::new(
             self.descriptor_alloc.clone(),
             self.msdf_pipeline.layout().set_layouts()[1].clone(),

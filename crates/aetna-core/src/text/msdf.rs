@@ -22,7 +22,7 @@
 
 use fdsm::{
     bezier::scanline::FillRule,
-    correct_error::{correct_error_mtsdf, ErrorCorrectionConfig},
+    correct_error::{ErrorCorrectionConfig, correct_error_mtsdf},
     generate::generate_mtsdf,
     render::correct_sign_mtsdf,
     shape::Shape,
@@ -190,7 +190,11 @@ mod tests {
         // and roughly equal to the cap-height portion plus spread.
         assert!(glyph.bearing_y < 0.0, "{}", glyph.bearing_y);
         // Advance is positive and reasonable.
-        assert!(glyph.advance > 10.0 && glyph.advance < 30.0, "{}", glyph.advance);
+        assert!(
+            glyph.advance > 10.0 && glyph.advance < 30.0,
+            "{}",
+            glyph.advance
+        );
     }
 
     #[test]
@@ -231,12 +235,18 @@ mod tests {
         let corner = &glyph.rgba[0..3];
         let mut v = [corner[0], corner[1], corner[2]];
         v.sort_unstable();
-        assert!(v[1] < 60, "top-left corner median should be far outside, got {v:?}");
+        assert!(
+            v[1] < 60,
+            "top-left corner median should be far outside, got {v:?}"
+        );
         let last_row = (glyph.height as usize - 1) * stride;
         let bottom_right = &glyph.rgba[last_row + stride - 4..last_row + stride - 1];
         let mut v = [bottom_right[0], bottom_right[1], bottom_right[2]];
         v.sort_unstable();
-        assert!(v[1] < 60, "bottom-right corner median should be far outside, got {v:?}");
+        assert!(
+            v[1] < 60,
+            "bottom-right corner median should be far outside, got {v:?}"
+        );
     }
 
     #[test]

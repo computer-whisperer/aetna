@@ -19,7 +19,7 @@
 
 use fdsm::{
     bezier::{Point, Segment},
-    correct_error::{correct_error_mtsdf, ErrorCorrectionConfig},
+    correct_error::{ErrorCorrectionConfig, correct_error_mtsdf},
     generate::generate_mtsdf,
     render::correct_sign_mtsdf,
     shape::{Contour, Shape},
@@ -272,10 +272,10 @@ fn push_bezpath_contours(path: &BezPath, shape: &mut Shape<Contour>) {
                 last = Some(pt);
             }
             PathEl::ClosePath => {
-                if let (Some(c), Some(prev), Some(s)) = (shape.contours.last_mut(), last, start) {
-                    if (prev - s).norm() > 1e-6 {
-                        c.segments.push(Segment::line(prev, s));
-                    }
+                if let (Some(c), Some(prev), Some(s)) = (shape.contours.last_mut(), last, start)
+                    && (prev - s).norm() > 1e-6
+                {
+                    c.segments.push(Segment::line(prev, s));
                 }
                 last = start;
             }
@@ -292,10 +292,10 @@ fn close_open_contour(
     start: &mut Option<Point>,
     last: &mut Option<Point>,
 ) {
-    if let (Some(c), Some(prev), Some(s)) = (shape.contours.last_mut(), *last, *start) {
-        if (prev - s).norm() > 1e-6 {
-            c.segments.push(Segment::line(prev, s));
-        }
+    if let (Some(c), Some(prev), Some(s)) = (shape.contours.last_mut(), *last, *start)
+        && (prev - s).norm() > 1e-6
+    {
+        c.segments.push(Segment::line(prev, s));
     }
     *start = None;
     *last = None;
@@ -334,7 +334,10 @@ mod tests {
         let off = cy * stride + cx * 4;
         let mut v = [m.rgba[off], m.rgba[off + 1], m.rgba[off + 2]];
         v.sort_unstable();
-        assert!(v[1] > 200, "expected centre to be inside the X stroke, got {v:?}");
+        assert!(
+            v[1] > 200,
+            "expected centre to be inside the X stroke, got {v:?}"
+        );
     }
 
     #[test]
@@ -353,7 +356,10 @@ mod tests {
         ];
         let mut v = br;
         v.sort_unstable();
-        assert!(v[1] < 60, "bottom-right corner should be outside, got {v:?}");
+        assert!(
+            v[1] < 60,
+            "bottom-right corner should be outside, got {v:?}"
+        );
     }
 
     #[test]

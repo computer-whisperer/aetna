@@ -29,12 +29,10 @@ struct DiffStats {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut before = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("out/text_quality.before.1x.png");
-    let mut after = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("out/text_quality.after.1x.png");
-    let mut out = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("out/text_quality.compare.png");
+    let mut before =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out/text_quality.before.1x.png");
+    let mut after = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out/text_quality.after.1x.png");
+    let mut out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out/text_quality.compare.png");
     let mut report: Option<PathBuf> = None;
 
     for arg in std::env::args().skip(1) {
@@ -113,7 +111,12 @@ fn read_png(path: &Path) -> Result<Image, Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
     let decoder = png::Decoder::new(std::io::BufReader::new(file));
     let mut reader = decoder.read_info()?;
-    let mut buf = vec![0; reader.output_buffer_size().ok_or("PNG dimensions overflow usize")?];
+    let mut buf = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .ok_or("PNG dimensions overflow usize")?
+    ];
     let info = reader.next_frame(&mut buf)?;
     if info.color_type != png::ColorType::Rgba || info.bit_depth != png::BitDepth::Eight {
         return Err(format!(
@@ -142,8 +145,10 @@ fn write_png(path: &Path, w: u32, h: u32, rgba: &[u8]) -> Result<(), Box<dyn std
 }
 
 fn diff_stats(a: &Image, b: &Image) -> DiffStats {
-    let mut s = DiffStats::default();
-    s.pixel_count = (a.width as u64) * (a.height as u64);
+    let mut s = DiffStats {
+        pixel_count: (a.width as u64) * (a.height as u64),
+        ..DiffStats::default()
+    };
     for (pa, pb) in a.rgba.chunks_exact(4).zip(b.rgba.chunks_exact(4)) {
         if pa == pb {
             s.exact_pixels += 1;
@@ -174,7 +179,11 @@ fn side_by_side(a: &Image, b: &Image) -> Image {
     let mut rgba = vec![20u8; (w * h * 4) as usize];
     blit(&mut rgba, w, 0, 0, a);
     blit(&mut rgba, w, a.width + divider, 0, b);
-    Image { width: w, height: h, rgba }
+    Image {
+        width: w,
+        height: h,
+        rgba,
+    }
 }
 
 fn blit(dst: &mut [u8], dst_w: u32, x0: u32, y0: u32, src: &Image) {

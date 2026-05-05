@@ -105,7 +105,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         compatible_surface: None,
         force_fallback_adapter: false,
     }))
-    .map_err(|e| format!("{} ({e})", "no compatible adapter (try installing vulkan / mesa drivers)"))?;
+    .map_err(|e| {
+        format!(
+            "{} ({e})",
+            "no compatible adapter (try installing vulkan / mesa drivers)"
+        )
+    })?;
 
     println!(
         "adapter: {:?} ({:?})",
@@ -113,16 +118,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         adapter.get_info().backend
     );
 
-    let (device, queue) = pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            label: Some("aetna_demo::liquid_glass::device"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            experimental_features: wgpu::ExperimentalFeatures::default(),
-            memory_hints: wgpu::MemoryHints::Performance,
-            trace: wgpu::Trace::Off,
-        },
-    ))?;
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("aetna_demo::liquid_glass::device"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        experimental_features: wgpu::ExperimentalFeatures::default(),
+        memory_hints: wgpu::MemoryHints::Performance,
+        trace: wgpu::Trace::Off,
+    }))?;
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -204,7 +207,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     buffer_slice.map_async(wgpu::MapMode::Read, move |r| {
         sender.send(r).ok();
     });
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("device poll");
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("device poll");
     receiver.recv()??;
 
     let padded = buffer_slice.get_mapped_range();
