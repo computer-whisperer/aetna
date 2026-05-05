@@ -26,7 +26,6 @@ pub use crate::event::{
 pub use crate::icons::{IntoIconName, all_icon_names, icon};
 pub use crate::layout::{LayoutCtx, LayoutFn};
 pub use crate::shader::{ShaderBinding, UniformBlock, UniformValue};
-pub use crate::state::WidgetState;
 pub use crate::style::StyleProfile;
 pub use crate::text::metrics::{
     TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text, line_height, line_width,

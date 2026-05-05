@@ -113,36 +113,42 @@ The two **escape hatches** documented in `SHADER_VISION.md`:
 - `.shader(ShaderBinding)` — bind your own shader for the surface paint, replacing `stock::rounded_rect`. The library injects `inner_rect` and `focus_color` / `focus_width` (when focusable + focused) uniforms into your binding — your shader can use them or ignore them.
 - `.layout(F)` — supply your own positioning function for direct children. The library still recurses into each child and drives hit-test / focus / animation off the rects you return. The `LayoutCtx` handed to your function carries `container` (your inner rect), `children` (read-only), `measure` (intrinsic for any child), and `rect_of_key(&str) → Option<Rect>` (look up any keyed element's laid-out rect — used by anchored popovers and any cross-tree positioning).
 
-### 6. Per-instance state — `widget_state::<T>`
+### 6. Controlled widget state
 
-Stateful widgets stash per-node, per-type state on `UiState`. The library owns the storage but never reads the values; it wipes entries when a node leaves the tree.
+App-facing widgets are **controlled**: the app owns their state and passes
+that state into the widget builder on every `build()`.
 
 ```rust
-use aetna_core::WidgetState;
+use aetna_core::prelude::*;
 
-#[derive(Default, Debug)]
-struct TextInputState {
-    caret: usize,
-    selection: Option<(usize, usize)>,
-    blink_phase: f32,
+struct Form {
+    name: String,
+    name_sel: TextSelection,
 }
 
-impl WidgetState for TextInputState {
-    fn debug_summary(&self) -> String {
-        format!("caret={} sel={:?}", self.caret, self.selection)
+impl App for Form {
+    fn build(&self) -> El {
+        text_input(&self.name, self.name_sel).key("name")
+    }
+
+    fn on_event(&mut self, event: UiEvent) {
+        if event.target_key() == Some("name") {
+            text_input::apply_event(&mut self.name, &mut self.name_sel, &event);
+        }
     }
 }
-
-// In your build closure or event handler:
-let state = ui_state.widget_state_mut::<TextInputState>(&node_id);
-state.caret += 1;
 ```
 
-`debug_summary()` shows up in `dump_tree` artifacts so the agent loop can see what a widget thinks per frame.
+That pattern is intentional. It keeps generated application code
+obvious: state lives in the app struct, `build()` projects it into an
+`El`, and `on_event()` folds routed events back into the state.
 
-`widget_state_mut::<T: Default>` lazy-inserts on first access. `widget_state::<T>` returns `Option<&T>`. `clear_widget_state::<T>` removes the entry.
-
-State is keyed by `(computed_id, TypeId)`, so multiple widgets can stash multiple state types on the same node without colliding.
+There is also an advanced `UiState::widget_state::<T>` typed bucket used
+by tests, diagnostics, and future host/widget experiments. Normal widget
+builders do not receive `UiState`, so do not reach for it when writing
+app-level widgets. If a stock widget needs hidden state that an app
+widget cannot express with controlled state, the kit is missing a public
+primitive and should grow one instead.
 
 ### 7. Hotkeys & key delivery
 
@@ -177,7 +183,7 @@ If you find yourself wanting a feature that requires reaching past this kit, tha
 
 ## Status
 
-- v0.7.5 — kit defined and dogfooded by stock widgets. `widget_state` typed bucket landed.
+- v0.7.5 — kit defined and dogfooded by stock widgets. A typed `UiState::widget_state` bucket exists for advanced host/diagnostic experiments, but the app-facing widget contract remains controlled state owned by the app.
 - v0.7.6 — input plumbing (mouse-up, drag, secondary click, character/IME text, focused-key priority).
 - v0.8.1 — single-line `text_input` widget dogfooded against the kit. App owns `(value, caret)`; widget builder composes `Kind::Custom` + `.focusable()` + `.capture_keys()` + `.paint_overflow()` + `.axis(Row)` over two `text` segments and a caret bar. `apply_event(value, caret, &UiEvent)` folds routed `TextInput`/`KeyDown(Backspace|Delete|Arrow|Home|End)`/`Click` events back into app state. Kit growth: `El::axis()` promoted from `pub(crate)` to `pub` (already documented as part of the kit).
 - v0.8.2 — selection. `TextSelection { anchor, head }` replaces the bare caret index; widget renders a tinted selection rectangle behind the selected glyphs. New surface: `UiEventKind::PointerDown` (so widgets see down-time before any drag), `UiEvent.modifiers` (Shift+click / Ctrl+drag), `UiState::set_modifiers` (host stamps the current mask). `apply_event` adds drag-select, Shift+arrow extension, Ctrl+A select-all, and replace-on-type / replace-on-backspace. Helpers: `selected_text`, `replace_selection`, `select_all`. Token: `SELECTION_BG`.
