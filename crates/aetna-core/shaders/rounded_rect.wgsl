@@ -36,7 +36,12 @@ struct InstanceInput {
 
 struct VertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
-    @location(0)      pos_px: vec2<f32>,       // pixel-space position (top-left origin)
+    // `@interpolate(perspective, sample)` on `pos_px` is what asks the
+    // rasterizer to run fs_main once per MSAA sample (sample-rate
+    // shading) instead of once per pixel — see the comment on fs_main.
+    // The other varyings are constant across the quad so they can stay
+    // at the default centroid interpolation.
+    @location(0) @interpolate(perspective, sample) pos_px: vec2<f32>,
     @location(1)      inner_center: vec2<f32>,
     @location(2)      inner_half_size: vec2<f32>,
     @location(3)      fill: vec4<f32>,
@@ -74,6 +79,13 @@ fn sdf_rounded_box(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0, 0.0))) - r;
 }
 
+// Sample-rate shading is requested via `@interpolate(perspective,
+// sample)` on `pos_px` (see VertexOutput). When the pipeline runs at
+// sample_count > 1, fs_main is invoked once per MSAA sample with
+// `pos_px` interpolated to that sub-sample's location; smoothstep AA
+// then evaluates at sub-pixel resolution and the four samples are
+// averaged on resolve, smoothing the brightness pop where a curved
+// boundary lands near a pixel center.
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let stroke_width = in.params.x;

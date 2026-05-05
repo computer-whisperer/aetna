@@ -43,8 +43,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }))?;
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    // 4× MSAA + sample shading: shaders annotated with @builtin(sample_index)
+    // run at sample rate, so SDF AA evaluates at 4 sub-pixel positions per
+    // pixel and averages on resolve. Eliminates the "curve apex pixels land
+    // on d≈0 and pop to alpha 1.0" artifact.
+    let sample_count = 4;
+    let msaa_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("aetna_demo::icon_gallery::target_msaa"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let msaa_view = msaa_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("aetna_demo::icon_gallery::target"),
+        label: Some("aetna_demo::icon_gallery::target_resolve"),
         size: wgpu::Extent3d {
             width,
             height,
@@ -70,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mapped_at_creation: false,
     });
 
-    let mut renderer = Runner::new(&device, &queue, format);
+    let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_theme(Theme::default().with_icon_material(material));
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
     let mut tree = aetna_demo::icon_gallery::icon_gallery();
@@ -83,8 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("aetna_demo::icon_gallery::pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
+                view: &msaa_view,
+                resolve_target: Some(&view),
                 depth_slice: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(bg_color()),

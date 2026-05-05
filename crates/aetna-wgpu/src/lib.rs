@@ -99,6 +99,7 @@ const INITIAL_INSTANCE_CAPACITY: usize = 256;
 /// are wgpu-specific resources only.
 pub struct Runner {
     target_format: wgpu::TextureFormat,
+    sample_count: u32,
 
     // Shared resources.
     pipeline_layout: wgpu::PipelineLayout,
@@ -213,8 +214,21 @@ impl Runner {
     /// the glyph atlas are built compatible.
     pub fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target_format: wgpu::TextureFormat,
+    ) -> Self {
+        Self::with_sample_count(device, queue, target_format, 1)
+    }
+
+    /// Like [`Self::new`], but builds all pipelines with `sample_count`
+    /// MSAA samples. The host must provide a matching multisampled
+    /// render target and a single-sample resolve target. `sample_count`
+    /// of 1 is the non-MSAA default.
+    pub fn with_sample_count(
+        device: &wgpu::Device,
         _queue: &wgpu::Queue,
         target_format: wgpu::TextureFormat,
+        sample_count: u32,
     ) -> Self {
         // ---- Shared resources ----
         let frame_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -320,20 +334,22 @@ impl Runner {
             device,
             &pipeline_layout,
             target_format,
+            sample_count,
             "stock::rounded_rect",
             stock_wgsl::ROUNDED_RECT,
         );
         pipelines.insert(ShaderHandle::Stock(StockShader::RoundedRect), rr_pipeline);
 
         // Text pipeline + atlas (replaces glyphon).
-        let text_paint = TextPaint::new(device, target_format, &frame_bind_layout);
-        let icon_paint = IconPaint::new(device, target_format, &frame_bind_layout);
+        let text_paint = TextPaint::new(device, target_format, sample_count, &frame_bind_layout);
+        let icon_paint = IconPaint::new(device, target_format, sample_count, &frame_bind_layout);
 
         let mut core = RunnerCore::new();
         core.quad_scratch = Vec::with_capacity(INITIAL_INSTANCE_CAPACITY);
 
         Self {
             target_format,
+            sample_count,
             pipeline_layout,
             backdrop_pipeline_layout,
             quad_bind_group,
@@ -426,7 +442,14 @@ impl Runner {
         } else {
             &self.pipeline_layout
         };
-        let pipeline = build_quad_pipeline(device, layout, self.target_format, &label, wgsl);
+        let pipeline = build_quad_pipeline(
+            device,
+            layout,
+            self.target_format,
+            self.sample_count,
+            &label,
+            wgsl,
+        );
         self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
         if samples_backdrop {
             self.backdrop_shaders.insert(name);

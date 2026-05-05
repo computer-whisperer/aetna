@@ -46,7 +46,8 @@ struct InstanceInput {
 
 struct VertexOutput {
     @builtin(position) clip_pos:  vec4<f32>,
-    @location(0)       local_px:  vec2<f32>,
+    // sample-rate shading on the SDF input — see rounded_rect.wgsl
+    @location(0) @interpolate(perspective, sample) local_px:  vec2<f32>,
     @location(1)       half_size: vec2<f32>,
     @location(2)       tint:      vec4<f32>,
     @location(3)       params:    vec4<f32>,

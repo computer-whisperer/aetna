@@ -55,6 +55,7 @@ pub(crate) fn build_quad_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,
     target_format: wgpu::TextureFormat,
+    sample_count: u32,
     label: &str,
     wgsl: &str,
 ) -> wgpu::RenderPipeline {
@@ -107,7 +108,11 @@ pub(crate) fn build_quad_pipeline(
             conservative: false,
         },
         depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState {
+            count: sample_count,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
         multiview_mask: None,
         cache: None,
     })

@@ -33,7 +33,9 @@ struct InstanceInput {
 
 struct VertexOutput {
     @builtin(position) clip_pos:  vec4<f32>,
-    @location(0)       local_px:  vec2<f32>,
+    // `@interpolate(perspective, sample)` triggers sample-rate shading
+    // when the pipeline runs at sample_count > 1; see rounded_rect.wgsl.
+    @location(0) @interpolate(perspective, sample) local_px:  vec2<f32>,
     @location(1)       half_size: vec2<f32>,
     @location(2)       top_color: vec4<f32>,
     @location(3)       bot_color: vec4<f32>,

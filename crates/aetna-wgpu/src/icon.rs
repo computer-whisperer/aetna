@@ -95,6 +95,7 @@ impl IconPaint {
     pub(crate) fn new(
         device: &wgpu::Device,
         target_format: wgpu::TextureFormat,
+        sample_count: u32,
         frame_bind_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         // ---- Tess pipelines ----
@@ -114,6 +115,7 @@ impl IconPaint {
             device,
             &tess_pipeline_layout,
             target_format,
+            sample_count,
             "stock::vector",
             stock_wgsl::VECTOR,
         );
@@ -121,6 +123,7 @@ impl IconPaint {
             device,
             &tess_pipeline_layout,
             target_format,
+            sample_count,
             "stock::vector_relief",
             stock_wgsl::VECTOR_RELIEF,
         );
@@ -128,6 +131,7 @@ impl IconPaint {
             device,
             &tess_pipeline_layout,
             target_format,
+            sample_count,
             "stock::vector_glass",
             stock_wgsl::VECTOR_GLASS,
         );
@@ -222,7 +226,11 @@ impl IconPaint {
                 conservative: false,
             },
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             multiview_mask: None,
             cache: None,
         });
@@ -473,6 +481,7 @@ fn build_tess_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
     target_format: wgpu::TextureFormat,
+    sample_count: u32,
     label: &'static str,
     wgsl: &'static str,
 ) -> wgpu::RenderPipeline {
@@ -513,7 +522,11 @@ fn build_tess_pipeline(
             conservative: false,
         },
         depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState {
+            count: sample_count,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
         multiview_mask: None,
         cache: None,
     })

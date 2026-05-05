@@ -120,6 +120,7 @@ impl TextPaint {
     pub(crate) fn new(
         device: &wgpu::Device,
         target_format: wgpu::TextureFormat,
+        sample_count: u32,
         frame_bind_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         // ---- Colour-bitmap pipeline (legacy `stock::text`) ----
@@ -194,7 +195,7 @@ impl TextPaint {
             }),
             primitive: triangle_strip(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState { count: sample_count, mask: !0, alpha_to_coverage_enabled: false },
             multiview_mask: None,
             cache: None,
         });
@@ -288,7 +289,7 @@ impl TextPaint {
             }),
             primitive: triangle_strip(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState { count: sample_count, mask: !0, alpha_to_coverage_enabled: false },
             multiview_mask: None,
             cache: None,
         });
