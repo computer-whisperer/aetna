@@ -248,6 +248,10 @@ fn counter_view(state: &CounterState) -> El {
         // Hover any of the three for ~500ms to see the runtime-driven
         // tooltip layer appear. The `.tooltip(text)` modifier is the
         // entire app-side surface; the rest is library-owned.
+        // `.hug()` on the row is what lets the column's `align(Center)`
+        // actually center it — a Fill-width row would claim the full
+        // content width and silently neutralize the centering, leaving
+        // the buttons at the left edge.
         row([
             button("−")
                 .key("counter-dec")
@@ -262,7 +266,8 @@ fn counter_view(state: &CounterState) -> El {
                 .primary()
                 .tooltip("Increment"),
         ])
-        .gap(tokens::SPACE_MD),
+        .gap(tokens::SPACE_MD)
+        .width(Size::Hug),
         text(if state.value == 0 {
             "Click + or −, or hover for a tooltip.".to_string()
         } else {
@@ -314,6 +319,10 @@ fn list_view(state: &ListState) -> El {
         })
         .collect();
 
+    // Fill-height column so the scroll's `Fill(1.0)` resolves against
+    // the leftover space (viewport − header − caption − gaps), not the
+    // intrinsic sum of all rows. Without this, column defaults to Hug
+    // → scroll falls back to intrinsic → ~1700px overflow.
     column([
         h2("Scrollable list"),
         text("Wheel inside the panel. Click a row to select.").muted(),
@@ -323,6 +332,7 @@ fn list_view(state: &ListState) -> El {
             .padding(tokens::SPACE_SM),
     ])
     .gap(tokens::SPACE_LG)
+    .height(Size::Fill(1.0))
 }
 
 fn list_on_event(state: &mut ListState, e: UiEvent) {
@@ -479,6 +489,9 @@ fn picker_view(state: &PickerState) -> El {
         })
         .collect();
 
+    // Fill-height column for the same reason as `list_view`: the inner
+    // scroll's `Fill(1.0)` only resolves correctly when the parent
+    // column has bounded height.
     column([
         h2("Hotkey picker"),
         text("Keyboard-only navigation — chords scope to this section.").muted(),
@@ -486,6 +499,7 @@ fn picker_view(state: &PickerState) -> El {
         scroll(rows).key("picker-items").height(Size::Fill(1.0)),
     ])
     .gap(tokens::SPACE_LG)
+    .height(Size::Fill(1.0))
 }
 
 fn picker_hotkeys(state: &PickerState) -> Vec<(KeyChord, String)> {
