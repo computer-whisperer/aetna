@@ -1,50 +1,85 @@
-//! Atlas-backed text rendering for `stock::text`.
+//! Text rendering: MSDF for outline glyphs, RGBA bitmap for colour
+//! glyphs.
 //!
-//! Owns an [`aetna_core::text::atlas::GlyphAtlas`] (cosmic-text shaping +
-//! swash rasterization, both backend-agnostic) and mirrors its CPU pages
-//! to one Rgba8UnormSrgb wgpu texture per page (unified atlas — outline
-//! glyphs are stored as `(255,255,255,alpha)`; color emoji as native
-//! RGBA). Recording a text run shapes the
-//! string, ensures all glyphs are present in the atlas, and emits one
-//! per-glyph quad instance that samples the matching page.
+//! Both paths share one [`aetna_core::text::atlas::GlyphAtlas`] for
+//! shaping (cosmic-text + rustybuzz). After shaping, the recorder walks
+//! the [`ShapedRun`] and routes each glyph by source-font kind:
 //!
-//! Page-split runs: a single logical text op may use glyphs from more
-//! than one atlas page (rare in practice — happens once a page fills
-//! up). Each page-segment becomes its own [`TextRun`] so the draw loop
-//! can rebind the page texture between segments.
+//! - **Outline fonts** (Roboto, Inter, Symbols, Math) — rasterized once
+//!   per `(font, glyph)` into the [`MsdfAtlas`] and rendered through
+//!   `stock::text_msdf` with screen-space-derivative AA. The atlas is
+//!   size-independent: a single MSDF serves every UI size and every
+//!   display scale.
+//!
+//! - **Colour fonts** (NotoColorEmoji, COLR Material Symbols) — swash
+//!   rasterizes the strike that best matches the requested size into
+//!   the legacy RGBA atlas, rendered through `stock::text` (modulate by
+//!   white = passthrough).
+//!
+//! Each [`TextRun`] is one of [`TextRunKind::Msdf`] / [`TextRunKind::Color`];
+//! the renderer reads `kind` to choose pipeline + page bind group.
 
 use std::borrow::Cow;
 
 use aetna_core::ir::TextAnchor;
 use aetna_core::shader::stock_wgsl;
 use aetna_core::text::atlas::{
-    ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas, RunStyle, ShapedRun,
+    ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas, RunStyle, ShapedGlyph, ShapedRun,
+};
+use aetna_core::text::msdf_atlas::{
+    DEFAULT_BASE_EM, DEFAULT_SPREAD, MSDF_BYTES_PER_PIXEL, MsdfAtlas, MsdfAtlasPage, MsdfGlyphKey,
+    MsdfRect, MsdfSlot,
 };
 use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};
 
 use bytemuck::{Pod, Zeroable};
+use cosmic_text::fontdb;
+use ttf_parser::Face;
 
 use aetna_core::paint::{PhysicalScissor, rgba_f32};
 use aetna_core::runtime::TextRecorder;
 
 const INITIAL_INSTANCE_CAPACITY: usize = 256;
 
-const INSTANCE_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
+const COLOR_INSTANCE_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
     1 => Float32x4,  // rect  (xy = top-left logical px, zw = size logical px)
     2 => Float32x4,  // uv    (xy = uv 0..1, zw = uv size 0..1)
     3 => Float32x4,  // color (linear rgba 0..1)
 ];
 
+const MSDF_INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+    1 => Float32x4,  // rect
+    2 => Float32x4,  // uv
+    3 => Float32x4,  // color
+    4 => Float32x4,  // params (x = atlas-space spread, y/z/w reserved)
+];
+
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
-pub(crate) struct GlyphInstance {
+pub(crate) struct ColorGlyphInstance {
     pub rect: [f32; 4],
     pub uv: [f32; 4],
     pub color: [f32; 4],
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable, Debug)]
+pub(crate) struct MsdfGlyphInstance {
+    pub rect: [f32; 4],
+    pub uv: [f32; 4],
+    pub color: [f32; 4],
+    pub params: [f32; 4],
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum TextRunKind {
+    Color,
+    Msdf,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct TextRun {
+    pub kind: TextRunKind,
     pub page: u32,
     pub scissor: Option<PhysicalScissor>,
     pub first: u32,
@@ -58,14 +93,27 @@ struct PageTexture {
 
 pub(crate) struct TextPaint {
     pub atlas: GlyphAtlas,
-    pages: Vec<PageTexture>,
-    instances: Vec<GlyphInstance>,
-    instance_buf: wgpu::Buffer,
-    instance_capacity: usize,
+    pub msdf_atlas: MsdfAtlas,
+
+    // Colour-bitmap path (NotoColorEmoji, COLR fonts).
+    color_pages: Vec<PageTexture>,
+    color_instances: Vec<ColorGlyphInstance>,
+    color_instance_buf: wgpu::Buffer,
+    color_instance_capacity: usize,
+    color_pipeline: wgpu::RenderPipeline,
+    color_page_bind_layout: wgpu::BindGroupLayout,
+    color_sampler: wgpu::Sampler,
+
+    // MSDF outline path.
+    msdf_pages: Vec<PageTexture>,
+    msdf_instances: Vec<MsdfGlyphInstance>,
+    msdf_instance_buf: wgpu::Buffer,
+    msdf_instance_capacity: usize,
+    msdf_pipeline: wgpu::RenderPipeline,
+    msdf_page_bind_layout: wgpu::BindGroupLayout,
+    msdf_sampler: wgpu::Sampler,
+
     runs: Vec<TextRun>,
-    pipeline: wgpu::RenderPipeline,
-    sampler: wgpu::Sampler,
-    page_bind_layout: wgpu::BindGroupLayout,
 }
 
 impl TextPaint {
@@ -74,44 +122,47 @@ impl TextPaint {
         target_format: wgpu::TextureFormat,
         frame_bind_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let page_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("aetna_wgpu::text::page_bind_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+        // ---- Colour-bitmap pipeline (legacy `stock::text`) ----
+        let color_page_bind_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("aetna_wgpu::text::color_page_bind_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("aetna_wgpu::text::pipeline_layout"),
-            bind_group_layouts: &[frame_bind_layout, &page_bind_layout],
-            push_constant_ranges: &[],
-        });
+        let color_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("aetna_wgpu::text::color_pipeline_layout"),
+                bind_group_layouts: &[frame_bind_layout, &color_page_bind_layout],
+                push_constant_ranges: &[],
+            });
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let color_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stock::text"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(stock_wgsl::TEXT)),
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("aetna_wgpu::text::pipeline"),
-            layout: Some(&pipeline_layout),
+        let color_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("aetna_wgpu::text::color_pipeline"),
+            layout: Some(&color_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &color_shader,
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &[
@@ -125,52 +176,31 @@ impl TextPaint {
                         }],
                     },
                     wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<GlyphInstance>() as u64,
+                        array_stride: std::mem::size_of::<ColorGlyphInstance>() as u64,
                         step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &INSTANCE_ATTRS,
+                        attributes: &COLOR_INSTANCE_ATTRS,
                     },
                 ],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &color_shader,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: target_format,
-                    blend: Some(wgpu::BlendState {
-                        // Premultiplied-alpha output from the fragment
-                        // shader; standard alpha blending compositions it.
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
+                    blend: Some(premultiplied_blend()),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
+            primitive: triangle_strip(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("aetna_wgpu::text::sampler"),
+        let color_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("aetna_wgpu::text::color_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -180,54 +210,136 @@ impl TextPaint {
             ..Default::default()
         });
 
-        let instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("aetna_wgpu::text::instance_buf"),
-            size: (INITIAL_INSTANCE_CAPACITY * std::mem::size_of::<GlyphInstance>()) as u64,
+        let color_instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aetna_wgpu::text::color_instance_buf"),
+            size: (INITIAL_INSTANCE_CAPACITY * std::mem::size_of::<ColorGlyphInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // ---- MSDF pipeline (`stock::text_msdf`) ----
+        let msdf_page_bind_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("aetna_wgpu::text::msdf_page_bind_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let msdf_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("aetna_wgpu::text::msdf_pipeline_layout"),
+                bind_group_layouts: &[frame_bind_layout, &msdf_page_bind_layout],
+                push_constant_ranges: &[],
+            });
+
+        let msdf_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("stock::text_msdf"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(stock_wgsl::TEXT_MSDF)),
+        });
+
+        let msdf_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("aetna_wgpu::text::msdf_pipeline"),
+            layout: Some(&msdf_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &msdf_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: (2 * std::mem::size_of::<f32>()) as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[wgpu::VertexAttribute {
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 0,
+                        }],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<MsdfGlyphInstance>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &MSDF_INSTANCE_ATTRS,
+                    },
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &msdf_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(premultiplied_blend()),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: triangle_strip(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let msdf_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("aetna_wgpu::text::msdf_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let msdf_instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aetna_wgpu::text::msdf_instance_buf"),
+            size: (INITIAL_INSTANCE_CAPACITY * std::mem::size_of::<MsdfGlyphInstance>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         Self {
             atlas: GlyphAtlas::new(),
-            pages: Vec::new(),
-            instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
-            instance_buf,
-            instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            msdf_atlas: MsdfAtlas::new(DEFAULT_BASE_EM, DEFAULT_SPREAD),
+            color_pages: Vec::new(),
+            color_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
+            color_instance_buf,
+            color_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            color_pipeline,
+            color_page_bind_layout,
+            color_sampler,
+            msdf_pages: Vec::new(),
+            msdf_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
+            msdf_instance_buf,
+            msdf_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            msdf_pipeline,
+            msdf_page_bind_layout,
+            msdf_sampler,
             runs: Vec::new(),
-            pipeline,
-            sampler,
-            page_bind_layout,
         }
     }
 
     pub(crate) fn frame_begin(&mut self) {
-        self.instances.clear();
+        self.color_instances.clear();
+        self.msdf_instances.clear();
         self.runs.clear();
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn record_inner(
-        &mut self,
-        rect: Rect,
-        scissor: Option<PhysicalScissor>,
-        color: Color,
-        text: &str,
-        size: f32,
-        weight: FontWeight,
-        wrap: TextWrap,
-        anchor: TextAnchor,
-        scale_factor: f32,
-    ) -> std::ops::Range<usize> {
-        let physical_size = size * scale_factor;
-        let avail = wrap_available_width(rect.w, scale_factor, wrap, anchor);
-        let shaped =
-            self.atlas
-                .shape_and_rasterize(text, physical_size, weight, wrap, anchor, avail, color);
-        self.emit_shaped_glyphs(rect, scissor, &shaped, wrap, scale_factor)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn record_runs_inner(
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
@@ -237,18 +349,18 @@ impl TextPaint {
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> std::ops::Range<usize> {
-        let physical_size = size * scale_factor;
+        // Shape at the *logical* size: MSDF is unhinted so size doesn't
+        // affect glyph IDs/advances beyond a uniform scale; we want
+        // logical-px positions out so quads land on logical pixels and
+        // the SDF shader handles screen-pixel AA via fwidth.
         let avail = wrap_available_width(rect.w, scale_factor, wrap, anchor);
-        // shape_and_rasterize_runs takes &[(&str, RunStyle)]; the
-        // owned-String form on DrawOp is stable across IR commits, so
-        // we re-borrow per call.
         let runs_ref: Vec<(&str, RunStyle)> = runs
             .iter()
             .map(|(text, style)| (text.as_str(), style.clone()))
             .collect();
-        let shaped =
-            self.atlas
-                .shape_and_rasterize_runs(&runs_ref, physical_size, wrap, anchor, avail);
+        let shaped = self
+            .atlas
+            .shape_runs(&runs_ref, size, wrap, anchor, avail);
         self.emit_shaped_glyphs(rect, scissor, &shaped, wrap, scale_factor)
     }
 
@@ -265,9 +377,8 @@ impl TextPaint {
             return runs_start..runs_start;
         }
 
-        // Layout came back in physical px; convert to logical for screen
-        // quad placement.
-        let logical_line_height = shaped.layout.line_height / scale_factor;
+        // Layout came back in logical px (we shaped at logical size).
+        let logical_line_height = shaped.layout.line_height;
         let v_offset = match wrap {
             TextWrap::NoWrap => ((rect.h - logical_line_height).max(0.0)) * 0.5,
             TextWrap::Wrap => 0.0,
@@ -275,81 +386,52 @@ impl TextPaint {
         let origin_x = rect.x;
         let origin_y = rect.y + v_offset;
 
-        let mut current_page: Option<u32> = None;
-        let mut run_first = self.instances.len() as u32;
+        // Walk shaped glyphs. Each becomes either a colour or MSDF
+        // instance, emitted into its own per-kind run. A run breaks
+        // whenever the kind+page combination changes.
+        let mut current: Option<(TextRunKind, u32, u32)> = None; // (kind, page, run_first)
 
         for glyph in &shaped.glyphs {
-            let Some(slot) = self.atlas.slot(glyph.key) else {
-                continue;
-            };
-            if slot.rect.w == 0 || slot.rect.h == 0 {
-                continue;
-            }
-            let page = slot.page;
-            // Convert physical-px glyph metrics back to logical-px screen
-            // quads. The atlas bitmap is at native render-target
-            // resolution; mapping logical px to NDC via the (logical)
-            // viewport in the vertex shader puts each atlas pixel onto
-            // exactly one physical pixel.
-            let bx = origin_x + (glyph.x + slot.offset.0 as f32) / scale_factor;
-            let by = origin_y + (glyph.y - slot.offset.1 as f32) / scale_factor;
-            let bw = slot.rect.w as f32 / scale_factor;
-            let bh = slot.rect.h as f32 / scale_factor;
-
-            // UV in 0..1 across the page texture. Source the page
-            // dimensions from the atlas — the wgpu texture mirror
-            // doesn't exist yet until `flush()` runs.
-            let atlas_page = self
-                .atlas
-                .page(page)
-                .expect("shaped glyph references missing atlas page");
-            let page_w = atlas_page.width as f32;
-            let page_h = atlas_page.height as f32;
-            let uv = [
-                slot.rect.x as f32 / page_w,
-                slot.rect.y as f32 / page_h,
-                slot.rect.w as f32 / page_w,
-                slot.rect.h as f32 / page_h,
-            ];
-
-            if current_page != Some(page) {
-                if let Some(p) = current_page {
-                    let count = self.instances.len() as u32 - run_first;
-                    if count > 0 {
-                        self.runs.push(TextRun {
-                            page: p,
-                            scissor,
-                            first: run_first,
-                            count,
-                        });
-                    }
-                    run_first = self.instances.len() as u32;
+            let font_id = glyph.key.font;
+            let is_color = self.atlas.is_color_font(font_id);
+            if is_color {
+                self.atlas.ensure_color_glyph(glyph.key);
+                let Some(slot) = self.atlas.slot(glyph.key) else {
+                    continue;
+                };
+                if slot.rect.w == 0 || slot.rect.h == 0 {
+                    continue;
                 }
-                current_page = Some(page);
-            }
-
-            // Color emoji glyphs carry their own RGB in the atlas;
-            // pass white as the per-glyph modulation color so the
-            // bitmap survives. Outline glyphs use the user's color so
-            // text takes on the requested paint color.
-            let inst_color = if slot.is_color {
-                [1.0, 1.0, 1.0, 1.0]
+                let page = slot.page;
+                let next_kind = TextRunKind::Color;
+                self.maybe_close_run(&mut current, next_kind, page, scissor);
+                self.push_color_glyph(glyph, slot, origin_x, origin_y, scale_factor);
             } else {
-                rgba_f32(glyph.color)
-            };
-            self.instances.push(GlyphInstance {
-                rect: [bx, by, bw, bh],
-                uv,
-                color: inst_color,
-            });
+                let mkey = MsdfGlyphKey {
+                    font: font_id,
+                    glyph_id: glyph.key.glyph_id,
+                };
+                let Some(slot) = self.ensure_msdf(mkey, font_id) else {
+                    // Whitespace or .notdef without outline — no quad,
+                    // advance is already baked into cosmic-text positions.
+                    continue;
+                };
+                let page = slot.page;
+                let next_kind = TextRunKind::Msdf;
+                self.maybe_close_run(&mut current, next_kind, page, scissor);
+                self.push_msdf_glyph(glyph, slot, origin_x, origin_y);
+            }
         }
-        if let Some(p) = current_page {
-            let count = self.instances.len() as u32 - run_first;
+
+        // Close the trailing open run, if any.
+        if let Some((kind, page, first)) = current {
+            let count = self.instance_count_after(kind, first);
             if count > 0 {
                 self.runs.push(TextRun {
-                    page: p,
+                    kind,
+                    page,
                     scissor,
-                    first: run_first,
+                    first,
                     count,
                 });
             }
@@ -358,87 +440,345 @@ impl TextPaint {
         runs_start..self.runs.len()
     }
 
-    /// Sync atlas pages to GPU textures and upload instance data. Call
-    /// once per frame, after all `record(...)` calls and before `draw`.
-    pub(crate) fn flush(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        // Drain dirty rects first, then allocate any missing page
-        // textures, then upload the dirty rects (covers both new and
-        // existing pages with one code path).
-        let dirty = self.atlas.take_dirty();
-        while self.pages.len() < self.atlas.pages().len() {
-            let i = self.pages.len();
-            let page = &self.atlas.pages()[i];
-            self.pages
-                .push(self.create_page_texture(device, page.width, page.height));
+    fn maybe_close_run(
+        &mut self,
+        current: &mut Option<(TextRunKind, u32, u32)>,
+        next_kind: TextRunKind,
+        next_page: u32,
+        scissor: Option<PhysicalScissor>,
+    ) {
+        let new_start = match next_kind {
+            TextRunKind::Color => self.color_instances.len() as u32,
+            TextRunKind::Msdf => self.msdf_instances.len() as u32,
+        };
+        let needs_close = match current {
+            Some((kind, page, _)) => !same_kind(*kind, next_kind) || *page != next_page,
+            None => false,
+        };
+        if needs_close {
+            let (kind, page, first) = current.take().unwrap();
+            let count = self.instance_count_after(kind, first);
+            if count > 0 {
+                self.runs.push(TextRun {
+                    kind,
+                    page,
+                    scissor,
+                    first,
+                    count,
+                });
+            }
         }
-        for (page_idx, rect) in dirty {
+        if current.is_none() {
+            *current = Some((next_kind, next_page, new_start));
+        }
+    }
+
+    fn instance_count_after(&self, kind: TextRunKind, first: u32) -> u32 {
+        let len = match kind {
+            TextRunKind::Color => self.color_instances.len() as u32,
+            TextRunKind::Msdf => self.msdf_instances.len() as u32,
+        };
+        len.saturating_sub(first)
+    }
+
+    fn push_color_glyph(
+        &mut self,
+        glyph: &ShapedGlyph,
+        slot: aetna_core::text::atlas::GlyphSlot,
+        origin_x: f32,
+        origin_y: f32,
+        scale_factor: f32,
+    ) {
+        // Colour-bitmap atlas slots are in physical px (the atlas is
+        // size-keyed). The glyph positions came out of shape() in
+        // *logical* px (we shape at logical size). We still want the
+        // bitmap rendered crisp per physical pixel — the slot's pixel
+        // bounds map 1:1 to physical pixels — so divide bitmap pixel
+        // metrics by scale_factor to produce a logical-px quad.
+        let bx = origin_x + glyph.x + slot.offset.0 as f32 / scale_factor;
+        let by = origin_y + glyph.y - slot.offset.1 as f32 / scale_factor;
+        let bw = slot.rect.w as f32 / scale_factor;
+        let bh = slot.rect.h as f32 / scale_factor;
+        let atlas_page = self
+            .atlas
+            .page(slot.page)
+            .expect("shaped glyph references missing colour atlas page");
+        let page_w = atlas_page.width as f32;
+        let page_h = atlas_page.height as f32;
+        let uv = [
+            slot.rect.x as f32 / page_w,
+            slot.rect.y as f32 / page_h,
+            slot.rect.w as f32 / page_w,
+            slot.rect.h as f32 / page_h,
+        ];
+        let inst_color = if slot.is_color {
+            [1.0, 1.0, 1.0, 1.0]
+        } else {
+            rgba_f32(glyph.color)
+        };
+        self.color_instances.push(ColorGlyphInstance {
+            rect: [bx, by, bw, bh],
+            uv,
+            color: inst_color,
+        });
+    }
+
+    fn push_msdf_glyph(&mut self, glyph: &ShapedGlyph, slot: MsdfSlot, origin_x: f32, origin_y: f32) {
+        // MSDF slot metrics are in **base-em pixels**. Multiply by the
+        // ratio of logical-em / base-em to get logical px.
+        let logical_em = glyph.key.size();
+        let base_em = self.msdf_atlas.base_em() as f32;
+        let scale = logical_em / base_em;
+        let bx = origin_x + glyph.x + slot.bearing_x * scale;
+        let by = origin_y + glyph.y + slot.bearing_y * scale;
+        let bw = slot.rect.w as f32 * scale;
+        let bh = slot.rect.h as f32 * scale;
+        let atlas_page = self
+            .msdf_atlas
+            .page(slot.page)
+            .expect("shaped glyph references missing MSDF atlas page");
+        let page_w = atlas_page.width as f32;
+        let page_h = atlas_page.height as f32;
+        let uv = [
+            slot.rect.x as f32 / page_w,
+            slot.rect.y as f32 / page_h,
+            slot.rect.w as f32 / page_w,
+            slot.rect.h as f32 / page_h,
+        ];
+        let color = rgba_f32(glyph.color);
+        self.msdf_instances.push(MsdfGlyphInstance {
+            rect: [bx, by, bw, bh],
+            uv,
+            color,
+            params: [slot.spread, 0.0, 0.0, 0.0],
+        });
+    }
+
+    fn ensure_msdf(&mut self, key: MsdfGlyphKey, font_id: fontdb::ID) -> Option<MsdfSlot> {
+        if let Some(slot) = self.msdf_atlas.slot(key) {
+            return Some(slot);
+        }
+        // Look up font bytes + face index, parse a ttf-parser Face,
+        // then ask MsdfAtlas to rasterize. We can't borrow font_system
+        // mutably (for get_font) and immutably (for db().face()) at
+        // once, so we hop: get_font yields an Arc that owns the bytes,
+        // then a separate immutable borrow for the face_index lookup.
+        let font = self.atlas.font_system_mut().get_font(font_id)?;
+        let face_index = self.atlas.font_system().db().face(font_id)?.index;
+        let face = Face::parse(font.data(), face_index).ok()?;
+        self.msdf_atlas.ensure(key, &face)
+    }
+
+    /// Sync atlas pages to GPU textures and upload instance data.
+    pub(crate) fn flush(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        // Colour pages.
+        let color_dirty = self.atlas.take_dirty();
+        while self.color_pages.len() < self.atlas.pages().len() {
+            let i = self.color_pages.len();
+            let page = &self.atlas.pages()[i];
+            self.color_pages
+                .push(create_color_page(device, &self.color_page_bind_layout, &self.color_sampler, page.width, page.height));
+        }
+        for (page_idx, rect) in color_dirty {
             let page = &self.atlas.pages()[page_idx];
-            upload_page_region(queue, &self.pages[page_idx].texture, page, rect);
+            upload_color_region(queue, &self.color_pages[page_idx].texture, page, rect);
         }
 
-        // Upload instances (resize buffer first if needed).
-        if self.instances.len() > self.instance_capacity {
-            let new_cap = self.instances.len().next_power_of_two();
-            self.instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("aetna_wgpu::text::instance_buf (resized)"),
-                size: (new_cap * std::mem::size_of::<GlyphInstance>()) as u64,
+        // MSDF pages.
+        let msdf_dirty = self.msdf_atlas.take_dirty();
+        while self.msdf_pages.len() < self.msdf_atlas.pages().len() {
+            let i = self.msdf_pages.len();
+            let page = &self.msdf_atlas.pages()[i];
+            self.msdf_pages
+                .push(create_msdf_page(device, &self.msdf_page_bind_layout, &self.msdf_sampler, page.width, page.height));
+        }
+        for (page_idx, rect) in msdf_dirty {
+            let page = &self.msdf_atlas.pages()[page_idx];
+            upload_msdf_region(queue, &self.msdf_pages[page_idx].texture, page, rect);
+        }
+
+        // Colour instance buffer.
+        if self.color_instances.len() > self.color_instance_capacity {
+            let new_cap = self.color_instances.len().next_power_of_two();
+            self.color_instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("aetna_wgpu::text::color_instance_buf (resized)"),
+                size: (new_cap * std::mem::size_of::<ColorGlyphInstance>()) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            self.instance_capacity = new_cap;
+            self.color_instance_capacity = new_cap;
         }
-        if !self.instances.is_empty() {
-            queue.write_buffer(&self.instance_buf, 0, bytemuck::cast_slice(&self.instances));
+        if !self.color_instances.is_empty() {
+            queue.write_buffer(
+                &self.color_instance_buf,
+                0,
+                bytemuck::cast_slice(&self.color_instances),
+            );
+        }
+
+        // MSDF instance buffer.
+        if self.msdf_instances.len() > self.msdf_instance_capacity {
+            let new_cap = self.msdf_instances.len().next_power_of_two();
+            self.msdf_instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("aetna_wgpu::text::msdf_instance_buf (resized)"),
+                size: (new_cap * std::mem::size_of::<MsdfGlyphInstance>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.msdf_instance_capacity = new_cap;
+        }
+        if !self.msdf_instances.is_empty() {
+            queue.write_buffer(
+                &self.msdf_instance_buf,
+                0,
+                bytemuck::cast_slice(&self.msdf_instances),
+            );
         }
     }
 
-    fn create_page_texture(&self, device: &wgpu::Device, width: u32, height: u32) -> PageTexture {
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("aetna_wgpu::text::atlas_page"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("aetna_wgpu::text::atlas_page_bg"),
-            layout: &self.page_bind_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-        PageTexture {
-            texture,
-            bind_group,
-        }
-    }
-
-    pub(crate) fn pipeline(&self) -> &wgpu::RenderPipeline {
-        &self.pipeline
-    }
-    pub(crate) fn instance_buf(&self) -> &wgpu::Buffer {
-        &self.instance_buf
-    }
     pub(crate) fn run(&self, index: usize) -> TextRun {
         self.runs[index]
     }
-    pub(crate) fn page_bind_group(&self, page: u32) -> &wgpu::BindGroup {
-        &self.pages[page as usize].bind_group
+
+    pub(crate) fn pipeline_for(&self, kind: TextRunKind) -> &wgpu::RenderPipeline {
+        match kind {
+            TextRunKind::Color => &self.color_pipeline,
+            TextRunKind::Msdf => &self.msdf_pipeline,
+        }
+    }
+
+    pub(crate) fn instance_buf_for(&self, kind: TextRunKind) -> &wgpu::Buffer {
+        match kind {
+            TextRunKind::Color => &self.color_instance_buf,
+            TextRunKind::Msdf => &self.msdf_instance_buf,
+        }
+    }
+
+    pub(crate) fn page_bind_group(&self, kind: TextRunKind, page: u32) -> &wgpu::BindGroup {
+        match kind {
+            TextRunKind::Color => &self.color_pages[page as usize].bind_group,
+            TextRunKind::Msdf => &self.msdf_pages[page as usize].bind_group,
+        }
+    }
+}
+
+fn same_kind(a: TextRunKind, b: TextRunKind) -> bool {
+    matches!(
+        (a, b),
+        (TextRunKind::Color, TextRunKind::Color) | (TextRunKind::Msdf, TextRunKind::Msdf)
+    )
+}
+
+fn premultiplied_blend() -> wgpu::BlendState {
+    wgpu::BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+            operation: wgpu::BlendOperation::Add,
+        },
+        alpha: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+            operation: wgpu::BlendOperation::Add,
+        },
+    }
+}
+
+fn triangle_strip() -> wgpu::PrimitiveState {
+    wgpu::PrimitiveState {
+        topology: wgpu::PrimitiveTopology::TriangleStrip,
+        strip_index_format: None,
+        front_face: wgpu::FrontFace::Ccw,
+        cull_mode: None,
+        polygon_mode: wgpu::PolygonMode::Fill,
+        unclipped_depth: false,
+        conservative: false,
+    }
+}
+
+fn create_color_page(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    width: u32,
+    height: u32,
+) -> PageTexture {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("aetna_wgpu::text::color_page"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("aetna_wgpu::text::color_page_bg"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    });
+    PageTexture {
+        texture,
+        bind_group,
+    }
+}
+
+fn create_msdf_page(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    width: u32,
+    height: u32,
+) -> PageTexture {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("aetna_wgpu::text::msdf_page"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        // MSDF distance encodes per-channel; storing them in a *linear*
+        // texture avoids the sRGB EOTF being applied to distance bytes.
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("aetna_wgpu::text::msdf_page_bg"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    });
+    PageTexture {
+        texture,
+        bind_group,
     }
 }
 
@@ -458,10 +798,8 @@ impl TextRecorder for TextPaint {
         self.record_inner(
             rect,
             scissor,
-            color,
-            text,
+            &[(text.to_string(), RunStyle::new(weight, color))],
             size,
-            weight,
             wrap,
             anchor,
             scale_factor,
@@ -478,24 +816,26 @@ impl TextRecorder for TextPaint {
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> std::ops::Range<usize> {
-        self.record_runs_inner(rect, scissor, runs, size, wrap, anchor, scale_factor)
+        self.record_inner(rect, scissor, runs, size, wrap, anchor, scale_factor)
     }
 }
 
 fn wrap_available_width(
     rect_w: f32,
-    scale_factor: f32,
+    _scale_factor: f32,
     wrap: TextWrap,
     anchor: TextAnchor,
 ) -> Option<f32> {
+    // We shape at logical px now, so the available width is logical
+    // too — no scale_factor multiplication.
     match (wrap, anchor) {
-        (TextWrap::Wrap, _) => Some(rect_w * scale_factor),
+        (TextWrap::Wrap, _) => Some(rect_w),
         (TextWrap::NoWrap, TextAnchor::Start) => None,
-        (TextWrap::NoWrap, TextAnchor::Middle | TextAnchor::End) => Some(rect_w * scale_factor),
+        (TextWrap::NoWrap, TextAnchor::Middle | TextAnchor::End) => Some(rect_w),
     }
 }
 
-fn upload_page_region(
+fn upload_color_region(
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
     page: &AtlasPage,
@@ -505,9 +845,6 @@ fn upload_page_region(
         return;
     }
     let bpp = ATLAS_BYTES_PER_PIXEL as usize;
-    // Slice out just the dirty rect's rows (4 bytes/pixel) from the
-    // page's row-major pixel buffer so we don't pay to re-upload the
-    // whole page.
     let row_bytes = rect.w as usize * bpp;
     let mut bytes = Vec::with_capacity(row_bytes * rect.h as usize);
     for row in 0..rect.h {
@@ -531,6 +868,49 @@ fn upload_page_region(
         wgpu::ImageDataLayout {
             offset: 0,
             bytes_per_row: Some(rect.w * ATLAS_BYTES_PER_PIXEL),
+            rows_per_image: Some(rect.h),
+        },
+        wgpu::Extent3d {
+            width: rect.w,
+            height: rect.h,
+            depth_or_array_layers: 1,
+        },
+    );
+}
+
+fn upload_msdf_region(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    page: &MsdfAtlasPage,
+    rect: MsdfRect,
+) {
+    if rect.w == 0 || rect.h == 0 {
+        return;
+    }
+    let bpp = MSDF_BYTES_PER_PIXEL as usize;
+    let row_bytes = rect.w as usize * bpp;
+    let mut bytes = Vec::with_capacity(row_bytes * rect.h as usize);
+    for row in 0..rect.h {
+        let y = rect.y + row;
+        let start = (y as usize * page.width as usize + rect.x as usize) * bpp;
+        let end = start + row_bytes;
+        bytes.extend_from_slice(&page.pixels[start..end]);
+    }
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: rect.x,
+                y: rect.y,
+                z: 0,
+            },
+            aspect: wgpu::TextureAspect::All,
+        },
+        &bytes,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(rect.w * MSDF_BYTES_PER_PIXEL),
             rows_per_image: Some(rect.h),
         },
         wgpu::Extent3d {

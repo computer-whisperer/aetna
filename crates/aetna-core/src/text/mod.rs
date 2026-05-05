@@ -8,3 +8,5 @@
 
 pub mod atlas;
 pub mod metrics;
+pub mod msdf;
+pub mod msdf_atlas;

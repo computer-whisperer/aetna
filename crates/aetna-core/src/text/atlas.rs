@@ -232,6 +232,11 @@ pub struct GlyphAtlas {
     scale_ctx: ScaleContext,
     pages: Vec<AtlasPage>,
     map: HashMap<GlyphKey, GlyphSlot>,
+    /// Per-font classification cache: `true` if the font carries one of
+    /// the colour-bitmap tables (CBDT/CBLC, COLR, sbix). The recorder
+    /// uses this to route glyphs from colour fonts down the bitmap path
+    /// (this atlas) and glyphs from outline fonts down the MSDF path.
+    color_font_cache: HashMap<fontdb::ID, bool>,
     /// Family names tried in priority order when shaping text. The
     /// **first** entry is the family name passed to cosmic-text's
     /// `Attrs::family`; cosmic-text then walks `fontdb` for
@@ -261,8 +266,41 @@ impl GlyphAtlas {
             scale_ctx: ScaleContext::new(),
             pages: vec![AtlasPage::new(PAGE_SIZE, PAGE_SIZE)],
             map: HashMap::new(),
+            color_font_cache: HashMap::new(),
             default_family_stack: vec![DEFAULT_SANS_FAMILY.to_string()],
         }
+    }
+
+    /// Borrow the cosmic-text font system. Backends use this to look up
+    /// raw font bytes + face indices when feeding the MSDF generator.
+    pub fn font_system(&self) -> &FontSystem {
+        &self.font_system
+    }
+
+    pub fn font_system_mut(&mut self) -> &mut FontSystem {
+        &mut self.font_system
+    }
+
+    /// `true` if the font carries colour-bitmap or layered-colour
+    /// outline tables (CBDT/CBLC, COLR, sbix). Cached per-font so the
+    /// classification cost amortises across many glyphs from the same
+    /// face. Outline fonts (Roboto, Inter, Symbols2) return `false`.
+    pub fn is_color_font(&mut self, id: fontdb::ID) -> bool {
+        if let Some(&cached) = self.color_font_cache.get(&id) {
+            return cached;
+        }
+        let result = self
+            .font_system
+            .db()
+            .with_face_data(id, |bytes, face_index| {
+                let face = ttf_parser::Face::parse(bytes, face_index).ok()?;
+                let tables = face.tables();
+                Some(tables.cbdt.is_some() || tables.colr.is_some() || tables.sbix.is_some())
+            })
+            .flatten()
+            .unwrap_or(false);
+        self.color_font_cache.insert(id, result);
+        result
     }
 
     /// Register a font's raw bytes with the atlas's font database. The
@@ -347,6 +385,50 @@ impl GlyphAtlas {
         )
     }
 
+    /// Shape `runs` and return per-glyph positions without rasterizing.
+    /// Backends that need to route glyphs by source-font kind (colour
+    /// bitmap vs. outline → MSDF) call this and then invoke
+    /// [`Self::ensure_color_glyph`] (or their MSDF atlas's `ensure`)
+    /// per glyph.
+    pub fn shape_runs(
+        &mut self,
+        runs: &[(&str, RunStyle)],
+        size: f32,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        available_width: Option<f32>,
+    ) -> ShapedRun {
+        self.shape_runs_inner(runs, size, wrap, anchor, available_width, false)
+    }
+
+    /// Shape a single styled text run without rasterizing.
+    pub fn shape(
+        &mut self,
+        text: &str,
+        size: f32,
+        weight: FontWeight,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        available_width: Option<f32>,
+        color: Color,
+    ) -> ShapedRun {
+        self.shape_runs(
+            &[(text, RunStyle::new(weight, color))],
+            size,
+            wrap,
+            anchor,
+            available_width,
+        )
+    }
+
+    /// Rasterize a glyph into the colour-bitmap atlas. Idempotent. Use
+    /// after [`Self::shape`] / [`Self::shape_runs`] when the recorder
+    /// has decided this glyph belongs on the colour path (its source
+    /// font is a colour font per [`Self::is_color_font`]).
+    pub fn ensure_color_glyph(&mut self, key: GlyphKey) {
+        self.ensure(key);
+    }
+
     /// v0.6 — shape an attributed sequence of styled runs into one
     /// cosmic-text buffer (so wrapping decisions cross run boundaries
     /// like real prose) and emit a single [`ShapedRun`] whose glyphs
@@ -363,6 +445,18 @@ impl GlyphAtlas {
         wrap: TextWrap,
         anchor: TextAnchor,
         available_width: Option<f32>,
+    ) -> ShapedRun {
+        self.shape_runs_inner(runs, size, wrap, anchor, available_width, true)
+    }
+
+    fn shape_runs_inner(
+        &mut self,
+        runs: &[(&str, RunStyle)],
+        size: f32,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        available_width: Option<f32>,
+        rasterize_into_color_atlas: bool,
     ) -> ShapedRun {
         let line_h = line_height(size);
         let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_h));
@@ -441,7 +535,9 @@ impl GlyphAtlas {
             for glyph in run.glyphs.iter() {
                 let physical = glyph.physical((0.0, 0.0), 1.0);
                 let key = glyph_key(physical.cache_key);
-                self.ensure(key);
+                if rasterize_into_color_atlas {
+                    self.ensure(key);
+                }
                 let run_idx = glyph.metadata.min(runs.len().saturating_sub(1));
                 let color = runs
                     .get(run_idx)

@@ -863,11 +863,15 @@ impl Runner {
                 PaintItem::Text(index) => {
                     let run = self.text_paint.run(index);
                     set_scissor(pass, run.scissor, full);
-                    pass.set_pipeline(self.text_paint.pipeline());
+                    pass.set_pipeline(self.text_paint.pipeline_for(run.kind));
                     pass.set_bind_group(0, &self.quad_bind_group, &[]);
-                    pass.set_bind_group(1, self.text_paint.page_bind_group(run.page), &[]);
+                    pass.set_bind_group(
+                        1,
+                        self.text_paint.page_bind_group(run.kind, run.page),
+                        &[],
+                    );
                     pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
-                    pass.set_vertex_buffer(1, self.text_paint.instance_buf().slice(..));
+                    pass.set_vertex_buffer(1, self.text_paint.instance_buf_for(run.kind).slice(..));
                     pass.draw(0..4, run.first..run.first + run.count);
                 }
                 PaintItem::IconRun(index) => {

@@ -12,7 +12,11 @@ path = "src/lib.rs"
 aetna-fonts = { path = "../aetna-fonts", default-features = false }
 bytemuck = { version = "1", features = ["derive"] }
 cosmic-text = "0.12.1"
+fdsm = "0.8"
+fdsm-ttf-parser = "0.2"
+image = { version = "0.25", default-features = false }
 lyon_tessellation = "1.0.20"
+nalgebra = { version = "0.34", default-features = false, features = ["std"] }
 swash = "0.1.19"
 ttf-parser = "0.25.1"
 usvg = { version = "0.47.0", default-features = false }
