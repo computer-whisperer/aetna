@@ -29,7 +29,9 @@ pub use showcase::Showcase;
 use std::sync::Arc;
 
 use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey};
-use aetna_wgpu::Runner;
+use aetna_wgpu::{MsaaTarget, Runner};
+
+const SAMPLE_COUNT: u32 = 4;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -81,6 +83,18 @@ struct Gfx {
     device: wgpu::Device,
     window: Arc<Window>,
     config: wgpu::SurfaceConfiguration,
+    /// Multisampled color attachment for the surface frame, kept in
+    /// sync with `config.width`/`config.height` and reallocated on
+    /// resize. The surface frame texture is the resolve target.
+    msaa: MsaaTarget,
+}
+
+fn surface_extent(config: &wgpu::SurfaceConfiguration) -> wgpu::Extent3d {
+    wgpu::Extent3d {
+        width: config.width,
+        height: config.height,
+        depth_or_array_layers: 1,
+    }
 }
 
 impl<A: App> ApplicationHandler for Host<A> {
@@ -142,7 +156,7 @@ impl<A: App> ApplicationHandler for Host<A> {
         };
         surface.configure(&device, &config);
 
-        let mut renderer = Runner::new(&device, &queue, format);
+        let mut renderer = Runner::with_sample_count(&device, &queue, format, SAMPLE_COUNT);
         renderer.set_theme(self.app.theme());
         renderer.set_surface_size(config.width, config.height);
         // Register any custom shaders the app declared. Done once at
@@ -151,6 +165,8 @@ impl<A: App> ApplicationHandler for Host<A> {
             renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
         }
 
+        let msaa = MsaaTarget::new(&device, format, surface_extent(&config), SAMPLE_COUNT);
+
         self.gfx = Some(Gfx {
             renderer,
             surface,
@@ -158,6 +174,7 @@ impl<A: App> ApplicationHandler for Host<A> {
             device,
             window,
             config,
+            msaa,
         });
         self.gfx.as_ref().unwrap().window.request_redraw();
     }
@@ -182,6 +199,15 @@ impl<A: App> ApplicationHandler for Host<A> {
                         gfx.surface.configure(&gfx.device, &gfx.config);
                         gfx.renderer
                             .set_surface_size(gfx.config.width, gfx.config.height);
+                        let extent = surface_extent(&gfx.config);
+                        if !gfx.msaa.matches(extent) {
+                            gfx.msaa = MsaaTarget::new(
+                                &gfx.device,
+                                gfx.config.format,
+                                extent,
+                                SAMPLE_COUNT,
+                            );
+                        }
                         gfx.window.request_redraw();
                     }
 
@@ -334,6 +360,7 @@ impl<A: App> ApplicationHandler for Host<A> {
                             &mut encoder,
                             &frame.texture,
                             &view,
+                            Some(&gfx.msaa.view),
                             wgpu::LoadOp::Clear(bg_color()),
                         );
                         gfx.queue.submit(Some(encoder.finish()));

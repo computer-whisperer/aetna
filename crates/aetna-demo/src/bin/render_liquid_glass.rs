@@ -22,7 +22,7 @@
 //! Usage: `cargo run -p aetna-demo --bin render_liquid_glass`
 
 use aetna_core::*;
-use aetna_wgpu::Runner;
+use aetna_wgpu::{MsaaTarget, Runner};
 
 const LIQUID_GLASS_WGSL: &str = include_str!("../../shaders/liquid_glass.wgsl");
 
@@ -129,19 +129,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }))?;
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    // 4× MSAA + sample-rate shading is the new standard SDF setup —
+    // see aetna_wgpu::MsaaTarget. Backdrop snapshots read from the
+    // resolved single-sample texture, so the COPY_SRC flag stays on
+    // the resolve target rather than the multisampled attachment.
+    let sample_count = 4;
+    let extent = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+    let msaa = MsaaTarget::new(&device, format, extent, sample_count);
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("aetna_demo::liquid_glass::target"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
+        size: extent,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        // COPY_SRC is required for backdrop sampling — the runner
-        // copies the target into its snapshot texture mid-frame.
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
@@ -158,7 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mapped_at_creation: false,
     });
 
-    let mut renderer = Runner::new(&device, &queue, format);
+    let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
     // Register the glass shader with backdrop-sampling enabled. This
     // is the load-bearing one-line opt-in that wires the multi-pass
@@ -178,6 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut encoder,
         &target,
         &target_view,
+        Some(&msaa.view),
         wgpu::LoadOp::Clear(bg_color()),
     );
     encoder.copy_texture_to_buffer(

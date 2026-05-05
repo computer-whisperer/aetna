@@ -58,8 +58,11 @@
 
 mod icon;
 mod instance;
+mod msaa;
 mod pipeline;
 mod text;
+
+pub use crate::msaa::MsaaTarget;
 
 use std::collections::{HashMap, HashSet};
 // `web_time::Instant` is API-identical to `std::time::Instant` on
@@ -709,8 +712,17 @@ impl Runner {
         encoder: &mut wgpu::CommandEncoder,
         target_tex: &wgpu::Texture,
         target_view: &wgpu::TextureView,
+        msaa_view: Option<&wgpu::TextureView>,
         load_op: wgpu::LoadOp<wgpu::Color>,
     ) {
+        // When MSAA is in use, the actual color attachment is the
+        // multisampled view and `target_view` becomes its resolve
+        // target. `target_tex` is always the resolved (single-sample)
+        // texture, so the snapshot copy below works whether MSAA is on
+        // or not — the resolve happens at end-of-Pass-A.
+        let attachment_view = msaa_view.unwrap_or(target_view);
+        let resolve_target = msaa_view.map(|_| target_view);
+
         // Locate the (at most one) snapshot boundary.
         let split_at = self
             .core
@@ -725,8 +737,8 @@ impl Runner {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("aetna_wgpu::pass_a"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: target_view,
-                        resolve_target: None,
+                        view: attachment_view,
+                        resolve_target,
                         depth_slice: None,
                         ops: wgpu::Operations {
                             load: load_op,
@@ -768,8 +780,8 @@ impl Runner {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("aetna_wgpu::pass_b"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: target_view,
-                        resolve_target: None,
+                        view: attachment_view,
+                        resolve_target,
                         depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -788,8 +800,8 @@ impl Runner {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("aetna_wgpu::pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target_view,
-                    resolve_target: None,
+                    view: attachment_view,
+                    resolve_target,
                     depth_slice: None,
                     ops: wgpu::Operations {
                         load: load_op,

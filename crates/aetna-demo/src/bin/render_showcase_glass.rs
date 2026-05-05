@@ -10,7 +10,7 @@
 
 use aetna_core::{AnimationMode, App, Rect};
 use aetna_demo::{Showcase, showcase::Section};
-use aetna_wgpu::Runner;
+use aetna_wgpu::{MsaaTarget, Runner};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let logical_width: u32 = 900;
@@ -38,13 +38,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }))?;
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let sample_count = 4;
+    let extent = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+    let msaa = MsaaTarget::new(&device, format, extent, sample_count);
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("aetna_demo::showcase_glass::target"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
+        size: extent,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -65,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mapped_at_creation: false,
     });
 
-    let mut renderer = Runner::new(&device, &queue, format);
+    let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_animation_mode(AnimationMode::Settled);
 
     // Build a Showcase with the Glass section selected, then drive it
@@ -87,6 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut encoder,
         &target,
         &target_view,
+        Some(&msaa.view),
         wgpu::LoadOp::Clear(bg_color()),
     );
     encoder.copy_texture_to_buffer(

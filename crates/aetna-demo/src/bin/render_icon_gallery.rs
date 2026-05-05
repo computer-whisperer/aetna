@@ -4,7 +4,7 @@
 //! Writes: `crates/aetna-demo/out/icon_gallery[.relief|.glass].wgpu.png`
 
 use aetna_core::*;
-use aetna_wgpu::Runner;
+use aetna_wgpu::{MsaaTarget, Runner};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let material = material_arg()?;
@@ -43,33 +43,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }))?;
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
-    // 4× MSAA + sample shading: shaders annotated with @builtin(sample_index)
-    // run at sample rate, so SDF AA evaluates at 4 sub-pixel positions per
-    // pixel and averages on resolve. Eliminates the "curve apex pixels land
-    // on d≈0 and pop to alpha 1.0" artifact.
+    // 4× MSAA + sample-rate shading is the new SDF default — shaders
+    // whose SDF input varying carries `@interpolate(perspective, sample)`
+    // re-evaluate per sub-sample, so curve apex pixels no longer pop to
+    // alpha 1.0 on the resolved image.
     let sample_count = 4;
-    let msaa_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("aetna_demo::icon_gallery::target_msaa"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count,
-        dimension: wgpu::TextureDimension::D2,
-        format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
-    });
-    let msaa_view = msaa_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let extent = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+    let msaa = MsaaTarget::new(&device, format, extent, sample_count);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("aetna_demo::icon_gallery::target_resolve"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
+        size: extent,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -103,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("aetna_demo::icon_gallery::pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &msaa_view,
+                view: &msaa.view,
                 resolve_target: Some(&view),
                 depth_slice: None,
                 ops: wgpu::Operations {

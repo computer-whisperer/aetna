@@ -12,7 +12,7 @@
 //! Writes: `crates/aetna-demo/out/settings.wgpu.png`
 
 use aetna_core::*;
-use aetna_wgpu::Runner;
+use aetna_wgpu::{MsaaTarget, Runner};
 
 fn settings() -> El {
     column([
@@ -100,13 +100,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }))?;
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let sample_count = 4;
+    let extent = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+    let msaa = MsaaTarget::new(&device, format, extent, sample_count);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("aetna_demo::headless::target"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
+        size: extent,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -128,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mapped_at_creation: false,
     });
 
-    let mut renderer = Runner::new(&device, &queue, format);
+    let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
     let mut tree = settings();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
@@ -141,8 +144,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("aetna_demo::headless::pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
+                view: &msaa.view,
+                resolve_target: Some(&view),
                 depth_slice: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(bg),

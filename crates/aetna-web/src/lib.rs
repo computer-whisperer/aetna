@@ -51,7 +51,9 @@ mod web_entry {
     use std::sync::Arc;
 
     use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey};
-    use aetna_wgpu::{PrepareTimings, Runner};
+    use aetna_wgpu::{MsaaTarget, PrepareTimings, Runner};
+
+    const SAMPLE_COUNT: u32 = 4;
     use wasm_bindgen::JsCast;
     use wasm_bindgen::prelude::*;
     use web_time::Instant;
@@ -243,6 +245,15 @@ mod web_entry {
         queue: wgpu::Queue,
         config: wgpu::SurfaceConfiguration,
         renderer: Runner,
+        msaa: MsaaTarget,
+    }
+
+    fn surface_extent(config: &wgpu::SurfaceConfiguration) -> wgpu::Extent3d {
+        wgpu::Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        }
     }
 
     impl<A: App> Host<A> {
@@ -397,7 +408,7 @@ mod web_entry {
                 };
                 surface.configure(&device, &config);
 
-                let mut renderer = Runner::new(&device, &queue, format);
+                let mut renderer = Runner::with_sample_count(&device, &queue, format, SAMPLE_COUNT);
                 renderer.set_theme(theme);
                 renderer.set_surface_size(config.width, config.height);
                 // Register every shader the App declared. If the
@@ -413,6 +424,7 @@ mod web_entry {
                     renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
                 }
 
+                let msaa = MsaaTarget::new(&device, format, surface_extent(&config), SAMPLE_COUNT);
                 *gfx_slot.borrow_mut() = Some(Gfx {
                     window: window_for_async.clone(),
                     surface,
@@ -420,6 +432,7 @@ mod web_entry {
                     queue,
                     config,
                     renderer,
+                    msaa,
                 });
                 let _ = viewport;
                 window_for_async.request_redraw();
@@ -450,6 +463,11 @@ mod web_entry {
                     gfx.surface.configure(&gfx.device, &gfx.config);
                     gfx.renderer
                         .set_surface_size(gfx.config.width, gfx.config.height);
+                    let extent = surface_extent(&gfx.config);
+                    if !gfx.msaa.matches(extent) {
+                        gfx.msaa =
+                            MsaaTarget::new(&gfx.device, gfx.config.format, extent, SAMPLE_COUNT);
+                    }
                     gfx.window.request_redraw();
                 }
 
@@ -591,6 +609,7 @@ mod web_entry {
                         &mut encoder,
                         &frame.texture,
                         &view,
+                        Some(&gfx.msaa.view),
                         wgpu::LoadOp::Clear(bg_color()),
                     );
                     gfx.queue.submit(Some(encoder.finish()));
