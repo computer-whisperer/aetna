@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use aetna_core::{AnimationMode, Rect};
-use aetna_demo::text_quality::{LOGICAL_HEIGHT, LOGICAL_WIDTH, fixture};
+use aetna_fixtures::text_quality::{LOGICAL_HEIGHT, LOGICAL_WIDTH, fixture};
 use aetna_vulkano::Runner;
 use vulkano::{
     VulkanLibrary,

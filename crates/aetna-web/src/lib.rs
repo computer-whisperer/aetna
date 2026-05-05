@@ -2,7 +2,7 @@
 //!
 //! "One UI crate, two backends" split — same shape as whisper-agent-webui
 //! at `../../whisper-agent`. The [`Showcase`] App impl lives in
-//! `aetna-demo` (so the native bin and the browser bundle drive the
+//! `aetna-fixtures` (so native, vulkano, and browser demos drive the
 //! same type); this crate provides only the wasm entry path:
 //!
 //! - **Wasm:** `wasm-pack build --target web` ships this crate as a
@@ -12,8 +12,9 @@
 //!   the browser (`spawn_app` rather than `run_app`, async adapter
 //!   request).
 //! - **Native:** run the same App via `cargo run -p aetna-demo --bin
-//!   showcase`. There's no separate native bin in this crate — that
-//!   path is covered by `aetna-demo`'s canonical winit runner.
+//!   showcase`. There's no separate native bin in this crate — the
+//!   reusable native host lives in `aetna-winit-wgpu`, with
+//!   `aetna-demo` providing the demo binary.
 //!
 //! See `assets/index.html` for the minimal browser harness; see
 //! `tools/build_web.sh` for the wasm-pack invocation.
@@ -25,7 +26,7 @@
 //! raf vs. winit redraw).
 
 use aetna_core::Rect;
-pub use aetna_demo::Showcase;
+pub use aetna_fixtures::Showcase;
 
 /// Default logical viewport. Sized to feel reasonable both as a winit
 /// window and as a browser canvas. Browsers can override this by
@@ -225,9 +226,9 @@ mod web_entry {
         let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(phys_w, phys_h));
     }
 
-    /// Mirrors `aetna_demo::run`'s `Host` — same shape, different
+    /// Mirrors the native winit + wgpu host shape, but with browser
     /// surface init (async via wasm-bindgen-futures rather than
-    /// pollster). Kept inline here so `aetna-demo` stays free of
+    /// pollster). Kept inline here so `aetna-winit-wgpu` stays free of
     /// wasm-only deps.
     struct Host<A: App> {
         viewport: Rect,
@@ -374,7 +375,7 @@ mod web_entry {
                     .unwrap_or(surface_caps.formats[0]);
                 // Single source of truth for the swapchain size:
                 // winit's inner_size() in physical pixels. Same value
-                // that aetna-demo's native runner uses; matches what
+                // that the native winit + wgpu host uses; matches what
                 // sync_canvas_to_css() set the canvas backing buffer to.
                 let inner = window_for_async.inner_size();
                 // COPY_SRC is required so backdrop-sampling shaders can

@@ -24,6 +24,8 @@
 
 use aetna_core::*;
 
+pub const LIQUID_GLASS_WGSL: &str = include_str!("../shaders/liquid_glass.wgsl");
+
 /// Which section the user is currently looking at.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Section {
@@ -179,10 +181,10 @@ impl App for Showcase {
     fn shaders(&self) -> Vec<AppShader> {
         // The Glass section needs the liquid_glass custom shader. The
         // host harness registers it once at startup; the WGSL ships
-        // bundled in the demo crate alongside the headless fixture.
+        // bundled in the fixture crate alongside the shared App.
         vec![AppShader {
             name: "liquid_glass",
-            wgsl: include_str!("../shaders/liquid_glass.wgsl"),
+            wgsl: LIQUID_GLASS_WGSL,
             samples_backdrop: true,
         }]
     }

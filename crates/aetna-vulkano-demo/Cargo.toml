@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 aetna-core = { path = "../aetna-core" }
-aetna-demo = { path = "../aetna-demo" }
+aetna-fixtures = { path = "../aetna-fixtures" }
 aetna-vulkano = { path = "../aetna-vulkano" }
 png = "0.18"
 vulkano = "0.35"

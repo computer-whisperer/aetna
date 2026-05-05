@@ -9,7 +9,7 @@
 //! Usage: `cargo run -p aetna-demo --bin render_showcase_glass`
 
 use aetna_core::{AnimationMode, App, Rect};
-use aetna_demo::{Showcase, showcase::Section};
+use aetna_fixtures::{Showcase, showcase::Section};
 use aetna_wgpu::{MsaaTarget, Runner};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

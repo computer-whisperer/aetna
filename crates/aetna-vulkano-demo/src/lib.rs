@@ -1,14 +1,13 @@
-//! aetna-vulkano-demo — winit + vulkano harness for the
-//! [`aetna-vulkano`] backend. Sibling of [`aetna-demo`], which serves
-//! the same role for [`aetna-wgpu`].
+//! aetna-vulkano-demo — winit + vulkano harness and demo binaries for
+//! the [`aetna-vulkano`] backend.
 //!
 //! The host owns the event loop, the Vulkan instance/device/queue, the
 //! swapchain, the framebuffers, and the per-frame command buffer. The
 //! library — `aetna-core` + `aetna-vulkano` — owns layout, paint,
 //! hit-test, and visual state. The user owns the [`App`] impl.
 //!
-//! [`run`] mirrors `aetna_demo::run`'s contract method-for-method so a
-//! Counter App written for the wgpu side runs unchanged here.
+//! [`run`] mirrors the simple native host contract method-for-method so
+//! an [`App`] written for the wgpu demo path runs unchanged here.
 
 use std::sync::Arc;
 
@@ -42,7 +41,8 @@ use winit::{
 };
 
 /// Run a windowed app on the vulkano backend. Blocks until the user
-/// closes the window. Mirrors `aetna_demo::run`.
+/// closes the window. Mirrors `aetna-winit-wgpu`'s simple run
+/// contract.
 pub fn run<A: App + 'static>(
     title: &'static str,
     viewport: Rect,
@@ -54,7 +54,8 @@ pub fn run<A: App + 'static>(
 /// Like [`run`], but invokes `init_runner` on the freshly-built
 /// [`Runner`] before the first frame. Use this to call
 /// [`Runner::register_shader`] for any custom shaders the App's tree
-/// references — same shape as `aetna-demo`'s `render_custom` fixture.
+/// references — same shape as the wgpu `render_custom` fixture in
+/// `aetna-demo`.
 pub fn run_with_init<A: App + 'static, F: FnOnce(&mut Runner) + 'static>(
     title: &'static str,
     viewport: Rect,

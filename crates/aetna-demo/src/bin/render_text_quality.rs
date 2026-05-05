@@ -1,7 +1,7 @@
 //! Headless: render the shared text-quality matrix to PNG via wgpu.
 //!
 //! Used as the visual-fidelity bench while we evolve text rendering.
-//! The fixture itself lives in `aetna_demo::text_quality::fixture()`
+//! The fixture itself lives in `aetna_fixtures::text_quality::fixture()`
 //! so the vulkano backend renders the same tree from
 //! `aetna-vulkano-demo`'s twin binary.
 //!
@@ -14,7 +14,7 @@
 //! Writes `crates/aetna-demo/out/text_quality{.tag}.{scale}x.png`.
 
 use aetna_core::*;
-use aetna_demo::text_quality::{LOGICAL_HEIGHT, LOGICAL_WIDTH, fixture};
+use aetna_fixtures::text_quality::{LOGICAL_HEIGHT, LOGICAL_WIDTH, fixture};
 use aetna_wgpu::{MsaaTarget, Runner};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

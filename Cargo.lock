@@ -48,8 +48,10 @@ name = "aetna-demo"
 version = "0.1.0"
 dependencies = [
  "aetna-core",
+ "aetna-fixtures",
  "aetna-fonts",
  "aetna-wgpu",
+ "aetna-winit-wgpu",
  "arboard",
  "cosmic-text",
  "png",
@@ -57,6 +59,13 @@ dependencies = [
  "ttf-parser",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "aetna-fixtures"
+version = "0.1.0"
+dependencies = [
+ "aetna-core",
 ]
 
 [[package]]
@@ -81,7 +90,7 @@ name = "aetna-vulkano-demo"
 version = "0.1.0"
 dependencies = [
  "aetna-core",
- "aetna-demo",
+ "aetna-fixtures",
  "aetna-vulkano",
  "png",
  "vulkano",
@@ -93,7 +102,7 @@ name = "aetna-web"
 version = "0.1.0"
 dependencies = [
  "aetna-core",
- "aetna-demo",
+ "aetna-fixtures",
  "aetna-wgpu",
  "console_error_panic_hook",
  "console_log",
@@ -117,6 +126,17 @@ dependencies = [
  "ttf-parser",
  "web-time",
  "wgpu",
+]
+
+[[package]]
+name = "aetna-winit-wgpu"
+version = "0.1.0"
+dependencies = [
+ "aetna-core",
+ "aetna-wgpu",
+ "pollster",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

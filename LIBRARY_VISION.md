@@ -83,7 +83,7 @@ Variable-height virtualization (the substrate work `feed`/`chat_log` would have 
 - Persistence. Saving / loading state, undo/redo. The library doesn't keep durable state.
 - Network. The library doesn't observe data sources. The host pumps data into state; `App::build` projects state into a tree; `request_redraw` advances frames.
 - Theme runtime. v0.1 ships `const` tokens. Runtime themes can come later if needed.
-- Window management. Single window via winit. Multi-window/menubar/tray are host concerns.
+- Window management. The reusable `aetna-core` and backend crates do not own windows; custom hosts can integrate them directly. `aetna-winit-wgpu` packages the common single-window winit + wgpu case as an optional helper, while multi-window/menubar/tray remain host concerns.
 - Application lifecycle. Main loop, signal handling, graceful shutdown — host owns these.
 
 This split keeps the library small enough that an LLM can hold the whole API in context, while leaving every "what state model do you use" debate where it belongs.

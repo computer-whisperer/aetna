@@ -1,0 +1,12 @@
+[package]
+name = "aetna-fixtures"
+version = "0.1.0"
+edition = "2024"
+description = "Aetna — backend-neutral showcase apps and render fixtures"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+aetna-core = { path = "../aetna-core" }

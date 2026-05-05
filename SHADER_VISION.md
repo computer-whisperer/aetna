@@ -18,13 +18,13 @@ attempt_3 validated the grammar with a cold-LLM-session test (a fresh sub-agent 
 
 ## Backend matrix
 
-| Backend | v0.1 | First-class target |
+| Backend | Current status | First-class target |
 |---|---|---|
 | wgpu native | yes (primary) | yes |
-| wgpu wasm | not yet | yes — design for this from day 1 |
+| wgpu wasm | yes via `aetna-web` | yes |
 | vulkano native | yes (parity since v0.7 step E, including backdrop sampling) | yes |
 
-We commit to the day-1 architectural constraint that **shader source must cross-target wgpu (wgsl-or-spirv) and vulkano (spirv) from a single source**, even though wgpu native is the only backend wired in v0.1. That constraint shapes the shader-language choice and the host-integration surface: no native-only deps, no wgpu-internals leaking into the public API.
+We commit to the architectural constraint that **shader source must cross-target wgpu (wgsl-or-spirv) and vulkano (spirv) from a single source**. That constraint shapes the shader-language choice and the host-integration surface: no native-only deps, no wgpu-internals leaking into the public API.
 
 ## IR shape
 
@@ -132,7 +132,7 @@ renderer.draw(&mut encoder, &mut render_pass, &root)?;
 
 **Library does not own:** device, queue, swapchain, surface, the render pass, color/depth attachments, present timing, input event delivery.
 
-A separate `attempt_4_demo` crate provides a winit-based standalone harness so authors can run UI fixtures without a host application. The core crate has zero winit dependency.
+Optional host/demo crates provide standalone harnesses so authors can run UI fixtures without a larger host application. `aetna-core` stays windowing-free; `aetna-winit-wgpu` owns the reusable native winit + wgpu host path.
 
 ## Bundle pipeline updates
 
@@ -187,7 +187,7 @@ Concretely, the first working pass:
 3. Implement `UiRenderer` for wgpu native, with one stock shader: `stock::rounded_rect.wgsl`.
 4. Wire glyphon for text via `stock::text_sdf`.
 5. Reproduce attempt_3's `settings` example. Visual parity (or better) with attempt_3 is the v0.1 milestone.
-6. Demo harness: `attempt_4_demo` crate with winit window.
+6. Demo harness: native winit window.
 7. Bundle pipeline emits `draw_ops.txt` and `shader_manifest.txt`. SVG approximation kept.
 
 Deferred until v0.1 lands:

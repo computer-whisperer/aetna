@@ -5,10 +5,10 @@
 //!
 //! Run: `cargo run -p aetna-demo --bin showcase`
 //!
-//! See `aetna_demo::showcase` for the full module docs.
+//! See `aetna_fixtures::showcase` for the full module docs.
 
 use aetna_core::Rect;
-use aetna_demo::Showcase;
+use aetna_fixtures::Showcase;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let viewport = Rect::new(0.0, 0.0, 900.0, 640.0);

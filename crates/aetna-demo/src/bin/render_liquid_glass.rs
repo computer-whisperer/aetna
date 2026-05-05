@@ -22,9 +22,8 @@
 //! Usage: `cargo run -p aetna-demo --bin render_liquid_glass`
 
 use aetna_core::*;
+use aetna_fixtures::showcase::LIQUID_GLASS_WGSL;
 use aetna_wgpu::{MsaaTarget, Runner};
-
-const LIQUID_GLASS_WGSL: &str = include_str!("../../shaders/liquid_glass.wgsl");
 
 fn panel(c: Color) -> El {
     // Bare colored fill that claims its share of the row. Width=Fill

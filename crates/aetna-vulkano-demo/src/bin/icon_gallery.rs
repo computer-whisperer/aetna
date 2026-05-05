@@ -9,6 +9,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     aetna_vulkano_demo::run(
         "Aetna — vector icons (vulkano)",
         viewport,
-        aetna_demo::IconGallery,
+        aetna_fixtures::IconGallery,
     )
 }

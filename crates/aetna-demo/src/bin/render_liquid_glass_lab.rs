@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mapped_at_creation: false,
     });
 
-    let app = aetna_demo::LiquidGlassLab;
+    let app = aetna_fixtures::LiquidGlassLab;
     let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_theme(app.theme());
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);

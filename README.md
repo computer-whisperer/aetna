@@ -1,6 +1,6 @@
 # Aetna
 
-A thin UI library that inserts into an existing Vulkan or wgpu renderer rather than owning the device, queue, or swapchain. The name echoes the API it sits on — Vulkan is named for Vulcan, the Roman smith-god, and Mt. Aetna is the volcano where his forge stood. The library doesn't replace the host's renderer; it shares its pass.
+A thin UI rendering library that can insert into an existing Vulkan or wgpu renderer rather than owning the device, queue, or swapchain. The core/backends don't replace the host's renderer; they share its pass. For simple desktop apps, the workspace also ships an optional winit + wgpu host crate that packages the common window/surface loop. The name echoes the API it sits on — Vulkan is named for Vulcan, the Roman smith-god, and Mt. Aetna is the volcano where his forge stood.
 
 Aetna is shaped around how **an LLM** authors UI, not how a human web developer does. The thesis: when the author is a model, the load-bearing constraints flip — vocabulary parity with the training distribution matters more than configurability, the *minimum* output should be the *correct* output, and the visual ceiling is set by what shaders the model can write, not by what the framework's CSS-shaped surface exposes.
 
@@ -19,10 +19,12 @@ v0.9 + v5.4 are in. Aetna lives under `crates/`:
 |---|---|
 | `aetna-core` | Backend-agnostic core. Tree (`El`), layout, draw-op IR, stock shaders + custom-shader binding, animation primitives, hit-test, focus, hotkeys, lint + bundle artifacts. Plus the v5.4 cross-backend paint primitives (`paint::QuadInstance` + paint-stream batching) and `runtime::RunnerCore` (the interaction half every backend `Runner` composes). No backend deps. |
 | `aetna-wgpu` | wgpu pipelines + per-page atlas textures + `Runner` shell. Wraps a shared `RunnerCore` from `aetna-core` for interaction state, paint-stream scratch, and the `pointer_*`/`key_down`/`set_hotkeys` surface; only GPU resources and the wgpu-flavoured `prepare()` GPU upload + `draw()` are backend-specific. |
-| `aetna-demo` | Winit harness + interactive bins + headless render fixtures (`render_counter`, `render_png`, `render_custom`). |
-| `aetna-web` | wasm browser entry point. `crate-type = ["cdylib", "rlib"]`; re-exports `aetna_demo::Showcase` and ships a `#[wasm_bindgen(start)] start_web()` that opens a wgpu surface against an `<canvas id="aetna_canvas">` and drives the same App impl `aetna-demo` runs natively. Same shape as `whisper-agent-webui` at `../../whisper-agent`. |
+| `aetna-fixtures` | Backend-neutral showcase apps and render fixtures (`Showcase`, icon gallery, text-quality matrix, liquid-glass lab). No windowing or GPU setup; native, web, and vulkano demo crates import the same fixtures for parity. |
+| `aetna-winit-wgpu` | Optional batteries-included native desktop host for simple winit + wgpu apps. Owns window/surface setup, MSAA target management, input mapping, IME forwarding, redraw-on-animation, plus opt-in host cadence / `before_build` hooks for live external state. Custom hosts can bypass it and call `aetna-wgpu::Runner` directly. |
+| `aetna-demo` | Thin demo binary crate + compatibility re-exports. Interactive bins use `aetna-winit-wgpu`; headless render fixtures still exercise `aetna-wgpu` directly. |
+| `aetna-web` | wasm browser entry point. `crate-type = ["cdylib", "rlib"]`; re-exports `aetna_fixtures::Showcase` and ships a `#[wasm_bindgen(start)] start_web()` that opens a wgpu surface against an `<canvas id="aetna_canvas">` and drives the same backend-neutral App impl that native demos use. Same shape as `whisper-agent-webui` at `../../whisper-agent`. |
 | `aetna-vulkano` | Vulkan backend, peer to `aetna-wgpu`. WGSL → SPIR-V via `naga`; `Runner` mirrors `aetna_wgpu::Runner`'s public surface with `Arc<Device>`/`Queue`/`Format` constructor args. v5.3 lands the rect + text + custom-shader paths native-only; v5.4 step 2 reroutes the interaction half + paint-stream loop through the shared `RunnerCore` so behaviour can no longer drift between backends. |
-| `aetna-vulkano-demo` | winit + vulkano harness sibling of `aetna-demo`. v5.3 ships `bin/counter` (the v5.0 boundary A/B fixture) and `bin/custom` (the gradient WGSL fixture); v5.4 adds `bin/showcase` (broader-coverage A/B against `aetna-demo`'s Showcase). |
+| `aetna-vulkano-demo` | winit + vulkano harness sibling of the wgpu demo path. v5.3 ships `bin/counter` (the v5.0 boundary A/B fixture) and `bin/custom` (the gradient WGSL fixture); v5.4 adds `bin/showcase`, which drives the same `aetna-fixtures::Showcase` app through `aetna-vulkano`. |
 
 The architectural decision v5.0 settled: `El` is the author's description of the scene; everything the library writes during a frame — computed rects, hover/press/focus state, envelope amounts, scroll offsets, animation tracker entries — lives in `UiState` side maps keyed by `El::computed_id`. The build closure produces a fresh `El` carrying zero library state; the runtime layer holds the state across rebuilds.
 
@@ -148,8 +150,10 @@ crates/
 
   aetna-wgpu/                    wgpu backend (Runner shell + pipelines + atlas mirror)
   aetna-vulkano/                 vulkano backend (Runner shell + pipelines + naga compile)
-  aetna-demo/                    winit harness + interactive bins (showcase, counter, …)
-  aetna-vulkano-demo/            vulkano sibling of aetna-demo
+  aetna-fixtures/                backend-neutral Showcase + render fixtures
+  aetna-winit-wgpu/              optional native winit + wgpu app host
+  aetna-demo/                    demo bins + compatibility exports
+  aetna-vulkano-demo/            vulkano demo harness + backend parity bins
   aetna-web/                     wasm browser entry point — cdylib re-exporting Showcase
   aetna-fonts/                   bundled Roboto + emoji (split out in v0.7)
 attempts/
@@ -160,7 +164,7 @@ tools/                           agent-loop scripts (rendering helpers, etc.)
 ## Try it locally
 
 ```bash
-cargo run -p aetna-demo --bin showcase            # interactive — v5.2 consolidated demo (the browser parity target)
+cargo run -p aetna-demo --bin showcase            # interactive wgpu host — shared Showcase fixture
 cargo run -p aetna-demo --bin counter             # interactive — v0.2
 cargo run -p aetna-demo --bin scroll_list         # interactive — v0.3 wheel
 cargo run -p aetna-demo --bin hotkey_picker       # interactive — v0.4 keyboard
@@ -176,10 +180,10 @@ cargo run -p aetna-demo --bin text_input          # v0.8.1–v0.8.3 — single-l
 cargo run -p aetna-demo --bin text_area           # v0.8.4 — multi-line input, wrapping caret, line-wise motion
 cargo run -p aetna-demo --bin popover             # v0.9 — anchored popovers, dropdown, context menu, tooltip
 cargo run -p aetna-demo --bin render_counter      # headless wgpu PNG snapshot
-cargo run -p aetna-vulkano-demo --bin counter     # v5.3 — same Counter, native vulkano (A/B vs aetna-demo's counter)
+cargo run -p aetna-vulkano-demo --bin counter     # v5.3 — same Counter, native vulkano (A/B vs wgpu demo counter)
 cargo run -p aetna-vulkano-demo --bin custom      # v5.3 — gradient.wgsl through Runner::register_shader
-cargo run -p aetna-vulkano-demo --bin showcase    # v5.4 — same Showcase, native vulkano (A/B vs aetna-demo's showcase)
-cargo test --workspace --lib                      # 160+ unit tests across aetna-core + aetna-{wgpu,vulkano}
+cargo run -p aetna-vulkano-demo --bin showcase    # v5.4 — aetna-fixtures::Showcase through native vulkano
+cargo test --workspace --lib                      # 200+ unit tests across aetna-core + demo/backend crates
 ```
 
 For the browser:
@@ -189,7 +193,7 @@ tools/build_web.sh --serve                        # wasm-pack build + python sta
 # open http://127.0.0.1:8080/assets/index.html
 ```
 
-Same `Showcase` `App` impl runs through `aetna-demo::run` natively (`cargo run -p aetna-demo --bin showcase`) and through the wasm-bindgen + canvas-bound winit event loop in `aetna-web::start_web` in the browser.
+Same `Showcase` `App` impl from `aetna-fixtures` runs through `aetna-winit-wgpu` via `aetna-demo::run` (`cargo run -p aetna-demo --bin showcase`), through `aetna-vulkano-demo::run` on vulkano, and through the wasm-bindgen + canvas-bound winit event loop in `aetna-web::start_web` in the browser.
 
 ## Reviewing this
 

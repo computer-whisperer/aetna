@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_theme(Theme::default().with_icon_material(material));
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
-    let mut tree = aetna_demo::icon_gallery::icon_gallery();
+    let mut tree = aetna_fixtures::icon_gallery::icon_gallery();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

@@ -263,7 +263,7 @@ pub enum UiEventKind {
 }
 
 /// The application contract. Implement this on your state struct and
-/// pass it to the host runner (e.g., `aetna_demo::run`).
+/// pass it to a host runner (e.g., `aetna_winit_wgpu::run`).
 pub trait App {
     /// Project current state into a scene tree. Called whenever the
     /// host requests a redraw. Pure — no I/O, no mutation.

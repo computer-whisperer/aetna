@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
 
-    let mut tree = aetna_demo::icon_gallery::icon_gallery();
+    let mut tree = aetna_fixtures::icon_gallery::icon_gallery();
     renderer.prepare(&mut tree, viewport, scale_factor);
 
     let readback = Buffer::new_slice::<u8>(

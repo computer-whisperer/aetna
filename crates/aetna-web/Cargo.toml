@@ -15,12 +15,10 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 aetna-core = { path = "../aetna-core" }
 aetna-wgpu = { path = "../aetna-wgpu" }
-# `aetna-demo` is the home of the shared `Showcase` App impl; depending
-# on it from both native and wasm gives us one type that drives both
-# targets. `aetna_demo::run` (the native winit runner) is the canonical
-# native entry; the wasm path here uses its own browser-tailored
-# event loop below.
-aetna-demo = { path = "../aetna-demo" }
+# `aetna-fixtures` is the home of the shared `Showcase` App impl;
+# depending on it from native, vulkano, and wasm gives every target one
+# backend-neutral fixture without pulling in a native demo harness.
+aetna-fixtures = { path = "../aetna-fixtures" }
 wgpu = "29"
 winit = "0.30"
 

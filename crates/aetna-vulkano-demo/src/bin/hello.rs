@@ -6,9 +6,9 @@
 //! works the platform-compat risks V5_3.md flagged are off the table
 //! and step 4 can wire up the Runner skeleton.
 //!
-//! Structure mirrors `aetna-demo/src/lib.rs`'s `Host` — same winit
+//! Structure mirrors the native winit host shape — same
 //! `ApplicationHandler` skeleton, same `gfx: Option<…>` lazy-init
-//! pattern — so the diff between the two harnesses stays small as
+//! pattern — so the diff between backend harnesses stays small as
 //! v5.3 grows.
 
 use std::sync::Arc;
@@ -147,10 +147,10 @@ impl ApplicationHandler for Host {
                 .physical_device()
                 .surface_formats(&surface, Default::default())
                 .expect("surface formats");
-            // Match aetna-demo: prefer an sRGB swapchain format so the
-            // `clear_color()` linear-space values land correctly. Without
-            // this, the first available format is often a UNORM one and
-            // `srgb_to_linear` double-darkens BG_APP to near-zero.
+            // Match the wgpu host path: prefer an sRGB swapchain format
+            // so the `clear_color()` linear-space values land correctly.
+            // Without this, the first available format is often a UNORM
+            // one and `srgb_to_linear` double-darkens BG_APP to near-zero.
             let image_format = formats
                 .iter()
                 .copied()
@@ -346,7 +346,7 @@ fn build_framebuffers(
         .collect()
 }
 
-/// Same logic as `aetna-demo`'s `bg_color` — the swapchain format we
+/// Same logic as the wgpu host clear color — the swapchain format we
 /// pick is sRGB, but vulkano's `ClearValue::Float` is taken as linear.
 /// Convert so the cleared pixel matches `tokens::BG_APP`.
 fn clear_color() -> [f32; 4] {
