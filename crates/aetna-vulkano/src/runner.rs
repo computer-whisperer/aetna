@@ -904,7 +904,7 @@ impl Runner {
                 PaintItem::Text(idx) => {
                     let run = self.text_paint.run(idx);
                     set_scissor(builder, run.scissor, full);
-                    let text_pipeline = self.text_paint.pipeline();
+                    let text_pipeline = self.text_paint.pipeline_for(run.kind);
                     builder
                         .bind_pipeline_graphics(text_pipeline.clone())
                         .expect("bind_pipeline_graphics text");
@@ -919,19 +919,34 @@ impl Runner {
                             0,
                             (
                                 self.frame_descriptor_set.clone(),
-                                self.text_paint.page_descriptor(run.page).clone(),
+                                self.text_paint.page_descriptor(run.kind, run.page).clone(),
                             ),
                         )
                         .expect("bind_descriptor_sets text");
-                    builder
-                        .bind_vertex_buffers(
-                            0,
-                            (
-                                self.quad_vbo.clone(),
-                                self.text_paint.instance_buf().clone(),
-                            ),
-                        )
-                        .expect("bind_vertex_buffers text");
+                    match run.kind {
+                        crate::text::TextRunKind::Color => {
+                            builder
+                                .bind_vertex_buffers(
+                                    0,
+                                    (
+                                        self.quad_vbo.clone(),
+                                        self.text_paint.instance_buf_color().clone(),
+                                    ),
+                                )
+                                .expect("bind_vertex_buffers text colour");
+                        }
+                        crate::text::TextRunKind::Msdf => {
+                            builder
+                                .bind_vertex_buffers(
+                                    0,
+                                    (
+                                        self.quad_vbo.clone(),
+                                        self.text_paint.instance_buf_msdf().clone(),
+                                    ),
+                                )
+                                .expect("bind_vertex_buffers text msdf");
+                        }
+                    }
                     unsafe {
                         builder.draw(4, run.count, 0, run.first).expect("draw text");
                     }

@@ -1,17 +1,22 @@
-//! Atlas-backed text rendering for `stock::text`.
+//! Atlas-backed text rendering for the Vulkano backend.
 //!
-//! Mirrors `aetna_wgpu::text` — owns the core-side
-//! [`aetna_core::text::atlas::GlyphAtlas`] (cosmic-text shaping + swash
-//! rasterization) and per-page Vulkan images that mirror the CPU pages.
-//! Per-glyph quads are emitted by `record()`; dirty atlas regions get
-//! copy_buffer_to_image'd to the GPU mirror in `flush()`.
+//! Two paths share one [`TextPaint`]:
+//!
+//! - **MTSDF outline path** (`stock::text_msdf`): each `(font, glyph)`
+//!   pair is rasterised once into a multi-channel + true-SDF atlas via
+//!   `MsdfAtlas`, and rendered as one quad per glyph regardless of UI
+//!   size. Used for outline fonts (Roboto, Symbols, Math).
+//! - **Colour bitmap path** (`stock::text`): swash rasterises emoji
+//!   strikes into the size-keyed RGBA `GlyphAtlas`. Each glyph quad is
+//!   modulated by white so the bitmap RGB passes through unchanged.
+//!
+//! Per-glyph routing is decided by the source font's classification
+//! (`GlyphAtlas::is_color_font`). Each [`TextRun`] carries a
+//! `kind` so the runner knows which pipeline + page descriptor to bind.
 //!
 //! Atlas dirty uploads run inside a one-shot command buffer that is
-//! submitted + waited on inside `flush()`. That's a strict serialisation
-//! point — fine for v5.3 because text shaping isn't on the hot path
-//! (the atlas only churns when the glyph set changes); v5.4 can revisit
-//! batching uploads into the host's main draw command buffer if perf
-//! data ever shows it matters.
+//! submitted + waited on inside `flush()`. v5.4 can revisit batching
+//! into the host's main draw command buffer if profiling demands it.
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -19,11 +24,17 @@ use std::sync::Arc;
 use aetna_core::ir::TextAnchor;
 use aetna_core::shader::stock_wgsl;
 use aetna_core::text::atlas::{
-    ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas, RunStyle, ShapedRun,
+    ATLAS_BYTES_PER_PIXEL, AtlasPage, AtlasRect, GlyphAtlas, GlyphSlot, RunStyle, ShapedGlyph,
+    ShapedRun,
+};
+use aetna_core::text::msdf_atlas::{
+    DEFAULT_BASE_EM, DEFAULT_SPREAD, MsdfAtlas, MsdfAtlasPage, MsdfGlyphKey, MsdfRect, MsdfSlot,
 };
 use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};
 use bytemuck::{Pod, Zeroable};
+use cosmic_text::fontdb;
 use smallvec::smallvec;
+use ttf_parser::Face;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
@@ -73,14 +84,30 @@ const INITIAL_INSTANCE_CAPACITY: u64 = 256;
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
-pub(crate) struct GlyphInstance {
+pub(crate) struct ColorGlyphInstance {
     pub rect: [f32; 4],
     pub uv: [f32; 4],
     pub color: [f32; 4],
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable, Debug)]
+pub(crate) struct MsdfGlyphInstance {
+    pub rect: [f32; 4],
+    pub uv: [f32; 4],
+    pub color: [f32; 4],
+    pub params: [f32; 4],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TextRunKind {
+    Color,
+    Msdf,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct TextRun {
+    pub kind: TextRunKind,
     pub page: u32,
     pub scissor: Option<PhysicalScissor>,
     pub first: u32,
@@ -94,14 +121,25 @@ struct PageGpu {
 
 pub(crate) struct TextPaint {
     pub atlas: GlyphAtlas,
-    pages: Vec<PageGpu>,
-    instances: Vec<GlyphInstance>,
-    runs: Vec<TextRun>,
+    pub msdf_atlas: MsdfAtlas,
 
-    pipeline: Arc<GraphicsPipeline>,
-    sampler: Arc<Sampler>,
-    instance_buf: Subbuffer<[GlyphInstance]>,
-    instance_capacity: u64,
+    // Colour bitmap path.
+    color_pages: Vec<PageGpu>,
+    color_instances: Vec<ColorGlyphInstance>,
+    color_instance_buf: Subbuffer<[ColorGlyphInstance]>,
+    color_instance_capacity: u64,
+    color_pipeline: Arc<GraphicsPipeline>,
+    color_sampler: Arc<Sampler>,
+
+    // MTSDF outline path.
+    msdf_pages: Vec<PageGpu>,
+    msdf_instances: Vec<MsdfGlyphInstance>,
+    msdf_instance_buf: Subbuffer<[MsdfGlyphInstance]>,
+    msdf_instance_capacity: u64,
+    msdf_pipeline: Arc<GraphicsPipeline>,
+    msdf_sampler: Arc<Sampler>,
+
+    runs: Vec<TextRun>,
 
     memory_alloc: Arc<StandardMemoryAllocator>,
     descriptor_alloc: Arc<StandardDescriptorSetAllocator>,
@@ -118,9 +156,23 @@ impl TextPaint {
         cmd_alloc: Arc<StandardCommandBufferAllocator>,
         subpass: Subpass,
     ) -> Self {
-        let pipeline = build_text_pipeline(device.clone(), subpass);
+        let color_pipeline = build_color_pipeline(device.clone(), subpass.clone());
+        let color_sampler = Sampler::new(
+            device.clone(),
+            SamplerCreateInfo {
+                mag_filter: Filter::Linear,
+                min_filter: Filter::Linear,
+                mipmap_mode: SamplerMipmapMode::Nearest,
+                address_mode: [SamplerAddressMode::ClampToEdge; 3],
+                ..Default::default()
+            },
+        )
+        .expect("aetna-vulkano: text colour sampler");
+        let color_instance_buf =
+            create_color_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
 
-        let sampler = Sampler::new(
+        let msdf_pipeline = build_msdf_pipeline(device.clone(), subpass);
+        let msdf_sampler = Sampler::new(
             device,
             SamplerCreateInfo {
                 mag_filter: Filter::Linear,
@@ -130,19 +182,26 @@ impl TextPaint {
                 ..Default::default()
             },
         )
-        .expect("aetna-vulkano: text sampler");
-
-        let instance_buf = create_glyph_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
+        .expect("aetna-vulkano: text msdf sampler");
+        let msdf_instance_buf =
+            create_msdf_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
 
         Self {
             atlas: GlyphAtlas::new(),
-            pages: Vec::new(),
-            instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
+            msdf_atlas: MsdfAtlas::new(DEFAULT_BASE_EM, DEFAULT_SPREAD),
+            color_pages: Vec::new(),
+            color_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
+            color_instance_buf,
+            color_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            color_pipeline,
+            color_sampler,
+            msdf_pages: Vec::new(),
+            msdf_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
+            msdf_instance_buf,
+            msdf_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            msdf_pipeline,
+            msdf_sampler,
             runs: Vec::new(),
-            pipeline,
-            sampler,
-            instance_buf,
-            instance_capacity: INITIAL_INSTANCE_CAPACITY,
             memory_alloc,
             descriptor_alloc,
             cmd_alloc,
@@ -151,36 +210,12 @@ impl TextPaint {
     }
 
     pub(crate) fn frame_begin(&mut self) {
-        self.instances.clear();
+        self.color_instances.clear();
+        self.msdf_instances.clear();
         self.runs.clear();
     }
 
-    /// Shape `text` and append per-glyph instances. Logic is identical
-    /// to `aetna_wgpu::text::TextPaint::record_inner` — only the stored
-    /// type of `instances` and `runs` differs.
-    #[allow(clippy::too_many_arguments)]
     fn record_inner(
-        &mut self,
-        rect: Rect,
-        scissor: Option<PhysicalScissor>,
-        color: Color,
-        text: &str,
-        size: f32,
-        weight: FontWeight,
-        wrap: TextWrap,
-        anchor: TextAnchor,
-        scale_factor: f32,
-    ) -> Range<usize> {
-        let physical_size = size * scale_factor;
-        let avail = wrap_available_width(rect.w, scale_factor, wrap, anchor);
-        let shaped =
-            self.atlas
-                .shape_and_rasterize(text, physical_size, weight, wrap, anchor, avail, color);
-        self.emit_shaped_glyphs(rect, scissor, &shaped, wrap, scale_factor)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn record_runs_inner(
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
@@ -190,15 +225,16 @@ impl TextPaint {
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> Range<usize> {
-        let physical_size = size * scale_factor;
+        // Shape at the *logical* size: MSDF is unhinted, so glyph IDs
+        // and advances scale uniformly with size; we want logical-px
+        // positions out so quads land on logical pixels and the SDF
+        // shader handles screen-pixel AA via fwidth(uv).
         let avail = wrap_available_width(rect.w, scale_factor, wrap, anchor);
         let runs_ref: Vec<(&str, RunStyle)> = runs
             .iter()
             .map(|(text, style)| (text.as_str(), style.clone()))
             .collect();
-        let shaped =
-            self.atlas
-                .shape_and_rasterize_runs(&runs_ref, physical_size, wrap, anchor, avail);
+        let shaped = self.atlas.shape_runs(&runs_ref, size, wrap, anchor, avail);
         self.emit_shaped_glyphs(rect, scissor, &shaped, wrap, scale_factor)
     }
 
@@ -215,7 +251,8 @@ impl TextPaint {
             return runs_start..runs_start;
         }
 
-        let logical_line_height = shaped.layout.line_height / scale_factor;
+        // Layout came back in logical px (we shaped at logical size).
+        let logical_line_height = shaped.layout.line_height;
         let v_offset = match wrap {
             TextWrap::NoWrap => ((rect.h - logical_line_height).max(0.0)) * 0.5,
             TextWrap::Wrap => 0.0,
@@ -223,73 +260,51 @@ impl TextPaint {
         let origin_x = rect.x;
         let origin_y = rect.y + v_offset;
 
-        let mut current_page: Option<u32> = None;
-        let mut run_first = self.instances.len() as u32;
+        // Walk shaped glyphs. Each becomes either a colour or MSDF
+        // instance, emitted into its own per-kind run. A run breaks
+        // whenever the kind+page combination changes.
+        let mut current: Option<(TextRunKind, u32, u32)> = None; // (kind, page, run_first)
 
         for glyph in &shaped.glyphs {
-            let Some(slot) = self.atlas.slot(glyph.key) else {
-                continue;
-            };
-            if slot.rect.w == 0 || slot.rect.h == 0 {
-                continue;
-            }
-            let page = slot.page;
-            let bx = origin_x + (glyph.x + slot.offset.0 as f32) / scale_factor;
-            let by = origin_y + (glyph.y - slot.offset.1 as f32) / scale_factor;
-            let bw = slot.rect.w as f32 / scale_factor;
-            let bh = slot.rect.h as f32 / scale_factor;
-
-            let atlas_page = self
-                .atlas
-                .page(page)
-                .expect("shaped glyph references missing atlas page");
-            let page_w = atlas_page.width as f32;
-            let page_h = atlas_page.height as f32;
-            let uv = [
-                slot.rect.x as f32 / page_w,
-                slot.rect.y as f32 / page_h,
-                slot.rect.w as f32 / page_w,
-                slot.rect.h as f32 / page_h,
-            ];
-
-            if current_page != Some(page) {
-                if let Some(p) = current_page {
-                    let count = self.instances.len() as u32 - run_first;
-                    if count > 0 {
-                        self.runs.push(TextRun {
-                            page: p,
-                            scissor,
-                            first: run_first,
-                            count,
-                        });
-                    }
-                    run_first = self.instances.len() as u32;
+            let font_id = glyph.key.font;
+            let is_color = self.atlas.is_color_font(font_id);
+            if is_color {
+                self.atlas.ensure_color_glyph(glyph.key);
+                let Some(slot) = self.atlas.slot(glyph.key) else {
+                    continue;
+                };
+                if slot.rect.w == 0 || slot.rect.h == 0 {
+                    continue;
                 }
-                current_page = Some(page);
-            }
-
-            // Color emoji glyphs carry their own RGB in the atlas;
-            // pass white as the per-glyph modulation color so the
-            // bitmap survives. Outline glyphs use the user's color so
-            // text takes on the requested paint color.
-            let inst_color = if slot.is_color {
-                [1.0, 1.0, 1.0, 1.0]
+                let page = slot.page;
+                let next_kind = TextRunKind::Color;
+                self.maybe_close_run(&mut current, next_kind, page, scissor);
+                self.push_color_glyph(glyph, slot, origin_x, origin_y, scale_factor);
             } else {
-                rgba_f32(glyph.color)
-            };
-            self.instances.push(GlyphInstance {
-                rect: [bx, by, bw, bh],
-                uv,
-                color: inst_color,
-            });
+                let mkey = MsdfGlyphKey {
+                    font: font_id,
+                    glyph_id: glyph.key.glyph_id,
+                };
+                let Some(slot) = self.ensure_msdf(mkey, font_id) else {
+                    // Whitespace or .notdef without outline — no quad.
+                    continue;
+                };
+                let page = slot.page;
+                let next_kind = TextRunKind::Msdf;
+                self.maybe_close_run(&mut current, next_kind, page, scissor);
+                self.push_msdf_glyph(glyph, slot, origin_x, origin_y);
+            }
         }
-        if let Some(p) = current_page {
-            let count = self.instances.len() as u32 - run_first;
+
+        // Close the trailing open run.
+        if let Some((kind, page, first)) = current {
+            let count = self.instance_count_after(kind, first);
             if count > 0 {
                 self.runs.push(TextRun {
-                    page: p,
+                    kind,
+                    page,
                     scissor,
-                    first: run_first,
+                    first,
                     count,
                 });
             }
@@ -298,26 +313,162 @@ impl TextPaint {
         runs_start..self.runs.len()
     }
 
-    /// Sync atlas dirty regions to GPU images and upload glyph instance
-    /// data. Call once per frame after all `record` calls, before
-    /// `Runner::draw` records the host's command buffer.
-    ///
-    /// The dirty-region uploads run inside a one-shot command buffer
-    /// that is submitted and *waited on* here. v5.4 can batch these
-    /// into the host's main command buffer if perf demands it.
-    pub(crate) fn flush(&mut self) {
-        let dirty = self.atlas.take_dirty();
+    fn maybe_close_run(
+        &mut self,
+        current: &mut Option<(TextRunKind, u32, u32)>,
+        next_kind: TextRunKind,
+        next_page: u32,
+        scissor: Option<PhysicalScissor>,
+    ) {
+        let new_start = match next_kind {
+            TextRunKind::Color => self.color_instances.len() as u32,
+            TextRunKind::Msdf => self.msdf_instances.len() as u32,
+        };
+        let needs_close = match current {
+            Some((kind, page, _)) => *kind != next_kind || *page != next_page,
+            None => false,
+        };
+        if needs_close {
+            let (kind, page, first) = current.take().unwrap();
+            let count = self.instance_count_after(kind, first);
+            if count > 0 {
+                self.runs.push(TextRun {
+                    kind,
+                    page,
+                    scissor,
+                    first,
+                    count,
+                });
+            }
+        }
+        if current.is_none() {
+            *current = Some((next_kind, next_page, new_start));
+        }
+    }
 
-        // Allocate page images for any new atlas pages.
-        while self.pages.len() < self.atlas.pages().len() {
-            let i = self.pages.len();
+    fn instance_count_after(&self, kind: TextRunKind, first: u32) -> u32 {
+        let len = match kind {
+            TextRunKind::Color => self.color_instances.len() as u32,
+            TextRunKind::Msdf => self.msdf_instances.len() as u32,
+        };
+        len.saturating_sub(first)
+    }
+
+    fn push_color_glyph(
+        &mut self,
+        glyph: &ShapedGlyph,
+        slot: GlyphSlot,
+        origin_x: f32,
+        origin_y: f32,
+        scale_factor: f32,
+    ) {
+        // Colour-bitmap atlas slots live in physical px (size-keyed
+        // GlyphAtlas). Glyph positions came out of shape() in logical
+        // px. Divide bitmap pixel metrics by scale_factor so the quad
+        // is in logical px while bitmaps still map 1:1 to physical
+        // pixels.
+        let bx = origin_x + glyph.x + slot.offset.0 as f32 / scale_factor;
+        let by = origin_y + glyph.y - slot.offset.1 as f32 / scale_factor;
+        let bw = slot.rect.w as f32 / scale_factor;
+        let bh = slot.rect.h as f32 / scale_factor;
+        let atlas_page = self
+            .atlas
+            .page(slot.page)
+            .expect("shaped glyph references missing colour atlas page");
+        let page_w = atlas_page.width as f32;
+        let page_h = atlas_page.height as f32;
+        let uv = [
+            slot.rect.x as f32 / page_w,
+            slot.rect.y as f32 / page_h,
+            slot.rect.w as f32 / page_w,
+            slot.rect.h as f32 / page_h,
+        ];
+        let inst_color = if slot.is_color {
+            [1.0, 1.0, 1.0, 1.0]
+        } else {
+            rgba_f32(glyph.color)
+        };
+        self.color_instances.push(ColorGlyphInstance {
+            rect: [bx, by, bw, bh],
+            uv,
+            color: inst_color,
+        });
+    }
+
+    fn push_msdf_glyph(
+        &mut self,
+        glyph: &ShapedGlyph,
+        slot: MsdfSlot,
+        origin_x: f32,
+        origin_y: f32,
+    ) {
+        // MSDF slot metrics are in **base-em pixels**; multiply by
+        // (logical em / base em) to get logical px.
+        let logical_em = glyph.key.size();
+        let base_em = self.msdf_atlas.base_em() as f32;
+        let scale = logical_em / base_em;
+        let bx = origin_x + glyph.x + slot.bearing_x * scale;
+        let by = origin_y + glyph.y + slot.bearing_y * scale;
+        let bw = slot.rect.w as f32 * scale;
+        let bh = slot.rect.h as f32 * scale;
+        let atlas_page = self
+            .msdf_atlas
+            .page(slot.page)
+            .expect("shaped glyph references missing MSDF atlas page");
+        let page_w = atlas_page.width as f32;
+        let page_h = atlas_page.height as f32;
+        let uv = [
+            slot.rect.x as f32 / page_w,
+            slot.rect.y as f32 / page_h,
+            slot.rect.w as f32 / page_w,
+            slot.rect.h as f32 / page_h,
+        ];
+        let color = rgba_f32(glyph.color);
+        self.msdf_instances.push(MsdfGlyphInstance {
+            rect: [bx, by, bw, bh],
+            uv,
+            color,
+            params: [slot.spread, 0.0, 0.0, 0.0],
+        });
+    }
+
+    fn ensure_msdf(&mut self, key: MsdfGlyphKey, font_id: fontdb::ID) -> Option<MsdfSlot> {
+        if let Some(slot) = self.msdf_atlas.slot(key) {
+            return Some(slot);
+        }
+        // get_font requires &mut FontSystem; db().face() requires &.
+        // Hop: take Arc<Font> first (drops the mut borrow) so we can
+        // re-borrow immutably for the face_index lookup.
+        let font = self.atlas.font_system_mut().get_font(font_id)?;
+        let face_index = self.atlas.font_system().db().face(font_id)?.index;
+        let face = Face::parse(font.data(), face_index).ok()?;
+        self.msdf_atlas.ensure(key, &face)
+    }
+
+    /// Sync atlas pages to GPU images and upload instance buffers.
+    /// Run once per frame after all `record` calls, before the host
+    /// records its draw command buffer.
+    pub(crate) fn flush(&mut self) {
+        // ---- Colour atlas pages ----
+        let color_dirty = self.atlas.take_dirty();
+        while self.color_pages.len() < self.atlas.pages().len() {
+            let i = self.color_pages.len();
             let page = &self.atlas.pages()[i];
-            let new_page = self.create_page(page.width, page.height);
-            self.pages.push(new_page);
+            let new_page = self.create_color_page(page.width, page.height);
+            self.color_pages.push(new_page);
         }
 
-        // Upload dirty regions via a one-shot command buffer.
-        if !dirty.is_empty() {
+        // ---- MSDF atlas pages ----
+        let msdf_dirty = self.msdf_atlas.take_dirty();
+        while self.msdf_pages.len() < self.msdf_atlas.pages().len() {
+            let i = self.msdf_pages.len();
+            let page = &self.msdf_atlas.pages()[i];
+            let new_page = self.create_msdf_page(page.width, page.height);
+            self.msdf_pages.push(new_page);
+        }
+
+        // ---- Upload all dirty regions in one one-shot command buffer ----
+        if !color_dirty.is_empty() || !msdf_dirty.is_empty() {
             let mut builder = AutoCommandBufferBuilder::primary(
                 self.cmd_alloc.clone(),
                 self.queue.queue_family_index(),
@@ -325,56 +476,34 @@ impl TextPaint {
             )
             .expect("aetna-vulkano: text upload cmd builder");
 
-            for (page_idx, rect) in &dirty {
+            for (page_idx, rect) in &color_dirty {
                 if rect.w == 0 || rect.h == 0 {
                     continue;
                 }
                 let page = &self.atlas.pages()[*page_idx];
-                let bytes = pack_rect_bytes(page, *rect);
-                let staging = Buffer::from_iter(
-                    self.memory_alloc.clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::TRANSFER_SRC,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
+                let bytes = pack_color_rect_bytes(page, *rect);
+                self.append_buffer_to_image_copy(
+                    &mut builder,
+                    self.color_pages[*page_idx].image.clone(),
                     bytes,
-                )
-                .expect("aetna-vulkano: text staging buffer");
-
-                let copy_info = CopyBufferToImageInfo {
-                    regions: smallvec![BufferImageCopy {
-                        buffer_offset: 0,
-                        // bytes_per_row defaults to tightly-packed when
-                        // buffer_image_height/buffer_row_length are 0.
-                        buffer_row_length: 0,
-                        buffer_image_height: 0,
-                        image_subresource: ImageSubresourceLayers {
-                            aspects: ImageAspects::COLOR,
-                            mip_level: 0,
-                            array_layers: 0..1,
-                        },
-                        image_offset: [rect.x, rect.y, 0],
-                        image_extent: [rect.w, rect.h, 1],
-                        ..Default::default()
-                    }],
-                    ..CopyBufferToImageInfo::buffer_image(
-                        staging,
-                        self.pages[*page_idx].image.clone(),
-                    )
-                };
-                builder
-                    .copy_buffer_to_image(copy_info)
-                    .expect("aetna-vulkano: copy_buffer_to_image");
+                    [rect.x, rect.y, rect.w, rect.h],
+                );
+            }
+            for (page_idx, rect) in &msdf_dirty {
+                if rect.w == 0 || rect.h == 0 {
+                    continue;
+                }
+                let page = &self.msdf_atlas.pages()[*page_idx];
+                let bytes = pack_msdf_rect_bytes(page, *rect);
+                self.append_buffer_to_image_copy(
+                    &mut builder,
+                    self.msdf_pages[*page_idx].image.clone(),
+                    bytes,
+                    [rect.x, rect.y, rect.w, rect.h],
+                );
             }
 
-            let cb = builder
-                .build()
-                .expect("aetna-vulkano: text upload cmd build");
+            let cb = builder.build().expect("aetna-vulkano: text upload cmd build");
             let future = sync::now(self.queue.device().clone())
                 .then_execute(self.queue.clone(), cb)
                 .expect("aetna-vulkano: text upload then_execute")
@@ -385,22 +514,80 @@ impl TextPaint {
                 .expect("aetna-vulkano: text upload fence wait");
         }
 
-        // Resize + write the glyph instance buffer.
-        if (self.instances.len() as u64) > self.instance_capacity {
-            let new_cap = (self.instances.len() as u64).next_power_of_two();
-            self.instance_buf = create_glyph_instance_buffer(&self.memory_alloc, new_cap);
-            self.instance_capacity = new_cap;
+        // ---- Resize + write the colour instance buffer ----
+        if (self.color_instances.len() as u64) > self.color_instance_capacity {
+            let new_cap = (self.color_instances.len() as u64).next_power_of_two();
+            self.color_instance_buf = create_color_instance_buffer(&self.memory_alloc, new_cap);
+            self.color_instance_capacity = new_cap;
         }
-        if !self.instances.is_empty() {
+        if !self.color_instances.is_empty() {
             let mut write = self
-                .instance_buf
+                .color_instance_buf
                 .write()
-                .expect("aetna-vulkano: text instance buf write");
-            write[..self.instances.len()].copy_from_slice(&self.instances);
+                .expect("aetna-vulkano: text colour instance buf write");
+            write[..self.color_instances.len()].copy_from_slice(&self.color_instances);
+        }
+
+        // ---- Resize + write the MSDF instance buffer ----
+        if (self.msdf_instances.len() as u64) > self.msdf_instance_capacity {
+            let new_cap = (self.msdf_instances.len() as u64).next_power_of_two();
+            self.msdf_instance_buf = create_msdf_instance_buffer(&self.memory_alloc, new_cap);
+            self.msdf_instance_capacity = new_cap;
+        }
+        if !self.msdf_instances.is_empty() {
+            let mut write = self
+                .msdf_instance_buf
+                .write()
+                .expect("aetna-vulkano: text msdf instance buf write");
+            write[..self.msdf_instances.len()].copy_from_slice(&self.msdf_instances);
         }
     }
 
-    fn create_page(&self, width: u32, height: u32) -> PageGpu {
+    fn append_buffer_to_image_copy(
+        &self,
+        builder: &mut AutoCommandBufferBuilder<
+            vulkano::command_buffer::PrimaryAutoCommandBuffer,
+        >,
+        target: Arc<Image>,
+        bytes: Vec<u8>,
+        rect: [u32; 4],
+    ) {
+        let staging = Buffer::from_iter(
+            self.memory_alloc.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_SRC,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            bytes,
+        )
+        .expect("aetna-vulkano: text staging buffer");
+        let copy_info = CopyBufferToImageInfo {
+            regions: smallvec![BufferImageCopy {
+                buffer_offset: 0,
+                buffer_row_length: 0,
+                buffer_image_height: 0,
+                image_subresource: ImageSubresourceLayers {
+                    aspects: ImageAspects::COLOR,
+                    mip_level: 0,
+                    array_layers: 0..1,
+                },
+                image_offset: [rect[0], rect[1], 0],
+                image_extent: [rect[2], rect[3], 1],
+                ..Default::default()
+            }],
+            ..CopyBufferToImageInfo::buffer_image(staging, target)
+        };
+        builder
+            .copy_buffer_to_image(copy_info)
+            .expect("aetna-vulkano: text copy_buffer_to_image");
+    }
+
+    fn create_color_page(&self, width: u32, height: u32) -> PageGpu {
         let image = Image::new(
             self.memory_alloc.clone(),
             ImageCreateInfo {
@@ -415,37 +602,85 @@ impl TextPaint {
                 ..Default::default()
             },
         )
-        .expect("aetna-vulkano: text atlas page image");
-
-        let view = ImageView::new_default(image.clone()).expect("aetna-vulkano: text page view");
+        .expect("aetna-vulkano: text colour atlas page image");
+        let view = ImageView::new_default(image.clone())
+            .expect("aetna-vulkano: text colour page view");
         let descriptor_set = DescriptorSet::new(
             self.descriptor_alloc.clone(),
-            self.pipeline.layout().set_layouts()[1].clone(),
+            self.color_pipeline.layout().set_layouts()[1].clone(),
             [
                 WriteDescriptorSet::image_view(0, view),
-                WriteDescriptorSet::sampler(1, self.sampler.clone()),
+                WriteDescriptorSet::sampler(1, self.color_sampler.clone()),
             ],
             [],
         )
-        .expect("aetna-vulkano: text page descriptor set");
-
+        .expect("aetna-vulkano: text colour page descriptor set");
         PageGpu {
             image,
             descriptor_set,
         }
     }
 
-    pub(crate) fn pipeline(&self) -> &Arc<GraphicsPipeline> {
-        &self.pipeline
+    fn create_msdf_page(&self, width: u32, height: u32) -> PageGpu {
+        let image = Image::new(
+            self.memory_alloc.clone(),
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                // Linear (NOT sRGB) — distance bytes shouldn't pass
+                // through the sRGB EOTF.
+                format: Format::R8G8B8A8_UNORM,
+                extent: [width, height, 1],
+                usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+        )
+        .expect("aetna-vulkano: text msdf atlas page image");
+        let view = ImageView::new_default(image.clone())
+            .expect("aetna-vulkano: text msdf page view");
+        let descriptor_set = DescriptorSet::new(
+            self.descriptor_alloc.clone(),
+            self.msdf_pipeline.layout().set_layouts()[1].clone(),
+            [
+                WriteDescriptorSet::image_view(0, view),
+                WriteDescriptorSet::sampler(1, self.msdf_sampler.clone()),
+            ],
+            [],
+        )
+        .expect("aetna-vulkano: text msdf page descriptor set");
+        PageGpu {
+            image,
+            descriptor_set,
+        }
     }
-    pub(crate) fn instance_buf(&self) -> &Subbuffer<[GlyphInstance]> {
-        &self.instance_buf
-    }
+
     pub(crate) fn run(&self, index: usize) -> TextRun {
         self.runs[index]
     }
-    pub(crate) fn page_descriptor(&self, page: u32) -> &Arc<DescriptorSet> {
-        &self.pages[page as usize].descriptor_set
+
+    pub(crate) fn pipeline_for(&self, kind: TextRunKind) -> &Arc<GraphicsPipeline> {
+        match kind {
+            TextRunKind::Color => &self.color_pipeline,
+            TextRunKind::Msdf => &self.msdf_pipeline,
+        }
+    }
+
+    pub(crate) fn page_descriptor(&self, kind: TextRunKind, page: u32) -> &Arc<DescriptorSet> {
+        match kind {
+            TextRunKind::Color => &self.color_pages[page as usize].descriptor_set,
+            TextRunKind::Msdf => &self.msdf_pages[page as usize].descriptor_set,
+        }
+    }
+
+    pub(crate) fn instance_buf_color(&self) -> &Subbuffer<[ColorGlyphInstance]> {
+        &self.color_instance_buf
+    }
+
+    pub(crate) fn instance_buf_msdf(&self) -> &Subbuffer<[MsdfGlyphInstance]> {
+        &self.msdf_instance_buf
     }
 }
 
@@ -465,10 +700,8 @@ impl TextRecorder for TextPaint {
         self.record_inner(
             rect,
             scissor,
-            color,
-            text,
+            &[(text.to_string(), RunStyle::new(weight, color))],
             size,
-            weight,
             wrap,
             anchor,
             scale_factor,
@@ -485,28 +718,26 @@ impl TextRecorder for TextPaint {
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> Range<usize> {
-        self.record_runs_inner(rect, scissor, runs, size, wrap, anchor, scale_factor)
+        self.record_inner(rect, scissor, runs, size, wrap, anchor, scale_factor)
     }
 }
 
 fn wrap_available_width(
     rect_w: f32,
-    scale_factor: f32,
+    _scale_factor: f32,
     wrap: TextWrap,
     anchor: TextAnchor,
 ) -> Option<f32> {
+    // We shape at logical px now, so the available width is logical
+    // too — no scale_factor multiplication.
     match (wrap, anchor) {
-        (TextWrap::Wrap, _) => Some(rect_w * scale_factor),
+        (TextWrap::Wrap, _) => Some(rect_w),
         (TextWrap::NoWrap, TextAnchor::Start) => None,
-        (TextWrap::NoWrap, TextAnchor::Middle | TextAnchor::End) => Some(rect_w * scale_factor),
+        (TextWrap::NoWrap, TextAnchor::Middle | TextAnchor::End) => Some(rect_w),
     }
 }
 
-/// Slice the `rect`-bounded subregion out of `page.pixels` (row-major
-/// RGBA8 bitmap, 4 bytes/pixel) into a tightly-packed Vec for
-/// staging-buffer upload — same shape `aetna_wgpu::text::
-/// upload_page_region` uses when calling `queue.write_texture`.
-fn pack_rect_bytes(page: &AtlasPage, rect: AtlasRect) -> Vec<u8> {
+fn pack_color_rect_bytes(page: &AtlasPage, rect: AtlasRect) -> Vec<u8> {
     let bpp = ATLAS_BYTES_PER_PIXEL as usize;
     let row_bytes = rect.w as usize * bpp;
     let mut bytes = Vec::with_capacity(row_bytes * rect.h as usize);
@@ -519,11 +750,24 @@ fn pack_rect_bytes(page: &AtlasPage, rect: AtlasRect) -> Vec<u8> {
     bytes
 }
 
-fn create_glyph_instance_buffer(
+fn pack_msdf_rect_bytes(page: &MsdfAtlasPage, rect: MsdfRect) -> Vec<u8> {
+    const BPP: usize = 4;
+    let row_bytes = rect.w as usize * BPP;
+    let mut bytes = Vec::with_capacity(row_bytes * rect.h as usize);
+    for row in 0..rect.h {
+        let y = rect.y + row;
+        let start = (y as usize * page.width as usize + rect.x as usize) * BPP;
+        let end = start + row_bytes;
+        bytes.extend_from_slice(&page.pixels[start..end]);
+    }
+    bytes
+}
+
+fn create_color_instance_buffer(
     allocator: &Arc<StandardMemoryAllocator>,
     capacity: u64,
-) -> Subbuffer<[GlyphInstance]> {
-    Buffer::new_slice::<GlyphInstance>(
+) -> Subbuffer<[ColorGlyphInstance]> {
+    Buffer::new_slice::<ColorGlyphInstance>(
         allocator.clone(),
         BufferCreateInfo {
             usage: BufferUsage::VERTEX_BUFFER,
@@ -536,10 +780,30 @@ fn create_glyph_instance_buffer(
         },
         capacity,
     )
-    .expect("aetna-vulkano: glyph instance buffer alloc")
+    .expect("aetna-vulkano: colour glyph instance buffer alloc")
 }
 
-fn build_text_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
+fn create_msdf_instance_buffer(
+    allocator: &Arc<StandardMemoryAllocator>,
+    capacity: u64,
+) -> Subbuffer<[MsdfGlyphInstance]> {
+    Buffer::new_slice::<MsdfGlyphInstance>(
+        allocator.clone(),
+        BufferCreateInfo {
+            usage: BufferUsage::VERTEX_BUFFER,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+            ..Default::default()
+        },
+        capacity,
+    )
+    .expect("aetna-vulkano: msdf glyph instance buffer alloc")
+}
+
+fn build_color_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
     let words = wgsl_to_spirv("stock::text", stock_wgsl::TEXT)
         .unwrap_or_else(|e| panic!("aetna-vulkano: text WGSL compile: {e}"));
     let module = unsafe {
@@ -552,7 +816,6 @@ fn build_text_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPip
     let fs = module
         .entry_point("fs_main")
         .expect("text.wgsl: missing fs_main");
-
     let stages = [
         PipelineShaderStageCreateInfo::new(vs),
         PipelineShaderStageCreateInfo::new(fs),
@@ -565,7 +828,7 @@ fn build_text_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPip
         ..Default::default()
     };
     let bind_instance = VertexInputBindingDescription {
-        stride: std::mem::size_of::<GlyphInstance>() as u32,
+        stride: std::mem::size_of::<ColorGlyphInstance>() as u32,
         input_rate: VertexInputRate::Instance { divisor: 1 },
         ..Default::default()
     };
@@ -578,17 +841,11 @@ fn build_text_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPip
     let vertex_input_state = VertexInputState::new()
         .binding(0, bind_vertex)
         .binding(1, bind_instance)
-        // location 0 — corner_uv
         .attribute(0, attr(0, 0, Format::R32G32_SFLOAT))
-        // location 1 — rect
         .attribute(1, attr(1, 0, Format::R32G32B32A32_SFLOAT))
-        // location 2 — uv
         .attribute(2, attr(1, 16, Format::R32G32B32A32_SFLOAT))
-        // location 3 — color
         .attribute(3, attr(1, 32, Format::R32G32B32A32_SFLOAT));
 
-    // Premultiplied-alpha blend: matches aetna_wgpu::text byte for byte.
-    // The fragment shader outputs `vec4(color.rgb * a, a)`.
     let premultiplied = AttachmentBlend {
         src_color_blend_factor: BlendFactor::One,
         dst_color_blend_factor: BlendFactor::OneMinusSrcAlpha,
@@ -625,5 +882,88 @@ fn build_text_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPip
             ..GraphicsPipelineCreateInfo::layout(layout)
         },
     )
-    .expect("aetna-vulkano: text GraphicsPipeline::new")
+    .expect("aetna-vulkano: text colour GraphicsPipeline::new")
+}
+
+fn build_msdf_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
+    let words = wgsl_to_spirv("stock::text_msdf", stock_wgsl::TEXT_MSDF)
+        .unwrap_or_else(|e| panic!("aetna-vulkano: text msdf WGSL compile: {e}"));
+    let module = unsafe {
+        ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&words))
+            .expect("aetna-vulkano: text msdf ShaderModule::new")
+    };
+    let vs = module
+        .entry_point("vs_main")
+        .expect("text_msdf.wgsl: missing vs_main");
+    let fs = module
+        .entry_point("fs_main")
+        .expect("text_msdf.wgsl: missing fs_main");
+    let stages = [
+        PipelineShaderStageCreateInfo::new(vs),
+        PipelineShaderStageCreateInfo::new(fs),
+    ];
+    let layout = crate::pipeline::build_shared_pipeline_layout(device.clone(), &stages);
+
+    let bind_vertex = VertexInputBindingDescription {
+        stride: (2 * std::mem::size_of::<f32>()) as u32,
+        input_rate: VertexInputRate::Vertex,
+        ..Default::default()
+    };
+    let bind_instance = VertexInputBindingDescription {
+        stride: std::mem::size_of::<MsdfGlyphInstance>() as u32,
+        input_rate: VertexInputRate::Instance { divisor: 1 },
+        ..Default::default()
+    };
+    let attr = |binding: u32, offset: u32, format: Format| VertexInputAttributeDescription {
+        binding,
+        offset,
+        format,
+        ..Default::default()
+    };
+    let vertex_input_state = VertexInputState::new()
+        .binding(0, bind_vertex)
+        .binding(1, bind_instance)
+        .attribute(0, attr(0, 0, Format::R32G32_SFLOAT))
+        .attribute(1, attr(1, 0, Format::R32G32B32A32_SFLOAT))
+        .attribute(2, attr(1, 16, Format::R32G32B32A32_SFLOAT))
+        .attribute(3, attr(1, 32, Format::R32G32B32A32_SFLOAT))
+        .attribute(4, attr(1, 48, Format::R32G32B32A32_SFLOAT));
+
+    let premultiplied = AttachmentBlend {
+        src_color_blend_factor: BlendFactor::One,
+        dst_color_blend_factor: BlendFactor::OneMinusSrcAlpha,
+        color_blend_op: BlendOp::Add,
+        src_alpha_blend_factor: BlendFactor::One,
+        dst_alpha_blend_factor: BlendFactor::OneMinusSrcAlpha,
+        alpha_blend_op: BlendOp::Add,
+    };
+
+    GraphicsPipeline::new(
+        device,
+        None,
+        GraphicsPipelineCreateInfo {
+            stages: stages.into_iter().collect(),
+            vertex_input_state: Some(vertex_input_state),
+            input_assembly_state: Some(InputAssemblyState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            }),
+            viewport_state: Some(ViewportState::default()),
+            rasterization_state: Some(RasterizationState::default()),
+            multisample_state: Some(MultisampleState::default()),
+            color_blend_state: Some(ColorBlendState::with_attachment_states(
+                subpass.num_color_attachments(),
+                ColorBlendAttachmentState {
+                    blend: Some(premultiplied),
+                    ..Default::default()
+                },
+            )),
+            dynamic_state: [DynamicState::Viewport, DynamicState::Scissor]
+                .into_iter()
+                .collect(),
+            subpass: Some(PipelineSubpassType::BeginRenderPass(subpass)),
+            ..GraphicsPipelineCreateInfo::layout(layout)
+        },
+    )
+    .expect("aetna-vulkano: text msdf GraphicsPipeline::new")
 }

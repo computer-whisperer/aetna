@@ -16,3 +16,5 @@ naga = { version = "23.1", features = ["wgsl-in", "spv-out"] }
 vulkano = "0.35"
 bytemuck = { version = "1.21", features = ["derive"] }
 smallvec = "1"
+cosmic-text = "0.12.1"
+ttf-parser = "0.25.1"

@@ -69,8 +69,10 @@ version = "0.1.0"
 dependencies = [
  "aetna-core",
  "bytemuck",
+ "cosmic-text",
  "naga",
  "smallvec",
+ "ttf-parser 0.25.1",
  "vulkano",
 ]
 
