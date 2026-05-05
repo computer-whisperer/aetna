@@ -122,6 +122,14 @@ pub struct El {
     /// same semantics.
     pub arrow_nav_siblings: bool,
 
+    /// Tooltip text. When set, the runtime synthesizes a hover-driven
+    /// tooltip layer anchored to this node — appearing after the
+    /// hover delay elapses, fading in with the standard envelope, and
+    /// dismissed when the pointer leaves or presses the node. The
+    /// trigger doesn't have to be focusable or keyed; the runtime
+    /// anchors the tooltip via the trigger's `computed_id`.
+    pub tooltip: Option<String>,
+
     /// Override the implicit `stock::rounded_rect` binding for this
     /// node's surface. The escape hatch a user crate uses to bind a
     /// custom shader (e.g. `liquid_glass`).
@@ -233,6 +241,7 @@ impl Default for El {
             clip: false,
             scrollable: false,
             arrow_nav_siblings: false,
+            tooltip: None,
             shader_override: None,
             layout_override: None,
             virtual_items: None,
@@ -409,6 +418,16 @@ impl El {
     /// [`Self::arrow_nav_siblings`].
     pub fn arrow_nav_siblings(mut self) -> Self {
         self.arrow_nav_siblings = true;
+        self
+    }
+
+    /// Attach a hover tooltip to this element. The runtime synthesizes
+    /// a floating tooltip layer when the pointer rests on the node for
+    /// the configured delay, anchors it below (or above, on viewport
+    /// collision) the trigger, and removes it on pointer-leave or
+    /// press. Layout-neutral — the trigger isn't resized.
+    pub fn tooltip(mut self, text: impl Into<String>) -> Self {
+        self.tooltip = Some(text.into());
         self
     }
 

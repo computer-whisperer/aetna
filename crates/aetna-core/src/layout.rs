@@ -150,6 +150,12 @@ pub struct LayoutCtx<'a> {
     /// [`crate::widgets::popover::popover`] to position children
     /// relative to elements outside their own subtree.
     pub rect_of_key: &'a dyn Fn(&str) -> Option<Rect>,
+    /// Look up a node's laid-out rect by its `computed_id`. Same
+    /// semantics as [`Self::rect_of_key`] but skips the `key →
+    /// computed_id` translation — useful for runtime-synthesized
+    /// layers (tooltips, focus rings) that anchor to a node the
+    /// library already knows by id.
+    pub rect_of_id: &'a dyn Fn(&str) -> Option<Rect>,
 }
 
 /// Lay out the whole tree into the given viewport rect.
@@ -286,11 +292,13 @@ fn layout_custom(node: &mut El, node_rect: Rect, layout_fn: LayoutFn, ui_state: 
         let id = key_index.get(key)?;
         computed_rects.get(id).copied()
     };
+    let rect_of_id = |id: &str| -> Option<Rect> { computed_rects.get(id).copied() };
     let rects = (layout_fn.0)(LayoutCtx {
         container: inner,
         children: &node.children,
         measure: &measure,
         rect_of_key: &rect_of_key,
+        rect_of_id: &rect_of_id,
     });
     assert_eq!(
         rects.len(),

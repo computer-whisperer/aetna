@@ -80,6 +80,11 @@ pub enum Anchor {
     /// isn't found (trigger scrolled out of view, removed by a
     /// rebuild, etc.) the panel falls back to the viewport origin.
     Key { key: String, side: Side },
+    /// Anchor by a node's `computed_id`. Used by runtime-synthesized
+    /// layers (tooltips) that already know the trigger by id and
+    /// don't need (or have) a key. Caller looks up via
+    /// `LayoutCtx::rect_of_id`.
+    Id { id: String, side: Side },
     /// Anchor at an absolute logical-pixel point. Used for context
     /// menus (anchor at right-click position) and any popup that
     /// follows a position the app already computed.
@@ -118,6 +123,12 @@ impl Anchor {
             side: Side::AtPoint,
         }
     }
+    pub fn below_id(id: impl Into<String>) -> Self {
+        Anchor::Id {
+            id: id.into(),
+            side: Side::Below,
+        }
+    }
 }
 
 /// Compute the laid-out rect for a popover panel of `panel_size`
@@ -151,6 +162,10 @@ pub fn anchor_rect(
     // pair. `Anchor::Point` becomes a zero-size rect at the point.
     let (anchor_rect, side) = match anchor {
         Anchor::Key { key, side } => match lookup(key) {
+            Some(r) => (r, *side),
+            None => return Rect::new(viewport.x, viewport.y, w, h),
+        },
+        Anchor::Id { id, side } => match lookup(id) {
             Some(r) => (r, *side),
             None => return Rect::new(viewport.x, viewport.y, w, h),
         },

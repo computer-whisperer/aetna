@@ -186,6 +186,30 @@ The widget builder remains "controlled" — `build()` reads
 `percent_for(node)` and projects that into the slider — but the value
 behind it now reconciles two sources without flicker.
 
+### 6.2 Tooltips
+
+`.tooltip(text)` attaches a hover-driven tooltip to any element. The
+runtime — not the app — owns the lifecycle: after the pointer rests
+on the trigger for ~500ms, the library synthesizes a styled tooltip
+layer at the El root, anchored below the trigger (flipping above on
+viewport collision). Pointer leaves the trigger, or the user clicks,
+the tooltip dismisses.
+
+```rust
+button("Save")
+    .key("save")
+    .tooltip("Save the current document (Ctrl+S)")
+```
+
+This is the only floating layer the library adds on the app's
+behalf. Modals and popovers stay app-owned (rendered explicitly
+from app state at the El root) — see `widgets/popover.rs` for the
+"no portal hoist" rationale. Tooltips fit a different rule because
+they are a pure read-out of hover state; the trigger doesn't need to
+be keyed or focusable, and the synthesized layer is hit-test
+transparent so it doesn't interfere with continued hover on the
+trigger underneath.
+
 ### 7. Hotkeys & key delivery
 
 Hotkeys are an app-level concern (`App::hotkeys()` returns `Vec<(KeyChord, String)>`); the library matches them in `key_down` ahead of focus activation. Widget builders that want a hotkey advertise the chord via the host's hotkey registry — there's no widget-private hotkey table.

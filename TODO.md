@@ -66,13 +66,17 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 
 ### Slice 4 — tooltips
 
-- [ ] **`.tooltip(text)` modifier on `El`.** Library-side runtime
-      synthesizes the tooltip layer from hover envelope state, anchored
-      to the trigger's rect, and appends it to the root tree after
-      `build()` returns. No author-side overlay composition. Slice
-      delivers the runtime synthesis, hover-delay timing, and the
-      `popover_panel`-styled visual. Volume doesn't need this; a real
-      desktop shell will.
+- [x] **`.tooltip(text)` modifier on `El`** in `tree/mod.rs`,
+      runtime synthesis in `crates/aetna-core/src/tooltip.rs`. The
+      runtime watches hover state, waits 500ms, then appends a
+      tooltip layer (anchored to the trigger by `computed_id` via
+      `LayoutCtx::rect_of_id`, a new lookup) to the El root. Pointer
+      leave or primary press dismisses; the dismissed flag clears on
+      hover-target change. Documented in `widget_kit.md` §6.2 and
+      demonstrated in `examples/src/bin/tooltip.rs`.
+      Out of scope (deferred): fade-in animation, focus-driven
+      tooltips for keyboard-only users, multi-line wrapping at a
+      max-width.
 
 ### Slice 5 — list-row primitive
 

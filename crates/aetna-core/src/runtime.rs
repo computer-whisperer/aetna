@@ -66,6 +66,7 @@ use crate::shader::ShaderHandle;
 use crate::state::{AnimationMode, UiState};
 use crate::text::atlas::RunStyle;
 use crate::theme::Theme;
+use crate::tooltip;
 use crate::tree::{Color, El, FontWeight, Rect, TextWrap};
 
 /// Reported back from each backend's `prepare(...)` per frame. The
@@ -198,7 +199,7 @@ impl RunnerCore {
             .last_tree
             .as_ref()
             .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        self.ui_state.hovered = hit;
+        self.ui_state.set_hovered(hit, Instant::now());
         // Drag: pointer moved while primary button is down → emit Drag
         // to the originally pressed target. Cursor escape from the
         // pressed node is the *normal* drag-extend case (e.g. text
@@ -217,7 +218,7 @@ impl RunnerCore {
 
     pub fn pointer_left(&mut self) {
         self.ui_state.pointer_pos = None;
-        self.ui_state.hovered = None;
+        self.ui_state.set_hovered(None, Instant::now());
         self.ui_state.pressed = None;
         self.ui_state.pressed_secondary = None;
     }
@@ -240,6 +241,9 @@ impl RunnerCore {
         if matches!(button, PointerButton::Primary) {
             self.ui_state.set_focus(hit.clone());
             self.ui_state.pressed = hit.clone();
+            // A press on the hovered node dismisses any tooltip for
+            // the rest of this hover session — matches native UIs.
+            self.ui_state.tooltip_dismissed_for_hover = true;
             let modifiers = self.ui_state.modifiers;
             hit.map(|p| UiEvent {
                 key: Some(p.key.clone()),
@@ -465,11 +469,20 @@ impl RunnerCore {
         timings: &mut PrepareTimings,
     ) -> (Vec<DrawOp>, bool) {
         let t0 = Instant::now();
+        // Tooltip synthesis runs before the real layout: assign ids
+        // first so we can find the hovered node by computed_id, then
+        // append a tooltip layer if one is due. The subsequent
+        // `layout::layout` call re-assigns (idempotently — same path
+        // shapes produce the same ids) and lays out the appended
+        // layer alongside everything else.
+        layout::assign_ids(root);
+        let tooltip_pending = tooltip::synthesize_tooltip(root, &self.ui_state, t0);
         layout::layout(root, &mut self.ui_state, viewport);
         self.ui_state.sync_focus_order(root);
         focus::sync_popover_focus(root, &mut self.ui_state);
         self.ui_state.apply_to_state();
-        let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now());
+        let needs_redraw =
+            self.ui_state.tick_visual_animations(root, Instant::now()) || tooltip_pending;
         self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
             (
                 (viewport.w * scale_factor).ceil().max(1.0) as u32,

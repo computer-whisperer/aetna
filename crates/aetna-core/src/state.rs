@@ -129,6 +129,14 @@ pub struct UiState {
     /// tree, in tree order. Diffed against the new tree to detect open
     /// / close transitions.
     pub(crate) popover_layer_ids: Vec<String>,
+    /// When the current `hovered` target started being hovered. `None`
+    /// when nothing is hovered or the pointer is outside the window.
+    /// Used by [`crate::tooltip`] to gate the hover-delay timer.
+    pub(crate) hover_started_at: Option<Instant>,
+    /// True when the user pressed (or clicked) the hovered node
+    /// during the current hover session. Suppresses the tooltip until
+    /// the pointer leaves and re-enters, matching native behavior.
+    pub(crate) tooltip_dismissed_for_hover: bool,
     /// Scroll offset (logical pixels) per scrollable node, keyed by
     /// `El::computed_id`. The layout pass reads this when positioning a
     /// scrollable's children and writes back the clamped value.
@@ -279,6 +287,24 @@ impl UiState {
             }
             self.focused = None;
         }
+    }
+
+    /// Update the hovered target. Maintains the hover-stable timer
+    /// the tooltip pass reads — resets to `now` whenever the hovered
+    /// node changes (or hover is gained), clears when it goes away.
+    /// Also clears the per-session "tooltip dismissed by press" flag
+    /// so the next hover starts fresh.
+    pub(crate) fn set_hovered(&mut self, new: Option<UiTarget>, now: Instant) {
+        let same = match (&self.hovered, &new) {
+            (Some(a), Some(b)) => a.node_id == b.node_id,
+            (None, None) => true,
+            _ => false,
+        };
+        if !same {
+            self.hover_started_at = new.as_ref().map(|_| now);
+            self.tooltip_dismissed_for_hover = false;
+        }
+        self.hovered = new;
     }
 
     pub fn set_focus(&mut self, target: Option<UiTarget>) {

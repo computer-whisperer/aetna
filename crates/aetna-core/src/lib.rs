@@ -122,6 +122,7 @@ pub mod style;
 pub mod text;
 pub mod theme;
 pub mod tokens;
+pub mod tooltip;
 pub mod tree;
 pub mod vector;
 pub mod widgets;
