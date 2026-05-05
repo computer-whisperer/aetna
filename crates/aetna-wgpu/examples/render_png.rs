@@ -5,9 +5,6 @@
 //! window. Produces a ground-truth PNG comparable to the SVG fallback;
 //! when they diverge it tells us where the SVG approximation is lying.
 //!
-//! v0.1: paints `stock::rounded_rect` only (cards + buttons + badges as
-//! shapes). Text and focus rings light up with the next slice.
-//!
 //! Usage: `cargo run -p aetna-wgpu --example render_png`
 //! Writes: `crates/aetna-wgpu/out/settings.wgpu.png`
 

@@ -5,8 +5,7 @@
 //! buttons via a registered custom WGSL shader (`gradient.wgsl`). The
 //! SVG fallback emits dashed-magenta placeholders for those buttons —
 //! that's the documented behavior for `ShaderHandle::Custom`. The wgpu
-//! PNG (written separately by `attempt_4_demo`'s `render_custom` bin)
-//! shows the actual gradient pixels.
+//! PNG shows the actual gradient pixels.
 //!
 //! Inspection of `out/custom_shader.shader_manifest.txt` is the point —
 //! it lists `custom::gradient` alongside the stock shaders, with the
@@ -19,7 +18,7 @@ use aetna_core::prelude::*;
 /// Helper: a button-shaped El whose surface paint is the registered
 /// `gradient` shader instead of stock::rounded_rect. The shader's vec_a
 /// slot is read as the top color, vec_b as the bottom, vec_c.x as the
-/// corner radius (see `attempts/attempt_4/shaders/gradient.wgsl`).
+/// corner radius.
 fn gradient_button(label: &str, top: Color, bottom: Color, radius: f32) -> El {
     button(label).text_color(tokens::TEXT_ON_SOLID_DARK).shader(
         ShaderBinding::custom("gradient")

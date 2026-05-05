@@ -1,4 +1,4 @@
-//! inline_runs — exercises the v0.6.1 attributed-text path.
+//! inline_runs — exercises the attributed-text path.
 //!
 //! One paragraph composed of styled inline runs (regular + bold +
 //! italic + colored + monospace) plus a hard break, all flowing through

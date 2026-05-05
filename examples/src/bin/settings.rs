@@ -2,9 +2,9 @@
 //! a winit window.
 //!
 //! This is a static fixture — no buttons are keyed and `on_event` is a
-//! no-op — so v0.2's hover/press visuals don't kick in. It exists as a
-//! readable parity baseline against `out/settings.wgpu.png`. The
-//! counter demo (`bin/counter.rs`) is the v0.2 interactive proof point.
+//! no-op — so the library's hover/press visuals don't kick in. It exists
+//! as a readable parity baseline against `out/settings.wgpu.png`. The
+//! counter demo (`bin/counter.rs`) is the interactive proof point.
 
 use aetna_core::prelude::*;
 

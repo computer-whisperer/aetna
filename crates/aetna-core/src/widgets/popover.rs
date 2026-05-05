@@ -39,13 +39,13 @@
 //! the popover is a sibling of main content, paints last, hit-tests
 //! first. See `widget_kit.md`.
 //!
-//! # Dogfood (v0.9)
+//! # Dogfood
 //!
 //! `popover` is a composition of [`crate::overlay`], a keyed
 //! [`crate::scrim`], and a custom-laid-out container that uses
-//! [`crate::layout::LayoutCtx::rect_of_key`] (the v0.9 kit growth) to
-//! position its panel relative to the trigger. An app crate can write
-//! an equivalent floating layer against the same public surface.
+//! [`crate::layout::LayoutCtx::rect_of_key`] to position its panel
+//! relative to the trigger. An app crate can write an equivalent
+//! floating layer against the same public surface.
 
 use std::panic::Location;
 

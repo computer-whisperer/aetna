@@ -1,4 +1,4 @@
-//! Text area — smoke test for the v0.8.4 multi-line widget.
+//! Text area — smoke test for the multi-line text widget.
 //!
 //! Single multi-line `text_area` plus a live preview of `(value,
 //! selection)`. Run interactively:

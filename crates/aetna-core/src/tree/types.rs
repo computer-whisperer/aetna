@@ -382,22 +382,22 @@ pub enum Kind {
     /// applied scroll offset, clips overflow, and routes wheel events
     /// to update the offset.
     Scroll,
-    /// v0.5 — vertically scrollable region whose children are produced
-    /// lazily by an author-supplied closure. Only rows whose rect
-    /// intersects the viewport are realized and laid out each frame.
-    /// Always clipping + scrollable.
+    /// Vertically scrollable region whose children are produced lazily
+    /// by an author-supplied closure. Only rows whose rect intersects
+    /// the viewport are realized and laid out each frame. Always
+    /// clipping + scrollable.
     VirtualList,
-    /// v0.6 — block whose direct children flow inline (text leaves +
-    /// embeds + hard breaks). Mirrors HTML's `<p>` / `<span>` shape:
-    /// children are heterogeneous Els and the layout pass shapes them
-    /// as one attributed line/wrap-block via cosmic-text. A child El
-    /// with `text` set contributes a styled text run; a child El
-    /// without text contributes an inline embed (v0.6.3); a
-    /// `Kind::HardBreak` forces a line break.
+    /// Block whose direct children flow inline (text leaves + embeds +
+    /// hard breaks). Mirrors HTML's `<p>` / `<span>` shape: children
+    /// are heterogeneous Els and the layout pass shapes them as one
+    /// attributed line/wrap-block via cosmic-text. A child El with
+    /// `text` set contributes a styled text run; a child El without
+    /// text contributes an inline embed; a `Kind::HardBreak` forces a
+    /// line break.
     Inlines,
-    /// v0.6 — forced line break inside a `Kind::Inlines` block. Mirrors
-    /// HTML's `<br>`. Outside an `Inlines` parent, lays out as a
-    /// zero-size leaf.
+    /// Forced line break inside a `Kind::Inlines` block. Mirrors HTML's
+    /// `<br>`. Outside an `Inlines` parent, lays out as a zero-size
+    /// leaf.
     HardBreak,
     /// Escape hatch for app-defined components.
     Custom(&'static str),

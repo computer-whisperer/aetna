@@ -392,10 +392,9 @@ pub trait App {
     /// registers them once at startup via
     /// `Runner::register_shader_with(name, wgsl, samples_backdrop)`.
     ///
-    /// Backends that don't yet support backdrop sampling (e.g.
-    /// vulkano in v0.7) skip entries with `samples_backdrop=true`;
-    /// any node bound to such a shader will draw nothing on those
-    /// backends rather than mis-render.
+    /// Backends that don't support backdrop sampling skip entries with
+    /// `samples_backdrop=true`; any node bound to such a shader will
+    /// draw nothing on those backends rather than mis-render.
     ///
     /// Default: no shaders.
     fn shaders(&self) -> Vec<AppShader> {

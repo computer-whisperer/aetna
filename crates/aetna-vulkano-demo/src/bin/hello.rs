@@ -1,15 +1,13 @@
-//! v5.3 step 3 — minimal vulkano + winit clear-color frame loop.
+//! Minimal vulkano + winit clear-color frame loop.
 //!
-//! No `aetna-vulkano::Runner` involvement yet; the only goal is to
-//! confirm vulkano 0.35 + winit 0.30 + the host's Vulkan loader bring
-//! up a window that paints `tokens::BG_APP` every frame. Once this
-//! works the platform-compat risks from the early v5.3 backend plan are
-//! off the table and step 4 can wire up the Runner skeleton.
+//! No `aetna-vulkano::Runner` involvement; the only goal is to confirm
+//! vulkano + winit + the host's Vulkan loader bring up a window that
+//! paints `tokens::BG_APP` every frame. Useful as a platform-compat
+//! smoke test independent of the rest of the backend.
 //!
 //! Structure mirrors the native winit host shape — same
 //! `ApplicationHandler` skeleton, same `gfx: Option<…>` lazy-init
-//! pattern — so the diff between backend harnesses stays small as
-//! v5.3 grows.
+//! pattern — so the diff between backend harnesses stays small.
 
 use std::sync::Arc;
 

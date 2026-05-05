@@ -1,4 +1,4 @@
-//! Popover — smoke test for the v0.9 anchored popover widget.
+//! Popover — smoke test for the anchored popover widget.
 //!
 //! Three patterns in one window:
 //!

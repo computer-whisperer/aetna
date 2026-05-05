@@ -1,4 +1,4 @@
-//! Animation primitives for v0.4.
+//! Animation primitives.
 //!
 //! Two motion models ship: spring physics (semi-implicit Euler) and
 //! cubic-bezier tweens. Springs are the default — they continue from
@@ -90,8 +90,8 @@ impl AnimChannels {
 ///
 /// The four preset constants are calibrated to feel competitive with
 /// modern native motion (UIKit defaults, Material 3 motion). Authors
-/// pick a preset; in v0.4 we don't expose ad-hoc tuning to keep the
-/// surface area small.
+/// pick a preset; ad-hoc tuning is intentionally not exposed to keep
+/// the surface area small.
 #[derive(Clone, Copy, Debug)]
 pub struct SpringConfig {
     pub mass: f32,

@@ -1,6 +1,6 @@
 //! Headless: render a small UI containing color emoji to PNG via wgpu.
 //!
-//! End-to-end smoke test for the v0.7 unified-RGBA atlas + NotoColorEmoji
+//! End-to-end smoke test for the unified-RGBA atlas + NotoColorEmoji
 //! bundle. The fixture mixes outline text (Roboto) with two color emoji
 //! glyphs; the PNG goes to `out/emoji.wgpu.png`. The program also walks
 //! the readback buffer and prints whether any pixel in the rendered

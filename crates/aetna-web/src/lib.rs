@@ -414,8 +414,7 @@ mod web_entry {
                 // surface doesn't support COPY_SRC (so multi-pass
                 // backdrop sampling is impossible), skip the backdrop
                 // shaders rather than registering them and rendering
-                // garbage — matches how the vulkano backend used to
-                // degrade before v0.7 step E.
+                // garbage.
                 for s in shaders {
                     if s.samples_backdrop && !want_copy_src {
                         continue;

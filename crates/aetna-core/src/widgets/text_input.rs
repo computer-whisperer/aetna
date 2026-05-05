@@ -27,13 +27,13 @@
 //! }
 //! ```
 //!
-//! # Dogfood note (v0.8.1 + v0.8.2)
+//! # Dogfood note
 //!
-//! Composes only the public widget-kit surface. v0.8.1 introduced the
-//! caret + character/IME path; v0.8.2 layers selection semantics on top
-//! of the same builder via [`TextSelection`] (a value type, not stored
-//! in `widget_state`), gaining drag-select, shift-extend, replace-on-
-//! type, and `Ctrl+A`. See `widget_kit.md`.
+//! Composes only the public widget-kit surface. The widget pairs a
+//! caret + character/IME path with selection semantics layered on top
+//! via [`TextSelection`] (a value type, not stored in `widget_state`),
+//! covering drag-select, shift-extend, replace-on-type, and `Ctrl+A`.
+//! See `widget_kit.md`.
 
 use std::panic::Location;
 
@@ -111,7 +111,7 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
     // Pixel offsets along the (single) shaped run. We measure substrings
     // independently here, which gives positions that are correct to
     // within sub-pixel kerning differences vs. the full-string layout.
-    // Good enough for caret + selection placement at v0.8 widths.
+    // Good enough for caret + selection placement at typical widths.
     let head_px = prefix_width(value, head);
     let lo_px = prefix_width(value, lo);
     let hi_px = prefix_width(value, hi);
@@ -1041,10 +1041,10 @@ mod tests {
 
     #[test]
     fn text_input_value_emits_a_single_glyph_run() {
-        // A regression test for the v0.8.2 kerning bug: splitting the
-        // value into [prefix, suffix] across the caret meant cosmic-
-        // text shaped each substring independently, breaking kerning
-        // and causing glyphs to "jump" left/right as the caret moved.
+        // Regression test against a kerning bug: splitting the value
+        // into [prefix, suffix] across the caret meant cosmic-text
+        // shaped each substring independently, breaking kerning and
+        // causing glyphs to "jump" left/right as the caret moved.
         // The fix renders the value as one shaped run.
         use crate::draw_ops::draw_ops;
         use crate::ir::DrawOp;

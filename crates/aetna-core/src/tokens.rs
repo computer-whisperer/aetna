@@ -12,9 +12,9 @@
 //! Naming intentionally shadows shadcn/Tailwind so LLM training transfers:
 //! `BG_CARD`, `TEXT_MUTED_FOREGROUND`, `RADIUS_LG`, `SPACE_MD`, etc.
 //!
-//! In attempt_4, [`Color`] tokens flow into shader uniforms at render
-//! time — the `token` metadata field stays attached so the shader manifest
-//! and tree dump can show "fill=bg-card" rather than rgba bytes.
+//! [`Color`] tokens flow into shader uniforms at render time — the
+//! `token` metadata field stays attached so the shader manifest and
+//! tree dump can show "fill=bg-card" rather than rgba bytes.
 
 use crate::tree::Color;
 

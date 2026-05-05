@@ -1,4 +1,4 @@
-//! Interactive scroll demo for v0.3 backfill.
+//! Interactive scroll demo.
 //!
 //! A list of selectable rows in a scroll viewport. The list's content
 //! is taller than the viewport — roll the wheel inside it to scroll.

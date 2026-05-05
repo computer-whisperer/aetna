@@ -13,7 +13,7 @@
 //! Override with `.width(Size::Fill(1.0))` to stretch — the label stays
 //! horizontally centered.
 //!
-//! # Dogfood note (v0.7.5)
+//! # Dogfood note
 //!
 //! This builder uses only the public widget-author surface — `Kind::Custom`
 //! for the inspector tag, `.focusable()` to opt into the focus ring,

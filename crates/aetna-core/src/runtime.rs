@@ -12,9 +12,8 @@
 //! Each backend's `Runner` *contains* a `RunnerCore` and forwards the
 //! interaction methods to it; only the GPU resources (pipelines,
 //! buffers, atlases) and the actual GPU upload + draw work stay
-//! per-backend. This is v5.4 step 2 of option B — share what's
-//! identical, no trait. Same shape as v5.4 step 1 (`crate::paint`),
-//! larger surface.
+//! per-backend. The split shares what's identical without a trait —
+//! same shape as `crate::paint`, larger surface.
 //!
 //! ## What this module does NOT own
 //!
@@ -32,10 +31,10 @@
 //!
 //! ## Why no `Painter` trait
 //!
-//! A v5.4 review considered extracting a `trait Painter { fn
-//! prepare(...); fn draw(...); fn set_scissor(...); }` so backends
-//! would share *one* abstraction surface. We declined: the only call
-//! sites left after this module + [`crate::paint`] are the two
+//! Extracting a `trait Painter { fn prepare(...); fn draw(...); fn
+//! set_scissor(...); }` was considered so backends would share *one*
+//! abstraction surface. We declined: the only call sites left after
+//! this module + [`crate::paint`] are the two
 //! `prepare()` GPU-upload tails and the two `draw()` walks, and both
 //! need backend-typed handles (`wgpu::RenderPass<'_>` /
 //! `AutoCommandBufferBuilder<...>`) that no trait can hide without
@@ -457,7 +456,7 @@ impl RunnerCore {
 
         let mut current: Option<(ShaderHandle, Option<PhysicalScissor>)> = None;
         let mut run_first: u32 = 0;
-        // v0.7: at most one snapshot per frame. Auto-inserted before
+        // At most one snapshot per frame. Auto-inserted before
         // the first paint that samples the backdrop.
         let mut snapshot_emitted = false;
 
@@ -630,8 +629,8 @@ impl RunnerCore {
                     );
                     current = None;
                     run_first = self.quad_scratch.len() as u32;
-                    // v0.7 caps at one snapshot per frame; an explicit
-                    // op only lands if the auto-emitter hasn't fired yet.
+                    // Cap at one snapshot per frame; an explicit op only
+                    // lands if the auto-emitter hasn't fired yet.
                     if !snapshot_emitted {
                         self.paint_items.push(PaintItem::BackdropSnapshot);
                         snapshot_emitted = true;
@@ -1049,6 +1048,6 @@ mod tests {
             .iter()
             .filter(|p| matches!(p, PaintItem::BackdropSnapshot))
             .count();
-        assert_eq!(snapshots, 1, "v0.7 caps backdrop depth at 1");
+        assert_eq!(snapshots, 1, "backdrop depth is capped at 1");
     }
 }

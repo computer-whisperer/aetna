@@ -1,12 +1,12 @@
-//! settings — moderately rich UI fixture, ported from attempt_3.
+//! settings — moderately rich UI fixture.
 //!
 //! Demonstrates: cards, button variants, badges, status colors, ghost
 //! buttons in a save-row pattern. Should look idiomatic to an LLM that
 //! has seen shadcn/Tailwind in training.
 //!
-//! In attempt_4 the visuals route through `stock::rounded_rect` and
-//! `stock::text_sdf` shaders. SVG output is approximate; the
-//! `shader_manifest.txt` artifact shows which shader paints what.
+//! Visuals route through `stock::rounded_rect` and `stock::text_sdf`
+//! shaders. SVG output is approximate; the `shader_manifest.txt`
+//! artifact shows which shader paints what.
 //!
 //! Produces a full agent bundle: SVG, tree dump, draw ops, shader
 //! manifest, lint. Run: `cargo run -p aetna-core --example settings`

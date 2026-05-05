@@ -1,14 +1,9 @@
-//! Counter — v5.3 step 5 acceptance fixture.
+//! Counter — vulkano backend acceptance fixture.
 //!
-//! Same App impl as `examples/src/bin/counter.rs` (the v0.2 wgpu
-//! proof point), driven through `aetna-vulkano` instead. Side-by-side
-//! with the wgpu version this is the visual A/B test for whether the
-//! `aetna-core` ↔ backend boundary actually holds across two GPU APIs.
-//!
-//! Step 5 only renders rect-shaped surfaces — text comes in step 6 —
-//! so the buttons appear as solid rounded rectangles without their
-//! "−" / "Reset" / "+" labels and the count number isn't visible.
-//! Hover, press, focus, and clicks still work end-to-end.
+//! Same App impl as `examples/src/bin/counter.rs`, driven through
+//! `aetna-vulkano` instead. Side-by-side with the wgpu version this is
+//! the visual A/B test for whether the `aetna-core` ↔ backend boundary
+//! actually holds across two GPU APIs.
 //!
 //! Duplicated rather than `pub use`-imported so this backend acceptance
 //! fixture remains self-contained.

@@ -1,5 +1,5 @@
-//! Smoke fixture for v5.3 step 7 — register a custom WGSL shader and
-//! render through it. Same gradient.wgsl that
+//! Smoke fixture — register a custom WGSL shader and render through it
+//! on the vulkano backend. Same gradient.wgsl that
 //! `aetna-wgpu/examples/render_custom.rs` exercises on the wgpu side, so
 //! you can A/B both backends against the same custom shader.
 //!

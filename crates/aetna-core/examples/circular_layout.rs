@@ -1,4 +1,4 @@
-//! circular_layout — exercises the v0.5 custom-layout escape hatch.
+//! circular_layout — exercises the custom-layout escape hatch.
 //!
 //! The fixture is a `stack(...)` whose direct children are arranged on
 //! the perimeter of a circle by the supplied [`LayoutFn`]. Stock paint

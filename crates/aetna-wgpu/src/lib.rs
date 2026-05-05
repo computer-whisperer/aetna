@@ -106,8 +106,8 @@ const INITIAL_INSTANCE_CAPACITY: usize = 256;
 ///
 /// All backend-agnostic state — interaction state, paint-stream scratch,
 /// per-stage layout/animation hooks — lives in `core: RunnerCore` and
-/// is shared with the vulkano backend (v5.4 step 2). The fields below
-/// are wgpu-specific resources only.
+/// is shared with the vulkano backend. The fields below are wgpu-specific
+/// resources only.
 pub struct Runner {
     target_format: wgpu::TextureFormat,
     sample_count: u32,
@@ -437,7 +437,7 @@ impl Runner {
     /// `binding=1` (`backdrop_smp`). See `docs/SHADER_VISION.md`
     /// §"Backdrop sampling architecture".
     ///
-    /// v0.7 caps backdrop depth at 1: glass-on-glass shows the same
+    /// Backdrop depth is capped at 1: glass-on-glass shows the same
     /// underlying content, not a second snapshot of the first glass
     /// composited.
     pub fn register_shader_with(
@@ -585,7 +585,7 @@ impl Runner {
         }
     }
 
-    // ---- v0.2 input plumbing ----
+    // ---- Input plumbing ----
     //
     // The host (winit-side) calls these from its event loop.
     // Coordinates are **logical pixels** — divide winit's physical

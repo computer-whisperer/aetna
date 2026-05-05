@@ -1,4 +1,4 @@
-//! Headless render of the counter fixture, exercising the v0.2
+//! Headless render of the counter fixture, exercising the
 //! state-driven build + simulated hover path.
 //!
 //! Drives the renderer like the windowed runner would: build → prepare
@@ -126,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // timing between the simulated pointer move and prepare.
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
 
-    // ---- v0.2 round-trip ----
+    // ---- build/prepare/pointer round-trip ----
     //
     // First prepare: lays out the tree and stashes it inside the
     // renderer so subsequent pointer events hit-test against real

@@ -4,8 +4,7 @@
 #
 # Usage:  ./tools/render <example-name> [-p <package>]
 #
-# Defaults: package=aetna-core. Pass `-p attempt_4` or `-p attempt_3`
-# to render archived attempts.
+# Defaults: package=aetna-core.
 #
 # Runs the cargo example (which writes the bundle artifacts), converts
 # the SVG to PNG, then prints the path of every artifact.
@@ -29,14 +28,8 @@ if [ -z "$example" ]; then
     echo "usage: $0 <example-name> [-p <package>]" >&2
     echo >&2
     echo "available examples in $pkg:" >&2
-    pkg_dir=""
     if [ -d "crates/$pkg" ]; then
-        pkg_dir="crates/$pkg"
-    elif [ -d "attempts/$pkg" ]; then
-        pkg_dir="attempts/$pkg"
-    fi
-    if [ -n "$pkg_dir" ]; then
-        find "$pkg_dir/examples" -maxdepth 1 -name '*.rs' -printf '  %f\n' 2>/dev/null \
+        find "crates/$pkg/examples" -maxdepth 1 -name '*.rs' -printf '  %f\n' 2>/dev/null \
         | sed 's/\.rs$//' >&2
     fi
     exit 2
@@ -44,10 +37,8 @@ fi
 
 if [ -d "crates/$pkg" ]; then
     pkg_dir="crates/$pkg"
-elif [ -d "attempts/$pkg" ]; then
-    pkg_dir="attempts/$pkg"
 else
-    echo "unknown package directory for '$pkg' (expected crates/$pkg or attempts/$pkg)" >&2
+    echo "unknown package directory for '$pkg' (expected crates/$pkg)" >&2
     exit 2
 fi
 
@@ -59,9 +50,7 @@ cargo run -q -p "$pkg" --example "$example" || exit $?
 out_dir="$pkg_dir/out"
 echo
 echo "artifacts:"
-# Current crates emit draw_ops.txt + shader_manifest.txt; older attempts
-# may emit commands.txt. List whichever exist.
-for ext in svg png tree.txt lint.txt draw_ops.txt shader_manifest.txt commands.txt; do
+for ext in svg png tree.txt lint.txt draw_ops.txt shader_manifest.txt; do
     f="$out_dir/$example.$ext"
     [ -f "$f" ] && echo "  $f"
 done

@@ -1,4 +1,4 @@
-//! Circular layout — interactive proof of the v0.5 second escape hatch.
+//! Circular layout — interactive proof of the custom-layout escape hatch.
 //!
 //! The compass-rose tree from `aetna-core/examples/circular_layout` runs
 //! through the reusable `aetna-winit-wgpu` host. Hover, press, and click route

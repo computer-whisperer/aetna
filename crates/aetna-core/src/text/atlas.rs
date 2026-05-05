@@ -79,14 +79,14 @@ const DEFAULT_SANS_FAMILY: &str = "Roboto";
 /// first line, x = 0).
 ///
 /// `color` lives on the glyph (rather than a single per-run uniform)
-/// so attributed paragraphs (v0.6 inline runs) emit one shaped output
-/// with per-glyph colors. Single-style text passes one color and every
+/// so attributed paragraphs (inline runs) emit one shaped output with
+/// per-glyph colors. Single-style text passes one color and every
 /// glyph receives the same value — no behaviour change.
 ///
 /// `run_index` identifies which input run produced this glyph
-/// (always `0` for single-style text). v0.6.4 selection / hit-test
-/// uses this to map glyphs back to runs (which carry link URLs,
-/// semantic tags, etc.).
+/// (always `0` for single-style text). Selection / hit-test uses this
+/// to map glyphs back to runs (which carry link URLs, semantic tags,
+/// etc.).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShapedGlyph {
     pub key: GlyphKey,
@@ -113,7 +113,7 @@ pub struct ShapedRun {
     pub glyphs: Vec<ShapedGlyph>,
 }
 
-/// v0.6 — per-run styling for attributed text shaping. Used by
+/// Per-run styling for attributed text shaping. Used by
 /// [`GlyphAtlas::shape_and_rasterize_runs`] to compose styled runs into
 /// one cosmic-text buffer with rich attributes.
 #[derive(Clone, Debug, PartialEq)]
@@ -413,11 +413,11 @@ impl GlyphAtlas {
         self.ensure(key);
     }
 
-    /// v0.6 — shape an attributed sequence of styled runs into one
-    /// cosmic-text buffer (so wrapping decisions cross run boundaries
-    /// like real prose) and emit a single [`ShapedRun`] whose glyphs
-    /// carry per-run color + `run_index`. Empty `runs` returns an
-    /// empty `ShapedRun`.
+    /// Shape an attributed sequence of styled runs into one cosmic-text
+    /// buffer (so wrapping decisions cross run boundaries like real
+    /// prose) and emit a single [`ShapedRun`] whose glyphs carry
+    /// per-run color + `run_index`. Empty `runs` returns an empty
+    /// [`ShapedRun`].
     ///
     /// `run_index` on each emitted [`ShapedGlyph`] points back into
     /// the input slice. The `metadata` field of cosmic-text's `Attrs`
@@ -761,9 +761,9 @@ fn merge_dirty(dirty: &mut Option<AtlasRect>, rect: AtlasRect) {
 
 fn glyph_key(cache_key: CacheKey) -> GlyphKey {
     // cosmic-text packs subpixel x/y bins into the cache key for
-    // subpixel positioning. v5.1 commit 1 quantizes to whole pixels
-    // (subpixel bins discarded) — backend can opt into subpixel later
-    // by widening the key.
+    // subpixel positioning. We quantize to whole pixels (subpixel bins
+    // discarded) — backend can opt into subpixel later by widening the
+    // key.
     GlyphKey {
         font: cache_key.font_id,
         glyph_id: cache_key.glyph_id,

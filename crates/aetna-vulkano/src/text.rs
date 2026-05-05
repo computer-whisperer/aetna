@@ -15,8 +15,8 @@
 //! `kind` so the runner knows which pipeline + page descriptor to bind.
 //!
 //! Atlas dirty uploads run inside a one-shot command buffer that is
-//! submitted + waited on inside `flush()`. v5.4 can revisit batching
-//! into the host's main draw command buffer if profiling demands it.
+//! submitted + waited on inside `flush()`. Batching into the host's
+//! main draw command buffer is a future option if profiling demands it.
 
 use std::ops::Range;
 use std::sync::Arc;

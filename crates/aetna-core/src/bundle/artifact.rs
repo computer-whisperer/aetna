@@ -12,10 +12,10 @@
 //! call so a single `cargo run --example X` produces everything needed
 //! to verify intent without further round-trips.
 //!
-//! In v0.1 the SVG output is approximate (stock shaders rendered best-
-//! effort, custom shaders as placeholder rects). When the wgpu renderer
-//! lands, that becomes the source of truth for visual fidelity; SVG
-//! stays as a layout/structure debugging artifact.
+//! The SVG output is approximate (stock shaders rendered best-effort,
+//! custom shaders as placeholder rects). The wgpu renderer is the source
+//! of truth for visual fidelity; SVG stays as a layout/structure
+//! debugging artifact.
 
 use std::path::Path;
 

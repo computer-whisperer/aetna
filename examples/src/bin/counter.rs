@@ -1,4 +1,4 @@
-//! Counter — the v0.2 proof point.
+//! Counter — the smallest interactive App-trait proof point.
 //!
 //! Validates the load-bearing claim from `docs/LIBRARY_VISION.md`: a real
 //! interactive native app fits in an [`App`] impl with a pure `build`

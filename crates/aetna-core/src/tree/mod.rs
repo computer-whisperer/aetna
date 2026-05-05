@@ -6,16 +6,16 @@
 //! `button`, `card`, …) and the layout primitives (`column`, `row`,
 //! `spacer`, `divider`).
 //!
-//! # What's different from attempt_3
+//! # Tree shape
 //!
-//! - Visual properties (`fill`, `stroke`, `radius`, `shadow`) are still
-//!   on `El` for the user-facing modifier API, but at render time they
-//!   resolve into [`crate::ir::DrawOp`]s bound to a stock shader
+//! - Visual properties (`fill`, `stroke`, `radius`, `shadow`) live on
+//!   `El` for the user-facing modifier API; at render time they resolve
+//!   into [`crate::ir::DrawOp`]s bound to a stock shader
 //!   ([`crate::shader::StockShader::RoundedRect`] for surfaces,
 //!   [`crate::shader::StockShader::Text`] for text).
 //! - [`El::shader_override`] lets a custom component bind its own shader
-//!   instead of `rounded_rect` for the surface paint. v0.1 ships no
-//!   custom shaders — this is the escape hatch the substrate must support.
+//!   instead of `rounded_rect` for the surface paint. The escape hatch
+//!   the substrate must support — see `docs/SHADER_VISION.md`.
 //!
 //! # Source mapping for free
 //!
@@ -112,12 +112,11 @@ pub struct El {
     pub scrollable: bool,
 
     /// Override the implicit `stock::rounded_rect` binding for this
-    /// node's surface. v0.1 ships no users of this; it's the escape
-    /// hatch a user crate uses to bind a custom shader (e.g.
-    /// `liquid_glass`).
+    /// node's surface. The escape hatch a user crate uses to bind a
+    /// custom shader (e.g. `liquid_glass`).
     pub shader_override: Option<ShaderBinding>,
 
-    /// v0.5 — second escape hatch: author-supplied layout function that
+    /// Second escape hatch: author-supplied layout function that
     /// positions this node's direct children. When set, the layout
     /// pass calls the function instead of running its column/row/
     /// overlay distribution. The library still recurses into each
@@ -126,10 +125,10 @@ pub struct El {
     /// contract.
     pub layout_override: Option<LayoutFn>,
 
-    /// v0.5 — virtualized list state. Set by [`crate::virtual_list`]
-    /// (and only on `Kind::VirtualList` nodes). The layout pass uses
-    /// this to realize only the rows whose rect intersects the
-    /// viewport. The node is automatically `scrollable` + `clip`.
+    /// Virtualized list state. Set by [`crate::virtual_list`] (and only
+    /// on `Kind::VirtualList` nodes). The layout pass uses this to
+    /// realize only the rows whose rect intersects the viewport. The
+    /// node is automatically `scrollable` + `clip`.
     pub virtual_items: Option<VirtualItems>,
 
     // Text
@@ -143,18 +142,17 @@ pub struct El {
     pub font_size: f32,
     pub font_weight: FontWeight,
     pub font_mono: bool,
-    /// v0.6 — italic styling. Author-set via [`Self::italic`]; honoured
-    /// when this El is a styled text leaf inside an [`Kind::Inlines`]
-    /// parent and (best-effort) on standalone text Els.
+    /// Italic styling. Author-set via [`Self::italic`]; honoured when
+    /// this El is a styled text leaf inside an [`Kind::Inlines`] parent
+    /// and (best-effort) on standalone text Els.
     pub text_italic: bool,
-    /// v0.6 — underline styling. Author-set via [`Self::underline`].
+    /// Underline styling. Author-set via [`Self::underline`].
     pub text_underline: bool,
-    /// v0.6 — strikethrough styling. Author-set via [`Self::strikethrough`].
+    /// Strikethrough styling. Author-set via [`Self::strikethrough`].
     pub text_strikethrough: bool,
-    /// v0.6 — link target URL. When set on a text leaf inside
-    /// [`Kind::Inlines`], the run renders as a link (themed) and runs
-    /// sharing a URL group together for hit-test. Author-set via
-    /// [`Self::link`].
+    /// Link target URL. When set on a text leaf inside [`Kind::Inlines`],
+    /// the run renders as a link (themed) and runs sharing a URL group
+    /// together for hit-test. Author-set via [`Self::link`].
     pub text_link: Option<String>,
 
     // Icon
@@ -435,12 +433,12 @@ impl El {
         self
     }
 
-    /// v0.5 — replace the column/row/overlay distribution for this
-    /// node with `f`. The function receives a [`LayoutCtx`] (container
-    /// rect, children, intrinsic-measure callback) and returns one
-    /// [`Rect`] per child in source order. The node itself must size
-    /// with `Fixed` or `Fill` on both axes — `Hug` is not supported
-    /// for custom-layout nodes in this slice.
+    /// Replace the column/row/overlay distribution for this node with
+    /// `f`. The function receives a [`LayoutCtx`] (container rect,
+    /// children, intrinsic-measure callback) and returns one [`Rect`]
+    /// per child in source order. The node itself must size with
+    /// `Fixed` or `Fill` on both axes — `Hug` is not supported for
+    /// custom-layout nodes.
     pub fn layout<F>(mut self, f: F) -> Self
     where
         F: Fn(LayoutCtx) -> Vec<Rect> + Send + Sync + 'static,
@@ -517,7 +515,7 @@ impl El {
         self
     }
 
-    /// v0.6 — italic styling for a text run. Honoured by the
+    /// Italic styling for a text run. Honoured by the
     /// [`Kind::Inlines`] layout pass and (best-effort) on standalone
     /// text Els.
     pub fn italic(mut self) -> Self {
@@ -525,22 +523,22 @@ impl El {
         self
     }
 
-    /// v0.6 — underline styling for a text run.
+    /// Underline styling for a text run.
     pub fn underline(mut self) -> Self {
         self.text_underline = true;
         self
     }
 
-    /// v0.6 — strikethrough styling for a text run.
+    /// Strikethrough styling for a text run.
     pub fn strikethrough(mut self) -> Self {
         self.text_strikethrough = true;
         self
     }
 
-    /// v0.6 — markdown-flavoured inline-code styling. Today this is
-    /// `mono`; later slices will add a tinted background per the
-    /// theme. Authors who want raw mono without code chrome should
-    /// use [`Self::mono`] instead.
+    /// Markdown-flavoured inline-code styling. Currently `mono`-styled;
+    /// a tinted background per the theme is a future addition. Authors
+    /// who want raw mono without code chrome should use [`Self::mono`]
+    /// instead.
     pub fn code(mut self) -> Self {
         self.text_role = TextRole::Code;
         self.font_size = crate::tokens::FONT_SM;
@@ -550,10 +548,9 @@ impl El {
         self
     }
 
-    /// v0.6 — mark this run as a link to `url`. Inside an
-    /// [`Kind::Inlines`] parent the run paints with a link-themed
-    /// color; runs sharing the same URL group together for hit-test
-    /// (v0.6.3).
+    /// Mark this run as a link to `url`. Inside an [`Kind::Inlines`]
+    /// parent the run paints with a link-themed color; runs sharing
+    /// the same URL group together for hit-test.
     pub fn link(mut self, url: impl Into<String>) -> Self {
         self.text_link = Some(url.into());
         self
@@ -687,22 +684,22 @@ where
         .scrollable()
 }
 
-/// v0.6 — block whose direct children flow inline (text leaves +
-/// embeds + hard breaks). Models HTML's `<p>` shape: heterogeneous
-/// children, attributed runs, optional inline embeds. Children are
-/// styled via the existing modifier chain (`.bold()`, `.italic()`,
-/// `.color(c)`, `.code()`, `.link(url)`, etc.) — there is no parallel
+/// Block whose direct children flow inline (text leaves + embeds +
+/// hard breaks). Models HTML's `<p>` shape: heterogeneous children,
+/// attributed runs, optional inline embeds. Children are styled via
+/// the existing modifier chain (`.bold()`, `.italic()`, `.color(c)`,
+/// `.code()`, `.link(url)`, etc.) — there is no parallel
 /// `RichText`/`TextRun` type.
 ///
 /// ```ignore
 /// text_runs([
-///     text("Aetna v0.6 — "),
+///     text("Aetna — "),
 ///     text("rich text").bold(),
 ///     text(" composition."),
 ///     hard_break(),
 ///     text("Custom shaders, custom layouts, "),
 ///     text("virtual_list").code(),
-///     text(" — and now inline runs."),
+///     text(" — and inline runs."),
 /// ])
 /// ```
 #[track_caller]
@@ -718,9 +715,8 @@ where
         .children(children)
 }
 
-/// v0.6 — forced line break inside a [`text_runs`] block. Mirrors
-/// HTML's `<br>`. Outside an `Inlines` parent, lays out as a
-/// zero-size leaf.
+/// Forced line break inside a [`text_runs`] block. Mirrors HTML's
+/// `<br>`. Outside an `Inlines` parent, lays out as a zero-size leaf.
 #[track_caller]
 pub fn hard_break() -> El {
     El::new(Kind::HardBreak)
@@ -729,7 +725,7 @@ pub fn hard_break() -> El {
         .height(Size::Hug)
 }
 
-/// v0.5 — virtualized vertical list of `count` rows of fixed height
+/// Virtualized vertical list of `count` rows of fixed height
 /// `row_height`. The library calls `build_row(i)` only for indices
 /// whose rect intersects the visible viewport, then lays them out at
 /// the scroll-shifted Y. Authors typically key rows with a stable

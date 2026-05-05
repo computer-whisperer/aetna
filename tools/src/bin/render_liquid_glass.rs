@@ -1,6 +1,6 @@
 //! Headless: render a liquid-glass card overlaid on a vivid background.
 //!
-//! End-to-end smoke test for v0.7's backdrop-sampling pipeline:
+//! End-to-end smoke test for the backdrop-sampling pipeline:
 //! `liquid_glass.wgsl` reads `@group(1)` `backdrop_tex`, blurs +
 //! refracts + tints, and the runner orchestrates Pass A → snapshot →
 //! Pass B around it.

@@ -1,4 +1,4 @@
-//! Scroll fixture for v0.3 scroll substrate.
+//! Scroll fixture for the scroll substrate.
 //!
 //! Demonstrates: a vertical scroll viewport with content taller than
 //! its visible rect, content clipped by the viewport, and a non-zero

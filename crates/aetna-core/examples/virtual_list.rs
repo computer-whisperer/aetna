@@ -1,4 +1,4 @@
-//! virtual_list — exercises the v0.5 virtualized list primitive.
+//! virtual_list — exercises the virtualized list primitive.
 //!
 //! 10,000 rows of fixed height in a small viewport, scrolled into the
 //! middle of the list. The bundle artifacts should show that only the

@@ -90,11 +90,11 @@ pub fn text_area(value: &str, selection: TextSelection) -> El {
     // text leaf's eventual wrap. In practice the discrepancy is fine
     // because `text_area` always wraps to the same `available_width`
     // the layout pass passes to the text leaf — which is the container
-    // content width. v0.8.4 doesn't have access to that width inside
-    // the builder, so the visual-line splits use NoWrap for the
-    // builder-time approximation. This means visible selection bands
-    // mirror BufferLine breaks (`\n`) but ignore soft wraps. Soft-wrap
-    // selection painting lands in v0.8.5.
+    // content width. The builder doesn't have access to that width, so
+    // the visual-line splits use NoWrap for the builder-time
+    // approximation. This means visible selection bands mirror
+    // BufferLine breaks (`\n`) but ignore soft wraps. Soft-wrap
+    // selection painting is a future improvement.
     let rects = selection_rects(
         value,
         lo,

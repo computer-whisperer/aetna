@@ -1,4 +1,4 @@
-//! Animated palette — v0.4 commit 2 proof point for `.animate()`.
+//! Animated palette — proof point for `.animate()`.
 //!
 //! A row of three colour swatches. Click one to select it: the picked
 //! swatch scales up (1.0 → 1.15), tints toward white (`fill` change),

@@ -12,8 +12,8 @@
 //! parent-id + dot + role-or-key + sibling-index. IDs survive minor
 //! refactors and are usable as patch / lint / draw-op targets.
 //!
-//! v5.0 step 7: rects no longer live on `El` — the layout pass writes
-//! them to `UiState`'s computed-rect side map, keyed by `computed_id`. The
+//! Rects do not live on `El` — the layout pass writes them to
+//! `UiState`'s computed-rect side map, keyed by `computed_id`. The
 //! container rect flows down the recursion as a parameter; child rects
 //! are computed per-axis and inserted into the side map. Scroll offsets
 //! likewise read/write `UiState`'s scroll-offset side map directly.
@@ -29,7 +29,7 @@ use crate::state::UiState;
 use crate::text::metrics as text_metrics;
 use crate::tree::*;
 
-/// v0.5 — second escape hatch: author-supplied layout function.
+/// Second escape hatch: author-supplied layout function.
 ///
 /// When set on a node via [`El::layout`], the layout pass calls this
 /// function instead of running the column/row/overlay distribution for
@@ -52,11 +52,11 @@ use crate::tree::*;
 /// - [`LayoutCtx::measure`] — call to get a child's intrinsic
 ///   `(width, height)` if you need it for sizing decisions.
 ///
-/// ## v0.5 scope limits (will panic)
+/// ## Scope limits (will panic)
 ///
 /// - The custom-layout node itself must size with [`Size::Fixed`] or
-///   [`Size::Fill`] on both axes. `Size::Hug` requires a separate
-///   intrinsic callback that's deferred.
+///   [`Size::Fill`] on both axes. `Size::Hug` would require a separate
+///   intrinsic callback and is not yet supported.
 /// - The returned `Vec<Rect>` length must equal `children.len()`.
 #[derive(Clone)]
 pub struct LayoutFn(pub Arc<dyn Fn(LayoutCtx) -> Vec<Rect> + Send + Sync>);
@@ -76,19 +76,19 @@ impl std::fmt::Debug for LayoutFn {
     }
 }
 
-/// v0.5 — virtualized list state attached to a [`Kind::VirtualList`]
-/// node. Holds the row count, fixed row height, and the closure that
-/// realizes a row by global index. Set via [`crate::virtual_list`];
-/// the layout pass calls `build_row(i)` only for indices whose rect
-/// intersects the viewport.
+/// Virtualized list state attached to a [`Kind::VirtualList`] node.
+/// Holds the row count, fixed row height, and the closure that realizes
+/// a row by global index. Set via [`crate::virtual_list`]; the layout
+/// pass calls `build_row(i)` only for indices whose rect intersects the
+/// viewport.
 ///
-/// ## Scope (v0.5 step 2)
+/// ## Current scope
 ///
 /// - **Fixed row height** — every row is `row_height` logical pixels
 ///   tall. Variable-height rows would require an estimated height +
-///   measure cache; deferred to a later slice.
-/// - **Vertical only** — the v0.5 fixture is feed/chat_log-shaped,
-///   which is always vertical. A horizontal variant can come later.
+///   measure cache; not yet supported.
+/// - **Vertical only** — feed/chat-log-shaped lists are the target.
+///   A horizontal variant can come later.
 /// - **No row pooling** — visible rows are rebuilt from scratch each
 ///   layout pass. Fine for thousands of items; if it bottlenecks we
 ///   add a pool keyed by stable row keys.
@@ -308,7 +308,7 @@ fn layout_custom(node: &mut El, node_rect: Rect, layout_fn: LayoutFn, ui_state: 
     }
 }
 
-/// v0.5 — virtualized list realization. Reads the stored scroll offset,
+/// Virtualized list realization. Reads the stored scroll offset,
 /// clamps it to the available range, computes the visible row index
 /// range, calls `build_row(i)` for each, and lays them out at the
 /// scroll-shifted Y positions. Replaces both the column distribution
@@ -558,14 +558,14 @@ pub fn intrinsic(c: &El) -> (f32, f32) {
 
 fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
     if c.layout_override.is_some() {
-        // v0.5: custom-layout nodes don't define an intrinsic. Authors
-        // must size them with `Fixed` or `Fill` on both axes; the
-        // returned (0.0, 0.0) is replaced by `apply_min` for `Fixed`
-        // and is unread for `Fill` (parent's distribution decides).
+        // Custom-layout nodes don't define an intrinsic. Authors must
+        // size them with `Fixed` or `Fill` on both axes; the returned
+        // (0.0, 0.0) is replaced by `apply_min` for `Fixed` and is
+        // unread for `Fill` (parent's distribution decides).
         if matches!(c.width, Size::Hug) || matches!(c.height, Size::Hug) {
             panic!(
                 "layout_override on {:?} requires Size::Fixed or Size::Fill on both axes; \
-                 Size::Hug is not supported for custom layouts in v0.5",
+                 Size::Hug is not supported for custom layouts",
                 c.computed_id,
             );
         }
@@ -823,9 +823,8 @@ mod tests {
     use super::*;
     use crate::state::UiState;
 
-    /// Regression test for attempt_3's broken `Justify::Center` (tripped
-    /// during the cold-session login fixture). When all children are
-    /// Hug-sized, Justify::Center should split the leftover space.
+    /// When all children are Hug-sized, `Justify::Center` should split
+    /// the leftover space symmetrically across the main axis.
     #[test]
     fn justify_center_centers_hug_children() {
         let mut root = column([crate::widgets::text::text("hi")

@@ -1,4 +1,4 @@
-//! Text input — smoke test for the v0.8.1/v0.8.2 widget.
+//! Text input — smoke test for the single-line text widget.
 //!
 //! Two single-line `text_input` fields plus a live preview of the
 //! current `(value, selection)` state for each. Run interactively:

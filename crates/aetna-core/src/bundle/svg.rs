@@ -1,9 +1,9 @@
 //! SVG fallback renderer — approximate visual output for the agent loop.
 //!
-//! In attempt_4 the production renderer is wgpu (landing v0.1+); SVG is
-//! demoted to an explicitly-approximate fixture renderer. It exists so
-//! the agent feedback loop (edit Rust → render → look at PNG + lint)
-//! keeps working while the wgpu renderer is brought up.
+//! The production renderer is wgpu; SVG is an explicitly-approximate
+//! fixture renderer. It exists so the agent feedback loop
+//! (edit Rust → render → look at PNG + lint) keeps working without
+//! standing up a GPU surface.
 //!
 //! Stock shaders are interpreted best-effort:
 //!

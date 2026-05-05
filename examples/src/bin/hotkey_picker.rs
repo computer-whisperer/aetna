@@ -1,4 +1,4 @@
-//! Hotkey-driven picker — v0.4 hotkey-system proof point.
+//! Hotkey-driven picker — proof point for the hotkey system.
 //!
 //! No `match e.key_press` in the app: every keyboard interaction goes
 //! through `App::hotkeys()` and the library routes the named chord

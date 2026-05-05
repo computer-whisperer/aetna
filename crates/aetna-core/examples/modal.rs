@@ -1,4 +1,4 @@
-//! Modal fixture for v0.3 overlay substrate.
+//! Modal fixture for the overlay substrate.
 //!
 //! Demonstrates: regular content behind an overlay, keyed dismiss scrim,
 //! centered blocking modal panel, and action buttons with normal keys.

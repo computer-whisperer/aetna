@@ -1,6 +1,6 @@
 //! `aetna-vulkano::Runner` — peer to `aetna_wgpu::Runner`.
 //!
-//! Through v5.4 + v0.7 the Runner owns:
+//! The Runner owns:
 //!
 //! - a clear-on-begin render pass and a load-on-begin render pass for
 //!   Pass B after a `BackdropSnapshot` boundary; both are

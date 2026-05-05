@@ -1,4 +1,4 @@
-//! Virtual list — interactive proof of the v0.5 virtualized list primitive.
+//! Virtual list — interactive proof of the virtualized list primitive.
 //!
 //! 100,000 rows in a fixed viewport. Wheel scrolls; only on-screen rows
 //! are realized each frame. Click any row to bump a centred counter

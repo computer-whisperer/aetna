@@ -1,6 +1,6 @@
 //! Headless: render the inline-runs fixture to PNG via wgpu.
 //!
-//! End-to-end smoke test for v0.6.1: the Inlines paragraph flows
+//! End-to-end smoke test for the inline-runs path: the Inlines paragraph flows
 //! through `DrawOp::AttributedText` → `TextRecorder::record_runs` →
 //! `GlyphAtlas::shape_and_rasterize_runs`, which shapes all runs in
 //! one cosmic-text buffer so wrapping decisions cross run boundaries.
