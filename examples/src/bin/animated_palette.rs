@@ -18,7 +18,7 @@
 //!
 //! Run: `cargo run -p aetna-examples --bin animated_palette`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 #[derive(Clone, Copy)]
 struct Swatch {
@@ -105,7 +105,7 @@ impl App for Palette {
 
     fn on_event(&mut self, event: UiEvent) {
         if matches!(event.kind, UiEventKind::Click | UiEventKind::Activate)
-            && let Some(k) = event.key.as_deref()
+            && let Some(k) = event.route()
             && let Some(rest) = k.strip_prefix("swatch-")
             && let Ok(i) = rest.parse::<usize>()
         {

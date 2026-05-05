@@ -7,8 +7,14 @@
 //! # Shape
 //!
 //! ```ignore
-//! struct App { color: String, color_open: bool }
-//! impl aetna_core::App for App {
+//! use aetna_core::prelude::*;
+//!
+//! struct Picker {
+//!     color: String,
+//!     color_open: bool,
+//! }
+//!
+//! impl App for Picker {
 //!     fn build(&self) -> El {
 //!         let trigger = select_trigger("color", &self.color);
 //!         let main = column([row([text("Color"), trigger])]);
@@ -22,6 +28,17 @@
 //!             ]));
 //!         }
 //!         stack(layers)
+//!     }
+//!
+//!     fn on_event(&mut self, event: UiEvent) {
+//!         if event.is_click_or_activate("color") {
+//!             self.color_open = !self.color_open;
+//!         } else if event.is_click_or_activate("color:dismiss") {
+//!             self.color_open = false;
+//!         } else if let Some(value) = event.route().and_then(|r| r.strip_prefix("color:option:")) {
+//!             self.color = value.to_string();
+//!             self.color_open = false;
+//!         }
 //!     }
 //! }
 //! ```

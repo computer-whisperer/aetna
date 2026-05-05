@@ -4,7 +4,7 @@
 //! centered blocking modal panel, and action buttons with normal keys.
 //! Run: `cargo run -p aetna-core --example modal`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 fn modal_fixture() -> El {
     stack([

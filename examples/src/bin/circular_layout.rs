@@ -10,7 +10,7 @@
 //!
 //! Run: `cargo run -p aetna-examples --bin circular_layout`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 struct Compass {
     clicks: u32,
@@ -83,7 +83,7 @@ impl App for Compass {
         if !matches!(event.kind, UiEventKind::Click | UiEventKind::Activate) {
             return;
         }
-        let key = match event.key.as_deref() {
+        let key = match event.route() {
             Some(k) => k,
             None => return,
         };

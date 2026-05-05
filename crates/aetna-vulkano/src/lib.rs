@@ -1,17 +1,19 @@
-//! aetna-vulkano — Vulkan backend for Aetna, peer to `aetna-wgpu`.
+//! Native Vulkan backend for custom Aetna hosts.
 //!
-//! v5.3 introduces this crate as the second GPU backend so the
-//! `aetna-core` ↔ backend boundary gets exercised against a wholly
-//! separate GPU API. The wgpu side stays unchanged.
+//! Most applications should implement `aetna_core::App` and run it
+//! through `aetna-winit-wgpu`. Use this crate directly when you are
+//! validating backend parity or embedding Aetna into an existing Vulkan
+//! renderer built on `vulkano`.
 //!
-//! Shape (per V5_3.md): mirror `aetna-wgpu`'s `Runner` surface, with
-//! GPU-typed parameters swapped for `vulkano`'s. WGSL stays the source
-//! shader language; `naga` transpiles to SPIR-V at pipeline build time.
+//! The public entry point is [`Runner`]. Its surface mirrors
+//! `aetna-wgpu::Runner` where the GPU APIs allow it: the host owns the
+//! window, device, queue, swapchain, and event loop; the runner owns
+//! Aetna interaction state, layout/draw-op preparation, Vulkan
+//! pipelines, text atlas images, and icon rendering.
 //!
-//! The runner owns text and vector-icon painters alongside the
-//! rect/custom-shader path. Text mirrors the core-side `GlyphAtlas` to
-//! per-page Vulkan images; icons use the shared SVG/vector mesh and
-//! stock icon-material shaders.
+//! WGSL remains the shader source language. This backend uses [`naga`]
+//! to compile WGSL to SPIR-V when building pipelines so custom shader
+//! fixtures can be shared with the `wgpu` backend.
 
 mod icon;
 mod instance;

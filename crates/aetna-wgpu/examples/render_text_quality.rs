@@ -13,7 +13,7 @@
 //!
 //! Writes `crates/aetna-wgpu/out/text_quality{.tag}.{scale}x.png`.
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 use aetna_fixtures::text_quality::{LOGICAL_HEIGHT, LOGICAL_WIDTH, fixture};
 use aetna_wgpu::{MsaaTarget, Runner};
 

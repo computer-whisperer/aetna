@@ -8,7 +8,7 @@
 //!
 //! Run: `cargo run -p aetna-examples --bin scroll_list`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 struct Picker {
     selected: Option<usize>,
@@ -56,8 +56,7 @@ impl App for Picker {
     }
 
     fn on_event(&mut self, event: UiEvent) {
-        if let (UiEventKind::Click | UiEventKind::Activate, Some(k)) =
-            (event.kind, event.key.as_deref())
+        if let (UiEventKind::Click | UiEventKind::Activate, Some(k)) = (event.kind, event.route())
             && let Some(rest) = k.strip_prefix("row-")
             && let Ok(i) = rest.parse::<usize>()
         {

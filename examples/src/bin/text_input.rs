@@ -24,8 +24,8 @@
 //!   into the other, or pasting text from another application.
 //! - Tab / Shift+Tab moves focus between fields.
 
+use aetna_core::prelude::*;
 use aetna_core::widgets::text_input;
-use aetna_core::*;
 
 struct Form {
     name: String,
@@ -73,7 +73,7 @@ impl App for Form {
 
     fn on_event(&mut self, event: UiEvent) {
         // Click on a regular button.
-        match (event.kind.clone(), event.key.as_deref()) {
+        match (event.kind, event.route()) {
             (UiEventKind::Click | UiEventKind::Activate, Some("clear")) => {
                 self.name.clear();
                 self.name_sel = TextSelection::default();
@@ -88,7 +88,7 @@ impl App for Form {
             _ => {}
         }
         // Route input events to the focused field by key.
-        match event.target.as_ref().map(|t| t.key.as_str()) {
+        match event.target_key() {
             Some("name") => apply_with_clipboard(
                 &mut self.name,
                 &mut self.name_sel,

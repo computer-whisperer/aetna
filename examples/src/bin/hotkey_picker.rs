@@ -14,7 +14,7 @@
 //!
 //! Run: `cargo run -p aetna-examples --bin hotkey_picker`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 const ITEMS: &[&str] = &[
     "build the renderer",
@@ -121,7 +121,7 @@ impl App for Picker {
     }
 
     fn on_event(&mut self, event: UiEvent) {
-        match (event.kind, event.key.as_deref()) {
+        match (event.kind, event.route()) {
             (UiEventKind::Hotkey, Some("move-down")) if self.selected + 1 < ITEMS.len() => {
                 self.selected += 1;
             }

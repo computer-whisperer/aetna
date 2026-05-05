@@ -3,7 +3,7 @@
 //! Usage: `cargo run -p aetna-wgpu --example render_liquid_glass_lab`
 //! Writes: `crates/aetna-wgpu/out/liquid_glass_lab.wgpu.png`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 use aetna_wgpu::{MsaaTarget, Runner};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,13 +72,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mapped_at_creation: false,
     });
 
-    let app = aetna_fixtures::LiquidGlassLab;
+    let mut app = aetna_fixtures::LiquidGlassLab;
     let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_theme(app.theme());
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
     for shader in app.shaders() {
         renderer.register_shader_with(&device, shader.name, shader.wgsl, shader.samples_backdrop);
     }
+    app.before_build();
     let mut tree = app.build();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 

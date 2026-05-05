@@ -25,8 +25,8 @@
 //!   the system clipboard, including multi-line text from any other
 //!   application.
 
+use aetna_core::prelude::*;
 use aetna_core::widgets::{text_area, text_input};
-use aetna_core::*;
 
 const PRESET: &str = "Multi-line text area.\n\
 Try Enter for new lines, Up/Down to move between them.\n\
@@ -71,7 +71,7 @@ impl App for Notes {
     }
 
     fn on_event(&mut self, event: UiEvent) {
-        match (event.kind.clone(), event.key.as_deref()) {
+        match (event.kind, event.route()) {
             (UiEventKind::Click | UiEventKind::Activate, Some("clear")) => {
                 self.body.clear();
                 self.body_sel = TextSelection::default();
@@ -84,7 +84,7 @@ impl App for Notes {
             }
             _ => {}
         }
-        if event.target.as_ref().map(|t| t.key.as_str()) == Some("body") {
+        if event.target_key() == Some("body") {
             apply_with_clipboard(
                 &mut self.body,
                 &mut self.body_sel,

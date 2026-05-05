@@ -1,6 +1,6 @@
 //! Focused liquid-glass material lab.
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 pub const LIQUID_GLASS_LAB_WGSL: &str = include_str!("../shaders/liquid_glass_lab.wgsl");
 pub const LIQUID_BACKDROP_LAB_WGSL: &str = include_str!("../shaders/liquid_backdrop_lab.wgsl");

@@ -1,55 +1,106 @@
-//! aetna-core — backend-agnostic UI library core.
+//! Backend-agnostic UI primitives for Aetna apps.
 //!
-//! See `SHADER_VISION.md` and `LIBRARY_VISION.md` at the repo root for
-//! the design intent. This crate is the verbatim port of v0.4
-//! (`attempts/attempt_4/src/`) into the canonical Aetna layout.
-//! Subsequent v5.0 commits split modules and move library bookkeeping
-//! off `El` into `UiState` side maps.
+//! Most applications should start with [`prelude`]:
+//!
+//! ```
+//! use aetna_core::prelude::*;
+//! ```
+//!
+//! The app-facing model is deliberately small:
+//!
+//! 1. Store your application state in a struct.
+//! 2. Implement [`App`] for that struct.
+//! 3. Refresh external state in [`App::before_build`] when needed.
+//! 4. Return a fresh [`El`] tree from [`App::build`].
+//! 5. Update your state from routed [`UiEvent`] values in
+//!    [`App::on_event`].
+//! 6. Run the app through a host crate such as `aetna-winit-wgpu`, or
+//!    integrate a backend runner directly in a custom host.
 //!
 //! # Quick example
 //!
 //! ```
-//! use aetna_core::*;
+//! use aetna_core::prelude::*;
 //!
-//! let mut ui = column([
-//!     h1("Hello"),
-//!     card("Greeting", [
-//!         text("Welcome to Aetna."),
-//!         row([spacer(), button("OK").primary()]),
-//!     ]),
-//! ]);
-//! let bundle = render_bundle(&mut ui, Rect::new(0.0, 0.0, 720.0, 400.0), Some("crates/aetna-core/src"));
+//! struct Counter {
+//!     value: i32,
+//! }
+//!
+//! impl App for Counter {
+//!     fn build(&self) -> El {
+//!         column([
+//!             h1(format!("{}", self.value)),
+//!             row([
+//!                 button("-").key("dec"),
+//!                 button("+").key("inc").primary(),
+//!             ])
+//!             .gap(tokens::SPACE_SM),
+//!         ])
+//!         .gap(tokens::SPACE_MD)
+//!         .padding(tokens::SPACE_LG)
+//!     }
+//!
+//!     fn on_event(&mut self, event: UiEvent) {
+//!         if event.is_click_or_activate("inc") {
+//!             self.value += 1;
+//!         } else if event.is_click_or_activate("dec") {
+//!             self.value -= 1;
+//!         }
+//!     }
+//! }
+//!
+//! let mut ui = Counter { value: 0 }.build();
+//! let bundle = render_bundle(&mut ui, Rect::new(0.0, 0.0, 720.0, 400.0), None);
 //! assert!(!bundle.svg.is_empty());
 //! ```
 //!
-//! # What's different from attempt_3
+//! # Running a native window
 //!
-//! - **Draw-op IR** ([`DrawOp`]) replaces `RenderCmd::Rect/Text`. Every
-//!   visual fact resolves to a `Quad` or `GlyphRun` bound to a
-//!   [`ShaderHandle`] and a [`UniformBlock`].
-//! - **Stock shaders** — the surface paint goes through
-//!   `stock::rounded_rect` (handles fill+stroke+radius+shadow plus the
-//!   focus ring as uniforms); text through `stock::text_sdf`.
-//!   Discipline: uniform proliferation, not shader proliferation.
-//! - **Custom shader override** ([`El::shader_override`]) — a user crate
-//!   can bind its own shader for the surface paint, replacing the
-//!   implicit `rounded_rect`. v0.1 ships no custom shaders, but the
-//!   substrate supports them.
-//! - **Bundle artifacts** add `draw_ops.txt` and `shader_manifest.txt`.
-//! - **`Justify::Center` / `Justify::End` fixed** (regression test in
-//!   `layout::tests`).
+//! In a desktop app, add `aetna-winit-wgpu` and pass your `App` to its
+//! host:
 //!
-//! # Pipeline
+//! ```ignore
+//! use aetna_core::prelude::*;
 //!
-//! ```text
-//! builders → El tree → render_bundle(viewport)
-//!                          ├─ layout      (mutates computed rects + ids)
-//!                          ├─ draw_ops    (resolve to DrawOp IR)
-//!                          ├─ inspect     (tree dump text)
-//!                          ├─ manifest    (shader manifest + draw-op text)
-//!                          ├─ lint        (with provenance)
-//!                          └─ svg         (approximate fallback)
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let viewport = Rect::new(0.0, 0.0, 720.0, 480.0);
+//!     aetna_winit_wgpu::run("Counter", viewport, Counter { value: 0 })
+//! }
 //! ```
+//!
+//! Use `aetna-wgpu::Runner` directly only when you are writing your own
+//! host or embedding Aetna into an existing render loop.
+//!
+//! # Public API layers
+//!
+//! - [`prelude`] is the app and widget author surface an LLM should
+//!   usually import.
+//! - [`widgets`] contains controlled widget builders and their helper
+//!   modules, such as `text_input::apply_event` and
+//!   `slider::normalized_from_event`.
+//! - [`bundle`] is for headless artifacts, tests, and design review.
+//! - [`ir`], [`paint`], [`runtime`], text atlas, vector mesh, and MSDF
+//!   modules are advanced backend/diagnostic surfaces. They are public
+//!   because sibling backend crates use them, but ordinary app code
+//!   should not start there.
+//!
+//! # Rendering pipeline
+//!
+//! Builders produce an [`El`] tree. Layout writes rects into [`UiState`].
+//! The draw-op pass resolves visual facts into backend-neutral [`DrawOp`]
+//! values. Backend runners turn those draw ops into GPU resources and
+//! route pointer/keyboard input back into [`UiEvent`] values.
+//!
+//! The stock surface shader is `rounded_rect`; text, icons, custom
+//! shaders, and backdrop-sampling materials all flow through the same
+//! tree and event model.
+//!
+//! # Packaged examples
+//!
+//! The crate ships runnable examples under `examples/`. After adding
+//! the crate from crates.io, inspect or run these for focused usage
+//! patterns: `settings`, `scroll_list`, `virtual_list`, `inline_runs`,
+//! `modal`, `custom_shader`, and `circular_layout`.
 
 pub mod anim;
 pub mod bundle;
@@ -63,6 +114,7 @@ pub mod icons;
 pub mod ir;
 pub mod layout;
 pub mod paint;
+pub mod prelude;
 pub mod runtime;
 pub mod shader;
 pub mod state;

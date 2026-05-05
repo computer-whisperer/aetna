@@ -2,7 +2,7 @@
 //! order Tab/Shift-Tab walks. Ancestors with `clip` shrink the visible
 //! rect so a focusable that's been scrolled out of view is dropped.
 //!
-//! Reads computed rects from [`UiState::computed_rects`]; the tree
+//! Reads computed rects from `UiState`'s layout side map; the tree
 //! itself only carries identity (`computed_id`).
 
 use crate::event::UiTarget;

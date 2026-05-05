@@ -8,13 +8,20 @@
 //! profile + clipboard helpers) to the same kit primitives.
 //!
 //! ```ignore
-//! struct App { body: String, body_sel: TextSelection }
-//! impl aetna_core::App for App {
+//! use aetna_core::prelude::*;
+//!
+//! struct Notes {
+//!     body: String,
+//!     body_sel: TextSelection,
+//! }
+//!
+//! impl App for Notes {
 //!     fn build(&self) -> El {
 //!         text_area(&self.body, self.body_sel).key("body")
 //!     }
+//!
 //!     fn on_event(&mut self, e: UiEvent) {
-//!         if e.target.as_ref().map(|t| t.key.as_str()) == Some("body") {
+//!         if e.target_key() == Some("body") {
 //!             text_area::apply_event(&mut self.body, &mut self.body_sel, &e);
 //!         }
 //!     }

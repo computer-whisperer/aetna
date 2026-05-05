@@ -26,8 +26,8 @@
 //! The atlas is unified RGBA — every glyph is stored as 4 bytes/pixel
 //! so the same shader path handles outline text and color glyphs.
 //! Three color formats flow through swash and the
-//! [`Content::Color`](swash::scale::image::Content) arm of
-//! [`expand_to_rgba`]:
+//! [`Content::Color`](swash::scale::image::Content) arm of the internal
+//! RGBA expansion path:
 //!
 //! - **CBDT/CBLC** (Google's color bitmap format) — used by the bundled
 //!   `NotoColorEmoji`. swash decodes the embedded PNG/raw bitmaps and

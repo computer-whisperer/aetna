@@ -38,7 +38,7 @@
 //! # API
 //!
 //! Each enabled font exposes a `pub static FOO: &[u8]` constant. The
-//! convenience function [`default_fonts`] returns the byte slices for
+//! [`DEFAULT_FONTS`] returns the byte slices for
 //! every font that is enabled in the current build, in priority order
 //! (sans-serif text first, then symbol/emoji fallbacks, then CJK if
 //! opted in). aetna-core's atlas loads them all into its `fontdb` so

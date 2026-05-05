@@ -4,9 +4,11 @@
 //! widget is a pure visual + identity carrier:
 //!
 //! ```ignore
+//! use aetna_core::prelude::*;
+//!
 //! // App holds `volume_pct: u32` (0..=150).
 //! let normalized = volume_pct as f32 / 150.0;
-//! slider(normalized).key(format!("volume:{node_id}"))
+//! slider(normalized, tokens::PRIMARY).key(format!("volume:{node_id}"))
 //! ```
 //!
 //! Pointer routing is delivered to `App::on_event` as `Click`,
@@ -15,14 +17,14 @@
 //! the slider's `target.rect` to a normalized value:
 //!
 //! ```ignore
-//! UiEventKind::PointerDown | UiEventKind::Drag => {
-//!     if event.key.as_deref() == Some(my_key) {
-//!         let normalized = slider::normalized_from_event(
-//!             event.target.unwrap().rect,
-//!             event.pointer.unwrap().0,
-//!         );
-//!         self.volume_pct = (normalized * 150.0).round() as u32;
-//!     }
+//! if matches!(event.kind, UiEventKind::PointerDown | UiEventKind::Drag)
+//!     && event.route() == Some(my_key)
+//! {
+//!     let normalized = slider::normalized_from_event(
+//!         event.target_rect().unwrap(),
+//!         event.pointer_x().unwrap(),
+//!     );
+//!     self.volume_pct = (normalized * 150.0).round() as u32;
 //! }
 //! ```
 //!

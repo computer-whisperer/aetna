@@ -7,7 +7,10 @@
 //!
 //! Run: `cargo run -p aetna-core --example scroll_list`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
+// This headless artifact example seeds scroll state before rendering,
+// so it opts into the explicit advanced state/layout modules.
+use aetna_core::{UiState, layout};
 
 fn scroll_list_fixture() -> El {
     let rows: Vec<El> = (0..20)

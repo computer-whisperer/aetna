@@ -14,7 +14,7 @@
 //!
 //! Run: `cargo run -p aetna-core --example custom_shader`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 /// Helper: a button-shaped El whose surface paint is the registered
 /// `gradient` shader instead of stock::rounded_rect. The shader's vec_a

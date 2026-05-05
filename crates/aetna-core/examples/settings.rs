@@ -11,7 +11,7 @@
 //! Produces a full agent bundle: SVG, tree dump, draw ops, shader
 //! manifest, lint. Run: `cargo run -p aetna-core --example settings`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 fn settings() -> El {
     column([

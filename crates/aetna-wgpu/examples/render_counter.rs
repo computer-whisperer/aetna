@@ -13,7 +13,7 @@
 //! Usage: `cargo run -p aetna-wgpu --example render_counter`
 //! Writes: `crates/aetna-wgpu/out/counter.wgpu.png`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 use aetna_wgpu::{MsaaTarget, Runner};
 
 struct Counter {
@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let height = (logical_height as f32 * scale_factor) as u32;
     let viewport = Rect::new(0.0, 0.0, logical_width as f32, logical_height as f32);
 
-    let app = Counter { value: 5 };
+    let mut app = Counter { value: 5 };
 
     // ---- wgpu boilerplate (same as render_png) ----
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -132,6 +132,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // renderer so subsequent pointer events hit-test against real
     // geometry. No GPU draw yet — we discard this pass's instance data
     // by just not running encode/submit.
+    app.before_build();
     let mut tree1 = app.build();
     renderer.prepare(&device, &queue, &mut tree1, viewport, scale_factor);
 
@@ -148,6 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Second prepare: fresh tree, library applies the now-set hover
     // key automatically, draw_ops emits the lightened fill.
+    app.before_build();
     let mut tree2 = app.build();
     renderer.prepare(&device, &queue, &mut tree2, viewport, scale_factor);
 

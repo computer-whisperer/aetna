@@ -106,8 +106,8 @@ pub struct El {
     pub clip: bool,
 
     /// This element is a vertical scroll viewport. The layout pass reads
-    /// the offset from [`crate::state::UiState::scroll_offsets`] keyed
-    /// by `computed_id`, clamps it to `[0, content_h - viewport_h]`, and
+    /// the offset from `UiState`'s scroll-offset side map keyed by
+    /// `computed_id`, clamps it to `[0, content_h - viewport_h]`, and
     /// writes the clamped value back. Set automatically by [`scroll`].
     pub scrollable: bool,
 
@@ -664,7 +664,7 @@ where
         .axis(Axis::Overlay)
 }
 
-/// A vertical scroll viewport. Children stack as in [`column`]; the
+/// A vertical scroll viewport. Children stack as in [`column()`]; the
 /// container clips overflow and translates content by the current scroll
 /// offset. Wheel events over the viewport update the offset.
 ///

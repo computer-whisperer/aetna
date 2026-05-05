@@ -13,10 +13,10 @@
 //! refactors and are usable as patch / lint / draw-op targets.
 //!
 //! v5.0 step 7: rects no longer live on `El` — the layout pass writes
-//! them to [`UiState::computed_rects`], keyed by `computed_id`. The
+//! them to `UiState`'s computed-rect side map, keyed by `computed_id`. The
 //! container rect flows down the recursion as a parameter; child rects
 //! are computed per-axis and inserted into the side map. Scroll offsets
-//! likewise read/write [`UiState::scroll_offsets`] directly.
+//! likewise read/write `UiState`'s scroll-offset side map directly.
 //!
 //! Text intrinsic measurement uses bundled-font glyph advances via
 //! [`crate::text::metrics`]. Full shaping still belongs to the renderer
@@ -37,7 +37,7 @@ use crate::tree::*;
 /// child (in source order), positioned anywhere inside the container.
 /// The library still recurses into each child (so descendants lay out
 /// normally) and still drives hit-test, focus, animation, scroll —
-/// those all read from [`UiState::computed_rects`], which receives the
+/// those all read from `UiState`'s computed-rect side map, which receives the
 /// rects this function produces.
 ///
 /// Authors typically write a free `fn(LayoutCtx) -> Vec<Rect>` and

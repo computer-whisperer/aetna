@@ -6,7 +6,7 @@
 //! are hit-test targets — author intent is "I tagged it with a key, it's
 //! interactive."
 //!
-//! Reads computed rects from [`UiState::computed_rects`] (populated by
+//! Reads computed rects from `UiState`'s layout side map (populated by
 //! the layout pass) — the tree carries identity (`computed_id`) but not
 //! geometry. Paint-time transforms (`translate`, `scale`) are then
 //! applied in the same way `draw_ops::push_node` applies them, so

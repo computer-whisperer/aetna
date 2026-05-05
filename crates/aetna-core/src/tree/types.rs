@@ -393,9 +393,9 @@ pub enum Kind {
     /// as one attributed line/wrap-block via cosmic-text. A child El
     /// with `text` set contributes a styled text run; a child El
     /// without text contributes an inline embed (v0.6.3); a
-    /// [`HardBreak`] forces a line break.
+    /// `Kind::HardBreak` forces a line break.
     Inlines,
-    /// v0.6 — forced line break inside an [`Inlines`] block. Mirrors
+    /// v0.6 — forced line break inside a `Kind::Inlines` block. Mirrors
     /// HTML's `<br>`. Outside an `Inlines` parent, lays out as a
     /// zero-size leaf.
     HardBreak,
@@ -456,9 +456,9 @@ impl SurfaceRole {
 
 /// Interaction state, applied as a render-time visual delta.
 ///
-/// Set with [`super::El::with_state`]. State styling lives in the renderer;
-/// the tree carries the state flag and the renderer applies the appropriate
-/// transformation when emitting draw ops.
+/// Written by the runtime's interaction tracker. State styling lives in
+/// draw-op resolution; the tree carries the resolved state flag and the
+/// renderer applies the appropriate transformation when emitting draw ops.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum InteractionState {
     #[default]

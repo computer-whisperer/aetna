@@ -575,6 +575,7 @@ mod web_entry {
                         .texture
                         .create_view(&wgpu::TextureViewDescriptor::default());
 
+                    self.app.before_build();
                     let mut tree = self.app.build();
                     gfx.renderer.set_theme(self.app.theme());
                     gfx.renderer.set_hotkeys(self.app.hotkeys());

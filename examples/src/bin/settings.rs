@@ -6,7 +6,7 @@
 //! readable parity baseline against `out/settings.wgpu.png`. The
 //! counter demo (`bin/counter.rs`) is the v0.2 interactive proof point.
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 struct Settings;
 

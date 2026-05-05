@@ -11,7 +11,7 @@
 //!
 //! Usage: `cargo run -p aetna-wgpu --example render_inline_runs`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 use aetna_wgpu::{MsaaTarget, Runner};
 
 fn fixture() -> El {

@@ -3,7 +3,7 @@
 //! Usage: `cargo run -p aetna-wgpu --example render_icon_gallery [--material=relief|glass]`
 //! Writes: `crates/aetna-wgpu/out/icon_gallery[.relief|.glass].wgpu.png`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 use aetna_wgpu::{MsaaTarget, Runner};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -7,7 +7,7 @@
 //! across crate directories. See `crates/aetna-core/shaders/`.
 //!
 //! Sits between the grammar layer (where users write `.fill(c)`,
-//! `.radius(r)`) and the renderer (which consumes typed [`DrawOp`]s with
+//! `.radius(r)`) and the renderer (which consumes typed [`crate::DrawOp`]s with
 //! shader handles + uniform blocks).
 //!
 //! The grammar layer doesn't speak shaders directly. The renderer walks

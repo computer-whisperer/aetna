@@ -7,11 +7,13 @@
 //! This module owns the *types* — what the host's `App::on_event` sees
 //! and what gets registered as hotkeys. The state machine that produces
 //! these events lives in [`crate::state::UiState`]; the routing helpers
-//! live in [`crate::hit_test`] and [`crate::focus`].
+//! live in [`mod@crate::hit_test`] and [`mod@crate::focus`].
 //!
 //! # The model
 //!
 //! ```ignore
+//! use aetna_core::prelude::*;
+//!
 //! struct Counter { value: i32 }
 //!
 //! impl App for Counter {
@@ -25,10 +27,10 @@
 //!         ])
 //!     }
 //!     fn on_event(&mut self, e: UiEvent) {
-//!         match (e.kind, e.key.as_deref()) {
-//!             (UiEventKind::Click, Some("inc")) => self.value += 1,
-//!             (UiEventKind::Click, Some("dec")) => self.value -= 1,
-//!             _ => {}
+//!         if e.is_click_or_activate("inc") {
+//!             self.value += 1;
+//!         } else if e.is_click_or_activate("dec") {
+//!             self.value -= 1;
 //!         }
 //!     }
 //! }
@@ -188,12 +190,35 @@ fn key_eq(a: &UiKey, b: &UiKey) -> bool {
 }
 
 /// User-facing event. The host's [`App::on_event`] receives one of these
-/// per discrete user action (click, key press, scroll wheel tick, …).
+/// per discrete user action.
+///
+/// Most apps should not destructure every field. Prefer the convenience
+/// methods on this type for common routes:
+///
+/// ```
+/// # use aetna_core::prelude::*;
+/// # struct Counter { value: i32 }
+/// # impl App for Counter {
+/// # fn build(&self) -> El { button("+").key("inc") }
+/// fn on_event(&mut self, event: UiEvent) {
+///     if event.is_click_or_activate("inc") {
+///         self.value += 1;
+///     }
+/// }
+/// # }
+/// ```
 #[derive(Clone, Debug)]
 pub struct UiEvent {
-    /// The `key` of the node the event was routed to, if any. `None`
-    /// for events with no specific target (e.g., a window-level
-    /// keyboard event).
+    /// Route string for this event.
+    ///
+    /// For pointer and focus events, this is the [`El::key`][crate::El::key]
+    /// of the target node. For [`UiEventKind::Hotkey`], this is the
+    /// action name returned from [`App::hotkeys`]. For window-level
+    /// keyboard events such as Escape with no focused target, this is
+    /// `None`.
+    ///
+    /// Prefer [`Self::route`] or [`Self::is_click_or_activate`] in app
+    /// code. The field remains public for direct pattern matching.
     pub key: Option<String>,
     /// Full hit-test target for events routed to a concrete element.
     pub target: Option<UiTarget>,
@@ -212,9 +237,70 @@ pub struct UiEvent {
     pub kind: UiEventKind,
 }
 
+impl UiEvent {
+    /// Route string for this event, if any.
+    ///
+    /// For pointer/focus events this is the target element key. For
+    /// hotkeys this is the registered action name.
+    pub fn route(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    /// Target element key, if this event was routed to an element.
+    ///
+    /// Unlike [`Self::route`], this returns `None` for app-level
+    /// hotkey actions because those do not have a concrete element
+    /// target.
+    pub fn target_key(&self) -> Option<&str> {
+        self.target.as_ref().map(|t| t.key.as_str())
+    }
+
+    /// True when this event's route equals `key`.
+    pub fn is_route(&self, key: &str) -> bool {
+        self.route() == Some(key)
+    }
+
+    /// True for a primary click or keyboard activation on `key`.
+    ///
+    /// This is the most common button/menu route in app code.
+    pub fn is_click_or_activate(&self, key: &str) -> bool {
+        matches!(self.kind, UiEventKind::Click | UiEventKind::Activate) && self.is_route(key)
+    }
+
+    /// True for a registered hotkey action name.
+    pub fn is_hotkey(&self, action: &str) -> bool {
+        self.kind == UiEventKind::Hotkey && self.is_route(action)
+    }
+
+    /// Pointer position in logical pixels, if this event carries one.
+    pub fn pointer_pos(&self) -> Option<(f32, f32)> {
+        self.pointer
+    }
+
+    /// Pointer x coordinate in logical pixels, if this event carries one.
+    pub fn pointer_x(&self) -> Option<f32> {
+        self.pointer.map(|(x, _)| x)
+    }
+
+    /// Pointer y coordinate in logical pixels, if this event carries one.
+    pub fn pointer_y(&self) -> Option<f32> {
+        self.pointer.map(|(_, y)| y)
+    }
+
+    /// Rectangle of the routed target from the last layout pass.
+    pub fn target_rect(&self) -> Option<Rect> {
+        self.target.as_ref().map(|t| t.rect)
+    }
+
+    /// OS-composed text payload for [`UiEventKind::TextInput`].
+    pub fn text(&self) -> Option<&str> {
+        self.text.as_deref()
+    }
+}
+
 /// What kind of event happened. Open enum — start with click, grow
 /// non-breakingly as the library does.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiEventKind {
     /// Primary-button pointer down + up landed on the same node.
     Click,
@@ -265,8 +351,21 @@ pub enum UiEventKind {
 /// The application contract. Implement this on your state struct and
 /// pass it to a host runner (e.g., `aetna_winit_wgpu::run`).
 pub trait App {
+    /// Refresh app-owned external state immediately before a frame is
+    /// built.
+    ///
+    /// Hosts call this once per redraw before [`Self::build`]. Use it
+    /// for polling an external source, reconciling optimistic local
+    /// state with a backend snapshot, or advancing host-owned live data
+    /// that should be visible in the next tree. Keep expensive work
+    /// outside the render loop; this hook is still on the frame path.
+    ///
+    /// Default: no-op.
+    fn before_build(&mut self) {}
+
     /// Project current state into a scene tree. Called whenever the
-    /// host requests a redraw. Pure — no I/O, no mutation.
+    /// host requests a redraw, after [`Self::before_build`]. Prefer to
+    /// keep this pure: read current state and return a fresh tree.
     fn build(&self) -> El;
 
     /// Update state in response to a routed event. Default: no-op.

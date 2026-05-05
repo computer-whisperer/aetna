@@ -1,42 +1,50 @@
-//! Aetna — wgpu backend.
+//! `wgpu` backend for custom Aetna hosts.
 //!
-//! v5.0 scope: paints `stock::rounded_rect` quads + `stock::text_sdf`
-//! glyph runs (focus indicators ride on each focusable node's own quad
-//! via `focus_color`/`focus_width` uniforms — no separate ring pipeline),
-//! plus user-registered custom shaders that share the rounded_rect
-//! vertex layout. This is the
-//! verbatim port of v0.4's `wgpu_render.rs`, refactored into the
-//! `aetna-wgpu` crate with the file split called out in `V5.md`.
+//! Most applications should implement `aetna_core::App` and run it
+//! through `aetna-winit-wgpu`. Use this crate directly when you are
+//! writing your own host, embedding Aetna into an existing `wgpu`
+//! renderer, or producing headless render artifacts.
 //!
-//! The single public entry point today is [`Runner`], which owns:
-//! - GPU resources (pipelines, buffers, glyph atlas)
-//! - [`UiState`](aetna_core::state::UiState) (hover/press/focus/scroll
-//!   trackers, hotkey registry, animation state)
-//! - The last laid-out tree (so events arriving between frames hit-test
-//!   against current geometry)
+//! The public entry point is [`Runner`]. It owns:
 //!
-//! A later commit splits `Runner` into a paint half (`WgpuPainter`) and
-//! a state half (still called `Runner`) that composes a painter — the
-//! split mirrors the eventual `aetna-vulkano` shape.
+//! - GPU resources: pipelines, buffers, text atlas, and icon atlas.
+//! - Backend-agnostic interaction state shared through
+//!   `aetna_core::runtime::RunnerCore`.
+//! - A snapshot of the last laid-out tree so input arriving between
+//!   frames hit-tests against the geometry the user can see.
 //!
-//! # Insert-into-pass integration
+//! # Custom host loop
 //!
-//! The runner does not own the device, queue, swapchain, or render
-//! pass. The host creates all of those, configures the surface, begins
-//! the encoder + pass, and calls [`Runner::draw`] to record draws into
-//! the pass. The host then ends the pass, submits, and presents.
+//! The runner does not own the device, queue, swapchain, window, or
+//! event loop. A host creates those resources, forwards input into the
+//! runner, builds a fresh `El` tree, prepares GPU buffers, and renders:
 //!
 //! ```ignore
-//! let mut ui = Runner::new(&device, &queue, surface_format);
-//! ui.register_shader(&device, "gradient", include_str!("gradient.wgsl"));
-//! // per frame:
-//! ui.prepare(&device, &queue, &mut tree, viewport, scale_factor);
-//! ui.draw(&mut pass);
+//! use aetna_core::prelude::*;
+//! use aetna_wgpu::Runner;
+//!
+//! let mut runner = Runner::new(&device, &queue, surface_format);
+//! runner.set_surface_size(surface_width, surface_height);
+//!
+//! // Per frame:
+//! app.before_build();
+//! let mut tree = app.build();
+//! runner.set_hotkeys(app.hotkeys());
+//! runner.set_theme(app.theme());
+//! runner.prepare(&device, &queue, &mut tree, viewport, scale_factor);
+//! runner.render(&device, &mut encoder, target_texture, target_view, None, load_op);
 //! ```
 //!
-//! `prepare` is split from `draw` so all `queue.write_buffer` calls and
-//! glyph atlas page uploads happen before the render pass begins,
-//! matching wgpu's expected order.
+//! `prepare` is split from `render`/`draw` so all `queue.write_buffer`
+//! calls and atlas uploads happen before render-pass recording, matching
+//! `wgpu`'s expected order. Coordinates passed to pointer methods are
+//! logical pixels; render targets are physical pixels, so pass the host
+//! scale factor to [`Runner::prepare`].
+//!
+//! Use [`Runner::render`] when Aetna should own pass boundaries. This is
+//! required for backdrop-sampling custom shaders. Use [`Runner::draw`]
+//! only when you are already inside a host-owned pass and do not need
+//! backdrop sampling.
 //!
 //! # Custom shaders
 //!

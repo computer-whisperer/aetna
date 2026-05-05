@@ -11,7 +11,7 @@
 //! Usage: `cargo run -p aetna-wgpu --example render_png`
 //! Writes: `crates/aetna-wgpu/out/settings.wgpu.png`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 use aetna_wgpu::{MsaaTarget, Runner};
 
 fn settings() -> El {

@@ -7,7 +7,7 @@
 //! Run:
 //! `cargo run -p aetna-core --example polish_calibration`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 fn main() -> std::io::Result<()> {
     let mut root = polish_calibration();

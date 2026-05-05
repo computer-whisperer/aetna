@@ -2,7 +2,7 @@
 //!
 //! Run: `cargo run -p aetna-examples --bin liquid_glass_lab`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     aetna_winit_wgpu::run(

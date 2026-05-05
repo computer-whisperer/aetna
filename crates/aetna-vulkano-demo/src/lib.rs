@@ -337,6 +337,7 @@ impl<A: App> ApplicationHandler for Host<A> {
                     rcx.recreate_swapchain = false;
                 }
 
+                self.app.before_build();
                 let mut tree = self.app.build();
                 rcx.runner.set_theme(self.app.theme());
                 rcx.runner.set_hotkeys(self.app.hotkeys());

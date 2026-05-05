@@ -21,7 +21,7 @@
 //!
 //! Usage: `cargo run -p aetna-wgpu --example render_liquid_glass`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 use aetna_fixtures::showcase::LIQUID_GLASS_WGSL;
 use aetna_wgpu::{MsaaTarget, Runner};
 

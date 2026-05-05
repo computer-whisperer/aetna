@@ -74,11 +74,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build a Showcase with the Glass section selected, then drive it
     // through the same shader-registration path the windowed harness
     // uses (`App::shaders()` → `register_shader_with`).
-    let app = Showcase::with_section(Section::Glass);
+    let mut app = Showcase::with_section(Section::Glass);
     for s in app.shaders() {
         renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
     }
 
+    app.before_build();
     let mut tree = app.build();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 

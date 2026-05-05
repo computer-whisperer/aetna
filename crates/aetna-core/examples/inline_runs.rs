@@ -13,7 +13,7 @@
 //!
 //! Run: `cargo run -p aetna-core --example inline_runs`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 fn fixture() -> El {
     column([

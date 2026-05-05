@@ -7,7 +7,10 @@
 //!
 //! Run: `cargo run -p aetna-core --example virtual_list`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
+// This headless artifact example seeds scroll state before rendering,
+// so it opts into the explicit advanced state/layout modules.
+use aetna_core::{UiState, layout};
 
 const ROW_COUNT: usize = 10_000;
 const ROW_HEIGHT: f32 = 44.0;

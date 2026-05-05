@@ -10,7 +10,7 @@
 //! - light and dark backgrounds (gamma blending tells on each),
 //! - a small Unicode + math sample so fallback faces participate.
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 pub const SIZES: &[f32] = &[10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 32.0, 48.0, 64.0];
 pub const SAMPLE: &str = "The quick brown fox jumps over the lazy dog 0123456789";

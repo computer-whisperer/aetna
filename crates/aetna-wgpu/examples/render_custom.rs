@@ -15,7 +15,7 @@
 //! Usage: `cargo run -p aetna-wgpu --example render_custom`
 //! Writes: `crates/aetna-wgpu/out/custom_shader.wgpu.png`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 use aetna_wgpu::{MsaaTarget, Runner};
 
 const GRADIENT_WGSL: &str = include_str!("../../aetna-core/shaders/gradient.wgsl");

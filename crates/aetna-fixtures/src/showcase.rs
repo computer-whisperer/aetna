@@ -22,7 +22,7 @@
 //! minimal-fixture proof points alongside this. Showcase is the
 //! integration view; they're the unit views.
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 pub const LIQUID_GLASS_WGSL: &str = include_str!("../shaders/liquid_glass.wgsl");
 
@@ -161,7 +161,7 @@ impl App for Showcase {
     fn on_event(&mut self, event: UiEvent) {
         // Sidebar navigation: any click on a `nav-*` key switches sections.
         if matches!(event.kind, UiEventKind::Click | UiEventKind::Activate)
-            && let Some(k) = event.key.as_deref()
+            && let Some(k) = event.route()
             && let Some(target) = nav_section(k)
         {
             self.section = target;

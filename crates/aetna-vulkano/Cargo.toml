@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 description = "Aetna — Vulkan backend via vulkano + naga WGSL→SPIR-V (native only)"
 license = "MIT OR Apache-2.0"
+readme = "README.md"
+documentation = "https://docs.rs/aetna-vulkano"
 
 [lib]
 path = "src/lib.rs"

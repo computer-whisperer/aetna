@@ -6,7 +6,7 @@
 //!
 //! Run: `cargo run -p aetna-examples --bin virtual_list`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 const ROW_COUNT: usize = 100_000;
 const ROW_HEIGHT: f32 = 44.0;
@@ -59,7 +59,7 @@ impl App for VirtualListApp {
         if !matches!(event.kind, UiEventKind::Click | UiEventKind::Activate) {
             return;
         }
-        let key = match event.key.as_deref() {
+        let key = match event.route() {
             Some(k) => k,
             None => return,
         };

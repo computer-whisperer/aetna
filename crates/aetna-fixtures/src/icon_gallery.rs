@@ -1,6 +1,6 @@
 //! Shared icon gallery fixture for windowed and headless wgpu demos.
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 pub struct IconGallery;
 

@@ -26,7 +26,7 @@
 //!   corner — the menu clamps inside the viewport.
 //! - Press and hold the help icon to show a tooltip.
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 #[derive(Default)]
 struct Demo {
@@ -113,7 +113,7 @@ impl App for Demo {
 
     fn on_event(&mut self, event: UiEvent) {
         // Open / close logic.
-        match (&event.kind, event.key.as_deref()) {
+        match (&event.kind, event.route()) {
             (UiEventKind::Click | UiEventKind::Activate, Some("color-trigger")) => {
                 self.color_open = !self.color_open;
                 self.edit_open = false;
@@ -127,7 +127,7 @@ impl App for Demo {
                 return;
             }
             (UiEventKind::SecondaryClick, Some("ctx-region")) => {
-                if let Some(p) = event.pointer {
+                if let Some(p) = event.pointer_pos() {
                     self.context_point = p;
                     self.context_open = true;
                     self.color_open = false;
@@ -153,7 +153,7 @@ impl App for Demo {
         // Dismiss-via-outside-click: any popover's scrim emits
         // `{key}:dismiss` on click.
         if matches!(event.kind, UiEventKind::Click)
-            && let Some(key) = event.key.as_deref()
+            && let Some(key) = event.route()
         {
             match key {
                 "color-menu:dismiss" => {
@@ -174,7 +174,7 @@ impl App for Demo {
 
         // Item routing — menu items carry `{family}:{label}` keys.
         if matches!(event.kind, UiEventKind::Click | UiEventKind::Activate)
-            && let Some(key) = event.key.as_deref()
+            && let Some(key) = event.route()
         {
             if let Some(c) = key.strip_prefix("color:") {
                 self.color = COLORS.iter().copied().find(|x| *x == c);

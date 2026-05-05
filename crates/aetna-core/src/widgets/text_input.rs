@@ -7,13 +7,20 @@
 //! folded back via [`apply_event`] in the app's `on_event` handler.
 //!
 //! ```ignore
-//! struct App { name: String, name_sel: TextSelection }
-//! impl aetna_core::App for App {
+//! use aetna_core::prelude::*;
+//!
+//! struct Form {
+//!     name: String,
+//!     name_sel: TextSelection,
+//! }
+//!
+//! impl App for Form {
 //!     fn build(&self) -> El {
 //!         text_input(&self.name, self.name_sel).key("name")
 //!     }
+//!
 //!     fn on_event(&mut self, e: UiEvent) {
-//!         if e.target.as_ref().map(|t| t.key.as_str()) == Some("name") {
+//!         if e.target_key() == Some("name") {
 //!             text_input::apply_event(&mut self.name, &mut self.name_sel, &e);
 //!         }
 //!     }

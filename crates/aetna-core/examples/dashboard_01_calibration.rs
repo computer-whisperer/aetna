@@ -4,7 +4,7 @@
 //! Run:
 //! `cargo run -p aetna-core --example dashboard_01_calibration`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 fn main() -> std::io::Result<()> {
     let mut root = dashboard_01_calibration();

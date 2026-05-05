@@ -2,9 +2,9 @@
 //!
 //! Holds pointer position, hovered/pressed/focused targets, per-node
 //! scroll offsets, the app-supplied hotkey registry, and the per-(node,
-//! prop) animation map. The host doesn't touch this directly; the
-//! renderer ([`crate::Runner`] in `aetna-wgpu`) owns one and routes
-//! input events through it.
+//! prop) animation map. The host doesn't touch this directly; backend
+//! runners such as `aetna_wgpu::Runner` own one and route input events
+//! through it.
 //!
 //! Visual delta application: if `pressed` is set, that node renders with
 //! `state = Press`. Otherwise, if `hovered` is set, that node renders
@@ -224,7 +224,8 @@ impl UiState {
         self.scroll_offsets.get(id).copied().unwrap_or(0.0)
     }
 
-    /// Rebuild [`Self::node_states`] from the current focused/pressed/
+    /// Rebuild the resolved per-node interaction-state side map from
+    /// the current focused/pressed/
     /// hovered trackers. Press wins over Focus on a same-node match;
     /// Hover only applies when the node isn't already pressed or focused.
     pub fn apply_to_state(&mut self) {
@@ -320,7 +321,7 @@ impl UiState {
     /// forward to `now`, and write back: app-driven props mutate the
     /// El's `fill` / `text_color` / `stroke` / `opacity` / `translate` /
     /// `scale` (so the next rebuild reads the eased value); state
-    /// envelopes are written to [`Self::envelopes`] for `draw_ops` to
+    /// envelopes are written to the envelope side map for `draw_ops` to
     /// modulate visuals from.
     ///
     /// Returns `true` if any animation is still in flight; the host

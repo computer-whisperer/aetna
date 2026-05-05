@@ -14,7 +14,7 @@
 //!
 //! Run: `cargo run -p aetna-core --example circular_layout`
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 fn circular(ctx: LayoutCtx) -> Vec<Rect> {
     let cx = ctx.container.x + ctx.container.w * 0.5;

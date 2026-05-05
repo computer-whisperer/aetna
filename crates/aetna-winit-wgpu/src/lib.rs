@@ -1,22 +1,40 @@
-//! aetna-winit-wgpu — optional desktop host for running [`App`]s
-//! against a real wgpu surface in a winit window.
+//! Optional desktop host for running [`App`]s against a real `wgpu`
+//! surface in a `winit` window.
 //!
-//! Shape: the host owns the event loop, the device/queue, the
-//! swapchain, and the render pass. The library (`aetna-core` +
-//! `aetna-wgpu`) owns layout, paint, hit-testing, and visual state.
-//! The user owns the [`App`] — its state, its build closure, its event
-//! handler.
+//! Most native apps should use this crate instead of calling
+//! `aetna-wgpu` directly:
+//!
+//! ```ignore
+//! use aetna_core::prelude::*;
+//!
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let viewport = Rect::new(0.0, 0.0, 720.0, 480.0);
+//!     aetna_winit_wgpu::run("My Aetna App", viewport, MyApp::default())
+//! }
+//! ```
+//!
+//! The host owns the event loop, window, device/queue, surface
+//! configuration, render pass boundaries, input mapping, IME forwarding,
+//! and animation redraw cadence. Your code owns the [`App`]: application
+//! state, [`App::build`], [`App::on_event`], optional hotkeys, custom
+//! shaders, and theme.
 //!
 //! [`run`] takes an [`App`] and runs an event loop that:
 //!
-//! - Calls `app.build()` on every redraw, applying current hover/press
+//! - Calls [`App::build`] on every redraw, applying current hover/press
 //!   visuals automatically before paint.
 //! - Routes `winit` pointer events through the renderer's hit-tester
-//!   and dispatches `Click` events back via `App::on_event`.
+//!   and dispatches events back via [`App::on_event`].
 //! - Routes Tab/Shift-Tab through focus traversal and Enter/Space/Escape
 //!   through keyboard events.
 //! - Requests a redraw whenever interaction state changes (mouse move,
 //!   button down/up) so hover/press visuals are immediate.
+//!
+//! Use [`run_with_config`] when a simple app needs a fixed redraw
+//! cadence for external live state such as meters. Put per-frame state
+//! refresh in [`App::before_build`]. For fully custom render-loop
+//! integration, bypass this crate and call `aetna_wgpu::Runner`
+//! directly.
 
 use std::{
     sync::Arc,
@@ -68,18 +86,24 @@ impl HostConfig {
     }
 }
 
-/// Extension point for apps that use the host crate.
+/// Compatibility extension point for apps that use this host crate.
 ///
-/// `aetna-core::App` stays the renderer-facing contract. This trait is
-/// only for the optional winit host, where desktop apps may want to
-/// refresh external state immediately before a frame is built.
+/// New apps should prefer [`App::before_build`]. This trait remains for
+/// code that wants to name a winit-host-specific app type while still
+/// using the same core lifecycle.
 pub trait WinitWgpuApp: App {
-    fn before_build(&mut self) {}
+    fn before_build(&mut self) {
+        App::before_build(self);
+    }
 }
 
 struct BasicApp<A>(A);
 
 impl<A: App> App for BasicApp<A> {
+    fn before_build(&mut self) {
+        self.0.before_build();
+    }
+
     fn build(&self) -> aetna_core::El {
         self.0.build()
     }
@@ -130,10 +154,10 @@ pub fn run_with_config<A: App + 'static>(
     run_host(title, viewport, BasicApp(app), config)
 }
 
-/// Run a windowed app with host hooks and host-specific configuration.
+/// Run a windowed app with host-specific configuration.
 ///
-/// Use this when the app wants `before_build` in addition to host
-/// configuration.
+/// Prefer [`run_with_config`] for new apps; [`App::before_build`] is
+/// available there as well.
 pub fn run_host_app_with_config<A: WinitWgpuApp + 'static>(
     title: &'static str,
     viewport: Rect,
@@ -143,7 +167,10 @@ pub fn run_host_app_with_config<A: WinitWgpuApp + 'static>(
     run_host(title, viewport, app, config)
 }
 
-/// Run a windowed app with host hooks and default host configuration.
+/// Run a windowed app with default host configuration.
+///
+/// Prefer [`run`] for new apps; [`App::before_build`] is available
+/// there as well.
 pub fn run_host_app<A: WinitWgpuApp + 'static>(
     title: &'static str,
     viewport: Rect,
@@ -444,7 +471,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             .texture
                             .create_view(&wgpu::TextureViewDescriptor::default());
 
-                        self.app.before_build();
+                        WinitWgpuApp::before_build(&mut self.app);
                         let mut tree = self.app.build();
                         gfx.renderer.set_theme(self.app.theme());
                         // Snapshot hotkeys alongside build() so the chord list

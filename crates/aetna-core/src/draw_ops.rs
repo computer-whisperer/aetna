@@ -6,8 +6,8 @@
 //!
 //! State styling lands here on the CPU side. Hover lightens / press
 //! darkens / focus-ring fade come from the eased envelopes in
-//! [`UiState::envelopes`] (written by
-//! [`UiState::tick_visual_animations`] in the prior pass). What this
+//! `UiState`'s eased envelope side map, written by
+//! [`UiState::tick_visual_animations`] in the prior pass. What this
 //! module computes are the deltas: lerp the build-time colours toward
 //! the state-modulated ones by the envelope amount, plus the non-eased
 //! `Disabled` (alpha multiply) and `Loading` (text suffix) deltas.
