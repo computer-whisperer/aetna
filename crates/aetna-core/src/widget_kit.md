@@ -18,7 +18,7 @@ The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`,
 
 ### 1.1 Layout — sizing, alignment, container axes
 
-Containers are El factories with axis + sensible defaults. `column([...])` is `axis = Column, align = Stretch`; `row([...])` is `axis = Row, align = Center, height = Hug`; `stack([...])` is `axis = Overlay`. Each container has a **main axis** (the axis its children flow along) and a **cross axis** (perpendicular).
+Containers are El factories with axis + sensible defaults. `column([...])` is `axis = Column, align = Stretch, height = Hug`; `row([...])` is `axis = Row, align = Center, height = Hug`; `stack([...])` is `axis = Overlay`. Each container has a **main axis** (the axis its children flow along) and a **cross axis** (perpendicular). Both `column` and `row` default to `Hug` on their main axis (height for column, height for row's cross) and `Fill(1.0)` width. To make a column claim its parent's full height, set `.height(Size::Fill(1.0))` explicitly.
 
 Each child has a `Size` intent on each axis:
 
@@ -53,8 +53,9 @@ column([
 
 Common pitfalls to avoid:
 
-- **Two `Fill` siblings in a column will split the column's height 50/50** — even if one of them logically wants to hug. If a panel header should be its natural size and the body should claim everything else, give the header `.height(Size::Hug)` explicitly. Column children inherit `Size::Fill(1.0)` from the El default.
-- **`row()` defaults to `height = Hug`.** A row of full-height columns needs `.height(Size::Fill(1.0))` on the row itself, otherwise it shrinks to its tallest child's hug height.
+- **A `Fill`-cross-axis child neutralizes the parent's `align`.** `align(Center)` only positions children that have slack to be positioned — Fill claims the full extent, so it's a no-op for that child. Where the visible content sits inside a Fill child is then determined by the *child's own* main-axis `justify` (which defaults to `Start`). Symptom: in a row of `align(Center)` siblings, a `Fill`-height column appears to "stick to the top" because its content top-aligns inside the box. Fix: `.height(Size::Hug)` on the inner column, so it sizes to content and the parent center alignment has slack to work with. (`column()` and `row()` now both default to `Hug` on their non-fill axis, which makes this the easy path. The footgun only resurfaces if you explicitly set `Fill` on the cross axis.)
+- **Two `Fill` siblings in a column will split the column's height proportionally to weight** — give one of them `.height(Size::Hug)` if it should size to content (panel header above scrollable body, etc).
+- **A row of full-height columns needs `.height(Size::Fill(1.0))` on the row itself.** Row defaults to `Hug` height, so it shrinks to its tallest child's hug height; nested `Fill`-height children then have nothing to fill.
 - **`stack()` (overlay) children share the parent's rect.** Use it for layered visuals (focus rings, tooltips) — not as a generic container. Z-order is child order.
 
 Shortcuts: `.fill_size()` for `.width(Fill(1.0)).height(Fill(1.0))`; `.hug()` for both Hug. `.padding(Sides::xy(h, v))` for asymmetric padding.

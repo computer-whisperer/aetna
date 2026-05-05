@@ -594,7 +594,19 @@ impl El {
 
 /// A vertical container with a comfortable default gap.
 ///
-/// Defaults: `axis = Column`, `align = Stretch`, `width = height = Fill(1.0)`.
+/// Defaults: `axis = Column`, `align = Stretch`, `width = Fill(1.0)`,
+/// `height = Hug`. The `Hug` height means the column is exactly as
+/// tall as its stacked children — the natural shape for most use
+/// (sidebar nav, card body, info pair). To make the column claim its
+/// parent's full height, set `.height(Size::Fill(1.0))`.
+///
+/// **Why `height = Hug` and not `Fill`:** when a column with `Fill`
+/// height sits inside a row that uses `align(Center)`, the column
+/// claims the row's full height and its content top-aligns inside
+/// the box (column's main-axis justify defaults to `Start`). The
+/// row's centering becomes a no-op for that child — a common surprise.
+/// Hugging the height keeps `align()` working the way it reads.
+///
 /// Hug-width children are stretched to the column's width; Fill-width
 /// children always fill regardless of `align`. Override `.align(...)`
 /// to position narrower (Hug/Fixed) children: `Start` (left), `Center`,
@@ -610,6 +622,7 @@ where
         .children(children)
         .gap(crate::tokens::SPACE_MD)
         .align(Align::Stretch)
+        .height(Size::Hug)
         .axis(Axis::Column)
 }
 
