@@ -71,9 +71,12 @@ dependencies = [
  "aetna-core",
  "aetna-fixtures",
  "aetna-fonts",
+ "aetna-wgpu",
  "cosmic-text",
  "png",
+ "pollster",
  "ttf-parser",
+ "wgpu",
 ]
 
 [[package]]
@@ -125,7 +128,6 @@ name = "aetna-wgpu"
 version = "0.1.0"
 dependencies = [
  "aetna-core",
- "aetna-fixtures",
  "bytemuck",
  "cosmic-text",
  "png",

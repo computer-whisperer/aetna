@@ -114,39 +114,13 @@ fn workspace_root() -> PathBuf {
 }
 
 fn render_pair(workspace: &Path, scale: Scale) -> Result<(), Box<dyn std::error::Error>> {
-    run_cargo_example(workspace, "aetna-wgpu", "render_text_quality", scale.arg)?;
+    run_cargo_bin(workspace, "aetna-tools", "render_text_quality", scale.arg)?;
     run_cargo_bin(
         workspace,
         "aetna-vulkano-demo",
         "render_text_quality",
         scale.arg,
     )?;
-    Ok(())
-}
-
-fn run_cargo_example(
-    workspace: &Path,
-    package: &str,
-    example: &str,
-    scale: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let status = Command::new(cargo)
-        .current_dir(workspace)
-        .args([
-            "run",
-            "--quiet",
-            "-p",
-            package,
-            "--example",
-            example,
-            "--",
-            &format!("--scale={scale}"),
-        ])
-        .status()?;
-    if !status.success() {
-        return Err(format!("renderer failed: {package}::{example} --scale={scale}").into());
-    }
     Ok(())
 }
 

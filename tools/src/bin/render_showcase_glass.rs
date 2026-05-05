@@ -1,14 +1,20 @@
-//! Headless render for the polished liquid-glass material lab.
+//! Headless render of the showcase's Glass section through the
+//! end-to-end host path: `App::shaders()` → `register_shader_with` →
+//! `Runner::render()` with backdrop sampling.
 //!
-//! Usage: `cargo run -p aetna-wgpu --example render_liquid_glass_lab`
-//! Writes: `crates/aetna-wgpu/out/liquid_glass_lab.wgpu.png`
+//! Mirrors what `aetna-examples`'s windowed `showcase` does for one frame,
+//! with `Section::Glass` selected, written to a PNG so we can confirm
+//! the section renders correctly without a display.
+//!
+//! Usage: `cargo run -p aetna-tools --bin render_showcase_glass`
 
-use aetna_core::prelude::*;
+use aetna_core::{AnimationMode, App, Rect};
+use aetna_fixtures::{Showcase, showcase::Section};
 use aetna_wgpu::{MsaaTarget, Runner};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let logical_width: u32 = 1100;
-    let logical_height: u32 = 760;
+    let logical_width: u32 = 900;
+    let logical_height: u32 = 640;
     let scale_factor: f32 = 2.0;
     let width = (logical_width as f32 * scale_factor) as u32;
     let height = (logical_height as f32 * scale_factor) as u32;
@@ -20,20 +26,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         compatible_surface: None,
         force_fallback_adapter: false,
     }))
-    .map_err(|e| {
-        format!(
-            "{} ({e})",
-            "no compatible adapter (try installing vulkan / mesa drivers)"
-        )
-    })?;
-    println!(
-        "adapter: {:?} ({:?})",
-        adapter.get_info().name,
-        adapter.get_info().backend
-    );
+    .map_err(|e| format!("{} ({e})", "no compatible adapter"))?;
 
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("aetna_wgpu::example::liquid_glass_lab::device"),
+        label: Some("aetna_wgpu::example::showcase_glass::device"),
         required_features: wgpu::Features::empty(),
         required_limits: wgpu::Limits::default(),
         experimental_features: wgpu::ExperimentalFeatures::default(),
@@ -49,8 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         depth_or_array_layers: 1,
     };
     let msaa = MsaaTarget::new(&device, format, extent, sample_count);
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("aetna_wgpu::example::liquid_glass_lab::target"),
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("aetna_wgpu::example::showcase_glass::target"),
         size: extent,
         mip_level_count: 1,
         sample_count: 1,
@@ -59,44 +55,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
     let unpadded_bytes_per_row = width * 4;
     let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
     let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(align) * align;
     let readback_size = (padded_bytes_per_row * height) as u64;
     let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("aetna_wgpu::example::liquid_glass_lab::readback"),
+        label: Some("aetna_wgpu::example::showcase_glass::readback"),
         size: readback_size,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
 
-    let mut app = aetna_fixtures::LiquidGlassLab;
     let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
-    renderer.set_theme(app.theme());
-    renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
-    for shader in app.shaders() {
-        renderer.register_shader_with(&device, shader.name, shader.wgsl, shader.samples_backdrop);
+    renderer.set_animation_mode(AnimationMode::Settled);
+
+    // Build a Showcase with the Glass section selected, then drive it
+    // through the same shader-registration path the windowed harness
+    // uses (`App::shaders()` → `register_shader_with`).
+    let mut app = Showcase::with_section(Section::Glass);
+    for s in app.shaders() {
+        renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
     }
+
     app.before_build();
     let mut tree = app.build();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("aetna_wgpu::example::liquid_glass_lab::encoder"),
+        label: Some("aetna_wgpu::example::showcase_glass::encoder"),
     });
     renderer.render(
         &device,
         &mut encoder,
-        &texture,
-        &view,
+        &target,
+        &target_view,
         Some(&msaa.view),
         wgpu::LoadOp::Clear(bg_color()),
     );
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
-            texture: &texture,
+            texture: &target,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
@@ -139,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     std::fs::create_dir_all(&out_dir)?;
-    let out = out_dir.join("liquid_glass_lab.wgpu.png");
+    let out = out_dir.join("showcase_glass.wgpu.png");
     let file = std::fs::File::create(&out)?;
     let writer = std::io::BufWriter::new(file);
     let mut encoder = png::Encoder::new(writer, width, height);

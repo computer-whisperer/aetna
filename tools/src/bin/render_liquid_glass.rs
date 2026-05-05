@@ -19,7 +19,7 @@
 //! both differ from the corresponding background-only pixels by
 //! enough to prove the glass is doing real work.
 //!
-//! Usage: `cargo run -p aetna-wgpu --example render_liquid_glass`
+//! Usage: `cargo run -p aetna-tools --bin render_liquid_glass`
 
 use aetna_core::prelude::*;
 use aetna_fixtures::showcase::LIQUID_GLASS_WGSL;

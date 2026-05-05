@@ -109,39 +109,18 @@ fn workspace_root() -> PathBuf {
 }
 
 fn render_pair(workspace: &Path, material: Material) -> Result<(), Box<dyn std::error::Error>> {
-    run_cargo_example(workspace, "aetna-wgpu", "render_icon_gallery", material.arg)?;
+    run_cargo_bin(
+        workspace,
+        "aetna-tools",
+        "render_icon_gallery",
+        material.arg,
+    )?;
     run_cargo_bin(
         workspace,
         "aetna-vulkano-demo",
         "render_icon_gallery",
         material.arg,
     )?;
-    Ok(())
-}
-
-fn run_cargo_example(
-    workspace: &Path,
-    package: &str,
-    example: &str,
-    material: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let status = Command::new(cargo)
-        .current_dir(workspace)
-        .args([
-            "run",
-            "--quiet",
-            "-p",
-            package,
-            "--example",
-            example,
-            "--",
-            &format!("--material={material}"),
-        ])
-        .status()?;
-    if !status.success() {
-        return Err(format!("renderer failed: {package}::{example} --material={material}").into());
-    }
     Ok(())
 }
 

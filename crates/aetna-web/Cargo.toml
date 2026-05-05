@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 description = "Aetna — wasm browser entry point for the shared Showcase app"
 license = "MIT OR Apache-2.0"
+publish = false
 readme = "README.md"
-documentation = "https://docs.rs/aetna-web"
 
 [lib]
 # `cdylib` is what `wasm-pack build --target web` ships to the browser;
