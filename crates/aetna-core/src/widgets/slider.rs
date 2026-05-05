@@ -43,6 +43,7 @@
 
 use std::panic::Location;
 
+use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::layout::LayoutCtx;
 use crate::tokens;
 use crate::tree::*;
@@ -117,9 +118,188 @@ pub fn normalized_from_event(rect: Rect, x: f32) -> f32 {
     (local / usable).clamp(0.0, 1.0)
 }
 
+/// Action implied by a key event routed to a focused slider.
+///
+/// [`classify_event`] returns one of these so apps that drive their
+/// own typed value (e.g. `volume_pct: u32`) can take the abstract
+/// action without going through `f32`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SliderAction {
+    /// Move the value by `delta` (in the same `0.0..=1.0` space the
+    /// widget paints in). Negative steps decrement.
+    Step(f32),
+    /// Set the value to a specific normalized position. Used for the
+    /// `Home` / `End` jumps; pointer-driven absolute sets stay in
+    /// [`normalized_from_event`].
+    Set(f32),
+}
+
+/// Classify a `KeyDown` event routed to the slider's `key` against
+/// the standard range pattern: `ArrowUp` / `ArrowRight` increment by
+/// `step`, `ArrowDown` / `ArrowLeft` decrement by `step`, `PageUp` /
+/// `PageDown` adjust by `page_step`, `Home` / `End` jump to the ends.
+///
+/// Returns `None` when the event isn't a key event for this slider
+/// or the key doesn't match a slider action — apps fall through to
+/// other handling.
+pub fn classify_event(
+    event: &UiEvent,
+    key: &str,
+    step: f32,
+    page_step: f32,
+) -> Option<SliderAction> {
+    if event.kind != UiEventKind::KeyDown || event.route() != Some(key) {
+        return None;
+    }
+    let press = event.key_press.as_ref()?;
+    Some(match press.key {
+        UiKey::ArrowUp | UiKey::ArrowRight => SliderAction::Step(step),
+        UiKey::ArrowDown | UiKey::ArrowLeft => SliderAction::Step(-step),
+        UiKey::PageUp => SliderAction::Step(page_step),
+        UiKey::PageDown => SliderAction::Step(-page_step),
+        UiKey::Home => SliderAction::Set(0.0),
+        UiKey::End => SliderAction::Set(1.0),
+        _ => return None,
+    })
+}
+
+/// Apply a key event to a normalized slider value, clamping the
+/// result to `0.0..=1.0`. Returns `true` when the value changed —
+/// apps use that to decide whether to write back into their typed
+/// state and request a redraw.
+pub fn apply_event(value: &mut f32, event: &UiEvent, key: &str, step: f32, page_step: f32) -> bool {
+    let Some(action) = classify_event(event, key, step, page_step) else {
+        return false;
+    };
+    let prev = *value;
+    let next = match action {
+        SliderAction::Step(d) => *value + d,
+        SliderAction::Set(v) => v,
+    };
+    *value = next.clamp(0.0, 1.0);
+    *value != prev
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::{KeyModifiers, KeyPress, UiTarget};
+
+    fn key_event(key: &str, ui_key: UiKey) -> UiEvent {
+        UiEvent {
+            key: Some(key.to_string()),
+            target: Some(UiTarget {
+                key: key.to_string(),
+                node_id: format!("/{key}"),
+                rect: Rect::new(0.0, 0.0, 100.0, 20.0),
+            }),
+            pointer: None,
+            key_press: Some(KeyPress {
+                key: ui_key,
+                modifiers: KeyModifiers::default(),
+                repeat: false,
+            }),
+            text: None,
+            modifiers: KeyModifiers::default(),
+            kind: UiEventKind::KeyDown,
+        }
+    }
+
+    #[test]
+    fn apply_event_steps_and_clamps() {
+        let mut value = 0.5;
+        assert!(apply_event(
+            &mut value,
+            &key_event("vol", UiKey::ArrowUp),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert!((value - 0.6).abs() < 1e-6);
+
+        assert!(apply_event(
+            &mut value,
+            &key_event("vol", UiKey::ArrowDown),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert!((value - 0.5).abs() < 1e-6);
+
+        // PageUp uses the larger step.
+        assert!(apply_event(
+            &mut value,
+            &key_event("vol", UiKey::PageUp),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert!((value - 0.75).abs() < 1e-6);
+
+        // Home / End jump.
+        assert!(apply_event(
+            &mut value,
+            &key_event("vol", UiKey::Home),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert_eq!(value, 0.0);
+        assert!(apply_event(
+            &mut value,
+            &key_event("vol", UiKey::End),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert_eq!(value, 1.0);
+
+        // Saturating: ArrowUp at 1.0 is a no-op (returns false).
+        assert!(!apply_event(
+            &mut value,
+            &key_event("vol", UiKey::ArrowUp),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert_eq!(value, 1.0);
+    }
+
+    #[test]
+    fn apply_event_ignores_unrouted_or_unrelated_keys() {
+        let mut value = 0.5;
+        // Wrong route → no change.
+        assert!(!apply_event(
+            &mut value,
+            &key_event("other", UiKey::ArrowUp),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert_eq!(value, 0.5);
+
+        // Routed but unrelated key → no change.
+        assert!(!apply_event(
+            &mut value,
+            &key_event("vol", UiKey::Tab),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert_eq!(value, 0.5);
+    }
+
+    #[test]
+    fn classify_left_right_mirrors_up_down() {
+        assert_eq!(
+            classify_event(&key_event("k", UiKey::ArrowRight), "k", 0.1, 0.25),
+            Some(SliderAction::Step(0.1)),
+        );
+        assert_eq!(
+            classify_event(&key_event("k", UiKey::ArrowLeft), "k", 0.1, 0.25),
+            Some(SliderAction::Step(-0.1)),
+        );
+    }
 
     #[test]
     fn normalized_tracks_thumb_center() {

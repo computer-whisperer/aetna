@@ -566,6 +566,8 @@ fn map_key(key: &Key) -> Option<UiKey> {
         Key::Named(NamedKey::Delete) => Some(UiKey::Delete),
         Key::Named(NamedKey::Home) => Some(UiKey::Home),
         Key::Named(NamedKey::End) => Some(UiKey::End),
+        Key::Named(NamedKey::PageUp) => Some(UiKey::PageUp),
+        Key::Named(NamedKey::PageDown) => Some(UiKey::PageDown),
         Key::Character(s) => Some(UiKey::Character(s.to_string())),
         Key::Named(named) => Some(UiKey::Other(format!("{named:?}"))),
         _ => None,

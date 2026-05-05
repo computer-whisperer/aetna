@@ -31,7 +31,7 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 
 ### Slice 1 — controlled `select` helpers
 
-- [ ] **`select::apply_event(&mut value, &mut open, &event, key, parse)`
+- [x] **`select::apply_event(&mut value, &mut open, &event, key, parse)`
       and `select::classify_event(event, key) -> Option<SelectAction>`.**
       Absorb the toggle / dismiss / option-pick dispatch so apps stop
       hand-parsing `{key}:option:{value}` and `{key}:dismiss` suffixes.
@@ -42,16 +42,18 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 
 ### Slice 2 — keyboard reach into popovers
 
-- [ ] **Focus stack on `UiState`.** Push current focus when an overlay
+- [x] **Focus stack on `UiState`.** Push current focus when an overlay
       opens, pop on close. Single `request_focus_key` slot isn't enough
       for nested cases (modal → dropdown): closing the inner layer must
       return focus to the trigger inside the modal, not to the trigger
       that opened the modal.
-- [ ] **Arrow-nav inside `menu_item` lists.** Up / Down / Home / End
-      navigate siblings inside a `popover_panel`; handled inside the
-      widget via `capture_keys`. Tab traversal is unchanged.
-- [ ] **Auto-focus on popover open + Escape returns focus.** Builds on
-      the focus stack.
+- [x] **Arrow-nav inside `menu_item` lists.** Up / Down / Home / End
+      navigate siblings inside a `popover_panel`; handled by the
+      runtime against any `arrow_nav_siblings` parent. Tab traversal is
+      unchanged.
+- [x] **Auto-focus on popover open + Escape returns focus.** Built on
+      the focus stack — Escape goes to the app, the app dismisses the
+      layer, and the disappearing `popover_layer` triggers the restore.
 
 ### Slice 3 — slider keyboard
 

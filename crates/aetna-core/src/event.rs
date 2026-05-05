@@ -95,6 +95,12 @@ pub enum UiKey {
     Home,
     /// End — caret to end of line.
     End,
+    /// PageUp — coarse-step navigation (sliders adjust by a larger
+    /// amount; lists scroll a viewport).
+    PageUp,
+    /// PageDown — coarse-step navigation (sliders adjust by a larger
+    /// amount; lists scroll a viewport).
+    PageDown,
     Character(String),
     Other(String),
 }
