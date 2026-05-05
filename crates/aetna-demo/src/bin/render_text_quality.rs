@@ -1,14 +1,9 @@
-//! Headless: render a text-quality matrix to PNG via wgpu.
+//! Headless: render the shared text-quality matrix to PNG via wgpu.
 //!
 //! Used as the visual-fidelity bench while we evolve text rendering.
-//! The fixture intentionally exercises:
-//!
-//! - body/UI sizes (10..16) where rasterization quality matters most,
-//! - mid sizes (18..24) typical for headings and KPIs,
-//! - large sizes (32/48/64) where corner sharpness shows up,
-//! - regular / medium / bold weights side-by-side,
-//! - light and dark backgrounds (gamma blending tells on each),
-//! - a small Unicode + math sample so fallback faces participate.
+//! The fixture itself lives in `aetna_demo::text_quality::fixture()`
+//! so the vulkano backend renders the same tree from
+//! `aetna-vulkano-demo`'s twin binary.
 //!
 //! Run with multiple scale factors to A/B multi-display behaviour:
 //!
@@ -19,94 +14,8 @@
 //! Writes `crates/aetna-demo/out/text_quality{.tag}.{scale}x.png`.
 
 use aetna_core::*;
+use aetna_demo::text_quality::{LOGICAL_HEIGHT, LOGICAL_WIDTH, fixture};
 use aetna_wgpu::Runner;
-
-const SIZES: &[f32] = &[10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 32.0, 48.0, 64.0];
-const SAMPLE: &str = "The quick brown fox jumps over the lazy dog 0123456789";
-const UNICODE_SAMPLE: &str = "—≡ →↑↓ ✓✕ αβγ ∑∫ ▲◆";
-
-fn size_row(size: f32) -> El {
-    let label = format!("{}px", size as u32);
-    column([
-        row([
-            text(&label).font_size(11.0).muted().width(Size::Fixed(56.0)),
-            text(SAMPLE).font_size(size).font_weight(FontWeight::Regular),
-        ])
-        .gap(tokens::SPACE_SM)
-        .align(Align::End),
-        row([
-            text("medium")
-                .font_size(11.0)
-                .muted()
-                .width(Size::Fixed(56.0)),
-            text(SAMPLE).font_size(size).font_weight(FontWeight::Medium),
-        ])
-        .gap(tokens::SPACE_SM)
-        .align(Align::End),
-        row([
-            text("bold").font_size(11.0).muted().width(Size::Fixed(56.0)),
-            text(SAMPLE).font_size(size).font_weight(FontWeight::Bold),
-        ])
-        .gap(tokens::SPACE_SM)
-        .align(Align::End),
-    ])
-    .gap(2.0)
-    .width(Size::Fill(1.0))
-    .height(Size::Hug)
-}
-
-fn dark_panel() -> El {
-    column([
-        text("dark surface").caption(),
-        text(SAMPLE).font_size(14.0),
-        text(SAMPLE).font_size(14.0).font_weight(FontWeight::Bold),
-        text(UNICODE_SAMPLE).font_size(16.0),
-    ])
-    .gap(tokens::SPACE_SM)
-    .padding(tokens::SPACE_MD)
-    .fill(Color::rgb(20, 20, 24))
-    .width(Size::Fill(1.0))
-    .height(Size::Hug)
-}
-
-fn light_panel() -> El {
-    column([
-        text("light surface")
-            .caption()
-            .text_color(Color::rgb(80, 80, 80)),
-        text(SAMPLE).font_size(14.0).text_color(Color::rgb(20, 20, 20)),
-        text(SAMPLE)
-            .font_size(14.0)
-            .font_weight(FontWeight::Bold)
-            .text_color(Color::rgb(20, 20, 20)),
-        text(UNICODE_SAMPLE)
-            .font_size(16.0)
-            .text_color(Color::rgb(20, 20, 20)),
-    ])
-    .gap(tokens::SPACE_SM)
-    .padding(tokens::SPACE_MD)
-    .fill(Color::rgb(245, 245, 248))
-    .width(Size::Fill(1.0))
-    .height(Size::Hug)
-}
-
-fn fixture() -> El {
-    column(
-        [
-            vec![h2("Text quality matrix")],
-            SIZES.iter().map(|&s| size_row(s)).collect::<Vec<_>>(),
-            vec![dark_panel(), light_panel()],
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>(),
-    )
-    .gap(tokens::SPACE_MD)
-    .padding(tokens::SPACE_LG)
-    .fill(tokens::BG_APP)
-    .width(Size::Fill(1.0))
-    .height(Size::Hug)
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut scale_factor: f32 = 1.0;
@@ -121,11 +30,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let logical_width: u32 = 980;
-    let logical_height: u32 = 1820;
-    let width = (logical_width as f32 * scale_factor) as u32;
-    let height = (logical_height as f32 * scale_factor) as u32;
-    let viewport = Rect::new(0.0, 0.0, logical_width as f32, logical_height as f32);
+    let width = (LOGICAL_WIDTH as f32 * scale_factor) as u32;
+    let height = (LOGICAL_HEIGHT as f32 * scale_factor) as u32;
+    let viewport = Rect::new(0.0, 0.0, LOGICAL_WIDTH as f32, LOGICAL_HEIGHT as f32);
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {

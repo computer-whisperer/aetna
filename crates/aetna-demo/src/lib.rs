@@ -21,6 +21,7 @@
 pub mod icon_gallery;
 pub mod liquid_glass_lab;
 pub mod showcase;
+pub mod text_quality;
 pub use icon_gallery::{GlassIconGallery, IconGallery, ReliefIconGallery};
 pub use liquid_glass_lab::LiquidGlassLab;
 pub use showcase::Showcase;
