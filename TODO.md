@@ -102,8 +102,11 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 
 ## Pre-release housekeeping
 
-- [ ] Crate-level rustdoc skim for accidental references to private /
-      fixture crates.
+- [x] Crate-level rustdoc skim. `cargo doc -p aetna-{core,wgpu,vulkano,winit-wgpu}`
+      now produces zero warnings; the only remaining mentions of
+      private crates in docs are the contextual `aetna-web` and
+      `aetna-volume` references in `widget_kit.md`, which are prose
+      pointers rather than intra-doc links.
 - [ ] Once the recipes above exist, mirror them in `examples/` so packaged
       users discover them via cargo.
 

@@ -5,7 +5,7 @@
 //! by shader handle; the SVG fallback (`crate::bundle::svg`) interprets stock
 //! shaders best-effort and emits placeholder rects for custom ones.
 //!
-//! `BackdropSnapshot` is emitted by [`crate::runner_core::RunnerCore`] when
+//! `BackdropSnapshot` is emitted by [`crate::runtime::RunnerCore`] when
 //! the resolved paint stream first needs a backdrop-sampling shader. See
 //! `docs/SHADER_VISION.md` for the backend contract.
 //!

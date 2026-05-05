@@ -134,12 +134,12 @@ fn collect_focus(
 }
 
 /// Reconcile the focus stack against the `popover_layer` nodes in
-/// `root`. Detects open / close transitions by diffing against
-/// [`UiState::popover_layer_ids`] from the previous frame:
+/// `root`. Detects open / close transitions by diffing against the
+/// previous frame's set of layer ids:
 ///
 /// - **Layer opened** (id present now, absent before): snapshot the
-///   current focus onto [`UiState::focus_stack`] and auto-focus the
-///   first focusable inside the new layer.
+///   current focus onto the focus stack and auto-focus the first
+///   focusable inside the new layer.
 /// - **Layer closed** (id absent now, present before): pop the stack.
 ///   Restore the saved focus only when no other focus is currently set
 ///   — typically the case after Escape / dismiss-scrim, where the
