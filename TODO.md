@@ -107,8 +107,12 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
       private crates in docs are the contextual `aetna-web` and
       `aetna-volume` references in `widget_kit.md`, which are prose
       pointers rather than intra-doc links.
-- [ ] Once the recipes above exist, mirror them in `examples/` so packaged
-      users discover them via cargo.
+- [x] Mirror the new recipes in `examples/`. The popover example
+      already exercises arrow-nav + focus-restore (and now uses
+      `overlays`); a new `slider_keyboard` example demonstrates
+      `slider::apply_event` end-to-end. The optimistic-override
+      pattern remains pointed at `aetna-volume` from `widget_kit.md`
+      §6.1 — it doesn't fit a small example without a fake backend.
 
 ## Deferred
 
