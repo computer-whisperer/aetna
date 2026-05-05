@@ -61,7 +61,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let h = clamp(dot(pa, ba) / denom, 0.0, 1.0);
     let d = length(pa - ba * h);
     let half_width = in.stroke_width * 0.5;
-    let aa = max(fwidth(d), 0.75);
+    let aa = max(length(vec2<f32>(dpdx(d), dpdy(d))), 0.75);
     let coverage = 1.0 - smoothstep(half_width - aa, half_width + aa, d);
     let alpha = coverage * in.color.a;
     return vec4<f32>(in.color.rgb * alpha, alpha);

@@ -87,7 +87,8 @@ fn fixture() -> El {
             spacer(),
             row([spacer(), glass_card(), spacer()]).height(Size::Hug),
             spacer(),
-        ]),
+        ])
+        .height(Size::Fill(1.0)),
     ])
 }
 

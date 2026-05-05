@@ -69,7 +69,7 @@ fn sdf_rounded_box(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let r = min(in.radius, min(in.half_size.x, in.half_size.y));
     let d = sdf_rounded_box(in.local_px, in.half_size, r);
-    let aa = max(fwidth(d), 0.5);
+    let aa = max(length(vec2<f32>(dpdx(d), dpdy(d))), 0.5);
     let inside = 1.0 - smoothstep(-aa, 0.0, d);
 
     // Vertical gradient: t = 0 at the top edge, t = 1 at the bottom.

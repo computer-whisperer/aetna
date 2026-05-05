@@ -12,7 +12,7 @@
 // shader maps to clip space via the frame's `viewport` (width, height).
 // The fragment shader computes the rounded-box SDF in centered pixel
 // coordinates relative to `inner_rect` and antialiases at the boundary
-// using fwidth.
+// using the SDF gradient magnitude (length of dpdx/dpdy).
 
 struct FrameUniforms {
     viewport: vec2<f32>,
@@ -84,8 +84,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let local_px = in.pos_px - in.inner_center;
     let d = sdf_rounded_box(local_px, in.inner_half_size, radius);
 
-    // Anti-aliasing width derived from screen-space derivatives.
-    let aa = max(fwidth(d), 0.5);
+    // Anti-aliasing width derived from screen-space derivatives. Use the
+    // L2 norm of the SDF gradient (not fwidth's L1) so the AA band is the
+    // same width on diagonals as on axis-aligned edges — fwidth would be
+    // sqrt(2)x larger at 45° and visibly fatten the rounded corners.
+    let aa = max(length(vec2<f32>(dpdx(d), dpdy(d))), 0.5);
 
     // Inside coverage of the layout rect.
     let inside = 1.0 - smoothstep(-aa, 0.0, d);

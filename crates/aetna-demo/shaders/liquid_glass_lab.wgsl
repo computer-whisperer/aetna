@@ -108,7 +108,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let frost = clamp(in.shape.z, 0.0, 1.0);
 
     let d = sdf_rounded_box(in.local_px, in.half_size, radius);
-    let aa = max(fwidth(d), 0.5);
+    let aa = max(length(vec2<f32>(dpdx(d), dpdy(d))), 0.5);
     let inside = 1.0 - smoothstep(-aa, 0.0, d);
     let rim = (1.0 - smoothstep(0.0, 16.0, abs(d))) * rim_strength;
     let outer_rim = 1.0 - smoothstep(-3.0, 18.0, d);

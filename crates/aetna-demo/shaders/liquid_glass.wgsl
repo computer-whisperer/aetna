@@ -137,7 +137,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // SDF mask for the rounded rect.
     let cr = min(corner_radius, min(in.half_size.x, in.half_size.y));
     let d = sdf_rounded_box(in.local_px, in.half_size, cr);
-    let aa = max(fwidth(d), 0.5);
+    let aa = max(length(vec2<f32>(dpdx(d), dpdy(d))), 0.5);
     let inside = 1.0 - smoothstep(-aa, 0.0, d);
 
     return vec4<f32>(final_rgb, inside);
