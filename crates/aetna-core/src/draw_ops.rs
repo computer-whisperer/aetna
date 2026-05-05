@@ -33,6 +33,12 @@ pub fn draw_ops_with_theme(root: &El, ui_state: &UiState, theme: &Theme) -> Vec<
     out
 }
 
+// Recursion threads four "inherited from parent" paint values
+// (scissor, translate, opacity, focus envelope) plus the four shared
+// references (node, ui_state, theme, out accumulator). The explicit
+// signature documents the dataflow more clearly than a bundling
+// struct would.
+#[allow(clippy::too_many_arguments)]
 fn push_node(
     n: &El,
     ui_state: &UiState,
