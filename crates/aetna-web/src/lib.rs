@@ -314,10 +314,9 @@ mod web_entry {
             // false`); wgpu then transparently picks WebGL2 here and
             // backdrop shaders are skipped via the COPY_SRC check
             // below. Revisit when Firefox WebGPU stabilises.
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
-                ..Default::default()
-            });
+            let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
+            instance_desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+            let instance = wgpu::Instance::new(instance_desc);
             let surface = instance
                 .create_surface(window.clone())
                 .expect("create surface");
@@ -355,15 +354,14 @@ mod web_entry {
                     wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
 
                 let (device, queue) = adapter
-                    .request_device(
-                        &wgpu::DeviceDescriptor {
-                            label: Some("aetna_web::device"),
-                            required_features: wgpu::Features::empty(),
-                            required_limits: limits,
-                            memory_hints: wgpu::MemoryHints::Performance,
-                        },
-                        None,
-                    )
+                    .request_device(&wgpu::DeviceDescriptor {
+                        label: Some("aetna_web::device"),
+                        required_features: wgpu::Features::empty(),
+                        required_limits: limits,
+                        experimental_features: wgpu::ExperimentalFeatures::default(),
+                        memory_hints: wgpu::MemoryHints::Performance,
+                        trace: wgpu::Trace::Off,
+                    })
                     .await
                     .expect("request_device");
 
@@ -529,24 +527,26 @@ mod web_entry {
                 }
 
                 WindowEvent::KeyboardInput {
-                    event: key_event,
+                    event:
+                        key_event @ winit::event::KeyEvent {
+                            state: ElementState::Pressed,
+                            ..
+                        },
                     is_synthetic: false,
                     ..
                 } => {
-                    if key_event.state == ElementState::Pressed {
-                        if let Some(key) = map_key(&key_event.logical_key)
-                            && let Some(event) =
-                                gfx.renderer.key_down(key, self.modifiers, key_event.repeat)
-                        {
-                            self.app.on_event(event);
-                        }
-                        if let Some(text) = &key_event.text
-                            && let Some(event) = gfx.renderer.text_input(text.to_string())
-                        {
-                            self.app.on_event(event);
-                        }
-                        gfx.window.request_redraw();
+                    if let Some(key) = map_key(&key_event.logical_key)
+                        && let Some(event) =
+                            gfx.renderer.key_down(key, self.modifiers, key_event.repeat)
+                    {
+                        self.app.on_event(event);
                     }
+                    if let Some(text) = &key_event.text
+                        && let Some(event) = gfx.renderer.text_input(text.to_string())
+                    {
+                        self.app.on_event(event);
+                    }
+                    gfx.window.request_redraw();
                 }
                 WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
                     if let Some(event) = gfx.renderer.text_input(text) {
@@ -558,13 +558,15 @@ mod web_entry {
                 WindowEvent::RedrawRequested => {
                     let frame_start = Instant::now();
                     let frame = match gfx.surface.get_current_texture() {
-                        Ok(f) => f,
-                        Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        wgpu::CurrentSurfaceTexture::Success(frame)
+                        | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+                        wgpu::CurrentSurfaceTexture::Lost
+                        | wgpu::CurrentSurfaceTexture::Outdated => {
                             gfx.surface.configure(&gfx.device, &gfx.config);
                             return;
                         }
-                        Err(e) => {
-                            log::error!("surface error: {e}");
+                        other => {
+                            log::error!("surface unavailable: {other:?}");
                             return;
                         }
                     };

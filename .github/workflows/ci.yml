@@ -59,3 +59,18 @@ jobs:
 
       - name: Run library tests
         run: cargo test --workspace --lib --locked
+
+  wasm32:
+    name: Wasm32 (aetna-web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # aetna-web's wasm host code lives behind `#[cfg(target_arch = "wasm32")]`,
+      # so it does not get exercised by the native build/clippy jobs above.
+      # Catch wgpu / winit / wasm-bindgen API drift here before it lands.
+      - run: cargo clippy -p aetna-web --target wasm32-unknown-unknown --locked -- -D warnings
