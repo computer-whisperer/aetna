@@ -120,6 +120,15 @@ pub struct UiState {
     pub(crate) pressed_secondary: Option<(UiTarget, PointerButton)>,
     pub focused: Option<UiTarget>,
     pub(crate) focus_order: Vec<UiTarget>,
+    /// LIFO of focus targets pushed when popover layers open. Each new
+    /// `Kind::Custom("popover_layer")` snapshots the current focus here
+    /// and auto-focuses into the layer; closing the layer pops and
+    /// restores. See [`crate::focus::sync_popover_focus`].
+    pub(crate) focus_stack: Vec<UiTarget>,
+    /// `computed_id`s of every popover-layer node in the last laid-out
+    /// tree, in tree order. Diffed against the new tree to detect open
+    /// / close transitions.
+    pub(crate) popover_layer_ids: Vec<String>,
     /// Scroll offset (logical pixels) per scrollable node, keyed by
     /// `El::computed_id`. The layout pass reads this when positioning a
     /// scrollable's children and writes back the clamped value.

@@ -467,6 +467,7 @@ impl RunnerCore {
         let t0 = Instant::now();
         layout::layout(root, &mut self.ui_state, viewport);
         self.ui_state.sync_focus_order(root);
+        focus::sync_popover_focus(root, &mut self.ui_state);
         self.ui_state.apply_to_state();
         let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now());
         self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
@@ -1101,6 +1102,246 @@ mod tests {
             Some("opt-blue"),
             "ArrowDown at bottom stays at bottom — no wrap",
         );
+    }
+
+    /// Build a tree shaped like a real app's `build()` output: a
+    /// background row with a "Trigger" button, optionally with a
+    /// dropdown popover layered on top.
+    fn build_popover_tree(open: bool) -> El {
+        use crate::widgets::button::button;
+        use crate::widgets::overlay::overlay;
+        use crate::widgets::popover::{dropdown, menu_item};
+        let mut layers: Vec<El> = vec![button("Trigger").key("trigger")];
+        if open {
+            layers.push(dropdown(
+                "menu",
+                "trigger",
+                [
+                    menu_item("A").key("item-a"),
+                    menu_item("B").key("item-b"),
+                    menu_item("C").key("item-c"),
+                ],
+            ));
+        }
+        overlay(layers).padding(20.0)
+    }
+
+    /// Run a full per-frame layout pass against `tree` so all the
+    /// post-layout hooks (focus order sync, popover focus stack, etc.)
+    /// fire just like a real frame.
+    fn run_frame(core: &mut RunnerCore, tree: &mut El) {
+        let mut t = PrepareTimings::default();
+        core.prepare_layout(tree, Rect::new(0.0, 0.0, 400.0, 300.0), 1.0, &mut t);
+        core.snapshot(tree, &mut t);
+    }
+
+    #[test]
+    fn popover_open_pushes_focus_and_auto_focuses_first_item() {
+        let mut core = RunnerCore::new();
+        let mut closed = build_popover_tree(false);
+        run_frame(&mut core, &mut closed);
+        // Pre-focus the trigger as if the user tabbed to it before
+        // opening the menu.
+        let trigger = core
+            .ui_state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "trigger")
+            .cloned();
+        core.ui_state.set_focus(trigger);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("trigger"),
+        );
+
+        // Open the popover. The runtime should snapshot the trigger
+        // onto the focus stack and auto-focus the first menu item.
+        let mut open = build_popover_tree(true);
+        run_frame(&mut core, &mut open);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("item-a"),
+            "popover open should auto-focus the first menu item",
+        );
+        assert_eq!(
+            core.ui_state.focus_stack.len(),
+            1,
+            "trigger should be saved on the focus stack",
+        );
+        assert_eq!(
+            core.ui_state.focus_stack[0].key.as_str(),
+            "trigger",
+            "saved focus should be the pre-open target",
+        );
+    }
+
+    #[test]
+    fn popover_close_restores_focus_to_trigger() {
+        let mut core = RunnerCore::new();
+        let mut closed = build_popover_tree(false);
+        run_frame(&mut core, &mut closed);
+        let trigger = core
+            .ui_state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "trigger")
+            .cloned();
+        core.ui_state.set_focus(trigger);
+
+        // Open → focus walks to the menu.
+        let mut open = build_popover_tree(true);
+        run_frame(&mut core, &mut open);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("item-a"),
+        );
+
+        // Close → focus restored to trigger, stack drained.
+        let mut closed_again = build_popover_tree(false);
+        run_frame(&mut core, &mut closed_again);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("trigger"),
+            "closing the popover should pop the saved focus",
+        );
+        assert!(
+            core.ui_state.focus_stack.is_empty(),
+            "focus stack should be drained after restore",
+        );
+    }
+
+    #[test]
+    fn popover_close_does_not_override_intentional_focus_move() {
+        let mut core = RunnerCore::new();
+        // Tree with a second focusable button outside the popover so
+        // the user can "click somewhere else" while the menu is open.
+        let build = |open: bool| -> El {
+            use crate::widgets::button::button;
+            use crate::widgets::overlay::overlay;
+            use crate::widgets::popover::{dropdown, menu_item};
+            let main = crate::row([
+                button("Trigger").key("trigger"),
+                button("Other").key("other"),
+            ]);
+            let mut layers: Vec<El> = vec![main];
+            if open {
+                layers.push(dropdown("menu", "trigger", [menu_item("A").key("item-a")]));
+            }
+            overlay(layers).padding(20.0)
+        };
+
+        let mut closed = build(false);
+        run_frame(&mut core, &mut closed);
+        let trigger = core
+            .ui_state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "trigger")
+            .cloned();
+        core.ui_state.set_focus(trigger);
+
+        let mut open = build(true);
+        run_frame(&mut core, &mut open);
+        assert_eq!(core.ui_state.focus_stack.len(), 1);
+
+        // Simulate an intentional focus move to a sibling that is
+        // outside the popover (e.g. the user re-tabbed somewhere). Do
+        // this by setting focus directly while the popover is still in
+        // the tree — the existing focus-order contains "other".
+        let other = core
+            .ui_state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "other")
+            .cloned();
+        core.ui_state.set_focus(other);
+
+        let mut closed_again = build(false);
+        run_frame(&mut core, &mut closed_again);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("other"),
+            "focus moved before close should not be overridden by restore",
+        );
+        assert!(core.ui_state.focus_stack.is_empty());
+    }
+
+    #[test]
+    fn nested_popovers_stack_and_unwind_focus_correctly() {
+        let mut core = RunnerCore::new();
+        // Two siblings layered at El root: an outer popover anchored to
+        // the trigger, and an inner popover anchored to a button inside
+        // the outer panel. Both are real popovers — separate
+        // popover_layer ids — so the runtime sees them stack.
+        let build = |outer: bool, inner: bool| -> El {
+            use crate::widgets::button::button;
+            use crate::widgets::overlay::overlay;
+            use crate::widgets::popover::{Anchor, popover, popover_panel};
+            let main = button("Trigger").key("trigger");
+            let mut layers: Vec<El> = vec![main];
+            if outer {
+                layers.push(popover(
+                    "outer",
+                    Anchor::below_key("trigger"),
+                    popover_panel([button("Open inner").key("inner-trigger")]),
+                ));
+            }
+            if inner {
+                layers.push(popover(
+                    "inner",
+                    Anchor::below_key("inner-trigger"),
+                    popover_panel([button("X").key("inner-a"), button("Y").key("inner-b")]),
+                ));
+            }
+            overlay(layers).padding(20.0)
+        };
+
+        // Frame 1: nothing open, focus on the trigger.
+        let mut closed = build(false, false);
+        run_frame(&mut core, &mut closed);
+        let trigger = core
+            .ui_state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "trigger")
+            .cloned();
+        core.ui_state.set_focus(trigger);
+
+        // Frame 2: outer opens. Save trigger, focus inner-trigger.
+        let mut outer = build(true, false);
+        run_frame(&mut core, &mut outer);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("inner-trigger"),
+        );
+        assert_eq!(core.ui_state.focus_stack.len(), 1);
+
+        // Frame 3: inner also opens. Save inner-trigger, focus inner-a.
+        let mut both = build(true, true);
+        run_frame(&mut core, &mut both);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("inner-a"),
+        );
+        assert_eq!(core.ui_state.focus_stack.len(), 2);
+
+        // Frame 4: inner closes. Pop → restore inner-trigger.
+        let mut outer_only = build(true, false);
+        run_frame(&mut core, &mut outer_only);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("inner-trigger"),
+        );
+        assert_eq!(core.ui_state.focus_stack.len(), 1);
+
+        // Frame 5: outer closes. Pop → restore trigger.
+        let mut none = build(false, false);
+        run_frame(&mut core, &mut none);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("trigger"),
+        );
+        assert!(core.ui_state.focus_stack.is_empty());
     }
 
     #[test]

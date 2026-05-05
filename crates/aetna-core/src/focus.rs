@@ -7,7 +7,7 @@
 
 use crate::event::UiTarget;
 use crate::state::UiState;
-use crate::tree::{El, Rect};
+use crate::tree::{El, Kind, Rect};
 
 /// Find the focusable siblings inside the focused element's nearest
 /// `arrow_nav_siblings` parent, returning them in tree order (so an
@@ -131,6 +131,119 @@ fn collect_focus(
     for child in &node.children {
         collect_focus(child, ui_state, clip, out);
     }
+}
+
+/// Reconcile the focus stack against the `popover_layer` nodes in
+/// `root`. Detects open / close transitions by diffing against
+/// [`UiState::popover_layer_ids`] from the previous frame:
+///
+/// - **Layer opened** (id present now, absent before): snapshot the
+///   current focus onto [`UiState::focus_stack`] and auto-focus the
+///   first focusable inside the new layer.
+/// - **Layer closed** (id absent now, present before): pop the stack.
+///   Restore the saved focus only when no other focus is currently set
+///   — typically the case after Escape / dismiss-scrim, where the
+///   element inside the layer ceased to exist. If focus moved
+///   intentionally elsewhere first (e.g. user clicked another widget),
+///   the saved entry is discarded so we don't yank focus back.
+///
+/// Must run after [`UiState::sync_focus_order`] so focus has already
+/// been retargeted / cleared against the new tree.
+pub fn sync_popover_focus(root: &El, ui_state: &mut UiState) {
+    let new_layers = collect_popover_layer_ids(root);
+    let old_layers = std::mem::take(&mut ui_state.popover_layer_ids);
+
+    // Process closes first, in reverse tree order (innermost first), so
+    // a same-frame close-then-reopen of a deeper layer pops the right
+    // saved focus before pushing the new one.
+    for id in old_layers.iter().rev() {
+        if !new_layers.contains(id) {
+            let saved = ui_state.focus_stack.pop();
+            if ui_state.focused.is_none()
+                && let Some(target) = saved
+                && ui_state
+                    .focus_order
+                    .iter()
+                    .any(|t| t.node_id == target.node_id)
+            {
+                ui_state.focused = Some(target);
+            }
+        }
+    }
+
+    // Then process opens in tree order so nested layers stack their
+    // saved focus correctly (outer layer's pre-open focus pushed first).
+    for id in &new_layers {
+        if !old_layers.contains(id) {
+            if let Some(current) = ui_state.focused.clone() {
+                ui_state.focus_stack.push(current);
+            }
+            if let Some(first) = first_focusable_in(root, id, ui_state) {
+                ui_state.focused = Some(first);
+            }
+        }
+    }
+
+    ui_state.popover_layer_ids = new_layers;
+}
+
+/// Collect the `computed_id` of every `Kind::Custom("popover_layer")`
+/// node in `root`, in tree order.
+fn collect_popover_layer_ids(root: &El) -> Vec<String> {
+    let mut out = Vec::new();
+    walk_popover_layers(root, &mut out);
+    out
+}
+
+fn walk_popover_layers(node: &El, out: &mut Vec<String>) {
+    if matches!(node.kind, Kind::Custom("popover_layer")) {
+        out.push(node.computed_id.clone());
+    }
+    for child in &node.children {
+        walk_popover_layers(child, out);
+    }
+}
+
+/// Find the first focusable, keyed node inside the subtree rooted at
+/// the node whose `computed_id == layer_id`. Uses the same clip-aware
+/// rule as [`focus_order`].
+fn first_focusable_in(root: &El, layer_id: &str, ui_state: &UiState) -> Option<UiTarget> {
+    let (subtree, inherited_clip) = locate_subtree(root, ui_state, None, layer_id)?;
+    let mut out = Vec::new();
+    collect_focus(subtree, ui_state, inherited_clip, &mut out);
+    out.into_iter().next()
+}
+
+/// Walk to the node with `target_id`, returning that node and the clip
+/// rect inherited from its ancestors (so the caller can resume the
+/// usual clip-aware focus walk).
+fn locate_subtree<'a>(
+    node: &'a El,
+    ui_state: &UiState,
+    inherited_clip: Option<Rect>,
+    target_id: &str,
+) -> Option<(&'a El, Option<Rect>)> {
+    let computed = ui_state.rect(&node.computed_id);
+    let clip = if node.clip {
+        match inherited_clip {
+            Some(clip) => Some(
+                clip.intersect(computed)
+                    .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+            ),
+            None => Some(computed),
+        }
+    } else {
+        inherited_clip
+    };
+    if node.computed_id == target_id {
+        return Some((node, clip));
+    }
+    for child in &node.children {
+        if let Some(found) = locate_subtree(child, ui_state, clip, target_id) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
