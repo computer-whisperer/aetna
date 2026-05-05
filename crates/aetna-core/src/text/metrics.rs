@@ -488,7 +488,14 @@ fn line_width_by_ttf(text: &str, size: f32, weight: FontWeight, mono: bool) -> f
 }
 
 pub fn line_height(size: f32) -> f32 {
-    size * LINE_HEIGHT_MULTIPLIER
+    // Ceil to an integer logical pixel. Sub-pixel line heights (e.g.
+    // 14 px × 1.4 = 19.6 px) cascade through Hug heights and centered
+    // `v_offset` math, leaving glyph bottom rows landing on fractional
+    // pixel boundaries — wgpu's anti-aliased blit then makes those rows
+    // ~0.4 alpha and the eye reads it as a 1 px clip. Snapping here
+    // costs at most 1 px of vertical room per text leaf and aligns the
+    // text box with the pixel grid for the whole pipeline.
+    (size * LINE_HEIGHT_MULTIPLIER).ceil()
 }
 
 fn build_layout(lines: Vec<String>, size: f32, weight: FontWeight, mono: bool) -> TextLayout {
