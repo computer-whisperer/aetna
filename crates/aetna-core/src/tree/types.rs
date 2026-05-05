@@ -111,6 +111,14 @@ impl From<f32> for Sides {
 /// - `Fixed(px)` — exact size.
 /// - `Fill(weight)` — claim a share of leftover space; weights are relative.
 /// - `Hug` — intrinsic size of contents.
+///
+/// On a container's **main axis** (the axis its children flow along),
+/// `Fill` siblings split the leftover space proportional to their weights.
+///
+/// On a container's **cross axis** (perpendicular), `Fill` always claims
+/// the container's full extent — `Align` does not affect Fill children
+/// because there is no slack left to position. `Align` positions
+/// Hug/Fixed children that are smaller than the container.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Size {
     Fixed(f32),
@@ -137,12 +145,24 @@ pub enum Axis {
 }
 
 /// Cross-axis alignment of children within a container.
+///
+/// `Align` positions Hug/Fixed children that are smaller than the
+/// container on the cross axis. It does **not** affect `Size::Fill`
+/// children — those always claim the container's full cross-axis
+/// extent (see [`Size`]).
+///
+/// - `Start` — pin to the start of the cross axis (top for rows, left for columns).
+/// - `Center` — center within the leftover slack.
+/// - `End` — pin to the end (bottom for rows, right for columns).
+/// - `Stretch` — currently equivalent to `Start` for positioning. The
+///   default for [`super::column`]. Reserved as the alignment under
+///   which a future "stretch Hug children to fill the cross axis"
+///   behavior would activate.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Align {
     Start,
     Center,
     End,
-    /// Stretch fill-sized children to the container's cross-axis extent.
     #[default]
     Stretch,
 }

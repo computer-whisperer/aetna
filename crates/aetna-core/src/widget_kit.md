@@ -16,6 +16,49 @@ A widget is a function (or struct + builder) that returns an [`El`]. To make wid
 
 The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`, `padding`, `gap`, `axis`, `align`, `justify`), visuals (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`, `surface_role`), text (`text`, `text_color`, `text_align`, `text_role`, `font_size`, `font_weight`, `mono`, `italic`, `underline`, `strikethrough`, `link`, `wrap_text`, `text_overflow`, `ellipsis`, `max_lines`), icons (`icon`, `icon_name`, `icon_size`, `icon_stroke_width`), the paint-time transforms (`opacity`, `translate`, `scale`, `animate`), and the cross-cutting flags `clip()` (scissor children to this node's painted rect) and `scrollable()` (route wheel events to this node so it can scroll). `Kind::Scroll` already turns both on; `clip()` and `scrollable()` are the primitives behind it, available to any user widget that wants the same behaviour without claiming the structural variant.
 
+### 1.1 Layout — sizing, alignment, container axes
+
+Containers are El factories with axis + sensible defaults. `column([...])` is `axis = Column, align = Stretch`; `row([...])` is `axis = Row, align = Center, height = Hug`; `stack([...])` is `axis = Overlay`. Each container has a **main axis** (the axis its children flow along) and a **cross axis** (perpendicular).
+
+Each child has a `Size` intent on each axis:
+
+- `Fixed(px)` — exact size.
+- `Hug` — intrinsic size of the child's content.
+- `Fill(weight)` — claim a share of leftover space.
+
+On the **main axis**, Fill siblings split leftover space proportional to weight. On the **cross axis**, Fill always claims the container's full extent — `Align` does not affect Fill children because there is no slack to position. `Align` positions Hug/Fixed children that are smaller than the container.
+
+`Justify` distributes leftover main-axis space (`Start` / `Center` / `End` / `SpaceBetween`).
+
+```rust
+// Sidebar + content, both filling viewport height. The row's
+// `Center` align is fine — Fill children fill regardless.
+row([sidebar(), content()])
+    .gap(tokens::SPACE_LG)
+    .height(Size::Fill(1.0))
+
+// Card row of icon + text + button. Default `Center` align
+// vertically centers the smaller children within the row's
+// hug height (≈ button height).
+row([icon("settings"), label, button("Edit")])
+    .gap(tokens::SPACE_SM)
+    .padding(tokens::SPACE_MD)
+
+// Two-pane fill: left pane gets 1/3, right gets 2/3.
+column([
+    left_pane().height(Size::Fill(1.0)),
+    right_pane().height(Size::Fill(2.0)),
+])
+```
+
+Common pitfalls to avoid:
+
+- **Two `Fill` siblings in a column will split the column's height 50/50** — even if one of them logically wants to hug. If a panel header should be its natural size and the body should claim everything else, give the header `.height(Size::Hug)` explicitly. Column children inherit `Size::Fill(1.0)` from the El default.
+- **`row()` defaults to `height = Hug`.** A row of full-height columns needs `.height(Size::Fill(1.0))` on the row itself, otherwise it shrinks to its tallest child's hug height.
+- **`stack()` (overlay) children share the parent's rect.** Use it for layered visuals (focus rings, tooltips) — not as a generic container. Z-order is child order.
+
+Shortcuts: `.fill_size()` for `.width(Fill(1.0)).height(Fill(1.0))`; `.hug()` for both Hug. `.padding(Sides::xy(h, v))` for asymmetric padding.
+
 ### 2. Identity & a11y tags
 
 - `key(s)` — stable identity for hit-test routing and event delivery.

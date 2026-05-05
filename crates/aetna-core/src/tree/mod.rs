@@ -593,6 +593,12 @@ impl El {
 // ---------- Layout primitives (plain functions) ----------
 
 /// A vertical container with a comfortable default gap.
+///
+/// Defaults: `axis = Column`, `align = Stretch`, `width = height = Fill(1.0)`.
+/// Hug-width children are stretched to the column's width; Fill-width
+/// children always fill regardless of `align`. Override `.align(...)`
+/// to position narrower (Hug/Fixed) children: `Start` (left), `Center`,
+/// `End` (right).
 #[track_caller]
 pub fn column<I, E>(children: I) -> El
 where
@@ -607,9 +613,16 @@ where
         .axis(Axis::Column)
 }
 
-/// A horizontal container with a comfortable default gap, vertically
-/// centered. Defaults to hugging height — override with
-/// `.height(Size::Fill(1.0))` if you want it to claim leftover space.
+/// A horizontal container with a comfortable default gap.
+///
+/// Defaults: `axis = Row`, `align = Center`, `height = Hug`. The
+/// `Center` default vertically centers the typical row content
+/// (icon + text + button) within the row's hug height.
+///
+/// To make the row span the full available height, set
+/// `.height(Size::Fill(1.0))`. `Fill`-height children always claim
+/// the row's full extent regardless of `align`; `align` only positions
+/// Hug/Fixed-height children that are shorter than the row.
 #[track_caller]
 pub fn row<I, E>(children: I) -> El
 where

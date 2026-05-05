@@ -460,13 +460,15 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
 
         let cross_intent = if vertical { c.width } else { c.height };
         let cross_intrinsic = if vertical { iw } else { ih };
+        // `Size::Fill` on the cross axis always claims the parent's
+        // full extent — there is no slack left to position, so the
+        // parent's `Align` becomes a no-op for that child. `Align`
+        // only positions Hug/Fixed children that are smaller than the
+        // container.
         let cross_size = match cross_intent {
             Size::Fixed(v) => v,
             Size::Hug => cross_intrinsic,
-            Size::Fill(_) => match node.align {
-                Align::Stretch => cross_extent,
-                _ => cross_intrinsic.min(cross_extent),
-            },
+            Size::Fill(_) => cross_extent,
         };
 
         let cross_off = match node.align {
