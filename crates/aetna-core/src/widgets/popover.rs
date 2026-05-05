@@ -276,6 +276,7 @@ where
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
         .surface_role(SurfaceRole::Popover)
+        .arrow_nav_siblings()
         .children(children)
         .fill(tokens::BG_CARD)
         .stroke(tokens::BORDER)

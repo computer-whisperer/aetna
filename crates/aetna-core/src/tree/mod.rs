@@ -111,6 +111,17 @@ pub struct El {
     /// writes the clamped value back. Set automatically by [`scroll`].
     pub scrollable: bool,
 
+    /// Treat this element's focusable children as a single arrow-navigable
+    /// group: while a focused element is one of the direct children,
+    /// `Up` / `Down` / `Home` / `End` move focus among the group's
+    /// focusable siblings instead of being routed as a `KeyDown`. Tab
+    /// traversal is unchanged.
+    ///
+    /// Used by `popover_panel` so menu items in a dropdown are
+    /// keyboard-navigable; available to any user widget that wants the
+    /// same semantics.
+    pub arrow_nav_siblings: bool,
+
     /// Override the implicit `stock::rounded_rect` binding for this
     /// node's surface. The escape hatch a user crate uses to bind a
     /// custom shader (e.g. `liquid_glass`).
@@ -221,6 +232,7 @@ impl Default for El {
             paint_overflow: Sides::zero(),
             clip: false,
             scrollable: false,
+            arrow_nav_siblings: false,
             shader_override: None,
             layout_override: None,
             virtual_items: None,
@@ -389,6 +401,14 @@ impl El {
     }
     pub fn scrollable(mut self) -> Self {
         self.scrollable = true;
+        self
+    }
+    /// Treat this element's focusable children as a single arrow-navigable
+    /// group: `Up` / `Down` / `Home` / `End` move focus among siblings
+    /// while one of them is focused. See the field doc on
+    /// [`Self::arrow_nav_siblings`].
+    pub fn arrow_nav_siblings(mut self) -> Self {
+        self.arrow_nav_siblings = true;
         self
     }
 

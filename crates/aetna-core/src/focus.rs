@@ -9,6 +9,86 @@ use crate::event::UiTarget;
 use crate::state::UiState;
 use crate::tree::{El, Rect};
 
+/// Find the focusable siblings inside the focused element's nearest
+/// `arrow_nav_siblings` parent, returning them in tree order (so an
+/// arrow-key handler can index them directly). Returns `None` when no
+/// such parent contains the focused element — that's the signal that
+/// arrow keys should fall through to the default `KeyDown` path.
+///
+/// Sibling collection mirrors [`focus_order`]: only `focusable` keyed
+/// nodes that survive the inherited clip are included. The returned
+/// list always contains the currently-focused element when one
+/// matches; callers locate it by `node_id` to compute next / prev /
+/// first / last.
+pub fn arrow_nav_group(root: &El, ui_state: &UiState, focused_id: &str) -> Option<Vec<UiTarget>> {
+    find_group(root, ui_state, None, focused_id)
+}
+
+fn find_group(
+    node: &El,
+    ui_state: &UiState,
+    inherited_clip: Option<Rect>,
+    focused_id: &str,
+) -> Option<Vec<UiTarget>> {
+    let computed = ui_state.rect(&node.computed_id);
+    let clip = if node.clip {
+        match inherited_clip {
+            Some(clip) => Some(
+                clip.intersect(computed)
+                    .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+            ),
+            None => Some(computed),
+        }
+    } else {
+        inherited_clip
+    };
+
+    // If this node is an arrow-navigable parent, check whether the
+    // focused element is one of its direct children. If so, this is
+    // the group to return — collect its focusable siblings.
+    if node.arrow_nav_siblings && node.children.iter().any(|c| c.computed_id == focused_id) {
+        let mut siblings: Vec<UiTarget> = Vec::new();
+        for child in &node.children {
+            collect_focusable_self(child, ui_state, clip, &mut siblings);
+        }
+        return Some(siblings);
+    }
+
+    // Otherwise, recurse — the focused element might be inside a
+    // deeper arrow-navigable group.
+    for child in &node.children {
+        if let Some(group) = find_group(child, ui_state, clip, focused_id) {
+            return Some(group);
+        }
+    }
+    None
+}
+
+/// Append `node`'s [`UiTarget`] if it's focusable, keyed, and inside
+/// the visible clip. Mirrors the per-node rule used by [`focus_order`]
+/// without recursing into descendants — the arrow-nav group is
+/// strictly the immediate children of the navigable parent.
+fn collect_focusable_self(
+    node: &El,
+    ui_state: &UiState,
+    clip: Option<Rect>,
+    out: &mut Vec<UiTarget>,
+) {
+    let computed = ui_state.rect(&node.computed_id);
+    if node.focusable
+        && let Some(key) = &node.key
+        && clip
+            .map(|c| c.intersect(computed).is_some())
+            .unwrap_or(true)
+    {
+        out.push(UiTarget {
+            key: key.clone(),
+            node_id: node.computed_id.clone(),
+            rect: computed,
+        });
+    }
+}
+
 /// Collect focusable, keyed nodes in tree order (Tab walks forward,
 /// Shift-Tab walks backward). Nodes outside their inherited clip are
 /// skipped.

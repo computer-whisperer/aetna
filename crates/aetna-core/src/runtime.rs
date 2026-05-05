@@ -53,7 +53,8 @@ use std::time::Duration;
 use web_time::Instant;
 
 use crate::draw_ops;
-use crate::event::{KeyChord, KeyModifiers, PointerButton, UiEvent, UiEventKind, UiKey};
+use crate::event::{KeyChord, KeyModifiers, PointerButton, UiEvent, UiEventKind, UiKey, UiTarget};
+use crate::focus;
 use crate::hit_test;
 use crate::ir::{DrawOp, TextAnchor};
 use crate::layout;
@@ -342,7 +343,62 @@ impl RunnerCore {
             }
             return self.ui_state.key_down_raw(key, modifiers, repeat);
         }
+
+        // Arrow-nav: if the focused node sits inside an arrow-navigable
+        // group (typically a popover_panel of menu items), Up / Down /
+        // Home / End move focus among its focusable siblings rather
+        // than emitting a `KeyDown` event. Hotkeys are still matched
+        // first so a global Ctrl+ArrowUp chord beats menu navigation.
+        if matches!(
+            key,
+            UiKey::ArrowUp | UiKey::ArrowDown | UiKey::Home | UiKey::End
+        ) && let Some(siblings) = self.focused_arrow_nav_group()
+        {
+            if let Some(event) = self.ui_state.try_hotkey(&key, modifiers, repeat) {
+                return Some(event);
+            }
+            self.move_focus_in_group(&key, &siblings);
+            return None;
+        }
+
         self.ui_state.key_down(key, modifiers, repeat)
+    }
+
+    /// Look up the focused node's nearest [`El::arrow_nav_siblings`]
+    /// parent in the last laid-out tree and return the focusable
+    /// siblings (the navigation targets for Up / Down / Home / End).
+    /// Returns `None` when no node is focused, the tree hasn't been
+    /// built yet, or the focused element isn't inside an
+    /// arrow-navigable parent.
+    fn focused_arrow_nav_group(&self) -> Option<Vec<UiTarget>> {
+        let focused = self.ui_state.focused.as_ref()?;
+        let tree = self.last_tree.as_ref()?;
+        focus::arrow_nav_group(tree, &self.ui_state, &focused.node_id)
+    }
+
+    /// Move the focused element to the appropriate sibling for `key`.
+    /// `Up` / `Down` step by one (saturating at the ends — no wrap, so
+    /// holding the key doesn't loop visually); `Home` / `End` jump to
+    /// the first / last sibling.
+    fn move_focus_in_group(&mut self, key: &UiKey, siblings: &[UiTarget]) {
+        if siblings.is_empty() {
+            return;
+        }
+        let focused_id = match self.ui_state.focused.as_ref() {
+            Some(t) => t.node_id.clone(),
+            None => return,
+        };
+        let idx = siblings.iter().position(|t| t.node_id == focused_id);
+        let next_idx = match (key, idx) {
+            (UiKey::ArrowUp, Some(i)) => i.saturating_sub(1),
+            (UiKey::ArrowDown, Some(i)) => (i + 1).min(siblings.len() - 1),
+            (UiKey::Home, _) => 0,
+            (UiKey::End, _) => siblings.len() - 1,
+            _ => return,
+        };
+        if Some(next_idx) != idx {
+            self.ui_state.set_focus(Some(siblings[next_idx].clone()));
+        }
     }
 
     /// Look up the focused node in the last laid-out tree and return
@@ -955,6 +1011,115 @@ mod tests {
             Some("ti"),
             "Tab from non-capturing focused does library-default traversal"
         );
+    }
+
+    /// A column whose three buttons sit inside an `arrow_nav_siblings`
+    /// parent (the shape `popover_panel` produces). Layout runs against
+    /// a 200x300 viewport with 10px padding; each button is 80px wide
+    /// and 36px tall stacked vertically, plenty inside the clip.
+    fn lay_out_arrow_nav_tree() -> RunnerCore {
+        use crate::tree::*;
+        let mut tree = crate::column([
+            crate::widgets::button::button("Red").key("opt-red"),
+            crate::widgets::button::button("Green").key("opt-green"),
+            crate::widgets::button::button("Blue").key("opt-blue"),
+        ])
+        .arrow_nav_siblings()
+        .padding(10.0);
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 200.0, 300.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+        // Pre-focus the middle option (the typical state right after a
+        // popover opens — we'll exercise transitions from there).
+        let target = core
+            .ui_state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "opt-green")
+            .cloned();
+        core.ui_state.set_focus(target);
+        core
+    }
+
+    #[test]
+    fn arrow_nav_moves_focus_among_siblings() {
+        let mut core = lay_out_arrow_nav_tree();
+
+        // ArrowDown moves to next sibling, no event emitted (it was
+        // consumed by the navigation path).
+        let down = core.key_down(UiKey::ArrowDown, KeyModifiers::default(), false);
+        assert!(down.is_none(), "arrow-nav consumes the key event");
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("opt-blue"),
+        );
+
+        // ArrowUp moves back.
+        core.key_down(UiKey::ArrowUp, KeyModifiers::default(), false);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("opt-green"),
+        );
+
+        // Home jumps to first.
+        core.key_down(UiKey::Home, KeyModifiers::default(), false);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("opt-red"),
+        );
+
+        // End jumps to last.
+        core.key_down(UiKey::End, KeyModifiers::default(), false);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("opt-blue"),
+        );
+    }
+
+    #[test]
+    fn arrow_nav_saturates_at_ends() {
+        let mut core = lay_out_arrow_nav_tree();
+        // Walk to the first option and try to go before it.
+        core.key_down(UiKey::Home, KeyModifiers::default(), false);
+        core.key_down(UiKey::ArrowUp, KeyModifiers::default(), false);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("opt-red"),
+            "ArrowUp at top stays at top — no wrap",
+        );
+        // Same at the bottom.
+        core.key_down(UiKey::End, KeyModifiers::default(), false);
+        core.key_down(UiKey::ArrowDown, KeyModifiers::default(), false);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("opt-blue"),
+            "ArrowDown at bottom stays at bottom — no wrap",
+        );
+    }
+
+    #[test]
+    fn arrow_nav_does_not_intercept_outside_navigable_groups() {
+        // Reuse the input tree (no arrow_nav_siblings parent). Arrow
+        // keys must produce a regular `KeyDown` event so a
+        // capture_keys widget can interpret them as caret motion.
+        let mut core = lay_out_input_tree(false);
+        let target = core
+            .ui_state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "btn")
+            .cloned();
+        core.ui_state.set_focus(target);
+        let event = core
+            .key_down(UiKey::ArrowDown, KeyModifiers::default(), false)
+            .expect("ArrowDown without navigable parent → event");
+        assert_eq!(event.kind, UiEventKind::KeyDown);
     }
 
     fn quad(shader: ShaderHandle) -> DrawOp {
