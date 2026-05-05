@@ -34,6 +34,7 @@ dependencies = [
  "fdsm",
  "fdsm-ttf-parser",
  "image",
+ "kurbo",
  "lyon_tessellation",
  "nalgebra",
  "swash",
@@ -47,10 +48,13 @@ name = "aetna-demo"
 version = "0.1.0"
 dependencies = [
  "aetna-core",
+ "aetna-fonts",
  "aetna-wgpu",
  "arboard",
+ "cosmic-text",
  "png 0.17.16",
  "pollster",
+ "ttf-parser 0.25.1",
  "wgpu",
  "winit",
 ]

@@ -1,11 +1,14 @@
 // stock::text_msdf — multi-channel signed-distance-field glyph rendering.
 //
 // One pipeline. Each per-instance entry places a glyph quad in logical
-// pixel space (`rect.xy/zw`) and samples a multi-channel SDF page in
-// (`uv.xy/zw`) at any size. The fragment shader recovers the signed
-// distance via the median of the three channels, derives an
-// anti-aliasing width from the screen-space UV gradient, and outputs
-// premultiplied colour scaled by coverage.
+// pixel space (`rect.xy/zw`) and samples an MTSDF page in
+// (`uv.xy/zw`) at any size. The atlas stores RGB = MSDF distance
+// channels and A = a true single-channel SDF. The fragment shader
+// reconstructs the signed distance from median(R,G,B); when median
+// disagrees with A about inside/outside (a classic MSDF artifact at
+// sharp corners), A wins. AA width is derived from the screen-space UV
+// gradient so output is one screen pixel wide regardless of render
+// scale.
 //
 // Coordinate system: vertex positions arrive as a unit quad with uv 0..1.
 // `rect` (xy=topleft logical px, zw=size logical px) places the glyph in
@@ -73,8 +76,17 @@ fn median3(a: f32, b: f32, c: f32) -> f32 {
 }
 
 fn coverage_at(uv: vec2<f32>, screen_px_range: f32) -> f32 {
-    let msd = textureSample(atlas_tex, atlas_smp, uv).rgb;
-    let sd = median3(msd.r, msd.g, msd.b) - 0.5;
+    let mtsd = textureSample(atlas_tex, atlas_smp, uv);
+    let median_sd = median3(mtsd.r, mtsd.g, mtsd.b);
+    let true_sd = mtsd.a;
+    // When MSDF and the true single-channel SDF disagree about whether
+    // a sample is inside or outside the glyph, the MSDF is lying — the
+    // per-channel coloring algorithm produces false-outside artifacts
+    // near sharp corners. The true SDF is monotonic and never has this
+    // problem, so it wins on disagreement (slightly rounding the corner
+    // there). Where they agree, MSDF wins (sharp).
+    let agree = (median_sd - 0.5) * (true_sd - 0.5) >= 0.0;
+    let sd = select(true_sd, median_sd, agree) - 0.5;
     return clamp(sd * 2.0 * screen_px_range + 0.5, 0.0, 1.0);
 }
 

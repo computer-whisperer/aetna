@@ -22,8 +22,9 @@
 
 use fdsm::{
     bezier::scanline::FillRule,
-    generate::generate_msdf,
-    render::correct_sign_msdf,
+    correct_error::{correct_error_mtsdf, ErrorCorrectionConfig},
+    generate::generate_mtsdf,
+    render::correct_sign_mtsdf,
     shape::Shape,
     transform::Transform,
 };
@@ -31,12 +32,19 @@ use fdsm_ttf_parser::load_shape_from_face;
 use nalgebra::{Affine2, Matrix3};
 use ttf_parser::{Face, GlyphId};
 
-/// One rasterized glyph in MSDF form, plus the metrics needed to place
+/// One rasterized glyph in MTSDF form, plus the metrics needed to place
 /// its quad. All metrics are in **base-em pixels**.
+///
+/// MTSDF = MSDF + true single-channel SDF in the alpha channel. The
+/// shader uses the alpha channel to detect and reject MSDF artifacts at
+/// sharp corners (median(R,G,B) can flip to "outside" inside the glyph
+/// when the per-channel coloring disagrees; the alpha channel never
+/// has this problem).
 #[derive(Clone, Debug, PartialEq)]
 pub struct MsdfGlyph {
-    /// RGB MSDF bitmap, packed `[r,g,b, r,g,b, …]`, length `w*h*3`.
-    pub rgb: Vec<u8>,
+    /// RGBA MTSDF bitmap, packed `[r,g,b,a, …]`, length `w*h*4`. RGB
+    /// channels carry the MSDF, A carries the true single-channel SDF.
+    pub rgba: Vec<u8>,
     /// Bitmap width in atlas pixels.
     pub width: u32,
     /// Bitmap height in atlas pixels.
@@ -95,10 +103,26 @@ pub fn build_glyph_msdf(
     let transform = Affine2::from_matrix_unchecked(m);
     shape.transform(&transform);
 
-    let prepared = Shape::edge_coloring_simple(shape, 0.03, 0).prepare();
-    let mut buf = image::RgbImage::new(width, height);
-    generate_msdf(&prepared, spread, &mut buf);
-    correct_sign_msdf(&mut buf, &prepared, FillRule::Nonzero);
+    let colored = Shape::edge_coloring_simple(shape, 0.03, 0);
+    let prepared = colored.prepare();
+    // Generate MTSDF at f32 precision: RGB carries the standard MSDF,
+    // alpha carries a true single-channel SDF. The shader picks the
+    // true SDF wherever median(RGB) disagrees with it, eliminating the
+    // false-outside artifacts that appear near sharp corners (e.g. the
+    // join between a glyph's stem and crossbar). Generation is followed
+    // by an error-correction pass, then sign correction (which must run
+    // last per fdsm's API contract).
+    let mut buf_f = image::Rgba32FImage::new(width, height);
+    generate_mtsdf(&prepared, spread, &mut buf_f);
+    correct_error_mtsdf(
+        &mut buf_f,
+        &colored,
+        &prepared,
+        spread,
+        &ErrorCorrectionConfig::default(),
+    );
+    correct_sign_mtsdf(&mut buf_f, &prepared, FillRule::Nonzero);
+    let buf = rgba32f_to_rgba8(&buf_f);
 
     let advance = face.glyph_hor_advance(gid).unwrap_or(0) as f32 * scale as f32;
     let bearing_x = bbox.x_min as f32 * scale as f32 - spread as f32;
@@ -108,7 +132,7 @@ pub fn build_glyph_msdf(
     let bearing_y = -(bbox.y_max as f32 * scale as f32) - spread as f32;
 
     Some(MsdfGlyph {
-        rgb: buf.into_raw(),
+        rgba: buf.into_raw(),
         width,
         height,
         bearing_x,
@@ -116,6 +140,18 @@ pub fn build_glyph_msdf(
         advance,
         spread: spread as f32,
     })
+}
+
+fn rgba32f_to_rgba8(src: &image::Rgba32FImage) -> image::RgbaImage {
+    let mut dst = image::RgbaImage::new(src.width(), src.height());
+    for (x, y, p) in src.enumerate_pixels() {
+        let r = (p[0].clamp(0.0, 1.0) * 255.0).round() as u8;
+        let g = (p[1].clamp(0.0, 1.0) * 255.0).round() as u8;
+        let b = (p[2].clamp(0.0, 1.0) * 255.0).round() as u8;
+        let a = (p[3].clamp(0.0, 1.0) * 255.0).round() as u8;
+        dst.put_pixel(x, y, image::Rgba([r, g, b, a]));
+    }
+    dst
 }
 
 /// Advance width for a glyph in base-em pixels. Useful for whitespace
@@ -143,7 +179,7 @@ mod tests {
         let glyph = build_glyph_msdf(&face, glyph_id, 32, 4.0).expect("MSDF for A");
 
         assert_eq!(glyph.spread, 4.0);
-        assert_eq!(glyph.rgb.len() as u32, glyph.width * glyph.height * 3);
+        assert_eq!(glyph.rgba.len() as u32, glyph.width * glyph.height * 4);
         // 32px em with 4px spread on each side: bitmap height covers
         // cap_height + spread*2 ≈ 28 px for Roboto.
         assert!(glyph.height >= 24 && glyph.height <= 36, "{}", glyph.height);
@@ -174,7 +210,7 @@ mod tests {
         let glyph_id = face.glyph_index('O').unwrap().0;
         let glyph = build_glyph_msdf(&face, glyph_id, 32, 4.0).unwrap();
         let mut found_inside = false;
-        for px in glyph.rgb.chunks_exact(3) {
+        for px in glyph.rgba.chunks_exact(4) {
             let mut v = [px[0], px[1], px[2]];
             v.sort_unstable();
             if v[1] > 200 {
@@ -191,13 +227,13 @@ mod tests {
         let face = roboto_face();
         let glyph_id = face.glyph_index('A').unwrap().0;
         let glyph = build_glyph_msdf(&face, glyph_id, 32, 4.0).unwrap();
-        let stride = glyph.width as usize * 3;
-        let corner = &glyph.rgb[0..3];
+        let stride = glyph.width as usize * 4;
+        let corner = &glyph.rgba[0..3];
         let mut v = [corner[0], corner[1], corner[2]];
         v.sort_unstable();
         assert!(v[1] < 60, "top-left corner median should be far outside, got {v:?}");
         let last_row = (glyph.height as usize - 1) * stride;
-        let bottom_right = &glyph.rgb[last_row + stride - 3..last_row + stride];
+        let bottom_right = &glyph.rgba[last_row + stride - 4..last_row + stride - 1];
         let mut v = [bottom_right[0], bottom_right[1], bottom_right[2]];
         v.sort_unstable();
         assert!(v[1] < 60, "bottom-right corner median should be far outside, got {v:?}");
@@ -210,6 +246,6 @@ mod tests {
         let b = build_glyph_msdf(&face, face.glyph_index('B').unwrap().0, 32, 4.0).unwrap();
         // Different shapes ⇒ different pixel content (or, very loosely,
         // not identical).
-        assert!(a.rgb != b.rgb || a.width != b.width || a.height != b.height);
+        assert!(a.rgba != b.rgba || a.width != b.width || a.height != b.height);
     }
 }

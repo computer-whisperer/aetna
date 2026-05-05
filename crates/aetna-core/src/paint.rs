@@ -96,12 +96,35 @@ pub struct InstanceRun {
     pub count: u32,
 }
 
-/// A contiguous run of backend-owned vector icon geometry sharing a scissor.
+/// Which icon-draw path a backend uses for this run.
+///
+/// `Tess` runs index into the backend's tessellated vector mesh
+/// (vertex range, expanded triangles). `Msdf` runs index into the
+/// backend's per-instance MSDF buffer (one entry = one icon quad) and
+/// must bind the atlas page identified by `IconRun::page`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IconRunKind {
+    Tess,
+    Msdf,
+}
+
+/// A contiguous run of backend-owned icon draws sharing a scissor.
+///
+/// For `Tess` runs, `first..first+count` is a vertex range in the
+/// backend's vector-mesh buffer and `material` selects the fragment
+/// shader (flat / relief / glass). For `Msdf` runs, `first..first+count`
+/// is an instance range in the backend's MSDF instance buffer; `page`
+/// names the atlas page to bind. `material` is always `Flat` for MSDF
+/// runs — non-flat materials need the per-fragment local view-box
+/// coordinate that the tessellated path provides, so they stay on the
+/// `Tess` route.
 #[derive(Clone, Copy)]
 pub struct IconRun {
+    pub kind: IconRunKind,
     pub scissor: Option<PhysicalScissor>,
     pub first: u32,
     pub count: u32,
+    pub page: u32,
     pub material: IconMaterial,
 }
 

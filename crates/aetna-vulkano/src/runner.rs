@@ -66,7 +66,7 @@ use vulkano::{
 };
 
 use aetna_core::ir::TextAnchor;
-use aetna_core::paint::{PaintItem, PhysicalScissor, QuadInstance};
+use aetna_core::paint::{IconRunKind, PaintItem, PhysicalScissor, QuadInstance};
 use aetna_core::runtime::{RecordedPaint, RunnerCore, TextRecorder};
 use aetna_core::text::atlas::RunStyle;
 use aetna_core::tree::{Color, FontWeight, IconName, TextWrap};
@@ -337,12 +337,19 @@ impl Runner {
             queue.clone(),
             memory_alloc.clone(),
             descriptor_alloc.clone(),
-            cmd_alloc,
+            cmd_alloc.clone(),
             text_subpass,
         );
         let icon_subpass =
             Subpass::from(render_pass.clone(), 0).expect("aetna-vulkano: icon subpass 0");
-        let icon_paint = IconPaint::new(device.clone(), memory_alloc.clone(), icon_subpass);
+        let icon_paint = IconPaint::new(
+            device.clone(),
+            queue.clone(),
+            memory_alloc.clone(),
+            descriptor_alloc.clone(),
+            cmd_alloc,
+            icon_subpass,
+        );
 
         // Filtering sampler bound at @group(1) @binding(1) for every
         // backdrop-sampling pipeline. Mirrors the wgpu side: linear
@@ -833,23 +840,65 @@ impl Runner {
                 PaintItem::IconRun(idx) => {
                     let run = self.icon_paint.run(idx);
                     set_scissor(builder, run.scissor, full);
-                    let icon_pipeline = self.icon_paint.pipeline(run.material);
-                    builder
-                        .bind_pipeline_graphics(icon_pipeline.clone())
-                        .expect("bind_pipeline_graphics icon");
-                    builder
-                        .bind_descriptor_sets(
-                            PipelineBindPoint::Graphics,
-                            icon_pipeline.layout().clone(),
-                            0,
-                            self.frame_descriptor_set.clone(),
-                        )
-                        .expect("bind_descriptor_sets icon");
-                    builder
-                        .bind_vertex_buffers(0, self.icon_paint.vertex_buf().clone())
-                        .expect("bind_vertex_buffers icon");
-                    unsafe {
-                        builder.draw(run.count, 1, run.first, 0).expect("draw icon");
+                    match run.kind {
+                        IconRunKind::Tess => {
+                            let pipeline = self.icon_paint.tess_pipeline(run.material);
+                            builder
+                                .bind_pipeline_graphics(pipeline.clone())
+                                .expect("bind_pipeline_graphics icon tess");
+                            builder
+                                .bind_descriptor_sets(
+                                    PipelineBindPoint::Graphics,
+                                    pipeline.layout().clone(),
+                                    0,
+                                    self.frame_descriptor_set.clone(),
+                                )
+                                .expect("bind_descriptor_sets icon tess");
+                            builder
+                                .bind_vertex_buffers(
+                                    0,
+                                    self.icon_paint.tess_vertex_buf().clone(),
+                                )
+                                .expect("bind_vertex_buffers icon tess");
+                            unsafe {
+                                builder
+                                    .draw(run.count, 1, run.first, 0)
+                                    .expect("draw icon tess");
+                            }
+                        }
+                        IconRunKind::Msdf => {
+                            let pipeline = self.icon_paint.msdf_pipeline();
+                            builder
+                                .bind_pipeline_graphics(pipeline.clone())
+                                .expect("bind_pipeline_graphics icon msdf");
+                            builder
+                                .bind_descriptor_sets(
+                                    PipelineBindPoint::Graphics,
+                                    pipeline.layout().clone(),
+                                    0,
+                                    (
+                                        self.frame_descriptor_set.clone(),
+                                        self.icon_paint
+                                            .msdf_page_descriptor(run.page)
+                                            .clone(),
+                                    ),
+                                )
+                                .expect("bind_descriptor_sets icon msdf");
+                            builder
+                                .bind_vertex_buffers(
+                                    0,
+                                    (
+                                        self.quad_vbo.clone(),
+                                        self.icon_paint.msdf_instance_buf().clone(),
+                                    ),
+                                )
+                                .expect("bind_vertex_buffers icon msdf");
+                            unsafe {
+                                builder
+                                    .draw(4, run.count, 0, run.first)
+                                    .expect("draw icon msdf");
+                            }
+                        }
                     }
                 }
                 PaintItem::Text(idx) => {

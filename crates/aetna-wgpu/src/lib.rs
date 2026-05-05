@@ -71,7 +71,7 @@ use wgpu::util::DeviceExt;
 
 use aetna_core::event::{KeyChord, KeyModifiers, PointerButton, UiEvent, UiKey};
 use aetna_core::ir::TextAnchor;
-use aetna_core::paint::{PhysicalScissor, QuadInstance};
+use aetna_core::paint::{IconRunKind, PhysicalScissor, QuadInstance};
 use aetna_core::runtime::{RecordedPaint, RunnerCore, TextRecorder};
 use aetna_core::shader::{ShaderHandle, StockShader, stock_wgsl};
 use aetna_core::state::{AnimationMode, UiState};
@@ -877,10 +877,29 @@ impl Runner {
                 PaintItem::IconRun(index) => {
                     let run = self.icon_paint.run(index);
                     set_scissor(pass, run.scissor, full);
-                    pass.set_pipeline(self.icon_paint.pipeline(run.material));
-                    pass.set_bind_group(0, &self.quad_bind_group, &[]);
-                    pass.set_vertex_buffer(0, self.icon_paint.vertex_buf().slice(..));
-                    pass.draw(run.first..run.first + run.count, 0..1);
+                    match run.kind {
+                        IconRunKind::Tess => {
+                            pass.set_pipeline(self.icon_paint.tess_pipeline(run.material));
+                            pass.set_bind_group(0, &self.quad_bind_group, &[]);
+                            pass.set_vertex_buffer(0, self.icon_paint.tess_vertex_buf().slice(..));
+                            pass.draw(run.first..run.first + run.count, 0..1);
+                        }
+                        IconRunKind::Msdf => {
+                            pass.set_pipeline(self.icon_paint.msdf_pipeline());
+                            pass.set_bind_group(0, &self.quad_bind_group, &[]);
+                            pass.set_bind_group(
+                                1,
+                                self.icon_paint.msdf_page_bind_group(run.page),
+                                &[],
+                            );
+                            pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
+                            pass.set_vertex_buffer(
+                                1,
+                                self.icon_paint.msdf_instance_buf().slice(..),
+                            );
+                            pass.draw(0..4, run.first..run.first + run.count);
+                        }
+                    }
                 }
                 PaintItem::BackdropSnapshot => {
                     // Marker only — `render()` splits the slice on

@@ -57,6 +57,8 @@ pub mod draw_ops;
 pub mod event;
 pub mod focus;
 pub mod hit_test;
+pub mod icon_msdf;
+pub mod icon_msdf_atlas;
 pub mod icons;
 pub mod ir;
 pub mod layout;

@@ -12,7 +12,10 @@ path = "src/lib.rs"
 
 [dependencies]
 aetna-core = { path = "../aetna-core" }
+aetna-fonts = { path = "../aetna-fonts" }
 aetna-wgpu = { path = "../aetna-wgpu" }
+cosmic-text = "0.12.1"
+ttf-parser = "0.25.1"
 wgpu = "23"
 winit = "0.30"
 pollster = "0.4"

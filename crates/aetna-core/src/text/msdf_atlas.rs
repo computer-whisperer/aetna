@@ -1,8 +1,11 @@
-//! MSDF glyph atlas — outline glyphs only.
+//! MTSDF glyph atlas — outline glyphs only.
 //!
-//! One MSDF per `(font, glyph)`, sized at a fixed base em and reused at
-//! every logical render size. Pages are RGBA8 (RGB = MSDF distance
-//! channels, A = 255); a backend mirrors them onto a GPU texture and
+//! One MTSDF per `(font, glyph)`, sized at a fixed base em and reused
+//! at every logical render size. Pages are RGBA8: RGB carries the
+//! standard 3-channel MSDF, A carries a true single-channel SDF. The
+//! shader uses A as a fallback wherever median(R,G,B) disagrees with
+//! it, eliminating the false-outside artifacts that MSDF produces near
+//! sharp corners. A backend mirrors pages onto a GPU texture and
 //! samples them through the `stock::text_msdf` shader.
 //!
 //! Color-emoji glyphs flow through the separate
@@ -265,7 +268,7 @@ impl MsdfAtlas {
 
     fn pack(&mut self, glyph: MsdfGlyph) -> MsdfSlot {
         let MsdfGlyph {
-            rgb,
+            rgba,
             width,
             height,
             bearing_x,
@@ -275,7 +278,7 @@ impl MsdfAtlas {
         } = glyph;
         let (page_idx, rect) = self.allocate(width, height);
         let page = &mut self.pages[page_idx];
-        copy_rgb_into_rgba(&mut page.pixels, page.width, &rect, &rgb);
+        copy_rgba_into_rgba(&mut page.pixels, page.width, &rect, &rgba);
         merge_dirty(&mut page.dirty, rect);
         MsdfSlot {
             page: page_idx as u32,
@@ -304,21 +307,16 @@ impl MsdfAtlas {
     }
 }
 
-fn copy_rgb_into_rgba(dst: &mut [u8], stride_pixels: u32, rect: &MsdfRect, src_rgb: &[u8]) {
+fn copy_rgba_into_rgba(dst: &mut [u8], stride_pixels: u32, rect: &MsdfRect, src_rgba: &[u8]) {
     let dst_row_bytes = stride_pixels as usize * MSDF_BYTES_PER_PIXEL as usize;
-    let src_row_bytes = rect.w as usize * 3;
+    let src_row_bytes = rect.w as usize * 4;
     for row in 0..rect.h as usize {
         let dst_off = (rect.y as usize + row) * dst_row_bytes
             + rect.x as usize * MSDF_BYTES_PER_PIXEL as usize;
         let src_off = row * src_row_bytes;
-        for col in 0..rect.w as usize {
-            let s = src_off + col * 3;
-            let d = dst_off + col * MSDF_BYTES_PER_PIXEL as usize;
-            dst[d] = src_rgb[s];
-            dst[d + 1] = src_rgb[s + 1];
-            dst[d + 2] = src_rgb[s + 2];
-            dst[d + 3] = 255;
-        }
+        let row_bytes = rect.w as usize * 4;
+        dst[dst_off..dst_off + row_bytes]
+            .copy_from_slice(&src_rgba[src_off..src_off + row_bytes]);
     }
 }
 

@@ -1,23 +1,45 @@
 //! GPU vector-icon rendering.
 //!
-//! Built-in icons are parsed from SVG through `usvg` into Aetna's
-//! backend-agnostic vector IR, tessellated into Aetna's shared vector
-//! mesh, then uploaded by this backend.
+//! Two paths sharing one [`IconPaint`]:
+//!
+//! - **MSDF**: pre-rasterised once per `(IconName, stroke_width)` into
+//!   an MTSDF atlas and rendered through `stock::text_msdf` (one quad
+//!   per icon). Used for the default `Flat` material, where coverage is
+//!   the only thing the fragment shader needs from the icon geometry.
+//! - **Tessellated**: lyon-tessellated triangles with analytic-AA
+//!   fringes, drawn through the local-coord `stock::vector*` shaders.
+//!   Kept for `Relief` / `Glass` materials which need per-fragment
+//!   view-box coordinates the MSDF path doesn't carry.
+//!
+//! Each [`IconRun`] carries a `kind` so the renderer knows which path
+//! to draw it through.
+//!
+//! Built-in icons are still parsed from SVG through `usvg` into Aetna's
+//! backend-agnostic vector IR; the MSDF path then runs that IR through
+//! kurbo (stroke→fill) and fdsm (MTSDF generation), the tess path
+//! through lyon.
 
 use std::borrow::Cow;
 use std::ops::Range;
 
+use aetna_core::icon_msdf_atlas::{
+    DEFAULT_PX_PER_UNIT, DEFAULT_SPREAD, IconMsdfAtlas, IconMsdfKey, IconMsdfPage, IconMsdfSlot,
+    IconRect,
+};
 use aetna_core::icons::icon_vector_asset;
-use aetna_core::paint::{IconRun, PhysicalScissor};
+use aetna_core::paint::{IconRun, IconRunKind, PhysicalScissor, rgba_f32};
 use aetna_core::shader::stock_wgsl;
 use aetna_core::tree::{Color, IconName, Rect};
 use aetna_core::vector::{
     IconMaterial, VectorMeshOptions, VectorMeshVertex, append_vector_asset_mesh,
 };
 
-const INITIAL_VERTEX_CAPACITY: usize = 1024;
+use bytemuck::{Pod, Zeroable};
 
-const VERTEX_ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+const INITIAL_VERTEX_CAPACITY: usize = 1024;
+const INITIAL_INSTANCE_CAPACITY: usize = 256;
+
+const TESS_VERTEX_ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
     0 => Float32x2, // position in logical px
     1 => Float32x2, // local SVG/viewBox coordinate
     2 => Float32x4, // linear rgba
@@ -25,14 +47,47 @@ const VERTEX_ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
     4 => Float32x2, // aa (analytic-AA fringe normal in logical px; (0,0) for solid verts)
 ];
 
+const MSDF_INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+    1 => Float32x4, // rect  (xy = top-left logical px, zw = size logical px)
+    2 => Float32x4, // uv    (xy = uv 0..1, zw = uv size 0..1)
+    3 => Float32x4, // color (linear rgba 0..1)
+    4 => Float32x4, // params (x = atlas-space spread, y/z/w reserved)
+];
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable, Debug)]
+pub(crate) struct MsdfIconInstance {
+    pub rect: [f32; 4],
+    pub uv: [f32; 4],
+    pub color: [f32; 4],
+    pub params: [f32; 4],
+}
+
+struct MsdfPageTexture {
+    texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
+}
+
 pub(crate) struct IconPaint {
-    vertices: Vec<VectorMeshVertex>,
-    vertex_buf: wgpu::Buffer,
-    vertex_capacity: usize,
-    runs: Vec<IconRun>,
+    // Tessellated path (legacy + non-flat materials).
+    tess_vertices: Vec<VectorMeshVertex>,
+    tess_vertex_buf: wgpu::Buffer,
+    tess_vertex_capacity: usize,
     flat_pipeline: wgpu::RenderPipeline,
     relief_pipeline: wgpu::RenderPipeline,
     glass_pipeline: wgpu::RenderPipeline,
+
+    // MSDF path (Flat material).
+    msdf_atlas: IconMsdfAtlas,
+    msdf_pages: Vec<MsdfPageTexture>,
+    msdf_instances: Vec<MsdfIconInstance>,
+    msdf_instance_buf: wgpu::Buffer,
+    msdf_instance_capacity: usize,
+    msdf_pipeline: wgpu::RenderPipeline,
+    msdf_page_bind_layout: wgpu::BindGroupLayout,
+    msdf_sampler: wgpu::Sampler,
+
+    runs: Vec<IconRun>,
     material: IconMaterial,
 }
 
@@ -42,48 +97,172 @@ impl IconPaint {
         target_format: wgpu::TextureFormat,
         frame_bind_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let vertex_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("aetna_wgpu::icon::vertex_buf"),
+        // ---- Tess pipelines ----
+        let tess_vertex_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aetna_wgpu::icon::tess_vertex_buf"),
             size: (INITIAL_VERTEX_CAPACITY * std::mem::size_of::<VectorMeshVertex>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("aetna_wgpu::icon::pipeline_layout"),
-            bind_group_layouts: &[frame_bind_layout],
-            push_constant_ranges: &[],
-        });
-        let flat_pipeline = build_vector_pipeline(
+        let tess_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("aetna_wgpu::icon::tess_pipeline_layout"),
+                bind_group_layouts: &[frame_bind_layout],
+                push_constant_ranges: &[],
+            });
+        let flat_pipeline = build_tess_pipeline(
             device,
-            &pipeline_layout,
+            &tess_pipeline_layout,
             target_format,
             "stock::vector",
             stock_wgsl::VECTOR,
         );
-        let relief_pipeline = build_vector_pipeline(
+        let relief_pipeline = build_tess_pipeline(
             device,
-            &pipeline_layout,
+            &tess_pipeline_layout,
             target_format,
             "stock::vector_relief",
             stock_wgsl::VECTOR_RELIEF,
         );
-        let glass_pipeline = build_vector_pipeline(
+        let glass_pipeline = build_tess_pipeline(
             device,
-            &pipeline_layout,
+            &tess_pipeline_layout,
             target_format,
             "stock::vector_glass",
             stock_wgsl::VECTOR_GLASS,
         );
 
+        // ---- MSDF pipeline ----
+        let msdf_page_bind_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("aetna_wgpu::icon::msdf_page_bind_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let msdf_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("aetna_wgpu::icon::msdf_pipeline_layout"),
+                bind_group_layouts: &[frame_bind_layout, &msdf_page_bind_layout],
+                push_constant_ranges: &[],
+            });
+        let msdf_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("stock::text_msdf (icon)"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(stock_wgsl::TEXT_MSDF)),
+        });
+        let msdf_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("aetna_wgpu::icon::msdf_pipeline"),
+            layout: Some(&msdf_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &msdf_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: (2 * std::mem::size_of::<f32>()) as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[wgpu::VertexAttribute {
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 0,
+                        }],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<MsdfIconInstance>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &MSDF_INSTANCE_ATTRS,
+                    },
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &msdf_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    // text_msdf outputs premultiplied colour; pair with
+                    // a premultiplied-alpha blend.
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let msdf_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("aetna_wgpu::icon::msdf_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let msdf_instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aetna_wgpu::icon::msdf_instance_buf"),
+            size: (INITIAL_INSTANCE_CAPACITY * std::mem::size_of::<MsdfIconInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
-            vertices: Vec::with_capacity(INITIAL_VERTEX_CAPACITY),
-            vertex_buf,
-            vertex_capacity: INITIAL_VERTEX_CAPACITY,
-            runs: Vec::new(),
+            tess_vertices: Vec::with_capacity(INITIAL_VERTEX_CAPACITY),
+            tess_vertex_buf,
+            tess_vertex_capacity: INITIAL_VERTEX_CAPACITY,
             flat_pipeline,
             relief_pipeline,
             glass_pipeline,
+            msdf_atlas: IconMsdfAtlas::new(DEFAULT_PX_PER_UNIT, DEFAULT_SPREAD),
+            msdf_pages: Vec::new(),
+            msdf_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
+            msdf_instance_buf,
+            msdf_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            msdf_pipeline,
+            msdf_page_bind_layout,
+            msdf_sampler,
+            runs: Vec::new(),
             material: IconMaterial::Flat,
         }
     }
@@ -97,7 +276,8 @@ impl IconPaint {
     }
 
     pub(crate) fn frame_begin(&mut self) {
-        self.vertices.clear();
+        self.tess_vertices.clear();
+        self.msdf_instances.clear();
         self.runs.clear();
     }
 
@@ -109,47 +289,116 @@ impl IconPaint {
         color: Color,
         stroke_width: f32,
     ) -> Range<usize> {
-        let asset = icon_vector_asset(name);
         if rect.w <= 0.0 || rect.h <= 0.0 {
             let start = self.runs.len();
             return start..start;
         }
-
-        let first = self.vertices.len() as u32;
-        let mesh_run = append_vector_asset_mesh(
-            asset,
-            VectorMeshOptions::icon(rect, color, stroke_width),
-            &mut self.vertices,
-        );
-        let count = mesh_run.count;
-        if count == 0 {
-            let start = self.runs.len();
-            return start..start;
-        }
-
         let start = self.runs.len();
-        self.runs.push(IconRun {
-            scissor,
-            first,
-            count,
-            material: self.material,
-        });
+        match self.material {
+            IconMaterial::Flat => {
+                if let Some(slot) = self
+                    .msdf_atlas
+                    .ensure(IconMsdfKey::new(name, stroke_width))
+                {
+                    let (page_w, page_h) = self.msdf_page_dims(slot.page);
+                    let instance = msdf_instance_for_icon(rect, color, &slot, page_w, page_h);
+                    let first = self.msdf_instances.len() as u32;
+                    self.msdf_instances.push(instance);
+                    self.runs.push(IconRun {
+                        kind: IconRunKind::Msdf,
+                        scissor,
+                        first,
+                        count: 1,
+                        page: slot.page,
+                        material: IconMaterial::Flat,
+                    });
+                }
+            }
+            material => {
+                let asset = icon_vector_asset(name);
+                let first = self.tess_vertices.len() as u32;
+                let mesh_run = append_vector_asset_mesh(
+                    asset,
+                    VectorMeshOptions::icon(rect, color, stroke_width),
+                    &mut self.tess_vertices,
+                );
+                if mesh_run.count > 0 {
+                    self.runs.push(IconRun {
+                        kind: IconRunKind::Tess,
+                        scissor,
+                        first,
+                        count: mesh_run.count,
+                        page: 0,
+                        material,
+                    });
+                }
+            }
+        }
         start..self.runs.len()
     }
 
+    /// `(width, height)` of the CPU-side atlas page for `page_idx`.
+    /// The GPU mirror may not exist yet (it's created at flush time);
+    /// the UV computation only needs the page extent, not the texture.
+    fn msdf_page_dims(&self, page_idx: u32) -> (u32, u32) {
+        let page = self
+            .msdf_atlas
+            .page(page_idx)
+            .expect("freshly-ensured slot references a missing atlas page");
+        (page.width, page.height)
+    }
+
     pub(crate) fn flush(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        if self.vertices.len() > self.vertex_capacity {
-            let new_cap = self.vertices.len().next_power_of_two();
-            self.vertex_buf = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("aetna_wgpu::icon::vertex_buf (resized)"),
+        // Tess vertex buffer.
+        if self.tess_vertices.len() > self.tess_vertex_capacity {
+            let new_cap = self.tess_vertices.len().next_power_of_two();
+            self.tess_vertex_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("aetna_wgpu::icon::tess_vertex_buf (resized)"),
                 size: (new_cap * std::mem::size_of::<VectorMeshVertex>()) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            self.vertex_capacity = new_cap;
+            self.tess_vertex_capacity = new_cap;
         }
-        if !self.vertices.is_empty() {
-            queue.write_buffer(&self.vertex_buf, 0, bytemuck::cast_slice(&self.vertices));
+        if !self.tess_vertices.is_empty() {
+            queue.write_buffer(&self.tess_vertex_buf, 0, bytemuck::cast_slice(&self.tess_vertices));
+        }
+
+        // MSDF pages: create GPU textures for any newly-allocated atlas
+        // pages, then upload dirty regions.
+        while self.msdf_pages.len() < self.msdf_atlas.pages().len() {
+            let i = self.msdf_pages.len();
+            let page = &self.msdf_atlas.pages()[i];
+            self.msdf_pages.push(create_msdf_page(
+                device,
+                &self.msdf_page_bind_layout,
+                &self.msdf_sampler,
+                page.width,
+                page.height,
+            ));
+        }
+        for (page_idx, rect) in self.msdf_atlas.take_dirty() {
+            let page = &self.msdf_atlas.pages()[page_idx];
+            upload_msdf_region(queue, &self.msdf_pages[page_idx].texture, page, rect);
+        }
+
+        // MSDF instance buffer.
+        if self.msdf_instances.len() > self.msdf_instance_capacity {
+            let new_cap = self.msdf_instances.len().next_power_of_two();
+            self.msdf_instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("aetna_wgpu::icon::msdf_instance_buf (resized)"),
+                size: (new_cap * std::mem::size_of::<MsdfIconInstance>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.msdf_instance_capacity = new_cap;
+        }
+        if !self.msdf_instances.is_empty() {
+            queue.write_buffer(
+                &self.msdf_instance_buf,
+                0,
+                bytemuck::cast_slice(&self.msdf_instances),
+            );
         }
     }
 
@@ -157,7 +406,7 @@ impl IconPaint {
         self.runs[index]
     }
 
-    pub(crate) fn pipeline(&self, material: IconMaterial) -> &wgpu::RenderPipeline {
+    pub(crate) fn tess_pipeline(&self, material: IconMaterial) -> &wgpu::RenderPipeline {
         match material {
             IconMaterial::Flat => &self.flat_pipeline,
             IconMaterial::Relief => &self.relief_pipeline,
@@ -165,12 +414,63 @@ impl IconPaint {
         }
     }
 
-    pub(crate) fn vertex_buf(&self) -> &wgpu::Buffer {
-        &self.vertex_buf
+    pub(crate) fn tess_vertex_buf(&self) -> &wgpu::Buffer {
+        &self.tess_vertex_buf
+    }
+
+    pub(crate) fn msdf_pipeline(&self) -> &wgpu::RenderPipeline {
+        &self.msdf_pipeline
+    }
+
+    pub(crate) fn msdf_instance_buf(&self) -> &wgpu::Buffer {
+        &self.msdf_instance_buf
+    }
+
+    pub(crate) fn msdf_page_bind_group(&self, page: u32) -> &wgpu::BindGroup {
+        &self.msdf_pages[page as usize].bind_group
     }
 }
 
-fn build_vector_pipeline(
+fn msdf_instance_for_icon(
+    rect: Rect,
+    color: Color,
+    slot: &IconMsdfSlot,
+    page_w: u32,
+    page_h: u32,
+) -> MsdfIconInstance {
+    // Expand the destination rect outward by the spread margin in
+    // logical px so the full atlas slot (including the SDF skirt) has
+    // somewhere to land — without this, the AA fringe is clipped by the
+    // unit-quad edge.
+    let [_, _, vw, vh] = slot.view_box;
+    let logical_per_unit_x = rect.w / vw.max(0.001);
+    let logical_per_unit_y = rect.h / vh.max(0.001);
+    let spread_x = slot.spread * logical_per_unit_x / slot.px_per_unit.max(0.001);
+    let spread_y = slot.spread * logical_per_unit_y / slot.px_per_unit.max(0.001);
+
+    let bx = rect.x - spread_x;
+    let by = rect.y - spread_y;
+    let bw = rect.w + 2.0 * spread_x;
+    let bh = rect.h + 2.0 * spread_y;
+
+    let pw = page_w as f32;
+    let ph = page_h as f32;
+    let uv = [
+        slot.rect.x as f32 / pw,
+        slot.rect.y as f32 / ph,
+        slot.rect.w as f32 / pw,
+        slot.rect.h as f32 / ph,
+    ];
+
+    MsdfIconInstance {
+        rect: [bx, by, bw, bh],
+        uv,
+        color: rgba_f32(color),
+        params: [slot.spread, 0.0, 0.0, 0.0],
+    }
+}
+
+fn build_tess_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
     target_format: wgpu::TextureFormat,
@@ -191,7 +491,7 @@ fn build_vector_pipeline(
             buffers: &[wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<VectorMeshVertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &VERTEX_ATTRS,
+                attributes: &TESS_VERTEX_ATTRS,
             }],
         },
         fragment: Some(wgpu::FragmentState {
@@ -218,4 +518,89 @@ fn build_vector_pipeline(
         multiview: None,
         cache: None,
     })
+}
+
+fn create_msdf_page(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    width: u32,
+    height: u32,
+) -> MsdfPageTexture {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("aetna_wgpu::icon::msdf_page"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("aetna_wgpu::icon::msdf_page_bg"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    });
+    MsdfPageTexture {
+        texture,
+        bind_group,
+    }
+}
+
+fn upload_msdf_region(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    page: &IconMsdfPage,
+    rect: IconRect,
+) {
+    // Pages are RGBA8 — 4 bytes per pixel.
+    let bpp: u32 = 4;
+    let row_bytes = page.width as usize * bpp as usize;
+    let dst_x = rect.x;
+    let dst_y = rect.y;
+    let mut staging = vec![0u8; (rect.w * rect.h * bpp) as usize];
+    for r in 0..rect.h as usize {
+        let src_off = (rect.y as usize + r) * row_bytes + rect.x as usize * bpp as usize;
+        let dst_off = r * (rect.w * bpp) as usize;
+        let len = (rect.w * bpp) as usize;
+        staging[dst_off..dst_off + len].copy_from_slice(&page.pixels[src_off..src_off + len]);
+    }
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: dst_x,
+                y: dst_y,
+                z: 0,
+            },
+            aspect: wgpu::TextureAspect::All,
+        },
+        &staging,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(rect.w * bpp),
+            rows_per_image: Some(rect.h),
+        },
+        wgpu::Extent3d {
+            width: rect.w,
+            height: rect.h,
+            depth_or_array_layers: 1,
+        },
+    );
 }
