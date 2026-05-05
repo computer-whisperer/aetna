@@ -1,6 +1,6 @@
 //! Smoke fixture for v5.3 step 7 — register a custom WGSL shader and
 //! render through it. Same gradient.wgsl that
-//! `aetna-demo/src/bin/render_custom.rs` exercises on the wgpu side, so
+//! `aetna-wgpu/examples/render_custom.rs` exercises on the wgpu side, so
 //! you can A/B both backends against the same custom shader.
 //!
 //! What this proves: `Runner::register_shader` runs naga on the WGSL,

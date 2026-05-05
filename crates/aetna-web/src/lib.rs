@@ -11,10 +11,10 @@
 //!   and drives [`Showcase`] through a winit event loop tailored for
 //!   the browser (`spawn_app` rather than `run_app`, async adapter
 //!   request).
-//! - **Native:** run the same App via `cargo run -p aetna-demo --bin
+//! - **Native:** run the same App via `cargo run -p aetna-examples --bin
 //!   showcase`. There's no separate native bin in this crate — the
 //!   reusable native host lives in `aetna-winit-wgpu`, with
-//!   `aetna-demo` providing the demo binary.
+//!   `aetna-examples` providing the demo binary.
 //!
 //! See `assets/index.html` for the minimal browser harness; see
 //! `tools/build_web.sh` for the wasm-pack invocation.

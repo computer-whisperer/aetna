@@ -16,3 +16,8 @@ cosmic-text = "0.19"
 ttf-parser = "0.25.1"
 # Drop-in `Instant::now()` that works on wasm32; std's panics there.
 web-time = "1"
+
+[dev-dependencies]
+aetna-fixtures = { path = "../aetna-fixtures" }
+png = "0.18"
+pollster = "0.4"

@@ -44,21 +44,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "aetna-demo"
+name = "aetna-examples"
 version = "0.1.0"
 dependencies = [
  "aetna-core",
  "aetna-fixtures",
- "aetna-fonts",
- "aetna-wgpu",
  "aetna-winit-wgpu",
  "arboard",
- "cosmic-text",
- "png",
- "pollster",
- "ttf-parser",
- "wgpu",
- "winit",
 ]
 
 [[package]]
@@ -71,6 +63,18 @@ dependencies = [
 [[package]]
 name = "aetna-fonts"
 version = "0.1.0"
+
+[[package]]
+name = "aetna-tools"
+version = "0.1.0"
+dependencies = [
+ "aetna-core",
+ "aetna-fixtures",
+ "aetna-fonts",
+ "cosmic-text",
+ "png",
+ "ttf-parser",
+]
 
 [[package]]
 name = "aetna-vulkano"
@@ -121,8 +125,11 @@ name = "aetna-wgpu"
 version = "0.1.0"
 dependencies = [
  "aetna-core",
+ "aetna-fixtures",
  "bytemuck",
  "cosmic-text",
+ "png",
+ "pollster",
  "ttf-parser",
  "web-time",
  "wgpu",

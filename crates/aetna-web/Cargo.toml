@@ -2,14 +2,13 @@
 name = "aetna-web"
 version = "0.1.0"
 edition = "2024"
-description = "Aetna — wasm browser entry point + shared App impl, with a native binary for parity"
+description = "Aetna — wasm browser entry point for the shared Showcase app"
 license = "MIT OR Apache-2.0"
 
 [lib]
 # `cdylib` is what `wasm-pack build --target web` ships to the browser;
-# `rlib` lets the sibling native binary import the same `App` impl.
-# This is the standard "one UI crate, two backends" split — same shape
-# as whisper-agent-webui at ../../whisper-agent.
+# `rlib` keeps the shared web entry importable by docs/tests. Native
+# parity now runs through `aetna-examples` and `aetna-vulkano-demo`.
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

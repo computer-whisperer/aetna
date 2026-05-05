@@ -13,15 +13,15 @@ Two manifesto documents stand at the repo root — read these before reviewing. 
 
 ## Where we are at
 
-v0.9 + v5.4 are in. Aetna lives under `crates/`:
+v0.9 + v5.4 are in. Aetna lives under `crates/`, with runnable cross-crate examples in the workspace `examples/` package:
 
 | Crate | Role |
 |---|---|
 | `aetna-core` | Backend-agnostic core. Tree (`El`), layout, draw-op IR, stock shaders + custom-shader binding, animation primitives, hit-test, focus, hotkeys, lint + bundle artifacts. Plus the v5.4 cross-backend paint primitives (`paint::QuadInstance` + paint-stream batching) and `runtime::RunnerCore` (the interaction half every backend `Runner` composes). No backend deps. |
 | `aetna-wgpu` | wgpu pipelines + per-page atlas textures + `Runner` shell. Wraps a shared `RunnerCore` from `aetna-core` for interaction state, paint-stream scratch, and the `pointer_*`/`key_down`/`set_hotkeys` surface; only GPU resources and the wgpu-flavoured `prepare()` GPU upload + `draw()` are backend-specific. |
-| `aetna-fixtures` | Backend-neutral showcase apps and render fixtures (`Showcase`, icon gallery, text-quality matrix, liquid-glass lab). No windowing or GPU setup; native, web, and vulkano demo crates import the same fixtures for parity. |
+| `aetna-fixtures` | Backend-neutral showcase apps and render fixtures (`Showcase`, icon gallery, text-quality matrix, liquid-glass lab). No windowing or GPU setup; examples, web, and backend parity crates import the same fixtures for parity. |
 | `aetna-winit-wgpu` | Optional batteries-included native desktop host for simple winit + wgpu apps. Owns window/surface setup, MSAA target management, input mapping, IME forwarding, redraw-on-animation, plus opt-in host cadence / `before_build` hooks for live external state. Custom hosts can bypass it and call `aetna-wgpu::Runner` directly. |
-| `aetna-demo` | Thin demo binary crate + compatibility re-exports. Interactive bins use `aetna-winit-wgpu`; headless render fixtures still exercise `aetna-wgpu` directly. |
+| `aetna-examples` | Workspace examples package (`examples/`). User-facing interactive examples that intentionally pull multiple crates: `aetna-core` + `aetna-winit-wgpu`, plus `aetna-fixtures` or native helpers where needed. |
 | `aetna-web` | wasm browser entry point. `crate-type = ["cdylib", "rlib"]`; re-exports `aetna_fixtures::Showcase` and ships a `#[wasm_bindgen(start)] start_web()` that opens a wgpu surface against an `<canvas id="aetna_canvas">` and drives the same backend-neutral App impl that native demos use. Same shape as `whisper-agent-webui` at `../../whisper-agent`. |
 | `aetna-vulkano` | Vulkan backend, peer to `aetna-wgpu`. WGSL → SPIR-V via `naga`; `Runner` mirrors `aetna_wgpu::Runner`'s public surface with `Arc<Device>`/`Queue`/`Format` constructor args. v5.3 lands the rect + text + custom-shader paths native-only; v5.4 step 2 reroutes the interaction half + paint-stream loop through the shared `RunnerCore` so behaviour can no longer drift between backends. |
 | `aetna-vulkano-demo` | winit + vulkano harness sibling of the wgpu demo path. v5.3 ships `bin/counter` (the v5.0 boundary A/B fixture) and `bin/custom` (the gradient WGSL fixture); v5.4 adds `bin/showcase`, which drives the same `aetna-fixtures::Showcase` app through `aetna-vulkano`. |
@@ -31,25 +31,25 @@ The architectural decision v5.0 settled: `El` is the author's description of the
 | Capability | Status | Proof point |
 |---|---|---|
 | Grammar | carried from attempt_3 | `column`/`row`/`card`/`button`/`badge`/`text`/`spacer`, intrinsic + `Fill`/`Hug`/`Fixed` sizing, `pub const` tokens |
-| Wgpu rendering | working | `cargo run -p aetna-demo --bin settings` and `crates/aetna-demo/out/settings.wgpu.png` |
+| Wgpu rendering | working | `cargo run -p aetna-examples --bin settings`; `cargo run -p aetna-wgpu --example render_png` writes `crates/aetna-wgpu/out/settings.wgpu.png` |
 | Stock shaders | `rounded_rect` + `text_sdf` + `focus_ring` | `solid_quad` / `divider_line` / `shadow` deferred to v0.7+ |
-| Custom-shader escape hatch | working | `crates/aetna-demo/out/custom_shader.wgpu.png` — gradient buttons rendered by user-authored `shaders/gradient.wgsl` |
-| Custom-layout escape hatch (v0.5) | working | `El::layout(f)` accepts a `LayoutFn(LayoutCtx) -> Vec<Rect>` that replaces the column/row/overlay distribution for a node's children. The library still recurses, still drives hit-test/focus/animation/scroll off the produced rects. `cargo run -p aetna-core --example circular_layout` → `crates/aetna-core/out/circular_layout.svg`; `cargo run -p aetna-demo --bin circular_layout` (interactive compass rose, click-routed through LayoutFn-produced rects) |
-| Virtualized list (v0.5) | working — fixed row height | `virtual_list(count, row_height, build_row)` realizes only the rows whose rect intersects the viewport. Wheel events route via the existing scroll machinery; computed_ids derive from row keys so hover/press/focus state survives scrolling. `cargo run -p aetna-core --example virtual_list` (10k rows, ~9 realized in tree dump); `cargo run -p aetna-demo --bin virtual_list` (100k rows, interactive scroll + click). Variable-height rows deferred to a later slice. |
-| App trait + hit-test + automatic hover/press | working | `cargo run -p aetna-demo --bin counter` (interactive); `crates/aetna-demo/out/counter.wgpu.png` |
+| Custom-shader escape hatch | working | `crates/aetna-wgpu/out/custom_shader.wgpu.png` — gradient buttons rendered by user-authored `shaders/gradient.wgsl` |
+| Custom-layout escape hatch (v0.5) | working | `El::layout(f)` accepts a `LayoutFn(LayoutCtx) -> Vec<Rect>` that replaces the column/row/overlay distribution for a node's children. The library still recurses, still drives hit-test/focus/animation/scroll off the produced rects. `cargo run -p aetna-core --example circular_layout` → `crates/aetna-core/out/circular_layout.svg`; `cargo run -p aetna-examples --bin circular_layout` (interactive compass rose, click-routed through LayoutFn-produced rects) |
+| Virtualized list (v0.5) | working — fixed row height | `virtual_list(count, row_height, build_row)` realizes only the rows whose rect intersects the viewport. Wheel events route via the existing scroll machinery; computed_ids derive from row keys so hover/press/focus state survives scrolling. `cargo run -p aetna-core --example virtual_list` (10k rows, ~9 realized in tree dump); `cargo run -p aetna-examples --bin virtual_list` (100k rows, interactive scroll + click). Variable-height rows deferred to a later slice. |
+| App trait + hit-test + automatic hover/press | working | `cargo run -p aetna-examples --bin counter` (interactive); `crates/aetna-wgpu/out/counter.wgpu.png` |
 | HiDPI text + shaped core layout + paragraph wrapping + text alignment | bundled Roboto, `cosmic-text` core layout + swash rasterization, core-owned glyph atlas | SVG fallback (`crates/aetna-core/out/settings.svg`) aligned with wgpu output |
 | Clip + modal/overlay (v0.3) | working | `cargo run -p aetna-core --example modal` → `crates/aetna-core/out/modal.svg` |
-| Scroll viewport (v0.3) | working | `cargo run -p aetna-core --example scroll_list` → `crates/aetna-core/out/scroll_list.svg`; `cargo run -p aetna-demo --bin scroll_list` (interactive, wheel) |
+| Scroll viewport (v0.3) | working | `cargo run -p aetna-core --example scroll_list` → `crates/aetna-core/out/scroll_list.svg`; `cargo run -p aetna-examples --bin scroll_list` (interactive, wheel) |
 | Host-painted regions | working | reserve a keyed node in the tree, call `Runner::rect_of_key("viewport")` after `prepare()`, and let the host renderer paint into that rect |
 | Focus traversal + keyboard routing (v0.4) | working | Tab / Shift+Tab / Enter / Space / Escape in any interactive demo |
-| Hotkey system (v0.4) | working | `cargo run -p aetna-demo --bin hotkey_picker` — `j`/`k` movement, Ctrl+L, `/`, etc., zero per-key matching in the app |
-| Animation primitives (v0.4) | spring + tween + per-(node, prop) tracker; library-owned hover / press / focus envelopes auto-ease on every keyed interactive node; author-facing `.animate(timing)` + `.opacity` / `.translate` / `.scale` for app-driven prop interpolation; `prepare()` returns `needs_redraw` so frames tick only while motion is in flight | `cargo run -p aetna-demo --bin animated_palette` — selection scales, fades, slides; counter & hotkey_picker get hover/press easing for free |
+| Hotkey system (v0.4) | working | `cargo run -p aetna-examples --bin hotkey_picker` — `j`/`k` movement, Ctrl+L, `/`, etc., zero per-key matching in the app |
+| Animation primitives (v0.4) | spring + tween + per-(node, prop) tracker; library-owned hover / press / focus envelopes auto-ease on every keyed interactive node; author-facing `.animate(timing)` + `.opacity` / `.translate` / `.scale` for app-driven prop interpolation; `prepare()` returns `needs_redraw` so frames tick only while motion is in flight | `cargo run -p aetna-examples --bin animated_palette` — selection scales, fades, slides; counter & hotkey_picker get hover/press easing for free |
 | Rich text (v0.6.1) | attributed runs, per-glyph color / weight / italic / strikethrough, hard breaks, paragraph alignment shared between SVG fallback and GPU paths | `cargo run -p aetna-core --example inline_runs` → `crates/aetna-core/out/inline_runs.svg` |
-| Backdrop sampling (v0.7) | multi-pass render API + snapshot copy + `@group(1)` backdrop sampler made available to custom shaders; `liquid_glass.wgsl` is the architectural acceptance test | `cargo run -p aetna-demo --bin render_liquid_glass`; runs identically through wgpu native, vulkano native, and WebGPU |
+| Backdrop sampling (v0.7) | multi-pass render API + snapshot copy + `@group(1)` backdrop sampler made available to custom shaders; `liquid_glass.wgsl` is the architectural acceptance test | `cargo run -p aetna-wgpu --example render_liquid_glass`; runs identically through wgpu native, vulkano native, and WebGPU |
 | Widget kit (v0.7.5) + input plumbing (v0.7.6) | symmetry invariant — stock widgets compose only public surface (`widget_state::<T>`, `capture_keys`, `paint_overflow`, `set_modifiers`, `LayoutCtx::rect_of_key`, etc.). `crates/aetna-core/src/widget_kit.md` is the author contract; every stock widget under `crates/aetna-core/src/widgets/` is a pure composition. v0.7.6 lands `PointerDown`, `SecondaryClick`, drag tracking, character / IME `TextInput` events, focused-node key capture, and `metrics::hit_text` as kit-public primitives | `widgets/button.rs` is the smallest dogfood example; `widget_kit.md` lists every kit surface |
-| `text_input` / `text_area` (v0.8.1–v0.8.4) | single + multi-line editing, `TextSelection { anchor, head }`, drag-to-select, shift-arrow extension, Ctrl+A/C/X/V via app-owned clipboard (`text_input::clipboard_request` detects keystrokes; app dispatches against `arboard` natively or web Clipboard API), preferred-column up/down motion, line-wise Home/End. Both widgets share `(value, TextSelection)` shape and the same `apply_event` helper. Built using only the public widget kit. | `cargo run -p aetna-demo --bin text_input`; `cargo run -p aetna-demo --bin text_area` |
-| Anchored popovers (v0.9) | two-pass layout positioning a popover relative to a trigger key (current-frame rect, no staleness); viewport-edge auto-flip; click-outside / Escape dismiss. `dropdown` and `context_menu` are compositions of `popover` + `popover_panel` + `menu_item` — no extra runtime wiring. New kit primitive: `LayoutCtx::rect_of_key` (any custom layout can position relative to keyed elements outside its own subtree). | `cargo run -p aetna-demo --bin popover` — top dropdown, bottom dropdown (auto-flip-up), context menu, non-scrim tooltip |
-| Bundle pipeline | `tree.txt` + `draw_ops.txt` + `shader_manifest.txt` + `lint.txt` + `.svg` + `.png` per fixture | `crates/aetna-{core,demo}/out/*` (gitignored under `crates/*/out/`; regenerate by re-running the example, then `tools/svg_to_png.sh` for PNGs) |
+| `text_input` / `text_area` (v0.8.1–v0.8.4) | single + multi-line editing, `TextSelection { anchor, head }`, drag-to-select, shift-arrow extension, Ctrl+A/C/X/V via app-owned clipboard (`text_input::clipboard_request` detects keystrokes; app dispatches against `arboard` natively or web Clipboard API), preferred-column up/down motion, line-wise Home/End. Both widgets share `(value, TextSelection)` shape and the same `apply_event` helper. Built using only the public widget kit. | `cargo run -p aetna-examples --bin text_input`; `cargo run -p aetna-examples --bin text_area` |
+| Anchored popovers (v0.9) | two-pass layout positioning a popover relative to a trigger key (current-frame rect, no staleness); viewport-edge auto-flip; click-outside / Escape dismiss. `dropdown` and `context_menu` are compositions of `popover` + `popover_panel` + `menu_item` — no extra runtime wiring. New kit primitive: `LayoutCtx::rect_of_key` (any custom layout can position relative to keyed elements outside its own subtree). | `cargo run -p aetna-examples --bin popover` — top dropdown, bottom dropdown (auto-flip-up), context menu, non-scrim tooltip |
+| Bundle pipeline | `tree.txt` + `draw_ops.txt` + `shader_manifest.txt` + `lint.txt` + `.svg` + `.png` per fixture | `crates/aetna-{core,wgpu}/out/*` (gitignored under `crates/*/out/`; regenerate by re-running the example, then `tools/svg_to_png.sh` for PNGs) |
 
 Author surface today — the entire interactive contract:
 
@@ -152,34 +152,34 @@ crates/
   aetna-vulkano/                 vulkano backend (Runner shell + pipelines + naga compile)
   aetna-fixtures/                backend-neutral Showcase + render fixtures
   aetna-winit-wgpu/              optional native winit + wgpu app host
-  aetna-demo/                    demo bins + compatibility exports
   aetna-vulkano-demo/            vulkano demo harness + backend parity bins
   aetna-web/                     wasm browser entry point — cdylib re-exporting Showcase
   aetna-fonts/                   bundled Roboto + emoji (split out in v0.7)
+examples/                        interactive cross-crate examples (`aetna-examples`)
+tools/                           Rust diagnostics (`aetna-tools`) plus helper scripts
 attempts/
   attempt_1..4/                  archive — read each directory's top-level docs for lineage
-tools/                           agent-loop scripts (rendering helpers, etc.)
 ```
 
 ## Try it locally
 
 ```bash
-cargo run -p aetna-demo --bin showcase            # interactive wgpu host — shared Showcase fixture
-cargo run -p aetna-demo --bin counter             # interactive — v0.2
-cargo run -p aetna-demo --bin scroll_list         # interactive — v0.3 wheel
-cargo run -p aetna-demo --bin hotkey_picker       # interactive — v0.4 keyboard
-cargo run -p aetna-demo --bin animated_palette    # interactive — v0.4 .animate()
+cargo run -p aetna-examples --bin showcase            # interactive wgpu host — shared Showcase fixture
+cargo run -p aetna-examples --bin counter             # interactive — v0.2
+cargo run -p aetna-examples --bin scroll_list         # interactive — v0.3 wheel
+cargo run -p aetna-examples --bin hotkey_picker       # interactive — v0.4 keyboard
+cargo run -p aetna-examples --bin animated_palette    # interactive — v0.4 .animate()
 cargo run -p aetna-core --example scroll_list     # headless → crates/aetna-core/out/scroll_list.svg
 cargo run -p aetna-core --example circular_layout # v0.5 — headless → crates/aetna-core/out/circular_layout.svg
-cargo run -p aetna-demo --bin circular_layout     # v0.5 — interactive compass rose, custom LayoutFn
+cargo run -p aetna-examples --bin circular_layout     # v0.5 — interactive compass rose, custom LayoutFn
 cargo run -p aetna-core --example virtual_list    # v0.5 — headless → crates/aetna-core/out/virtual_list.svg (10k rows; tree dump shows only the realized window)
-cargo run -p aetna-demo --bin virtual_list        # v0.5 — interactive 100k-row list, wheel scroll + click
+cargo run -p aetna-examples --bin virtual_list        # v0.5 — interactive 100k-row list, wheel scroll + click
 cargo run -p aetna-core --example inline_runs     # v0.6.1 — headless → crates/aetna-core/out/inline_runs.svg (attributed runs)
-cargo run -p aetna-demo --bin render_liquid_glass # v0.7 — backdrop-sampling acceptance test
-cargo run -p aetna-demo --bin text_input          # v0.8.1–v0.8.3 — single-line input, selection, clipboard
-cargo run -p aetna-demo --bin text_area           # v0.8.4 — multi-line input, wrapping caret, line-wise motion
-cargo run -p aetna-demo --bin popover             # v0.9 — anchored popovers, dropdown, context menu, tooltip
-cargo run -p aetna-demo --bin render_counter      # headless wgpu PNG snapshot
+cargo run -p aetna-wgpu --example render_liquid_glass # v0.7 — backdrop-sampling acceptance test
+cargo run -p aetna-examples --bin text_input          # v0.8.1–v0.8.3 — single-line input, selection, clipboard
+cargo run -p aetna-examples --bin text_area           # v0.8.4 — multi-line input, wrapping caret, line-wise motion
+cargo run -p aetna-examples --bin popover             # v0.9 — anchored popovers, dropdown, context menu, tooltip
+cargo run -p aetna-wgpu --example render_counter      # headless wgpu PNG snapshot
 cargo run -p aetna-vulkano-demo --bin counter     # v5.3 — same Counter, native vulkano (A/B vs wgpu demo counter)
 cargo run -p aetna-vulkano-demo --bin custom      # v5.3 — gradient.wgsl through Runner::register_shader
 cargo run -p aetna-vulkano-demo --bin showcase    # v5.4 — aetna-fixtures::Showcase through native vulkano
@@ -193,7 +193,7 @@ tools/build_web.sh --serve                        # wasm-pack build + python sta
 # open http://127.0.0.1:8080/assets/index.html
 ```
 
-Same `Showcase` `App` impl from `aetna-fixtures` runs through `aetna-winit-wgpu` via `aetna-demo::run` (`cargo run -p aetna-demo --bin showcase`), through `aetna-vulkano-demo::run` on vulkano, and through the wasm-bindgen + canvas-bound winit event loop in `aetna-web::start_web` in the browser.
+Same `Showcase` `App` impl from `aetna-fixtures` runs through `aetna-winit-wgpu` in `aetna-examples` (`cargo run -p aetna-examples --bin showcase`), through `aetna-vulkano-demo::run` on vulkano, and through the wasm-bindgen + canvas-bound winit event loop in `aetna-web::start_web` in the browser.
 
 ## Reviewing this
 

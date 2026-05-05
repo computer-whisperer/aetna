@@ -1,6 +1,6 @@
 //! Headless: render the shared text-quality matrix to PNG via vulkano.
 //!
-//! Twin of `aetna-demo`'s `render_text_quality` binary. Shares the
+//! Twin of `aetna-wgpu`'s `render_text_quality` example. Shares the
 //! same fixture so the two PNGs are directly comparable for backend
 //! parity work.
 //!

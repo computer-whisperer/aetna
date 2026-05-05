@@ -1,6 +1,6 @@
 //! Counter — v5.3 step 5 acceptance fixture.
 //!
-//! Same App impl as `aetna-demo/src/bin/counter.rs` (the v0.2 wgpu
+//! Same App impl as `examples/src/bin/counter.rs` (the v0.2 wgpu
 //! proof point), driven through `aetna-vulkano` instead. Side-by-side
 //! with the wgpu version this is the visual A/B test for whether the
 //! `aetna-core` ↔ backend boundary actually holds across two GPU APIs.
@@ -10,8 +10,8 @@
 //! "−" / "Reset" / "+" labels and the count number isn't visible.
 //! Hover, press, focus, and clicks still work end-to-end.
 //!
-//! Duplicated rather than `pub use`-imported so `aetna-demo` stays
-//! unchanged per V5_3.md's "what changes" table.
+//! Duplicated rather than `pub use`-imported so this backend acceptance
+//! fixture remains self-contained.
 
 use aetna_core::*;
 

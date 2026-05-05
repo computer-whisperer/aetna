@@ -54,8 +54,8 @@ pub fn run<A: App + 'static>(
 /// Like [`run`], but invokes `init_runner` on the freshly-built
 /// [`Runner`] before the first frame. Use this to call
 /// [`Runner::register_shader`] for any custom shaders the App's tree
-/// references — same shape as the wgpu `render_custom` fixture in
-/// `aetna-demo`.
+/// references — same shape as the wgpu `render_custom` example in
+/// `aetna-wgpu`.
 pub fn run_with_init<A: App + 'static, F: FnOnce(&mut Runner) + 'static>(
     title: &'static str,
     viewport: Rect,
