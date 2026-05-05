@@ -298,9 +298,13 @@ impl UiEvent {
     }
 }
 
-/// What kind of event happened. Open enum — start with click, grow
-/// non-breakingly as the library does.
+/// What kind of event happened.
+///
+/// This enum is non-exhaustive so Aetna can add new input events
+/// without breaking downstream apps. Match the variants you handle and
+/// include a wildcard arm for everything else.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UiEventKind {
     /// Primary-button pointer down + up landed on the same node.
     Click,

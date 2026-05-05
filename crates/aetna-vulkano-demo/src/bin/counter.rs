@@ -13,7 +13,7 @@
 //! Duplicated rather than `pub use`-imported so this backend acceptance
 //! fixture remains self-contained.
 
-use aetna_core::*;
+use aetna_core::prelude::*;
 
 struct Counter {
     value: i32,
@@ -43,11 +43,12 @@ impl App for Counter {
     }
 
     fn on_event(&mut self, event: UiEvent) {
-        match (event.kind, event.key.as_deref()) {
-            (UiEventKind::Click | UiEventKind::Activate, Some("inc")) => self.value += 1,
-            (UiEventKind::Click | UiEventKind::Activate, Some("dec")) => self.value -= 1,
-            (UiEventKind::Click | UiEventKind::Activate, Some("reset")) => self.value = 0,
-            _ => {}
+        if event.is_click_or_activate("inc") {
+            self.value += 1;
+        } else if event.is_click_or_activate("dec") {
+            self.value -= 1;
+        } else if event.is_click_or_activate("reset") {
+            self.value = 0;
         }
     }
 }

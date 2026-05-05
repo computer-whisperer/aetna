@@ -263,7 +263,7 @@ fn counter_view(state: &CounterState) -> El {
 }
 
 fn counter_on_event(state: &mut CounterState, e: UiEvent) {
-    match (e.kind, e.key.as_deref()) {
+    match (e.kind, e.route()) {
         (UiEventKind::Click | UiEventKind::Activate, Some("counter-inc")) => state.value += 1,
         (UiEventKind::Click | UiEventKind::Activate, Some("counter-dec")) => state.value -= 1,
         (UiEventKind::Click | UiEventKind::Activate, Some("counter-reset")) => state.value = 0,
@@ -313,7 +313,7 @@ fn list_view(state: &ListState) -> El {
 }
 
 fn list_on_event(state: &mut ListState, e: UiEvent) {
-    if let (UiEventKind::Click | UiEventKind::Activate, Some(k)) = (e.kind, e.key.as_deref())
+    if let (UiEventKind::Click | UiEventKind::Activate, Some(k)) = (e.kind, e.route())
         && let Some(rest) = k.strip_prefix("list-row-")
         && let Ok(i) = rest.parse::<usize>()
     {
@@ -395,7 +395,7 @@ fn palette_view(state: &PaletteState) -> El {
 
 fn palette_on_event(state: &mut PaletteState, e: UiEvent) {
     if matches!(e.kind, UiEventKind::Click | UiEventKind::Activate)
-        && let Some(k) = e.key.as_deref()
+        && let Some(k) = e.route()
         && let Some(rest) = k.strip_prefix("palette-swatch-")
         && let Ok(i) = rest.parse::<usize>()
     {
@@ -512,7 +512,7 @@ fn picker_hotkeys(state: &PickerState) -> Vec<(KeyChord, String)> {
 }
 
 fn picker_on_event(state: &mut PickerState, e: UiEvent) {
-    match (e.kind, e.key.as_deref()) {
+    match (e.kind, e.route()) {
         (UiEventKind::Hotkey, Some("picker-move-down"))
             if state.selected + 1 < PICKER_ITEMS.len() =>
         {
@@ -787,7 +787,7 @@ fn glass_on_event(state: &mut GlassState, e: UiEvent) {
     if !matches!(e.kind, UiEventKind::Click | UiEventKind::Activate) {
         return;
     }
-    match e.key.as_deref() {
+    match e.route() {
         Some("glass-next") => state.preset = (state.preset + 1) % GLASS_PRESETS.len(),
         Some("glass-drift") => state.drift = (state.drift + 1) % DRIFT_OFFSETS.len(),
         _ => {}
