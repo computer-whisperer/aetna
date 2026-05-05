@@ -108,8 +108,8 @@ impl IconPaint {
         let tess_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("aetna_wgpu::icon::tess_pipeline_layout"),
-                bind_group_layouts: &[frame_bind_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(frame_bind_layout)],
+                immediate_size: 0,
             });
         let flat_pipeline = build_tess_pipeline(
             device,
@@ -160,8 +160,8 @@ impl IconPaint {
         let msdf_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("aetna_wgpu::icon::msdf_pipeline_layout"),
-                bind_group_layouts: &[frame_bind_layout, &msdf_page_bind_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(frame_bind_layout), Some(&msdf_page_bind_layout)],
+                immediate_size: 0,
             });
         let msdf_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stock::text_msdf (icon)"),
@@ -225,7 +225,7 @@ impl IconPaint {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -236,7 +236,7 @@ impl IconPaint {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -515,7 +515,7 @@ fn build_tess_pipeline(
         },
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }
@@ -581,7 +581,7 @@ fn upload_msdf_region(
         staging[dst_off..dst_off + len].copy_from_slice(&page.pixels[src_off..src_off + len]);
     }
     queue.write_texture(
-        wgpu::ImageCopyTexture {
+        wgpu::TexelCopyTextureInfo {
             texture,
             mip_level: 0,
             origin: wgpu::Origin3d {
@@ -592,7 +592,7 @@ fn upload_msdf_region(
             aspect: wgpu::TextureAspect::All,
         },
         &staging,
-        wgpu::ImageDataLayout {
+        wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(rect.w * bpp),
             rows_per_image: Some(rect.h),

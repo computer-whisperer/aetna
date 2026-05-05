@@ -21,7 +21,7 @@ aetna-wgpu = { path = "../aetna-wgpu" }
 # native entry; the wasm path here uses its own browser-tailored
 # event loop below.
 aetna-demo = { path = "../aetna-demo" }
-wgpu = "23"
+wgpu = "29"
 winit = "0.30"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -42,6 +42,6 @@ web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
     "Window",
 ] }
-# Browser wgpu backends — workspace's plain `wgpu = "23"` only enables
+# Browser wgpu backends — workspace's plain `wgpu = "29"` only enables
 # native backends.
-wgpu = { version = "23", features = ["webgl"] }
+wgpu = { version = "29", features = ["webgl"] }

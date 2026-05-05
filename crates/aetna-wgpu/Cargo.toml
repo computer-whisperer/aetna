@@ -10,7 +10,7 @@ path = "src/lib.rs"
 
 [dependencies]
 aetna-core = { path = "../aetna-core" }
-wgpu = "23"
+wgpu = "29"
 bytemuck = { version = "1.21", features = ["derive"] }
 cosmic-text = "0.19"
 ttf-parser = "0.25.1"

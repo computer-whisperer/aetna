@@ -10,9 +10,9 @@ path = "src/lib.rs"
 
 [dependencies]
 aetna-core = { path = "../aetna-core" }
-# Pinned to match wgpu 23.x's bundled naga so the two backends parse
+# Pinned to match wgpu 29.x's bundled naga so the two backends parse
 # WGSL identically and a shader that compiles for one compiles for both.
-naga = { version = "23.1", features = ["wgsl-in", "spv-out"] }
+naga = { version = "29", features = ["wgsl-in", "spv-out"] }
 vulkano = "0.35"
 bytemuck = { version = "1.21", features = ["derive"] }
 smallvec = "1"

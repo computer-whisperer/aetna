@@ -149,8 +149,8 @@ impl TextPaint {
         let color_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("aetna_wgpu::text::color_pipeline_layout"),
-                bind_group_layouts: &[frame_bind_layout, &color_page_bind_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(frame_bind_layout), Some(&color_page_bind_layout)],
+                immediate_size: 0,
             });
 
         let color_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -195,7 +195,7 @@ impl TextPaint {
             primitive: triangle_strip(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -206,7 +206,7 @@ impl TextPaint {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -244,8 +244,8 @@ impl TextPaint {
         let msdf_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("aetna_wgpu::text::msdf_pipeline_layout"),
-                bind_group_layouts: &[frame_bind_layout, &msdf_page_bind_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(frame_bind_layout), Some(&msdf_page_bind_layout)],
+                immediate_size: 0,
             });
 
         let msdf_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -290,7 +290,7 @@ impl TextPaint {
             primitive: triangle_strip(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -301,7 +301,7 @@ impl TextPaint {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -859,7 +859,7 @@ fn upload_color_region(
         bytes.extend_from_slice(&page.pixels[start..end]);
     }
     queue.write_texture(
-        wgpu::ImageCopyTexture {
+        wgpu::TexelCopyTextureInfo {
             texture,
             mip_level: 0,
             origin: wgpu::Origin3d {
@@ -870,7 +870,7 @@ fn upload_color_region(
             aspect: wgpu::TextureAspect::All,
         },
         &bytes,
-        wgpu::ImageDataLayout {
+        wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(rect.w * ATLAS_BYTES_PER_PIXEL),
             rows_per_image: Some(rect.h),
@@ -902,7 +902,7 @@ fn upload_msdf_region(
         bytes.extend_from_slice(&page.pixels[start..end]);
     }
     queue.write_texture(
-        wgpu::ImageCopyTexture {
+        wgpu::TexelCopyTextureInfo {
             texture,
             mip_level: 0,
             origin: wgpu::Origin3d {
@@ -913,7 +913,7 @@ fn upload_msdf_region(
             aspect: wgpu::TextureAspect::All,
         },
         &bytes,
-        wgpu::ImageDataLayout {
+        wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(rect.w * MSDF_BYTES_PER_PIXEL),
             rows_per_image: Some(rect.h),

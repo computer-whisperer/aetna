@@ -14,13 +14,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let height = (logical_height as f32 * scale_factor) as u32;
     let viewport = Rect::new(0.0, 0.0, logical_width as f32, logical_height as f32);
 
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::default(),
         compatible_surface: None,
         force_fallback_adapter: false,
     }))
-    .ok_or("no compatible adapter (try installing vulkan / mesa drivers)")?;
+    .map_err(|e| format!("{} ({e})", "no compatible adapter (try installing vulkan / mesa drivers)"))?;
     println!(
         "adapter: {:?} ({:?})",
         adapter.get_info().name,
@@ -32,9 +32,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             label: Some("aetna_demo::liquid_glass_lab::device"),
             required_features: wgpu::Features::empty(),
             required_limits: wgpu::Limits::default(),
+            experimental_features: wgpu::ExperimentalFeatures::default(),
             memory_hints: wgpu::MemoryHints::Performance,
+            trace: wgpu::Trace::Off,
         },
-        None,
     ))?;
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
@@ -86,15 +87,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         wgpu::LoadOp::Clear(bg_color()),
     );
     encoder.copy_texture_to_buffer(
-        wgpu::ImageCopyTexture {
+        wgpu::TexelCopyTextureInfo {
             texture: &texture,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        wgpu::ImageCopyBuffer {
+        wgpu::TexelCopyBufferInfo {
             buffer: &readback_buf,
-            layout: wgpu::ImageDataLayout {
+            layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(padded_bytes_per_row),
                 rows_per_image: Some(height),
@@ -113,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     buffer_slice.map_async(wgpu::MapMode::Read, move |r| {
         sender.send(r).ok();
     });
-    device.poll(wgpu::Maintain::Wait);
+    device.poll(wgpu::PollType::wait_indefinitely()).expect("device poll");
     receiver.recv()??;
 
     let padded = buffer_slice.get_mapped_range();

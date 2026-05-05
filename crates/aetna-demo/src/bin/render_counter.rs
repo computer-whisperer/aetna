@@ -67,13 +67,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Counter { value: 5 };
 
     // ---- wgpu boilerplate (same as render_png) ----
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::default(),
         compatible_surface: None,
         force_fallback_adapter: false,
     }))
-    .ok_or("no compatible adapter")?;
+    .map_err(|e| format!("{} ({e})", "no compatible adapter"))?;
     println!(
         "adapter: {:?} ({:?})",
         adapter.get_info().name,
@@ -85,9 +85,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             label: Some("aetna_demo::counter::device"),
             required_features: wgpu::Features::empty(),
             required_limits: wgpu::Limits::default(),
+            experimental_features: wgpu::ExperimentalFeatures::default(),
             memory_hints: wgpu::MemoryHints::Performance,
+            trace: wgpu::Trace::Off,
         },
-        None,
     ))?;
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
@@ -160,6 +161,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &view,
                 resolve_target: None,
+                depth_slice: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(bg),
                     store: wgpu::StoreOp::Store,
@@ -168,19 +170,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         renderer.draw(&mut pass);
     }
     encoder.copy_texture_to_buffer(
-        wgpu::ImageCopyTexture {
+        wgpu::TexelCopyTextureInfo {
             texture: &texture,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        wgpu::ImageCopyBuffer {
+        wgpu::TexelCopyBufferInfo {
             buffer: &readback_buf,
-            layout: wgpu::ImageDataLayout {
+            layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(padded_bytes_per_row),
                 rows_per_image: Some(height),
@@ -199,7 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     buffer_slice.map_async(wgpu::MapMode::Read, move |r| {
         sender.send(r).ok();
     });
-    device.poll(wgpu::Maintain::Wait);
+    device.poll(wgpu::PollType::wait_indefinitely()).expect("device poll");
     receiver.recv()??;
 
     let padded = buffer_slice.get_mapped_range();

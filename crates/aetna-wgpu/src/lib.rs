@@ -263,8 +263,8 @@ impl Runner {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("aetna_wgpu::pipeline_layout"),
-            bind_group_layouts: &[&frame_bind_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&frame_bind_layout)],
+            immediate_size: 0,
         });
 
         // ---- Backdrop sampling resources ----
@@ -299,8 +299,8 @@ impl Runner {
         let backdrop_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("aetna_wgpu::backdrop_pipeline_layout"),
-                bind_group_layouts: &[&frame_bind_layout, &backdrop_bind_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&frame_bind_layout), Some(&backdrop_bind_layout)],
+                immediate_size: 0,
             });
         let backdrop_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("aetna_wgpu::backdrop_sampler"),
@@ -309,7 +309,7 @@ impl Runner {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -704,6 +704,7 @@ impl Runner {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: target_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: load_op,
                             store: wgpu::StoreOp::Store,
@@ -712,6 +713,7 @@ impl Runner {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 self.draw_items(&mut pass, &self.core.paint_items[..idx]);
             }
@@ -720,13 +722,13 @@ impl Runner {
             // + TEXTURE_BINDING.
             let snapshot = self.snapshot.as_ref().expect("snapshot ensured");
             encoder.copy_texture_to_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: target_tex,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &snapshot.texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
@@ -745,6 +747,7 @@ impl Runner {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: target_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -753,6 +756,7 @@ impl Runner {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 // Skip the snapshot item itself; it's a marker, not a draw.
                 self.draw_items(&mut pass, &self.core.paint_items[idx + 1..]);
@@ -763,6 +767,7 @@ impl Runner {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: target_view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: load_op,
                         store: wgpu::StoreOp::Store,
@@ -771,6 +776,7 @@ impl Runner {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             self.draw_items(&mut pass, &self.core.paint_items);
         }
