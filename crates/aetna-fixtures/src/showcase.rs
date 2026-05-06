@@ -37,6 +37,8 @@ pub enum Section {
     Picker,
     Settings,
     Forms,
+    Inputs,
+    Tabs,
     Split,
     Glass,
     Toasts,
@@ -52,6 +54,8 @@ impl Section {
             Section::Picker => "Picker",
             Section::Settings => "Settings",
             Section::Forms => "Forms",
+            Section::Inputs => "Inputs",
+            Section::Tabs => "Tabs",
             Section::Split => "Split",
             Section::Glass => "Glass",
             Section::Toasts => "Toasts",
@@ -67,6 +71,8 @@ impl Section {
             Section::Picker => "nav-picker",
             Section::Settings => "nav-settings",
             Section::Forms => "nav-forms",
+            Section::Inputs => "nav-inputs",
+            Section::Tabs => "nav-tabs",
             Section::Split => "nav-split",
             Section::Glass => "nav-glass",
             Section::Toasts => "nav-toasts",
@@ -74,13 +80,15 @@ impl Section {
         }
     }
 
-    const ALL: [Section; 10] = [
+    const ALL: [Section; 12] = [
         Section::Counter,
         Section::List,
         Section::Palette,
         Section::Picker,
         Section::Settings,
         Section::Forms,
+        Section::Inputs,
+        Section::Tabs,
         Section::Split,
         Section::Glass,
         Section::Toasts,
@@ -144,6 +152,59 @@ impl Default for FormsState {
     }
 }
 
+struct InputsState {
+    /// Volume slider, normalized 0.0..=1.0.
+    volume: f32,
+    /// Single-line text input — display name.
+    name: String,
+    name_sel: TextSelection,
+    /// Single-line text input — email address.
+    email: String,
+    email_sel: TextSelection,
+    /// Multi-line text area — bio.
+    bio: String,
+    bio_sel: TextSelection,
+    /// Selected region token from the dropdown.
+    region: String,
+    /// Whether the region select dropdown is currently open.
+    region_open: bool,
+}
+
+impl Default for InputsState {
+    fn default() -> Self {
+        Self {
+            volume: 0.6,
+            name: "Christian".into(),
+            name_sel: TextSelection::default(),
+            email: "user@example.com".into(),
+            email_sel: TextSelection::default(),
+            bio: "Building Aetna — a renderer-agnostic UI kit for Rust apps and AI agents.".into(),
+            bio_sel: TextSelection::default(),
+            region: "us-east".into(),
+            region_open: false,
+        }
+    }
+}
+
+struct TabsState {
+    /// Currently active tab — token returned from `tab_option_key`.
+    tab: String,
+    /// Whether the "Actions ▾" dropdown on the Account tab is open.
+    actions_open: bool,
+    /// Last action picked from the dropdown (display only).
+    last_action: Option<String>,
+}
+
+impl Default for TabsState {
+    fn default() -> Self {
+        Self {
+            tab: "account".into(),
+            actions_open: false,
+            last_action: None,
+        }
+    }
+}
+
 struct SplitState {
     /// Current sidebar width in logical pixels.
     sidebar_w: f32,
@@ -199,6 +260,8 @@ pub struct Showcase {
     palette: PaletteState,
     picker: PickerState,
     forms: FormsState,
+    inputs: InputsState,
+    tabs: TabsState,
     split: SplitState,
     glass: GlassState,
     toasts: ToastsState,
@@ -226,7 +289,26 @@ impl App for Showcase {
         // tooltip / toast layers as siblings of the main view
         // without those layers competing for row-axis space —
         // same convention any app uses for popovers and modals.
-        overlays(row([sidebar(self.section), content(self)]), [])
+        //
+        // The Inputs and Tabs sections each contribute a single
+        // popover layer (region select menu / actions dropdown) when
+        // their open flag is set; all other sections contribute
+        // none.
+        let region_layer = (self.section == Section::Inputs && self.inputs.region_open)
+            .then(|| select_menu("inputs-region", REGION_OPTIONS.iter().copied()));
+        let actions_layer = (self.section == Section::Tabs && self.tabs.actions_open).then(|| {
+            dropdown(
+                "tabs-actions-menu",
+                "tabs-actions-trigger",
+                TABS_ACTIONS
+                    .iter()
+                    .map(|a| menu_item(*a).key(format!("tabs-action:{a}"))),
+            )
+        });
+        overlays(
+            row([sidebar(self.section), content(self)]),
+            [region_layer, actions_layer],
+        )
     }
 
     fn hotkeys(&self) -> Vec<(KeyChord, String)> {
@@ -253,6 +335,8 @@ impl App for Showcase {
             Section::Picker => picker_on_event(&mut self.picker, event),
             Section::Settings => {} // static fixture, no events
             Section::Forms => forms_on_event(&mut self.forms, event),
+            Section::Inputs => inputs_on_event(&mut self.inputs, event),
+            Section::Tabs => tabs_on_event(&mut self.tabs, event),
             Section::Split => split_on_event(&mut self.split, event),
             Section::Glass => glass_on_event(&mut self.glass, event),
             Section::Toasts => toasts_on_event(&mut self.toasts, event),
@@ -314,6 +398,8 @@ fn content(app: &Showcase) -> El {
         Section::Picker => picker_view(&app.picker),
         Section::Settings => settings_view(),
         Section::Forms => forms_view(&app.forms),
+        Section::Inputs => inputs_view(&app.inputs),
+        Section::Tabs => tabs_view(&app.tabs),
         Section::Split => split_view(&app.split),
         Section::Glass => {
             return glass_view(&app.glass)
@@ -913,6 +999,265 @@ fn forms_on_event(state: &mut FormsState, e: UiEvent) {
         || switch::apply_event(&mut state.share_usage, &e, "forms-share-usage");
 }
 
+// ---- Inputs section ----
+//
+// Slider + text_input + text_area + select, each in its own card. The
+// section exists so the smoke-test pass can poke every value-capture
+// widget without hunting for a fixture; it doubles as a regression
+// surface for the slider grab feedback (the thumb borrows the focusable
+// container's hover / press envelopes via `state_follows_interactive_ancestor`).
+
+const REGION_OPTIONS: &[(&str, &str)] = &[
+    ("us-east", "US East (Virginia)"),
+    ("us-west", "US West (Oregon)"),
+    ("eu-central", "EU Central (Frankfurt)"),
+    ("ap-tokyo", "AP Tokyo"),
+    ("ap-sydney", "AP Sydney"),
+];
+
+fn region_label(value: &str) -> &'static str {
+    REGION_OPTIONS
+        .iter()
+        .find(|(v, _)| *v == value)
+        .map(|(_, l)| *l)
+        .unwrap_or("Pick a region")
+}
+
+fn inputs_view(state: &InputsState) -> El {
+    let volume = card(
+        "Output volume",
+        [
+            row([
+                text("Volume").label(),
+                spacer(),
+                text(format!("{}%", (state.volume * 100.0).round() as i32)).muted(),
+            ])
+            .align(Align::Center),
+            slider(state.volume, tokens::PRIMARY).key("inputs-volume"),
+            text("Drag the thumb, or focus and use ←/→ · PageUp/Down · Home/End.")
+                .small()
+                .muted(),
+        ],
+    );
+
+    let profile = card(
+        "Profile",
+        [
+            input_row(
+                "Display name",
+                text_input(&state.name, state.name_sel).key("inputs-name"),
+            ),
+            input_row(
+                "Email",
+                text_input(&state.email, state.email_sel).key("inputs-email"),
+            ),
+        ],
+    );
+
+    let bio = card(
+        "Bio",
+        [text_area(&state.bio, state.bio_sel)
+            .key("inputs-bio")
+            .height(Size::Fixed(110.0))],
+    );
+
+    let region = card(
+        "Hosting region",
+        [input_row(
+            "Region",
+            select_trigger("inputs-region", region_label(&state.region)),
+        )],
+    );
+
+    column([
+        h1("Inputs"),
+        scroll([volume, profile, bio, region])
+            .key("inputs-scroll")
+            .height(Size::Fill(1.0))
+            .gap(tokens::SPACE_LG)
+            .padding(Sides::xy(0.0, tokens::SPACE_SM)),
+    ])
+    .gap(tokens::SPACE_LG)
+    .height(Size::Fill(1.0))
+}
+
+/// Helper: a row pairing a fixed-width label with a value-capture
+/// widget. Mirrors the `checkbox_row` / `switch_row` shape from the
+/// Forms section so the visual rhythm carries across.
+fn input_row(label: &str, input: El) -> El {
+    row([
+        text(label).width(Size::Fixed(110.0)).muted(),
+        input.width(Size::Fill(1.0)),
+    ])
+    .gap(tokens::SPACE_SM)
+    .align(Align::Center)
+}
+
+fn inputs_on_event(state: &mut InputsState, e: UiEvent) {
+    // Slider: pointer drag + click set the value via the screen-x →
+    // normalized helper; keyboard arrows fold via `apply_event`.
+    if matches!(
+        e.kind,
+        UiEventKind::PointerDown | UiEventKind::Drag | UiEventKind::Click
+    ) && e.route() == Some("inputs-volume")
+        && let (Some(rect), Some(x)) = (e.target_rect(), e.pointer_x())
+    {
+        state.volume = slider::normalized_from_event(rect, x);
+        return;
+    }
+    if slider::apply_event(&mut state.volume, &e, "inputs-volume", 0.05, 0.25) {
+        return;
+    }
+
+    // Select dropdown: toggle / dismiss / pick all fold through one helper.
+    if select::apply_event(
+        &mut state.region,
+        &mut state.region_open,
+        &e,
+        "inputs-region",
+        |s| Some(s.to_string()),
+    ) {
+        return;
+    }
+
+    // Text inputs / area: dispatch by target_key. The showcase skips
+    // clipboard wiring (the `text_input` example demonstrates that
+    // separately); typing, navigation, drag-select, and shift-extend
+    // all work without it.
+    match e.target_key() {
+        Some("inputs-name") => {
+            text_input::apply_event(&mut state.name, &mut state.name_sel, &e);
+        }
+        Some("inputs-email") => {
+            text_input::apply_event(&mut state.email, &mut state.email_sel, &e);
+        }
+        Some("inputs-bio") => {
+            text_area::apply_event(&mut state.bio, &mut state.bio_sel, &e);
+        }
+        _ => {}
+    }
+}
+
+// ---- Tabs section ----
+//
+// `tabs_list` driving a panel swap, plus a `dropdown` popover anchored
+// off a button on the Account panel — covers the tabs widget and the
+// generic popover/dropdown surface in one section.
+
+const TABS_ACTIONS: &[&str] = &["Reset to defaults", "Export config", "Import config"];
+
+fn tabs_view(state: &TabsState) -> El {
+    let body = match state.tab.as_str() {
+        "account" => tabs_account_panel(state),
+        "appearance" => tabs_appearance_panel(),
+        "advanced" => tabs_advanced_panel(),
+        // Defensive default — the live tabs row only ever produces
+        // one of the three tokens above, but a stale/synthetic value
+        // shouldn't render as an empty page.
+        other => column([text(format!("Unknown tab: {other}")).muted()]),
+    };
+    column([
+        h1("Tabs"),
+        text(
+            "Click a tab to swap the panel below. Tab into the row, then \
+             ←/→ walks the triggers. The Account tab also hosts a \
+             dropdown popover.",
+        )
+        .muted(),
+        tabs_list(
+            "tabs-settings",
+            &state.tab,
+            [
+                ("account", "Account"),
+                ("appearance", "Appearance"),
+                ("advanced", "Advanced"),
+            ],
+        ),
+        body,
+    ])
+    .gap(tokens::SPACE_LG)
+    .height(Size::Fill(1.0))
+}
+
+fn tabs_account_panel(state: &TabsState) -> El {
+    let trailing_caption = match &state.last_action {
+        Some(a) => format!("last action: {a}"),
+        None => "Click \"Actions ▾\" to open a dropdown menu.".to_string(),
+    };
+    card(
+        "Account",
+        [
+            row([text("Email"), text("user@example.com").muted()])
+                .align(Align::Center)
+                .justify(Justify::SpaceBetween),
+            row([
+                text("Two-factor authentication"),
+                badge("Enabled").success(),
+            ])
+            .align(Align::Center)
+            .justify(Justify::SpaceBetween),
+            row([
+                text("Bulk actions"),
+                button("Actions ▾").key("tabs-actions-trigger").secondary(),
+            ])
+            .align(Align::Center)
+            .justify(Justify::SpaceBetween),
+            text(trailing_caption).small().muted(),
+        ],
+    )
+}
+
+fn tabs_appearance_panel() -> El {
+    card(
+        "Appearance",
+        [
+            row([text("Theme"), badge("Dark").info()])
+                .align(Align::Center)
+                .justify(Justify::SpaceBetween),
+            row([text("Compact mode"), badge("Off").muted()])
+                .align(Align::Center)
+                .justify(Justify::SpaceBetween),
+            row([text("Font size"), text("14")])
+                .align(Align::Center)
+                .justify(Justify::SpaceBetween),
+        ],
+    )
+}
+
+fn tabs_advanced_panel() -> El {
+    card(
+        "Advanced",
+        [
+            row([text("Telemetry"), badge("Off").muted()])
+                .align(Align::Center)
+                .justify(Justify::SpaceBetween),
+            row([text("Beta features"), badge("Off").muted()])
+                .align(Align::Center)
+                .justify(Justify::SpaceBetween),
+        ],
+    )
+}
+
+fn tabs_on_event(state: &mut TabsState, e: UiEvent) {
+    // Tabs row first — most common interaction.
+    if tabs::apply_event(&mut state.tab, &e, "tabs-settings", |s| Some(s.to_string())) {
+        return;
+    }
+    // Actions dropdown: trigger toggles, scrim dismisses, items
+    // pick. Mirrors the popover example's open/close pattern.
+    if matches!(e.kind, UiEventKind::Click | UiEventKind::Activate) {
+        match e.route() {
+            Some("tabs-actions-trigger") => state.actions_open = !state.actions_open,
+            Some("tabs-actions-menu:dismiss") => state.actions_open = false,
+            Some(k) if k.starts_with("tabs-action:") => {
+                state.last_action = Some(k["tabs-action:".len()..].to_string());
+                state.actions_open = false;
+            }
+            _ => {}
+        }
+    }
+}
+
 // ---- Split section ----
 //
 // Resizable sidebar — the dominant use of `resize_handle`. The app
@@ -1493,6 +1838,46 @@ mod tests {
             s.share_usage,
         );
         assert_eq!(before, after, "unrelated events left state unchanged");
+    }
+
+    #[test]
+    fn inputs_select_pick_closes_dropdown_and_sets_value() {
+        let mut s = InputsState {
+            region_open: true,
+            ..Default::default()
+        };
+        // First a toggle click on the trigger flips the open flag.
+        inputs_on_event(&mut s, click("inputs-region"));
+        assert!(!s.region_open, "trigger click toggles open flag");
+
+        // Open it again, then pick an option.
+        inputs_on_event(&mut s, click("inputs-region"));
+        assert!(s.region_open);
+        inputs_on_event(&mut s, click("inputs-region:option:eu-central"));
+        assert_eq!(s.region, "eu-central");
+        assert!(!s.region_open, "picking an option closes the menu");
+    }
+
+    #[test]
+    fn tabs_section_swaps_active_tab() {
+        let mut s = TabsState::default();
+        assert_eq!(s.tab, "account");
+        tabs_on_event(&mut s, click("tabs-settings:tab:appearance"));
+        assert_eq!(s.tab, "appearance");
+        tabs_on_event(&mut s, click("tabs-settings:tab:advanced"));
+        assert_eq!(s.tab, "advanced");
+    }
+
+    #[test]
+    fn tabs_actions_dropdown_open_close_cycle() {
+        let mut s = TabsState::default();
+        assert!(!s.actions_open);
+        tabs_on_event(&mut s, click("tabs-actions-trigger"));
+        assert!(s.actions_open, "trigger click opens the dropdown");
+        // Picking an action closes the menu and records it.
+        tabs_on_event(&mut s, click("tabs-action:Reset to defaults"));
+        assert_eq!(s.last_action.as_deref(), Some("Reset to defaults"));
+        assert!(!s.actions_open);
     }
 
     #[test]
