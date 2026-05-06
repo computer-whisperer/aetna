@@ -141,14 +141,15 @@ impl Showcase {
 
 impl App for Showcase {
     fn build(&self) -> El {
+        // No `width: Fill` / `height: Fill` — the runtime gives the
+        // root the viewport rect regardless. `gap: 0` zeros the
+        // sidebar/content seam (rows ship with a default gap so
+        // typical content rows look right out of the box). `align:
+        // Stretch` overrides row's default `Center` so the content
+        // column claims full viewport height, which the Glass
+        // section's backdrop relies on.
         row([sidebar(self.section), content(self)])
             .gap(0.0)
-            .width(Size::Fill(1.0))
-            .height(Size::Fill(1.0))
-            // Stretch lets the content column claim the full viewport
-            // height regardless of its intrinsic height — important
-            // for the Glass section's backdrop, which would otherwise
-            // collapse to its intrinsic (≈ the glass card height).
             .align(Align::Stretch)
     }
 
@@ -588,17 +589,18 @@ fn settings_view() -> El {
         card(
             "Account",
             [
-                row([text("Email"), spacer(), text("user@example.com").muted()]),
+                row([text("Email"), text("user@example.com").muted()])
+                    .justify(Justify::SpaceBetween),
                 row([
                     text("Two-factor authentication"),
-                    spacer(),
                     badge("Enabled").success(),
-                ]),
+                ])
+                .justify(Justify::SpaceBetween),
                 row([
                     text("Recovery codes"),
-                    spacer(),
                     button("Generate").secondary().key("settings-generate"),
-                ]),
+                ])
+                .justify(Justify::SpaceBetween),
             ],
         ),
         card(
@@ -606,11 +608,11 @@ fn settings_view() -> El {
             [
                 row([
                     text("Theme"),
-                    spacer(),
                     button("Dark").secondary().key("settings-theme"),
-                ]),
-                row([text("Compact mode"), spacer(), badge("Off").muted()]),
-                row([text("Font size"), spacer(), text("14")]),
+                ])
+                .justify(Justify::SpaceBetween),
+                row([text("Compact mode"), badge("Off").muted()]).justify(Justify::SpaceBetween),
+                row([text("Font size"), text("14")]).justify(Justify::SpaceBetween),
             ],
         ),
         card(
@@ -624,15 +626,15 @@ fn settings_view() -> El {
                 ])
                 .gap(tokens::SPACE_XS)
                 .align(Align::Start),
-                spacer(),
                 button("Delete").destructive().key("settings-delete"),
-            ])],
+            ])
+            .justify(Justify::SpaceBetween)],
         ),
         row([
-            spacer(),
             button("Cancel").ghost().key("settings-cancel"),
             button("Save").primary().key("settings-save"),
-        ]),
+        ])
+        .justify(Justify::End),
     ])
     .gap(tokens::SPACE_LG)
 }
@@ -719,10 +721,10 @@ const GLASS_PRESETS: &[GlassPreset] = &[
 /// as a uniform tint.
 fn glass_backdrop() -> El {
     fn stripe(c: Color) -> El {
-        column(Vec::<El>::new())
-            .fill(c)
-            .width(Size::Fill(1.0))
-            .height(Size::Fill(1.0))
+        // `flex: 1` on the main axis (width) — height comes from the
+        // row's `align(Stretch)`, the same way CSS items stretch on
+        // the cross axis under `align-items: stretch`.
+        column(Vec::<El>::new()).fill(c).width(Size::Fill(1.0))
     }
     row([
         stripe(Color::rgb(220, 60, 60)),
@@ -731,9 +733,6 @@ fn glass_backdrop() -> El {
         stripe(Color::rgb(240, 200, 60)),
     ])
     .gap(0.0)
-    // Stretch lets each Fill(1.0) stripe claim the full cross-axis
-    // height; without it the row's default Center align would
-    // collapse intrinsic-zero children to height 0.
     .align(Align::Stretch)
     .height(Size::Fill(1.0))
     .width(Size::Fill(1.0))
