@@ -35,6 +35,7 @@
 //! covering drag-select, shift-extend, replace-on-type, and `Ctrl+A`.
 //! See `widget_kit.md`.
 
+use std::borrow::Cow;
 use std::panic::Location;
 
 use crate::cursor::Cursor;
@@ -57,6 +58,71 @@ use crate::widgets::text::text;
 pub struct TextSelection {
     pub anchor: usize,
     pub head: usize,
+}
+
+/// How (or whether) the rendered text should be visually masked. The
+/// underlying `value` is always the real string; mask only affects
+/// what's painted, what widths are measured against (so caret and
+/// selection band line up with the dots), and which pointer column
+/// maps to which byte offset.
+///
+/// The library's [`clipboard_request_for`] also reads this — copy /
+/// cut are suppressed for masked fields (a password manager pasted in
+/// is fine, but you don't want Ctrl+C to leak the secret to the system
+/// clipboard).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MaskMode {
+    #[default]
+    None,
+    Password,
+}
+
+const MASK_CHAR: char = '•';
+
+/// Optional configuration for [`text_input_with`] / [`apply_event_with`].
+/// The defaults reproduce [`text_input`] / [`apply_event`] verbatim, so
+/// callers only set the fields they need.
+///
+/// Fields mirror the corresponding HTML `<input>` attributes:
+/// `placeholder`, `maxlength`, `type=password`. The same value is
+/// expected to be available both at build-time (so the placeholder
+/// renders, the mask is applied) and at event-time (so `max_length`
+/// can clip a paste, and Copy / Cut can be suppressed on a masked
+/// field) — that joint availability is why this is a struct the app
+/// holds onto rather than chained modifiers on the returned `El`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TextInputOpts<'a> {
+    /// Muted hint text shown only while `value` is empty. Visible even
+    /// while the field is focused (matches HTML `<input placeholder>`).
+    pub placeholder: Option<&'a str>,
+    /// Cap on the *character* count of `value` after an edit. Inserts
+    /// (typing, paste, IME commit) are truncated so the post-edit
+    /// length doesn't exceed this. Existing values longer than the cap
+    /// are left alone — the cap only constrains future inserts.
+    pub max_length: Option<usize>,
+    /// Visual masking of the rendered value. See [`MaskMode`].
+    pub mask: MaskMode,
+}
+
+impl<'a> TextInputOpts<'a> {
+    pub fn placeholder(mut self, p: &'a str) -> Self {
+        self.placeholder = Some(p);
+        self
+    }
+
+    pub fn max_length(mut self, n: usize) -> Self {
+        self.max_length = Some(n);
+        self
+    }
+
+    pub fn password(mut self) -> Self {
+        self.mask = MaskMode::Password;
+        self
+    }
+
+    fn is_masked(&self) -> bool {
+        !matches!(self.mask, MaskMode::None)
+    }
 }
 
 impl TextSelection {
@@ -103,21 +169,37 @@ impl TextSelection {
 /// library's standard focus animation).
 #[track_caller]
 pub fn text_input(value: &str, selection: TextSelection) -> El {
+    text_input_with(value, selection, TextInputOpts::default())
+}
+
+/// Like [`text_input`], but takes an optional [`TextInputOpts`] for
+/// placeholder / max-length / password masking. Pass
+/// `TextInputOpts::default()` for an output identical to
+/// [`text_input`].
+#[track_caller]
+pub fn text_input_with(value: &str, selection: TextSelection, opts: TextInputOpts<'_>) -> El {
     let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     let lo = anchor.min(head);
     let hi = anchor.max(head);
     let line_h = line_height_px();
 
+    // Pick the rendered string. In password mode each scalar of `value`
+    // becomes one bullet; widths and indices below all reference this
+    // displayed string so the caret and selection band sit under the
+    // dots, not under the (invisible) original glyphs.
+    let display = display_str(value, opts.mask);
+
     // Pixel offsets along the (single) shaped run. We measure substrings
     // independently here, which gives positions that are correct to
     // within sub-pixel kerning differences vs. the full-string layout.
     // Good enough for caret + selection placement at typical widths.
-    let head_px = prefix_width(value, head);
-    let lo_px = prefix_width(value, lo);
-    let hi_px = prefix_width(value, hi);
+    let to_display = |b: usize| original_to_display_byte(value, b, opts.mask);
+    let head_px = prefix_width(&display, to_display(head));
+    let lo_px = prefix_width(&display, to_display(lo));
+    let hi_px = prefix_width(&display, to_display(hi));
 
-    let mut children: Vec<El> = Vec::with_capacity(3);
+    let mut children: Vec<El> = Vec::with_capacity(4);
 
     // Selection band paints first (behind text, behind caret).
     if lo < hi {
@@ -132,10 +214,25 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
         );
     }
 
-    // The value as one shaped run. Hug width so the leaf's intrinsic
-    // measure is the actual glyph extent (used for layout).
+    // Placeholder hint — shown only while the value is empty. Sits at
+    // the same origin as the (empty) text leaf, so it visually fills
+    // the gap. The caret still paints on top.
+    if value.is_empty()
+        && let Some(ph) = opts.placeholder
+    {
+        children.push(
+            text(ph)
+                .font_size(tokens::FONT_BASE)
+                .muted()
+                .width(Size::Hug)
+                .height(Size::Fixed(line_h)),
+        );
+    }
+
+    // The value (or its mask) as one shaped run. Hug width so the
+    // leaf's intrinsic measure is the actual glyph extent.
     children.push(
-        text(value)
+        text(display.into_owned())
             .font_size(tokens::FONT_BASE)
             .width(Size::Hug)
             .height(Size::Fixed(line_h)),
@@ -215,6 +312,18 @@ fn prefix_width(value: &str, byte_index: usize) -> f32 {
 ///
 /// All caret arithmetic respects UTF-8 grapheme boundaries.
 pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &UiEvent) -> bool {
+    apply_event_with(value, selection, event, &TextInputOpts::default())
+}
+
+/// Like [`apply_event`], but takes a [`TextInputOpts`] so the field
+/// honors `max_length` and password-masked pointer hits. Default opts
+/// produce identical behavior to [`apply_event`].
+pub fn apply_event_with(
+    value: &mut String,
+    selection: &mut TextSelection,
+    event: &UiEvent,
+    opts: &TextInputOpts<'_>,
+) -> bool {
     selection.anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     selection.head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     match event.kind {
@@ -244,7 +353,11 @@ pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &Ui
             if filtered.is_empty() {
                 return false;
             }
-            replace_selection(value, selection, &filtered);
+            let to_insert = clip_to_max_length(value, *selection, &filtered, opts.max_length);
+            if to_insert.is_empty() {
+                return false;
+            }
+            replace_selection(value, selection, &to_insert);
             true
         }
         UiEventKind::KeyDown => {
@@ -359,7 +472,7 @@ pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &Ui
                 return false;
             };
             let local_x = px - target.rect.x - tokens::SPACE_MD;
-            let pos = caret_from_x(value, local_x);
+            let pos = caret_from_x(value, local_x, opts.mask);
             selection.head = pos;
             if !event.modifiers.shift {
                 selection.anchor = pos;
@@ -371,7 +484,7 @@ pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &Ui
                 return false;
             };
             let local_x = px - target.rect.x - tokens::SPACE_MD;
-            selection.head = caret_from_x(value, local_x);
+            selection.head = caret_from_x(value, local_x, opts.mask);
             true
         }
         UiEventKind::Click => false,
@@ -398,6 +511,24 @@ pub fn replace_selection(value: &mut String, selection: &mut TextSelection, repl
     let new_caret = lo + replacement.len();
     selection.anchor = new_caret;
     selection.head = new_caret;
+}
+
+/// [`replace_selection`] that respects [`TextInputOpts::max_length`]:
+/// the replacement is truncated (by character count) so the post-edit
+/// `value` doesn't exceed the cap. Use this for paste / drop / IME
+/// commit flows where the field has a length cap. Returns the byte
+/// length of the actually-inserted text — useful when the caller wants
+/// to know whether the input was clipped.
+pub fn replace_selection_with(
+    value: &mut String,
+    selection: &mut TextSelection,
+    replacement: &str,
+    opts: &TextInputOpts<'_>,
+) -> usize {
+    let clipped = clip_to_max_length(value, *selection, replacement, opts.max_length);
+    let len = clipped.len();
+    replace_selection(value, selection, &clipped);
+    len
 }
 
 /// `(0, value.len())` — the selection that spans the whole field.
@@ -446,6 +577,13 @@ pub enum ClipboardKind {
 /// }
 /// ```
 pub fn clipboard_request(event: &UiEvent) -> Option<ClipboardKind> {
+    clipboard_request_for(event, &TextInputOpts::default())
+}
+
+/// Mask-aware variant of [`clipboard_request`]: returns `None` for
+/// `Copy` / `Cut` when the field is masked (password mode). Paste is
+/// still recognized — pasting *into* a password field is normal.
+pub fn clipboard_request_for(event: &UiEvent, opts: &TextInputOpts<'_>) -> Option<ClipboardKind> {
     if event.kind != UiEventKind::KeyDown {
         return None;
     }
@@ -463,30 +601,109 @@ pub fn clipboard_request(event: &UiEvent) -> Option<ClipboardKind> {
     let UiKey::Character(c) = &kp.key else {
         return None;
     };
-    match c.to_ascii_lowercase().as_str() {
-        "c" => Some(ClipboardKind::Copy),
-        "x" => Some(ClipboardKind::Cut),
-        "v" => Some(ClipboardKind::Paste),
-        _ => None,
+    let kind = match c.to_ascii_lowercase().as_str() {
+        "c" => ClipboardKind::Copy,
+        "x" => ClipboardKind::Cut,
+        "v" => ClipboardKind::Paste,
+        _ => return None,
+    };
+    if opts.is_masked()
+        && matches!(kind, ClipboardKind::Copy | ClipboardKind::Cut)
+    {
+        return None;
     }
+    Some(kind)
 }
 
-fn caret_from_x(value: &str, local_x: f32) -> usize {
+fn caret_from_x(value: &str, local_x: f32, mask: MaskMode) -> usize {
     if value.is_empty() || local_x <= 0.0 {
         return 0;
     }
+    let probe = display_str(value, mask);
     let local_y = metrics::line_height(tokens::FONT_BASE) * 0.5;
-    match hit_text(
-        value,
+    let hit = hit_text(
+        &probe,
         tokens::FONT_BASE,
         FontWeight::Regular,
         TextWrap::NoWrap,
         None,
         local_x,
         local_y,
-    ) {
-        Some(hit) => hit.byte_index.min(value.len()),
-        None => value.len(),
+    );
+    let display_byte = match hit {
+        Some(h) => h.byte_index.min(probe.len()),
+        None => probe.len(),
+    };
+    display_to_original_byte(value, display_byte, mask)
+}
+
+/// Borrow `value` directly when [`MaskMode::None`]; otherwise build a
+/// masked rendering (one [`MASK_CHAR`] per Unicode scalar). Used at
+/// build-time to position the caret / selection band against the same
+/// pixel widths the text leaf will eventually shape.
+fn display_str(value: &str, mask: MaskMode) -> Cow<'_, str> {
+    match mask {
+        MaskMode::None => Cow::Borrowed(value),
+        MaskMode::Password => {
+            let n = value.chars().count();
+            let mut s = String::with_capacity(n * MASK_CHAR.len_utf8());
+            for _ in 0..n {
+                s.push(MASK_CHAR);
+            }
+            Cow::Owned(s)
+        }
+    }
+}
+
+fn original_to_display_byte(value: &str, byte_index: usize, mask: MaskMode) -> usize {
+    match mask {
+        MaskMode::None => byte_index.min(value.len()),
+        MaskMode::Password => {
+            let clamped = clamp_to_char_boundary(value, byte_index.min(value.len()));
+            value[..clamped].chars().count() * MASK_CHAR.len_utf8()
+        }
+    }
+}
+
+/// Inverse of [`original_to_display_byte`].
+fn display_to_original_byte(value: &str, display_byte: usize, mask: MaskMode) -> usize {
+    match mask {
+        MaskMode::None => clamp_to_char_boundary(value, display_byte.min(value.len())),
+        MaskMode::Password => {
+            let scalar_idx = display_byte / MASK_CHAR.len_utf8();
+            value
+                .char_indices()
+                .nth(scalar_idx)
+                .map(|(i, _)| i)
+                .unwrap_or(value.len())
+        }
+    }
+}
+
+/// Truncate `replacement` so that, after replacing the current
+/// selection in `value`, the post-edit character count doesn't exceed
+/// `max_length`. Returns `replacement` unchanged when no cap is set;
+/// when the value already exceeds the cap, refuses any insert (we
+/// don't auto-shrink an existing value just because the cap was
+/// lowered — that's the caller's call). Defensive against an
+/// unclamped `selection`.
+fn clip_to_max_length<'a>(
+    value: &str,
+    selection: TextSelection,
+    replacement: &'a str,
+    max_length: Option<usize>,
+) -> Cow<'a, str> {
+    let Some(max) = max_length else {
+        return Cow::Borrowed(replacement);
+    };
+    let lo = clamp_to_char_boundary(value, selection.anchor.min(selection.head).min(value.len()));
+    let hi = clamp_to_char_boundary(value, selection.anchor.max(selection.head).min(value.len()));
+    let post_other = value[..lo].chars().count() + value[hi..].chars().count();
+    let allowed = max.saturating_sub(post_other);
+    if replacement.chars().count() <= allowed {
+        Cow::Borrowed(replacement)
+    } else {
+        Cow::Owned(replacement.chars().take(allowed).collect())
     }
 }
 
@@ -1143,6 +1360,213 @@ mod tests {
         assert_eq!(clipboard_request(&e), None);
         // TextInput events never report a clipboard request.
         assert_eq!(clipboard_request(&ev_text("c")), None);
+    }
+
+    fn password_opts() -> TextInputOpts<'static> {
+        TextInputOpts::default().password()
+    }
+
+    #[test]
+    fn password_input_renders_value_as_bullets_not_plaintext() {
+        // The text leaf should never expose the original characters in
+        // a password field. One bullet per scalar.
+        let el = text_input_with("hunter2", TextSelection::caret(0), password_opts());
+        let leaf = el
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Text))
+            .expect("text leaf");
+        assert_eq!(leaf.text.as_deref(), Some("•••••••"));
+    }
+
+    #[test]
+    fn password_input_caret_position_uses_masked_widths() {
+        // Caret offset must come from the rendered (masked) prefix
+        // width, not the original-string prefix width — otherwise the
+        // caret drifts away from the dots.
+        use crate::text::metrics::line_width;
+        let value = "abc";
+        let head = 2;
+        let el = text_input_with(value, TextSelection::caret(head), password_opts());
+        let caret = el
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
+            .expect("caret child");
+        // Two bullets of prefix.
+        let expected = line_width("••", tokens::FONT_BASE, FontWeight::Regular, false);
+        assert!(
+            (caret.translate.0 - expected).abs() < 0.01,
+            "caret translate.x = {}, expected {}",
+            caret.translate.0,
+            expected
+        );
+    }
+
+    #[test]
+    fn password_pointer_click_maps_back_to_original_byte() {
+        // A pointer at the right edge of a 5-char password should
+        // place the caret at byte index value.len() (=5 for ASCII).
+        let mut value = String::from("abcde");
+        let mut sel = TextSelection::default();
+        let target = ti_target();
+        let down = ev_pointer_down(
+            target.clone(),
+            (target.rect.x + target.rect.w - 4.0, target.rect.y + 18.0),
+            KeyModifiers::default(),
+        );
+        assert!(apply_event_with(&mut value, &mut sel, &down, &password_opts()));
+        assert_eq!(sel.head, value.len());
+    }
+
+    #[test]
+    fn password_pointer_click_with_multibyte_value() {
+        // Mask is one bullet per scalar; the returned byte index must
+        // be a valid boundary in the (multi-byte) original value.
+        // 'é' is 2 bytes; "éé" is 4 bytes total.
+        let mut value = String::from("éé");
+        let mut sel = TextSelection::default();
+        let target = ti_target();
+        // Click at a position that should land between the two bullets.
+        let bullet_w = metrics::line_width("•", tokens::FONT_BASE, FontWeight::Regular, false);
+        let click_x = target.rect.x + tokens::SPACE_MD + bullet_w * 1.4;
+        let down = ev_pointer_down(
+            target,
+            (click_x, ti_target().rect.y + 18.0),
+            KeyModifiers::default(),
+        );
+        assert!(apply_event_with(&mut value, &mut sel, &down, &password_opts()));
+        // After 1 scalar in "éé" the byte offset is 2 (or 4 if the hit
+        // landed past the second bullet). Either way, must be a char
+        // boundary in `value`.
+        assert!(
+            value.is_char_boundary(sel.head),
+            "head={} not on a char boundary in {value:?}",
+            sel.head
+        );
+        assert!(sel.head == 2 || sel.head == 4, "head={}", sel.head);
+    }
+
+    #[test]
+    fn password_clipboard_request_suppresses_copy_and_cut_only() {
+        let ctrl = KeyModifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let opts = password_opts();
+        let copy = ev_key_with_mods(UiKey::Character("c".into()), ctrl);
+        let cut = ev_key_with_mods(UiKey::Character("x".into()), ctrl);
+        let paste = ev_key_with_mods(UiKey::Character("v".into()), ctrl);
+        assert_eq!(clipboard_request_for(&copy, &opts), None);
+        assert_eq!(clipboard_request_for(&cut, &opts), None);
+        assert_eq!(
+            clipboard_request_for(&paste, &opts),
+            Some(ClipboardKind::Paste)
+        );
+        // Plain (non-masked) opts behave like the legacy entry point.
+        let plain = TextInputOpts::default();
+        assert_eq!(
+            clipboard_request_for(&copy, &plain),
+            Some(ClipboardKind::Copy)
+        );
+    }
+
+    #[test]
+    fn placeholder_renders_only_when_value_is_empty() {
+        let opts = TextInputOpts::default().placeholder("Email");
+        let empty = text_input_with("", TextSelection::default(), opts);
+        let muted_leaf = empty.children.iter().find(|c| {
+            matches!(c.kind, Kind::Text) && c.text.as_deref() == Some("Email")
+        });
+        assert!(muted_leaf.is_some(), "placeholder leaf should be present");
+
+        let nonempty = text_input_with("hi", TextSelection::caret(2), opts);
+        let muted_leaf = nonempty.children.iter().find(|c| {
+            matches!(c.kind, Kind::Text) && c.text.as_deref() == Some("Email")
+        });
+        assert!(
+            muted_leaf.is_none(),
+            "placeholder should not render once the field has a value"
+        );
+    }
+
+    #[test]
+    fn max_length_truncates_text_input_inserts() {
+        let mut value = String::from("ab");
+        let mut sel = TextSelection::caret(2);
+        let opts = TextInputOpts::default().max_length(4);
+        // "cdef" would push to 6 chars; only "cd" fits.
+        assert!(apply_event_with(
+            &mut value,
+            &mut sel,
+            &ev_text("cdef"),
+            &opts
+        ));
+        assert_eq!(value, "abcd");
+        assert_eq!(sel, TextSelection::caret(4));
+        // A further insert is refused — there's no room.
+        assert!(!apply_event_with(
+            &mut value,
+            &mut sel,
+            &ev_text("z"),
+            &opts
+        ));
+        assert_eq!(value, "abcd");
+    }
+
+    #[test]
+    fn max_length_replaces_selection_with_capacity_freed_by_removal() {
+        // Replacing 3 chars with 5 chars at a 4-char cap: post_other = 0,
+        // allowed = 4, replacement truncated to 4.
+        let mut value = String::from("abc");
+        let mut sel = TextSelection::range(0, 3); // whole value selected
+        let opts = TextInputOpts::default().max_length(4);
+        assert!(apply_event_with(
+            &mut value,
+            &mut sel,
+            &ev_text("12345"),
+            &opts
+        ));
+        assert_eq!(value, "1234");
+        assert_eq!(sel, TextSelection::caret(4));
+    }
+
+    #[test]
+    fn replace_selection_with_max_length_clips_a_paste() {
+        let mut value = String::from("ab");
+        let mut sel = TextSelection::caret(2);
+        let opts = TextInputOpts::default().max_length(5);
+        // Paste 10 chars into a value already at 2/5; only 3 fit.
+        let inserted = replace_selection_with(&mut value, &mut sel, "0123456789", &opts);
+        assert_eq!(value, "ab012");
+        assert_eq!(inserted, 3);
+        assert_eq!(sel, TextSelection::caret(5));
+    }
+
+    #[test]
+    fn max_length_does_not_shrink_an_already_overlong_value() {
+        // Caller is allowed to pass a value already longer than the cap;
+        // the cap only constrains future inserts. Existing chars stay.
+        let mut value = String::from("abcdef");
+        let mut sel = TextSelection::caret(6);
+        let opts = TextInputOpts::default().max_length(3);
+        // No room for a new char.
+        assert!(!apply_event_with(
+            &mut value,
+            &mut sel,
+            &ev_text("z"),
+            &opts
+        ));
+        assert_eq!(value, "abcdef");
+        // But a delete still works — apply_event_with isn't gating
+        // removals on max_length.
+        assert!(apply_event_with(
+            &mut value,
+            &mut sel,
+            &ev_key(UiKey::Backspace),
+            &opts
+        ));
+        assert_eq!(value, "abcde");
     }
 
     #[test]

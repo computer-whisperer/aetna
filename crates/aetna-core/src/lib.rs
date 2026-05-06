@@ -205,4 +205,6 @@ pub use widgets::switch::switch;
 pub use widgets::tabs::{TabsAction, tab_option_key, tab_trigger, tabs_list};
 pub use widgets::text::{h1, h2, h3, mono, paragraph, text};
 pub use widgets::text_area::text_area;
-pub use widgets::text_input::{ClipboardKind, TextSelection, text_input};
+pub use widgets::text_input::{
+    ClipboardKind, MaskMode, TextInputOpts, TextSelection, text_input, text_input_with,
+};
