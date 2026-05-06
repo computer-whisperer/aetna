@@ -46,13 +46,29 @@ where
 /// Equivalent to building a `Vec<El>` by hand and pushing only when
 /// each `Option` is `Some`. Layers paint in the order given (last on
 /// top); hit-testing visits them in reverse.
+///
+/// Each `Size::Hug` axis on `main` is promoted to `Size::Fill(1.0)`
+/// so the main view spans the full viewport rect — overlay-axis
+/// layout sizes a `Hug` child to its intrinsic, which would silently
+/// collapse a `virtual_list` or any other content whose intrinsic is
+/// `(0, 0)` to zero. Axes the author set to `Fixed` or `Fill` are
+/// left untouched. Apps that want a fully `Hug`-sized main view (e.g.
+/// a centred card with overlays around it) should compose `stack`
+/// directly instead.
 #[track_caller]
 pub fn overlays<I>(main: impl Into<El>, layers: I) -> El
 where
     I: IntoIterator<Item = Option<El>>,
 {
+    let mut main = main.into();
+    if matches!(main.width, Size::Hug) {
+        main.width = Size::Fill(1.0);
+    }
+    if matches!(main.height, Size::Hug) {
+        main.height = Size::Fill(1.0);
+    }
     let mut children: Vec<El> = Vec::new();
-    children.push(main.into());
+    children.push(main);
     children.extend(layers.into_iter().flatten());
     crate::stack(children)
 }
@@ -137,5 +153,35 @@ mod tests {
         let stacked = overlays(button("main").key("main"), std::iter::empty::<Option<El>>());
         assert_eq!(stacked.children.len(), 1);
         assert_eq!(stacked.children[0].key.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn overlays_promotes_hug_main_to_fill() {
+        // Author passes a Hug-sized main column; overlays() must
+        // promote both axes to Fill so overlay-axis layout doesn't
+        // collapse Fill descendants (e.g. virtual_list, scroll
+        // viewports) to zero.
+        let main = crate::column(std::iter::empty::<El>());
+        assert!(matches!(main.width, Size::Hug));
+        assert!(matches!(main.height, Size::Hug));
+        let stacked = overlays(main, std::iter::empty::<Option<El>>());
+        let promoted = &stacked.children[0];
+        assert!(matches!(promoted.width, Size::Fill(_)));
+        assert!(matches!(promoted.height, Size::Fill(_)));
+    }
+
+    #[test]
+    fn overlays_preserves_explicit_main_sizes() {
+        // Authors who deliberately set Fixed or Fill on either axis
+        // (e.g. a Fixed-height toolbar with overlays at the root) must
+        // see their choice preserved. Only Hug → Fill promotion is
+        // automatic.
+        let main = crate::column(std::iter::empty::<El>())
+            .width(Size::Fixed(320.0))
+            .height(Size::Fill(1.0));
+        let stacked = overlays(main, std::iter::empty::<Option<El>>());
+        let kept = &stacked.children[0];
+        assert!(matches!(kept.width, Size::Fixed(v) if (v - 320.0).abs() < 0.01));
+        assert!(matches!(kept.height, Size::Fill(_)));
     }
 }
