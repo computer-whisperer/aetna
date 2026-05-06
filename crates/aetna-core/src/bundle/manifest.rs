@@ -83,6 +83,7 @@ pub fn shader_manifest(ops: &[DrawOp]) -> String {
                     s.push('\n');
                 }
                 DrawOp::Icon { .. } => {}
+                DrawOp::Image { .. } => {} // bound to a per-image texture, not a stock shader
                 DrawOp::BackdropSnapshot => {}
             }
         }
@@ -204,6 +205,35 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                     rect.w,
                     rect.h,
                     color_label(*color),
+                );
+                if let Some(sci) = scissor {
+                    write_scissor(&mut s, *sci);
+                }
+                s.push('\n');
+            }
+            DrawOp::Image {
+                id,
+                rect,
+                scissor,
+                image,
+                tint,
+                radius,
+                fit,
+            } => {
+                let tint_str = match tint {
+                    Some(c) => color_label(*c),
+                    None => "none".to_string(),
+                };
+                let _ = write!(
+                    s,
+                    "Image  src={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} natural=({}x{}) fit={fit:?} tint={tint_str} radius={radius:.1}",
+                    image.label(),
+                    rect.x,
+                    rect.y,
+                    rect.w,
+                    rect.h,
+                    image.width(),
+                    image.height(),
                 );
                 if let Some(sci) = scissor {
                     write_scissor(&mut s, *sci);

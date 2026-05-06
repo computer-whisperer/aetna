@@ -239,6 +239,7 @@ fn role_token(k: &Kind) -> &'static str {
         Kind::VirtualList => "virtual_list",
         Kind::Inlines => "inlines",
         Kind::HardBreak => "hard_break",
+        Kind::Image => "image",
         Kind::Custom(name) => name,
     }
 }
@@ -703,6 +704,14 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
             c.font_size + c.padding.left + c.padding.right,
             c.font_size + c.padding.top + c.padding.bottom,
         );
+    }
+    if let Some(img) = &c.image {
+        // Natural pixel size as a logical-pixel intrinsic. Authors who
+        // want a different sized box set `.width()` / `.height()`;
+        // the projection inside that box is decided by `image_fit`.
+        let w = img.width() as f32 + c.padding.left + c.padding.right;
+        let h = img.height() as f32 + c.padding.top + c.padding.bottom;
+        return apply_min(c, w, h);
     }
     if let Some(text) = &c.text {
         let unwrapped = text_metrics::layout_text(

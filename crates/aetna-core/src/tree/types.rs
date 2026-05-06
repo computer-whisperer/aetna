@@ -424,6 +424,11 @@ pub enum Kind {
     /// `<br>`. Outside an `Inlines` parent, lays out as a zero-size
     /// leaf.
     HardBreak,
+    /// Raster image element. Carries a [`crate::image::Image`] in the
+    /// `image` field; the layout pass measures intrinsic to the image's
+    /// natural pixel size and `draw_ops` emits a [`crate::ir::DrawOp::Image`]
+    /// projected per the El's [`crate::image::ImageFit`].
+    Image,
     /// Escape hatch for app-defined components.
     Custom(&'static str),
 }

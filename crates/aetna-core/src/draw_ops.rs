@@ -265,6 +265,28 @@ fn push_node(
         });
     }
 
+    if let Some(image) = &n.image {
+        let inner = inner_painted_rect.inset(n.padding);
+        let dest = n.image_fit.project(image.width(), image.height(), inner);
+        // Always clip image draws to the El's content rect so `Cover`
+        // / `None` overflow is cropped without forcing every author to
+        // call `.clip()`. The clamp respects any inherited scissor.
+        let scissor = match own_scissor {
+            Some(s) => s.intersect(inner),
+            None => Some(inner),
+        };
+        let tint = n.image_tint.map(|c| opaque(c, opacity));
+        out.push(DrawOp::Image {
+            id: n.computed_id.clone(),
+            rect: dest,
+            scissor,
+            image: image.clone(),
+            tint,
+            radius: n.radius,
+            fit: n.image_fit,
+        });
+    }
+
     // Attributed paragraph: aggregate child Text/HardBreak runs into one
     // DrawOp::AttributedText so cosmic-text shapes the runs together
     // (wrapping crosses run boundaries like real prose). Skip recursion
@@ -709,6 +731,75 @@ mod tests {
             "icon rect.x = {}, expected 32 (centered in inset rect)",
             rect.x,
         );
+    }
+
+    #[test]
+    fn image_intrinsic_is_natural_pixel_size() {
+        let pixels = vec![0u8; 80 * 40 * 4];
+        let img = crate::image::Image::from_rgba8(80, 40, pixels);
+        let el = crate::tree::image(img);
+        let (w, h) = crate::layout::intrinsic(&el);
+        assert!((w - 80.0).abs() < 1e-3, "intrinsic w = {w}");
+        assert!((h - 40.0).abs() < 1e-3, "intrinsic h = {h}");
+    }
+
+    #[test]
+    fn image_emits_draw_op_with_fit_projection() {
+        // 100×50 image into a 400×400 box with Cover: dest = 800×400.
+        let pixels = vec![0u8; 100 * 50 * 4];
+        let img = crate::image::Image::from_rgba8(100, 50, pixels);
+        let mut root = crate::row([crate::tree::image(img)
+            .image_fit(crate::image::ImageFit::Cover)
+            .width(Size::Fixed(400.0))
+            .height(Size::Fixed(400.0))]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 600.0, 600.0));
+        let ops = draw_ops(&root, &state);
+        let img_op = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::Image { .. }))
+            .expect("image El emits a DrawOp::Image");
+        let DrawOp::Image {
+            rect,
+            scissor,
+            fit,
+            ..
+        } = img_op
+        else {
+            unreachable!()
+        };
+        assert_eq!(*fit, crate::image::ImageFit::Cover);
+        // Cover scale = max(400/100, 400/50) = 8 → 800×400 dest.
+        assert!((rect.w - 800.0).abs() < 1e-3, "rect.w = {}", rect.w);
+        assert!((rect.h - 400.0).abs() < 1e-3, "rect.h = {}", rect.h);
+        // Scissor clamps to content (400×400 box) so the horizontal
+        // overflow is cropped without an explicit `.clip()`.
+        let s = scissor.expect("image draw op carries a scissor");
+        assert!((s.w - 400.0).abs() < 1e-3, "scissor.w = {}", s.w);
+        assert!((s.h - 400.0).abs() < 1e-3, "scissor.h = {}", s.h);
+    }
+
+    #[test]
+    fn image_tint_propagates_with_opacity() {
+        let pixels = vec![0u8; 4 * 4 * 4];
+        let img = crate::image::Image::from_rgba8(4, 4, pixels);
+        let mut root = crate::tree::image(img)
+            .image_tint(Color::rgb(200, 100, 50))
+            .opacity(0.5);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 100.0));
+        let ops = draw_ops(&root, &state);
+        let DrawOp::Image { tint, .. } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::Image { .. }))
+            .expect("image emits draw op")
+        else {
+            unreachable!()
+        };
+        let tint = tint.expect("image_tint set, draw op carries tint");
+        // Opacity halves the alpha channel of the tint (255 → 128).
+        assert_eq!(tint.a, 128, "tint.a after 0.5 opacity = {}", tint.a);
+        assert_eq!((tint.r, tint.g, tint.b), (200, 100, 50));
     }
 
     #[test]

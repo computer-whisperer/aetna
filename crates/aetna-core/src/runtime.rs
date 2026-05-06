@@ -807,6 +807,35 @@ impl RunnerCore {
                         }
                     }
                 }
+                DrawOp::Image {
+                    rect,
+                    scissor,
+                    image,
+                    tint,
+                    radius,
+                    fit,
+                    ..
+                } => {
+                    close_run(
+                        &mut self.runs,
+                        &mut self.paint_items,
+                        current,
+                        run_first,
+                        self.quad_scratch.len() as u32,
+                    );
+                    current = None;
+                    run_first = self.quad_scratch.len() as u32;
+
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        continue;
+                    }
+                    let recorded =
+                        text.record_image(*rect, phys, image, *tint, *radius, *fit, scale_factor);
+                    for index in recorded {
+                        self.paint_items.push(PaintItem::Image(index));
+                    }
+                }
                 DrawOp::BackdropSnapshot => {
                     close_run(
                         &mut self.runs,
@@ -933,6 +962,26 @@ pub trait TextRecorder {
             TextAnchor::Middle,
             scale_factor,
         ))
+    }
+
+    /// Append a raster image draw. Backends with texture sampling
+    /// override this and return one or more indices into their image
+    /// storage (each index lands in `paint_items` as
+    /// `PaintItem::Image`). The default returns an empty range —
+    /// backends without raster support paint nothing for image Els
+    /// (the SVG fallback emits a labelled placeholder rect on its own).
+    #[allow(clippy::too_many_arguments)]
+    fn record_image(
+        &mut self,
+        _rect: Rect,
+        _scissor: Option<PhysicalScissor>,
+        _image: &crate::image::Image,
+        _tint: Option<Color>,
+        _radius: f32,
+        _fit: crate::image::ImageFit,
+        _scale_factor: f32,
+    ) -> Range<usize> {
+        0..0
     }
 }
 
@@ -1745,6 +1794,7 @@ mod tests {
                 PaintItem::QuadRun(_) => "Q",
                 PaintItem::IconRun(_) => "I",
                 PaintItem::Text(_) => "T",
+                PaintItem::Image(_) => "M",
                 PaintItem::BackdropSnapshot => "S",
             })
             .collect();

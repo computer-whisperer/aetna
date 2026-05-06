@@ -107,8 +107,38 @@ fn emit_op(s: &mut String, op: &DrawOp) {
             stroke_width,
             ..
         } => emit_icon(s, id, *rect, source, *color, *stroke_width),
+        DrawOp::Image {
+            id, rect, image, ..
+        } => emit_image_placeholder(s, id, *rect, image),
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
+}
+
+/// Placeholder rect labelled with the image's content hash. The real
+/// raster bytes never reach the SVG bundle (kept lean — bundles ship
+/// over the wire and are inspected as text), so the dump shows where
+/// an image would be and which one without embedding pixel data.
+fn emit_image_placeholder(s: &mut String, id: &str, rect: Rect, image: &crate::image::Image) {
+    let label = image.label();
+    let _ = writeln!(
+        s,
+        r##"<rect data-node="{}" data-shader="stock::image" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="#444" stroke="#888" stroke-width="1" stroke-dasharray="4 2" />"##,
+        esc(id),
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+    );
+    // Centred label so artifacts stay self-describing.
+    let cx = rect.x + rect.w * 0.5;
+    let cy = rect.y + rect.h * 0.5;
+    let _ = writeln!(
+        s,
+        r##"<text x="{:.2}" y="{:.2}" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#bbb">{}</text>"##,
+        cx,
+        cy,
+        esc(&label),
+    );
 }
 
 fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, uniforms: &UniformBlock) {

@@ -36,6 +36,7 @@ pub use types::{
 };
 
 use crate::anim::Timing;
+use crate::image::{Image, ImageFit};
 use crate::layout::{LayoutCtx, LayoutFn, VirtualItems};
 use crate::shader::ShaderBinding;
 use crate::style::StyleProfile;
@@ -199,6 +200,21 @@ pub struct El {
     pub icon: Option<crate::svg_icon::IconSource>,
     pub icon_stroke_width: f32,
 
+    /// Raster image. When set together with [`Kind::Image`] (or any
+    /// kind, though [`crate::image`] is the idiomatic builder) the
+    /// `draw_ops` pass emits a [`crate::ir::DrawOp::Image`] projected
+    /// per [`Self::image_fit`] and tinted by [`Self::image_tint`].
+    /// Layout intrinsic is the image's natural pixel size when both
+    /// `width` and `height` are `Hug`.
+    pub image: Option<Image>,
+    /// Multiply each sampled pixel by this colour (RGBA `[0..1]`). Most
+    /// raster art wants `None` (no tint); set it for monochrome assets
+    /// (icon-style PNGs) the app wants to recolour.
+    pub image_tint: Option<Color>,
+    /// How the image projects into the resolved rect. Defaults to
+    /// `ImageFit::Contain` — preserves aspect ratio and letterboxes.
+    pub image_fit: ImageFit,
+
     pub children: Vec<El>,
 
     /// Paint-time alpha multiplier in `[0, 1]`. Default `1.0`. Multiplies
@@ -284,6 +300,9 @@ impl Default for El {
             text_link: None,
             icon: None,
             icon_stroke_width: 2.0,
+            image: None,
+            image_tint: None,
+            image_fit: ImageFit::Contain,
             children: Vec::new(),
             opacity: 1.0,
             translate: (0.0, 0.0),
@@ -599,6 +618,23 @@ impl El {
         self.height = Size::Fixed(size);
         self
     }
+
+    /// Attach a raster image. Usually you'll want the [`crate::image`]
+    /// free builder instead, which sets [`Kind::Image`] for you; this
+    /// method exists for cases where you've already constructed an El
+    /// (e.g. through a stock widget) and want to swap in pixel art.
+    pub fn image(mut self, image: impl Into<Image>) -> Self {
+        self.image = Some(image.into());
+        self
+    }
+    pub fn image_fit(mut self, fit: ImageFit) -> Self {
+        self.image_fit = fit;
+        self
+    }
+    pub fn image_tint(mut self, c: Color) -> Self {
+        self.image_tint = Some(c);
+        self
+    }
     pub fn mono(mut self) -> Self {
         self.font_mono = true;
         self
@@ -859,6 +895,23 @@ pub fn spacer() -> El {
         .at_loc(Location::caller())
         .width(Size::Fill(1.0))
         .height(Size::Fill(1.0))
+}
+
+/// A raster image element. The El hugs the image's natural pixel
+/// size by default; set [`El::width`] / [`El::height`] for an
+/// explicit box, and [`El::image_fit`] to control projection.
+///
+/// ```
+/// use aetna_core::prelude::*;
+/// let pixels = vec![0u8; 4 * 4 * 4];
+/// let img = Image::from_rgba8(4, 4, pixels);
+/// let _ = image(img).image_fit(ImageFit::Cover).radius(8.0);
+/// ```
+#[track_caller]
+pub fn image(img: impl Into<Image>) -> El {
+    El::new(Kind::Image)
+        .at_loc(Location::caller())
+        .image(img)
 }
 
 /// A 1-pixel separator line.

@@ -158,6 +158,11 @@ pub enum PaintItem {
     QuadRun(usize),
     IconRun(usize),
     Text(usize),
+    /// One raster image draw. Indexes into the backend's
+    /// `ImagePaint`-equivalent storage. Produced by
+    /// [`crate::runtime::TextRecorder::record_image`] from a
+    /// [`crate::ir::DrawOp::Image`].
+    Image(usize),
     BackdropSnapshot,
 }
 

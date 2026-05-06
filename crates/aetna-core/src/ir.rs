@@ -16,6 +16,7 @@
 //! shadows, focus rings, and glass effects resolve to stock shader uniforms or
 //! custom shader bindings before a backend records GPU commands.
 
+use crate::image::{Image, ImageFit};
 use crate::shader::{ShaderHandle, UniformBlock};
 use crate::svg_icon::IconSource;
 use crate::text::atlas::RunStyle;
@@ -87,6 +88,21 @@ pub enum DrawOp {
         size: f32,
         stroke_width: f32,
     },
+    /// A raster image painted into `rect`. The `image` carries the
+    /// pixel data (Arc-shared with the source El) and is keyed by
+    /// `image.content_hash()` in backend texture caches. `rect` is the
+    /// post-`fit` destination; for `Cover` it can extend past the El's
+    /// content area and is clipped via `scissor`. SVG bundle output
+    /// emits a placeholder rect labelled with the image's hash.
+    Image {
+        id: String,
+        rect: Rect,
+        scissor: Option<Rect>,
+        image: Image,
+        tint: Option<Color>,
+        radius: f32,
+        fit: ImageFit,
+    },
     /// Mid-frame snapshot of the current target into a sampled texture,
     /// scheduled before any backdrop-sampling pass.
     BackdropSnapshot,
@@ -105,7 +121,8 @@ impl DrawOp {
             DrawOp::Quad { id, .. }
             | DrawOp::GlyphRun { id, .. }
             | DrawOp::AttributedText { id, .. }
-            | DrawOp::Icon { id, .. } => id,
+            | DrawOp::Icon { id, .. }
+            | DrawOp::Image { id, .. } => id,
             DrawOp::BackdropSnapshot => "<backdrop-snapshot>",
         }
     }
@@ -114,7 +131,7 @@ impl DrawOp {
             DrawOp::Quad { shader, .. }
             | DrawOp::GlyphRun { shader, .. }
             | DrawOp::AttributedText { shader, .. } => Some(shader),
-            DrawOp::Icon { .. } => None,
+            DrawOp::Icon { .. } | DrawOp::Image { .. } => None,
             DrawOp::BackdropSnapshot => None,
         }
     }
@@ -123,7 +140,8 @@ impl DrawOp {
             DrawOp::Quad { scissor, .. }
             | DrawOp::GlyphRun { scissor, .. }
             | DrawOp::AttributedText { scissor, .. }
-            | DrawOp::Icon { scissor, .. } => *scissor,
+            | DrawOp::Icon { scissor, .. }
+            | DrawOp::Image { scissor, .. } => *scissor,
             DrawOp::BackdropSnapshot => None,
         }
     }

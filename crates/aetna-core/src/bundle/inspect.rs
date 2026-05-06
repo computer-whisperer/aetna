@@ -126,6 +126,7 @@ fn kind_str(k: &Kind) -> &str {
         Kind::VirtualList => "VirtualList",
         Kind::Inlines => "Inlines",
         Kind::HardBreak => "HardBreak",
+        Kind::Image => "Image",
         Kind::Custom(name) => name,
     }
 }

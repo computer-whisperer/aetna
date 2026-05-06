@@ -973,6 +973,13 @@ impl Runner {
                         }
                     }
                 }
+                PaintItem::Image(_) => {
+                    // Raster image painter not yet wired up on this
+                    // backend — `TextRecorder::record_image` returns
+                    // an empty range so this arm is unreachable today.
+                    // Kept as an explicit no-op so adding the painter
+                    // is a focused diff.
+                }
                 PaintItem::BackdropSnapshot => {
                     // Marker only — `render()` splits the slice on
                     // these and never includes one in a draw range.

@@ -111,6 +111,7 @@ pub mod hit_test;
 pub mod icon_msdf;
 pub mod icon_msdf_atlas;
 pub mod icons;
+pub mod image;
 pub mod ir;
 pub mod layout;
 #[doc(hidden)]

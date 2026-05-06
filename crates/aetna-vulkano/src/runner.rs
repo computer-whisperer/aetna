@@ -840,6 +840,11 @@ impl Runner {
                     // a no-op and any backdrop draws after it sample
                     // undefined memory.
                 }
+                PaintItem::Image(_) => {
+                    // Raster image painter not yet wired up on this
+                    // backend — `TextRecorder::record_image` returns
+                    // an empty range so this arm is unreachable today.
+                }
                 PaintItem::IconRun(idx) => {
                     let run = self.icon_paint.run(idx);
                     set_scissor(builder, run.scissor, full);
