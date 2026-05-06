@@ -959,13 +959,14 @@ mod tests {
     #[test]
     fn scroll_offset_translates_children_and_clamps_to_content() {
         // Six 50px-tall rows in a 200px-tall scroll viewport.
-        // Content height = 6*50 + 5*gap_default = 300 + 5*12 = 360 px.
-        // Visible viewport (no padding) = 200 px → max_offset = 160.
+        // Content height = 6 * 50 + 5 * 12 (gap) = 360 px. Visible
+        // viewport (no padding) = 200 px → max_offset = 160.
         let mut root = scroll(
             (0..6)
                 .map(|i| crate::widgets::text::text(format!("row {i}")).height(Size::Fixed(50.0))),
         )
         .key("list")
+        .gap(12.0)
         .height(Size::Fixed(200.0));
         let mut state = UiState::new();
         assign_ids(&mut root);

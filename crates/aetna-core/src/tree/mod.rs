@@ -628,19 +628,21 @@ impl El {
 
 // ---------- Layout primitives (plain functions) ----------
 
-/// A vertical container with a comfortable default gap.
+/// A vertical container.
 ///
-/// Defaults: `axis = Column`, `align = Stretch`, `width = Hug`,
-/// `height = Hug`. The `Hug` defaults match CSS flex's `flex: 0 1
-/// auto` — the column shrinks to its content on both axes. To claim
-/// the parent's available extent (the analog of `width: 100%` /
-/// `flex: 1`), set `.width(Size::Fill(1.0))` / `.height(Size::Fill(1.0))`.
+/// Defaults match CSS flex's `display: flex; flex-direction: column`:
+/// `axis = Column`, `align = Stretch`, `width = Hug`, `height = Hug`,
+/// `gap = 0`. Children shrink to content on the main axis (height)
+/// and stretch to the column's width on the cross axis.
 ///
-/// `align(Stretch)` (the default) stretches children to the column's
-/// width — the same effect CSS gets from `align-items: stretch`.
-/// Switch to `align(Center)` / `Start` / `End` and children shrink
-/// to their content width so the alignment can position them
-/// (matching CSS `align-items` semantics).
+/// To claim the parent's extent (the analog of `width: 100%` /
+/// `flex: 1`), set `.width(Size::Fill(1.0))` /
+/// `.height(Size::Fill(1.0))`. To space children apart, set
+/// `.gap(tokens::SPACE_*)` — CSS-style opt-in spacing.
+///
+/// Switch `align` to `Center` / `Start` / `End` and children shrink
+/// to their content width so the alignment can position them — the
+/// same as CSS `align-items` non-stretch semantics.
 #[track_caller]
 pub fn column<I, E>(children: I) -> El
 where
@@ -650,23 +652,25 @@ where
     El::new(Kind::Group)
         .at_loc(Location::caller())
         .children(children)
-        .gap(crate::tokens::SPACE_MD)
-        .align(Align::Stretch)
-        .height(Size::Hug)
         .axis(Axis::Column)
 }
 
-/// A horizontal container with a comfortable default gap.
+/// A horizontal container.
 ///
-/// Defaults: `axis = Row`, `align = Center`, `width = Hug`,
-/// `height = Hug`. The `Center` default vertically centers the typical
-/// row content (icon + text + button) within the row's hug height —
-/// a small divergence from CSS's `align-items: stretch` default that
-/// reflects what row-shaped UI almost always wants in practice.
+/// Defaults match CSS flex's `display: flex; flex-direction: row`:
+/// `axis = Row`, `align = Stretch`, `width = Hug`, `height = Hug`,
+/// `gap = 0`. Children shrink to content on the main axis (width)
+/// and stretch to the row's height on the cross axis.
 ///
-/// Sizing matches CSS flex's `flex: 0 1 auto`: the row shrinks to its
-/// content width and packs children left. To claim the parent's full
-/// width or height, set `.width(Size::Fill(1.0))` / `.height(Size::Fill(1.0))`.
+/// `Stretch` is the cross-axis default the same way `align-items:
+/// stretch` is in CSS. For typical content rows (`[icon, text,
+/// button]`) you almost always want `.align(Center)` to vertically
+/// center the children — the CSS-Tailwind muscle memory of
+/// `flex items-center`. Without it, smaller fixed-size children
+/// (badges, icons) sit at the top of the row, just like CSS does.
+///
+/// To space children apart, set `.gap(tokens::SPACE_*)` — opt-in
+/// like CSS.
 #[track_caller]
 pub fn row<I, E>(children: I) -> El
 where
@@ -676,9 +680,6 @@ where
     El::new(Kind::Group)
         .at_loc(Location::caller())
         .children(children)
-        .gap(crate::tokens::SPACE_SM)
-        .align(Align::Center)
-        .height(Size::Hug)
         .axis(Axis::Row)
 }
 
@@ -711,8 +712,6 @@ where
     El::new(Kind::Scroll)
         .at_loc(Location::caller())
         .children(children)
-        .gap(crate::tokens::SPACE_MD)
-        .align(Align::Stretch)
         .axis(Axis::Column)
         .width(Size::Fill(1.0))
         .height(Size::Fill(1.0))

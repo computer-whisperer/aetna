@@ -17,25 +17,32 @@ impl App for Settings {
             card(
                 "Account",
                 [
-                    row([text("Email"), spacer(), text("user@example.com").muted()]),
+                    row([text("Email"), text("user@example.com").muted()])
+                        .align(Align::Center)
+                        .justify(Justify::SpaceBetween),
                     row([
                         text("Two-factor authentication"),
-                        spacer(),
                         badge("Enabled").success(),
-                    ]),
-                    row([
-                        text("Recovery codes"),
-                        spacer(),
-                        button("Generate").secondary(),
-                    ]),
+                    ])
+                    .align(Align::Center)
+                    .justify(Justify::SpaceBetween),
+                    row([text("Recovery codes"), button("Generate").secondary()])
+                        .align(Align::Center)
+                        .justify(Justify::SpaceBetween),
                 ],
             ),
             card(
                 "Appearance",
                 [
-                    row([text("Theme"), spacer(), button("Dark").secondary()]),
-                    row([text("Compact mode"), spacer(), badge("Off").muted()]),
-                    row([text("Font size"), spacer(), text("14")]),
+                    row([text("Theme"), button("Dark").secondary()])
+                        .align(Align::Center)
+                        .justify(Justify::SpaceBetween),
+                    row([text("Compact mode"), badge("Off").muted()])
+                        .align(Align::Center)
+                        .justify(Justify::SpaceBetween),
+                    row([text("Font size"), text("14")])
+                        .align(Align::Center)
+                        .justify(Justify::SpaceBetween),
                 ],
             ),
             card(
@@ -49,11 +56,14 @@ impl App for Settings {
                     ])
                     .gap(tokens::SPACE_XS)
                     .align(Align::Start),
-                    spacer(),
                     button("Delete").destructive(),
-                ])],
+                ])
+                .align(Align::Center)
+                .justify(Justify::SpaceBetween)],
             ),
-            row([spacer(), button("Cancel").ghost(), button("Save").primary()]),
+            row([button("Cancel").ghost(), button("Save").primary()])
+                .gap(tokens::SPACE_SM)
+                .justify(Justify::End),
         ])
         .gap(tokens::SPACE_LG)
         .padding(tokens::SPACE_XL)

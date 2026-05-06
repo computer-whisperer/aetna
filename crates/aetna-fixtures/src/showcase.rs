@@ -141,16 +141,7 @@ impl Showcase {
 
 impl App for Showcase {
     fn build(&self) -> El {
-        // No `width: Fill` / `height: Fill` — the runtime gives the
-        // root the viewport rect regardless. `gap: 0` zeros the
-        // sidebar/content seam (rows ship with a default gap so
-        // typical content rows look right out of the box). `align:
-        // Stretch` overrides row's default `Center` so the content
-        // column claims full viewport height, which the Glass
-        // section's backdrop relies on.
         row([sidebar(self.section), content(self)])
-            .gap(0.0)
-            .align(Align::Stretch)
     }
 
     fn hotkeys(&self) -> Vec<(KeyChord, String)> {
@@ -308,6 +299,7 @@ fn list_view(state: &ListState) -> El {
                 .muted(),
             ])
             .gap(tokens::SPACE_SM)
+            .align(Align::Center)
             .height(Size::Fixed(44.0))
             .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
             .key(key)
@@ -462,7 +454,8 @@ fn picker_view(state: &PickerState) -> El {
         spacer(),
         text(format!("{}/{}", state.selected + 1, PICKER_ITEMS.len())).muted(),
     ])
-    .gap(tokens::SPACE_SM);
+    .gap(tokens::SPACE_SM)
+    .align(Align::Center);
 
     let rows: Vec<El> = PICKER_ITEMS
         .iter()
@@ -480,6 +473,7 @@ fn picker_view(state: &PickerState) -> El {
                 .muted(),
             ])
             .gap(tokens::SPACE_SM)
+            .align(Align::Center)
             .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
             .height(Size::Fixed(40.0))
             .key(format!("picker-row-{i}"))
@@ -590,16 +584,19 @@ fn settings_view() -> El {
             "Account",
             [
                 row([text("Email"), text("user@example.com").muted()])
+                    .align(Align::Center)
                     .justify(Justify::SpaceBetween),
                 row([
                     text("Two-factor authentication"),
                     badge("Enabled").success(),
                 ])
+                .align(Align::Center)
                 .justify(Justify::SpaceBetween),
                 row([
                     text("Recovery codes"),
                     button("Generate").secondary().key("settings-generate"),
                 ])
+                .align(Align::Center)
                 .justify(Justify::SpaceBetween),
             ],
         ),
@@ -610,9 +607,14 @@ fn settings_view() -> El {
                     text("Theme"),
                     button("Dark").secondary().key("settings-theme"),
                 ])
+                .align(Align::Center)
                 .justify(Justify::SpaceBetween),
-                row([text("Compact mode"), badge("Off").muted()]).justify(Justify::SpaceBetween),
-                row([text("Font size"), text("14")]).justify(Justify::SpaceBetween),
+                row([text("Compact mode"), badge("Off").muted()])
+                    .align(Align::Center)
+                    .justify(Justify::SpaceBetween),
+                row([text("Font size"), text("14")])
+                    .align(Align::Center)
+                    .justify(Justify::SpaceBetween),
             ],
         ),
         card(
@@ -628,12 +630,14 @@ fn settings_view() -> El {
                 .align(Align::Start),
                 button("Delete").destructive().key("settings-delete"),
             ])
+            .align(Align::Center)
             .justify(Justify::SpaceBetween)],
         ),
         row([
             button("Cancel").ghost().key("settings-cancel"),
             button("Save").primary().key("settings-save"),
         ])
+        .gap(tokens::SPACE_SM)
         .justify(Justify::End),
     ])
     .gap(tokens::SPACE_LG)
@@ -732,10 +736,8 @@ fn glass_backdrop() -> El {
         stripe(Color::rgb(70, 110, 220)),
         stripe(Color::rgb(240, 200, 60)),
     ])
-    .gap(0.0)
-    .align(Align::Stretch)
-    .height(Size::Fill(1.0))
     .width(Size::Fill(1.0))
+    .height(Size::Fill(1.0))
 }
 
 /// Horizontal offsets the "Drift" button cycles through. Index 0 is
