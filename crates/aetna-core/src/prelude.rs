@@ -69,4 +69,4 @@ pub use crate::widgets::text_input::{
     self, ClipboardKind, MaskMode, TextInputOpts, TextSelection, text_input, text_input_with,
 };
 
-pub use crate::selection::{Selection, SelectionPoint, SelectionRange};
+pub use crate::selection::{Selection, SelectionPoint, SelectionRange, selected_text};

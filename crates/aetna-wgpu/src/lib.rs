@@ -629,7 +629,7 @@ impl Runner {
     /// when the primary button is held; the host should dispatch it
     /// via `App::on_event`. The hovered node is updated on
     /// `ui_state().hovered` regardless.
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<UiEvent> {
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Vec<UiEvent> {
         self.core.pointer_moved(x, y)
     }
 
@@ -645,7 +645,7 @@ impl Runner {
     /// selection anchor, draggable handles) can do so. For
     /// `Secondary` / `Middle`, records on a side channel and returns
     /// `None`. The actual click event fires on `pointer_up`.
-    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Option<UiEvent> {
+    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
         self.core.pointer_down(x, y, button)
     }
 
@@ -687,6 +687,13 @@ impl Runner {
     /// passing `app.hotkeys()` so chords stay in sync with state.
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
         self.core.set_hotkeys(hotkeys);
+    }
+
+    /// Push the app's current selection to the runtime so the painter
+    /// can draw highlight bands. Hosts call this once per frame
+    /// alongside [`Self::set_hotkeys`].
+    pub fn set_selection(&mut self, selection: aetna_core::selection::Selection) {
+        self.core.set_selection(selection);
     }
 
     /// Queue toast specs onto the runtime's toast stack. Hosts call

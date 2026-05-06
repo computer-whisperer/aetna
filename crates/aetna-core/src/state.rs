@@ -115,6 +115,17 @@ pub struct ScrollMetrics {
 /// are captured at `pointer_down`; `pointer_moved` updates
 /// `scroll_offsets[scroll_id]` to `start_offset + (dy *
 /// max_offset / track_remaining)` so the cursor-thumb pixel
+/// Active text-selection drag, captured at `pointer_down` on a
+/// selectable leaf. The anchor stays fixed; `pointer_moved` extends
+/// the head and emits `SelectionChanged`.
+#[derive(Clone, Debug)]
+pub(crate) struct SelectionDrag {
+    pub anchor: crate::selection::SelectionPoint,
+    /// `node_id` of the anchor leaf — used to find the leaf's rect /
+    /// El during pointer_moved without re-walking selection_order.
+    pub anchor_node_id: String,
+}
+
 /// relationship stays 1:1.
 #[derive(Clone, Debug)]
 pub struct ThumbDrag {
@@ -158,6 +169,17 @@ pub struct UiState {
     /// to map pointer hits to a [`crate::selection::SelectionPoint`]
     /// and to walk cross-element selections.
     pub(crate) selection_order: Vec<UiTarget>,
+    /// Mirror of the application's current
+    /// [`crate::selection::Selection`]. Set by the host runner once
+    /// per frame from [`crate::event::App::selection`]; read by the
+    /// painter to draw highlight bands and by the selection manager
+    /// to know what's currently active when extending a drag.
+    pub current_selection: crate::selection::Selection,
+    /// Active drag, set by `pointer_down` when the press lands on a
+    /// selectable leaf and primary button. The anchor stays fixed for
+    /// the duration of the drag; head moves as the pointer moves.
+    /// Cleared by `pointer_up`.
+    pub(crate) selection_drag: Option<SelectionDrag>,
     /// LIFO of focus targets pushed when popover layers open. Each new
     /// `Kind::Custom("popover_layer")` snapshots the current focus here
     /// and auto-focuses into the layer; closing the layer pops and
@@ -698,6 +720,7 @@ impl UiState {
                 repeat,
             }),
             text: None,
+            selection: None,
             modifiers,
             kind: UiEventKind::Hotkey,
         })
@@ -724,6 +747,7 @@ impl UiState {
                 repeat,
             }),
             text: None,
+            selection: None,
             modifiers,
             kind: UiEventKind::KeyDown,
         })
@@ -768,6 +792,7 @@ impl UiState {
                 repeat,
             }),
             text: None,
+            selection: None,
             modifiers,
             kind,
         })

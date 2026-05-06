@@ -255,6 +255,7 @@ mod tests {
             pointer: None,
             key_press: None,
             text: None,
+            selection: None,
             modifiers: KeyModifiers::default(),
         }
     }
@@ -476,6 +477,7 @@ mod tests {
             pointer: None,
             key_press: None,
             text: None,
+            selection: None,
             modifiers: KeyModifiers::default(),
         };
         let mut tab = String::from("account");

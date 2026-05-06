@@ -503,6 +503,7 @@ mod tests {
                 repeat: false,
             }),
             text: None,
+            selection: None,
             modifiers,
             kind: UiEventKind::KeyDown,
         }
@@ -598,6 +599,7 @@ mod tests {
             pointer: None,
             key_press: None,
             text: Some("c".into()),
+            selection: None,
             modifiers: ctrl,
             kind: UiEventKind::TextInput,
         };

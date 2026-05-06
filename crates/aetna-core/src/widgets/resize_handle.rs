@@ -373,6 +373,7 @@ mod tests {
             pointer: Some((x, 100.0)),
             key_press: None,
             text: None,
+            selection: None,
             modifiers: KeyModifiers::default(),
             kind,
         }
@@ -393,6 +394,7 @@ mod tests {
                 repeat: false,
             }),
             text: None,
+            selection: None,
             modifiers: KeyModifiers::default(),
             kind: UiEventKind::KeyDown,
         }

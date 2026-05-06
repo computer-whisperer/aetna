@@ -277,6 +277,49 @@ fn push_node(
                 TextWrap::Wrap => Some(glyph_rect.w),
             },
         );
+
+        // Selection band — emit behind the glyph run when this leaf is
+        // selectable, keyed, and (part of) its bytes fall inside the
+        // active selection range. Only single-leaf selections paint
+        // here in P1a; cross-element selections need the
+        // selection_order walk and ship in P1b.
+        if n.selectable
+            && let Some(key) = &n.key
+            && let Some(view) = ui_state.current_selection.within(key)
+            && !view.is_collapsed()
+        {
+            let (lo, hi) = view.ordered();
+            let rects = text_metrics::selection_rects(
+                &display,
+                lo,
+                hi,
+                painted_font_size,
+                weight,
+                n.text_wrap,
+                match n.text_wrap {
+                    TextWrap::NoWrap => None,
+                    TextWrap::Wrap => Some(glyph_rect.w),
+                },
+            );
+            for (rx, ry, rw, rh) in rects {
+                let band = Rect::new(glyph_rect.x + rx, glyph_rect.y + ry, rw, rh);
+                let mut band_uniforms = UniformBlock::new();
+                band_uniforms.insert(
+                    "fill",
+                    UniformValue::Color(opaque(tokens::SELECTION_BG, opacity)),
+                );
+                band_uniforms.insert("radius", UniformValue::F32(2.0));
+                band_uniforms.insert("inner_rect", inner_rect_uniform(band));
+                out.push(DrawOp::Quad {
+                    id: format!("{}.selection-band", n.computed_id),
+                    rect: band,
+                    scissor: own_scissor,
+                    shader: ShaderHandle::Stock(StockShader::RoundedRect),
+                    uniforms: band_uniforms,
+                });
+            }
+        }
+
         out.push(DrawOp::GlyphRun {
             id: n.computed_id.clone(),
             rect: glyph_rect,

@@ -374,7 +374,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         let lx = position.x as f32 / scale;
                         let ly = position.y as f32 / scale;
                         self.last_pointer = Some((lx, ly));
-                        if let Some(event) = gfx.renderer.pointer_moved(lx, ly) {
+                        for event in gfx.renderer.pointer_moved(lx, ly) {
                             self.app.on_event(event);
                         }
                         gfx.window.request_redraw();
@@ -395,7 +395,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         };
                         match state {
                             ElementState::Pressed => {
-                                if let Some(event) = gfx.renderer.pointer_down(lx, ly, button) {
+                                for event in gfx.renderer.pointer_down(lx, ly, button) {
                                     self.app.on_event(event);
                                 }
                                 gfx.window.request_redraw();
@@ -488,6 +488,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         // reflects current state (apps can return different
                         // hotkeys per mode, e.g. `j/k` only in list view).
                         gfx.renderer.set_hotkeys(self.app.hotkeys());
+                        gfx.renderer.set_selection(self.app.selection());
                         // Drain any toasts the app accumulated since
                         // the last frame and queue them onto the
                         // runtime's toast stack. The synthesize pass

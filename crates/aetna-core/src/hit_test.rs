@@ -16,8 +16,10 @@
 //! author-declared boundary) gates descent into descendants.
 
 use crate::event::UiTarget;
+use crate::selection::SelectionPoint;
 use crate::state::UiState;
-use crate::tree::{El, Rect};
+use crate::text::metrics;
+use crate::tree::{El, Kind, Rect};
 
 /// Find the topmost keyed node whose laid-out rect contains `point`
 /// (logical pixels). Returns `None` if the point hits no keyed node.
@@ -103,6 +105,108 @@ fn hit_test_rec(
         return Hit::Blocked;
     }
     Hit::Miss
+}
+
+/// Find the topmost selectable + keyed text leaf containing `point`
+/// and return a [`SelectionPoint`] resolved against the leaf's text
+/// content (one byte offset per Unicode scalar boundary).
+///
+/// Returns `None` when the point misses every selectable leaf, or
+/// when the hit leaf has no text. Walks the same tree the focus
+/// hit-test walks, with the same clip / translate rules — so a
+/// selectable paragraph that's been scrolled out of view is correctly
+/// excluded.
+pub fn selection_point_at(
+    root: &El,
+    ui_state: &UiState,
+    point: (f32, f32),
+) -> Option<SelectionPoint> {
+    let mut hit: Option<SelectableHit<'_>> = None;
+    selectable_rec(root, ui_state, point, None, (0.0, 0.0), &mut hit);
+    let SelectableHit { node, painted } = hit?;
+    let key = node.key.clone()?;
+    let value = node.text.as_deref()?;
+    let local_x = (point.0 - painted.x).max(0.0);
+    let local_y = (point.1 - painted.y).clamp(0.0, painted.h.max(1.0) - 1.0);
+    let byte = match metrics::hit_text(
+        value,
+        node.font_size,
+        node.font_weight,
+        node.text_wrap,
+        Some(painted.w),
+        local_x,
+        local_y,
+    ) {
+        Some(h) => h.byte_index.min(value.len()),
+        None => {
+            if local_x <= 0.0 {
+                0
+            } else {
+                value.len()
+            }
+        }
+    };
+    Some(SelectionPoint { key, byte })
+}
+
+/// Inner state carried while walking for a selectable target. We
+/// keep a borrow of the El so the caller can read `text` / font
+/// params after the walk completes — saving a second tree walk.
+struct SelectableHit<'a> {
+    node: &'a El,
+    painted: Rect,
+}
+
+fn selectable_rec<'a>(
+    node: &'a El,
+    ui_state: &UiState,
+    point: (f32, f32),
+    inherited_clip: Option<Rect>,
+    inherited_translate: (f32, f32),
+    out: &mut Option<SelectableHit<'a>>,
+) {
+    if let Some(clip) = inherited_clip
+        && !clip.contains(point.0, point.1)
+    {
+        return;
+    }
+    let total_translate = (
+        inherited_translate.0 + node.translate.0,
+        inherited_translate.1 + node.translate.1,
+    );
+    let computed = ui_state.rect(&node.computed_id);
+    let translated_rect = translated(computed, total_translate);
+    let painted_rect = scaled_around_center(translated_rect, node.scale);
+    let child_clip = if node.clip {
+        match inherited_clip {
+            Some(clip) => Some(
+                clip.intersect(painted_rect)
+                    .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+            ),
+            None => Some(painted_rect),
+        }
+    } else {
+        inherited_clip
+    };
+    // Children paint on top → check first.
+    for child in node.children.iter().rev() {
+        selectable_rec(child, ui_state, point, child_clip, total_translate, out);
+        if out.is_some() {
+            return;
+        }
+    }
+    // Self counts only if it's a selectable + keyed text leaf and the
+    // point lands inside its painted rect.
+    if node.selectable
+        && node.key.is_some()
+        && matches!(node.kind, Kind::Text | Kind::Heading)
+        && painted_rect.contains(point.0, point.1)
+    {
+        *out = Some(SelectableHit {
+            node,
+            painted: painted_rect,
+        });
+    }
 }
 
 /// Return the `computed_id` of the deepest scrollable container whose

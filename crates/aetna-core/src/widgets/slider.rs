@@ -213,6 +213,7 @@ mod tests {
                 repeat: false,
             }),
             text: None,
+            selection: None,
             modifiers: KeyModifiers::default(),
             kind: UiEventKind::KeyDown,
         }

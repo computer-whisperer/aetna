@@ -603,7 +603,7 @@ impl Runner {
         }
     }
 
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<UiEvent> {
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Vec<UiEvent> {
         self.core.pointer_moved(x, y)
     }
 
@@ -611,7 +611,7 @@ impl Runner {
         self.core.pointer_left();
     }
 
-    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Option<UiEvent> {
+    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
         self.core.pointer_down(x, y, button)
     }
 
@@ -638,6 +638,10 @@ impl Runner {
 
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
         self.core.set_hotkeys(hotkeys);
+    }
+
+    pub fn set_selection(&mut self, selection: aetna_core::selection::Selection) {
+        self.core.set_selection(selection);
     }
 
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {

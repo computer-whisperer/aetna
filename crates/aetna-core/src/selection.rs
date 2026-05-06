@@ -28,6 +28,7 @@
 //! excluded from `selection_order` because nothing could survive a
 //! tree rebuild as a stable identity. See [`crate::tree::El::selectable`].
 
+use crate::tree::{El, Kind};
 use crate::widgets::text_input::TextSelection;
 
 /// The application's single selection slot. `None` means nothing is
@@ -136,6 +137,80 @@ impl Selection {
     }
 }
 
+/// Walk `tree` and return the substring covered by `selection`.
+/// Returns `None` for an empty selection or when the selection
+/// references a key with no matching keyed text leaf in the tree.
+///
+/// For single-leaf selections (the only kind P1a renders) the
+/// returned string is `value[lo..hi]` for that leaf. Cross-leaf
+/// selections walk in tree order: anchor leaf from anchor.byte to
+/// end, every leaf strictly between anchor and head fully, head leaf
+/// up to head.byte. Joined with `\n` between leaves.
+pub fn selected_text(tree: &El, selection: &Selection) -> Option<String> {
+    let r = selection.range.as_ref()?;
+    if r.anchor.key == r.head.key {
+        let value = find_keyed_text(tree, &r.anchor.key)?;
+        let lo = r.anchor.byte.min(r.head.byte).min(value.len());
+        let hi = r.anchor.byte.max(r.head.byte).min(value.len());
+        if lo >= hi {
+            return None;
+        }
+        return Some(value[lo..hi].to_string());
+    }
+    // Cross-leaf walk in tree order.
+    let mut leaves: Vec<(String, String)> = Vec::new();
+    collect_keyed_text_leaves(tree, &mut leaves);
+    let anchor_idx = leaves.iter().position(|(k, _)| *k == r.anchor.key)?;
+    let head_idx = leaves.iter().position(|(k, _)| *k == r.head.key)?;
+    let (lo_idx, lo_byte, hi_idx, hi_byte) = if anchor_idx <= head_idx {
+        (anchor_idx, r.anchor.byte, head_idx, r.head.byte)
+    } else {
+        (head_idx, r.head.byte, anchor_idx, r.anchor.byte)
+    };
+    let mut out = String::new();
+    for (i, (_, value)) in leaves.iter().enumerate().skip(lo_idx).take(hi_idx - lo_idx + 1) {
+        let start = if i == lo_idx {
+            lo_byte.min(value.len())
+        } else {
+            0
+        };
+        let end = if i == hi_idx {
+            hi_byte.min(value.len())
+        } else {
+            value.len()
+        };
+        if start >= end {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&value[start..end]);
+    }
+    if out.is_empty() { None } else { Some(out) }
+}
+
+fn find_keyed_text(node: &El, key: &str) -> Option<String> {
+    if matches!(node.kind, Kind::Text | Kind::Heading)
+        && node.key.as_deref() == Some(key)
+        && let Some(t) = &node.text
+    {
+        return Some(t.clone());
+    }
+    node.children.iter().find_map(|c| find_keyed_text(c, key))
+}
+
+fn collect_keyed_text_leaves(node: &El, out: &mut Vec<(String, String)>) {
+    if matches!(node.kind, Kind::Text | Kind::Heading)
+        && let (Some(k), Some(t)) = (&node.key, &node.text)
+    {
+        out.push((k.clone(), t.clone()));
+    }
+    for c in &node.children {
+        collect_keyed_text_leaves(c, out);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,5 +266,47 @@ mod tests {
         // Selection unchanged.
         assert_eq!(sel.within("name"), Some(TextSelection::caret(0)));
         assert!(sel.within("email").is_none());
+    }
+
+    #[test]
+    fn selected_text_returns_single_leaf_substring() {
+        let tree = crate::widgets::text::text("Hello, world!").key("p");
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("p", 7),
+                head: SelectionPoint::new("p", 12),
+            }),
+        };
+        assert_eq!(selected_text(&tree, &sel).as_deref(), Some("world"));
+    }
+
+    #[test]
+    fn selected_text_walks_tree_order_for_cross_leaf_selection() {
+        let tree = crate::column([
+            crate::widgets::text::text("alpha").key("a"),
+            crate::widgets::text::text("bravo").key("b"),
+            crate::widgets::text::text("charlie").key("c"),
+        ]);
+        // Anchor inside "alpha" at byte 2, head inside "charlie" at
+        // byte 4 — should yield "pha\nbravo\nchar" (joined by newline
+        // between leaves; full middle leaf included).
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("a", 2),
+                head: SelectionPoint::new("c", 4),
+            }),
+        };
+        assert_eq!(
+            selected_text(&tree, &sel).as_deref(),
+            Some("pha\nbravo\nchar")
+        );
+    }
+
+    #[test]
+    fn selected_text_returns_none_for_empty_or_unknown_keys() {
+        let tree = crate::widgets::text::text("hi").key("p");
+        assert!(selected_text(&tree, &Selection::default()).is_none());
+        let unknown = Selection::caret("missing", 0);
+        assert!(selected_text(&tree, &unknown).is_none());
     }
 }

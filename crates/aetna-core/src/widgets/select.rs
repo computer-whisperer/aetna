@@ -308,6 +308,7 @@ mod tests {
             pointer: None,
             key_press: None,
             text: None,
+            selection: None,
             modifiers: Default::default(),
         }
     }

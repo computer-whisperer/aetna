@@ -750,6 +750,7 @@ mod tests {
             pointer: None,
             key_press: None,
             text: Some(s.into()),
+            selection: None,
             modifiers,
             kind: UiEventKind::TextInput,
         }
@@ -770,6 +771,7 @@ mod tests {
                 repeat: false,
             }),
             text: None,
+            selection: None,
             modifiers,
             kind: UiEventKind::KeyDown,
         }
@@ -782,6 +784,7 @@ mod tests {
             pointer: Some(pointer),
             key_press: None,
             text: None,
+            selection: None,
             modifiers,
             kind: UiEventKind::PointerDown,
         }
@@ -794,6 +797,7 @@ mod tests {
             pointer: Some(pointer),
             key_press: None,
             text: None,
+            selection: None,
             modifiers: KeyModifiers::default(),
             kind: UiEventKind::Drag,
         }
@@ -1178,6 +1182,7 @@ mod tests {
             pointer: Some((ti_target().rect.x + 1.0, ti_target().rect.y + 18.0)),
             key_press: None,
             text: None,
+            selection: None,
             modifiers: KeyModifiers::default(),
             kind: UiEventKind::Click,
         };
@@ -1591,10 +1596,16 @@ mod tests {
         core.pointer_moved(down_x, cy);
         let down = core
             .pointer_down(down_x, cy, PointerButton::Primary)
+            .into_iter()
+            .find(|e| e.kind == UiEventKind::PointerDown)
             .expect("pointer_down emits PointerDown");
         assert!(apply_event(&mut value, &mut sel, &down));
 
-        let drag = core.pointer_moved(drag_x, cy).expect("Drag while pressed");
+        let drag = core
+            .pointer_moved(drag_x, cy)
+            .into_iter()
+            .find(|e| e.kind == UiEventKind::Drag)
+            .expect("Drag while pressed");
         assert!(apply_event(&mut value, &mut sel, &drag));
 
         let events = core.pointer_up(drag_x, cy, PointerButton::Primary);

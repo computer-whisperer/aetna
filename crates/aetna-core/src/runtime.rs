@@ -201,7 +201,7 @@ impl RunnerCore {
     /// originally pressed target. The event's `modifiers` field
     /// reflects the mask currently tracked on `UiState` (set by the
     /// host via `set_modifiers`).
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<UiEvent> {
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Vec<UiEvent> {
         self.ui_state.pointer_pos = Some((x, y));
 
         // Active scrollbar drag: translate cursor delta into
@@ -218,7 +218,7 @@ impl RunnerCore {
             };
             let clamped = new_offset.clamp(0.0, drag.max_offset);
             self.ui_state.scroll_offsets.insert(drag.scroll_id, clamped);
-            return None;
+            return Vec::new();
         }
 
         let hit = self
@@ -226,20 +226,64 @@ impl RunnerCore {
             .as_ref()
             .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
         self.ui_state.set_hovered(hit, Instant::now());
+        let modifiers = self.ui_state.modifiers;
+
+        let mut out = Vec::new();
+
+        // Selection drag-extend takes precedence over the focusable
+        // Drag emission: while the user is selecting on a static
+        // paragraph, there's no `pressed` (static text isn't focusable)
+        // so the focusable Drag arm wouldn't fire anyway. We compute a
+        // new head and emit a SelectionChanged.
+        if let Some(drag) = self.ui_state.selection_drag.clone()
+            && let Some(tree) = self.last_tree.as_ref()
+        {
+            // P1a: clamp the drag to the anchor leaf — the head stays
+            // in the same key as the anchor. P1b will let head escape
+            // into a sibling selectable leaf.
+            let head_byte = if let Some(point) = hit_test::selection_point_at(tree, &self.ui_state, (x, y))
+                && point.key == drag.anchor.key
+            {
+                point.byte
+            } else if let Some(point) = byte_in_anchor_leaf(tree, &self.ui_state, &drag, (x, y)) {
+                point.byte
+            } else {
+                drag.anchor.byte
+            };
+            let new_sel = crate::selection::Selection {
+                range: Some(crate::selection::SelectionRange {
+                    anchor: drag.anchor.clone(),
+                    head: crate::selection::SelectionPoint {
+                        key: drag.anchor.key.clone(),
+                        byte: head_byte,
+                    },
+                }),
+            };
+            if new_sel != self.ui_state.current_selection {
+                self.ui_state.current_selection = new_sel.clone();
+                out.push(selection_event(new_sel, modifiers, Some((x, y))));
+            }
+        }
+
         // Drag: pointer moved while primary button is down → emit Drag
         // to the originally pressed target. Cursor escape from the
         // pressed node is the *normal* drag-extend case (e.g. text
-        // selection); we keep emitting until pointer_up clears `pressed`.
-        let modifiers = self.ui_state.modifiers;
-        self.ui_state.pressed.clone().map(|p| UiEvent {
-            key: Some(p.key.clone()),
-            target: Some(p),
-            pointer: Some((x, y)),
-            key_press: None,
-            text: None,
-            modifiers,
-            kind: UiEventKind::Drag,
-        })
+        // selection inside an editable widget); we keep emitting until
+        // pointer_up clears `pressed`.
+        if let Some(p) = self.ui_state.pressed.clone() {
+            out.push(UiEvent {
+                key: Some(p.key.clone()),
+                target: Some(p),
+                pointer: Some((x, y)),
+                key_press: None,
+                text: None,
+                selection: None,
+                modifiers,
+                kind: UiEventKind::Drag,
+            });
+        }
+
+        out
     }
 
     pub fn pointer_left(&mut self) {
@@ -251,11 +295,17 @@ impl RunnerCore {
 
     /// Primary/secondary/middle pointer button pressed at `(x, y)`.
     /// For the primary button, focuses the hit target and stashes it
-    /// as the pressed target; returns a `PointerDown` event so widgets
+    /// as the pressed target; emits a `PointerDown` event so widgets
     /// like text_input can react at down-time (e.g., set the selection
     /// anchor before any drag extends it). Secondary/middle store on a
     /// separate channel and never emit a `PointerDown`.
-    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Option<UiEvent> {
+    ///
+    /// Also drives the library's text-selection manager: a primary
+    /// press on a `selectable` text leaf starts a drag and produces a
+    /// `SelectionChanged` event; a press on any other element clears
+    /// any active static-text selection by emitting a
+    /// `SelectionChanged` with an empty range.
+    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
         // Scrollbar track pre-empts normal hit-test: a primary press
         // inside a scrollable's track column either captures a thumb
         // drag (when the press lands inside the visible thumb rect)
@@ -304,7 +354,7 @@ impl RunnerCore {
                 let new_offset = (start_offset + delta).clamp(0.0, metrics.max_offset);
                 self.ui_state.scroll_offsets.insert(scroll_id, new_offset);
             }
-            return None;
+            return Vec::new();
         }
 
         let hit = self
@@ -315,28 +365,88 @@ impl RunnerCore {
         // envelope. Secondary/middle clicks shouldn't yank focus from
         // the currently-focused element (matches browser/native behavior
         // where right-clicking a button doesn't take focus).
-        if matches!(button, PointerButton::Primary) {
-            self.ui_state.set_focus(hit.clone());
-            self.ui_state.pressed = hit.clone();
-            // A press on the hovered node dismisses any tooltip for
-            // the rest of this hover session — matches native UIs.
-            self.ui_state.tooltip_dismissed_for_hover = true;
-            let modifiers = self.ui_state.modifiers;
-            hit.map(|p| UiEvent {
+        if !matches!(button, PointerButton::Primary) {
+            // Stash the down-target on the secondary/middle channel so
+            // pointer_up can confirm the click landed on the same node.
+            self.ui_state.pressed_secondary = hit.map(|h| (h, button));
+            return Vec::new();
+        }
+
+        self.ui_state.set_focus(hit.clone());
+        self.ui_state.pressed = hit.clone();
+        // A press on the hovered node dismisses any tooltip for
+        // the rest of this hover session — matches native UIs.
+        self.ui_state.tooltip_dismissed_for_hover = true;
+        let modifiers = self.ui_state.modifiers;
+
+        let mut out = Vec::new();
+        if let Some(p) = hit.clone() {
+            out.push(UiEvent {
                 key: Some(p.key.clone()),
                 target: Some(p),
                 pointer: Some((x, y)),
                 key_press: None,
                 text: None,
+                selection: None,
                 modifiers,
                 kind: UiEventKind::PointerDown,
-            })
-        } else {
-            // Stash the down-target on the secondary/middle channel so
-            // pointer_up can confirm the click landed on the same node.
-            self.ui_state.pressed_secondary = hit.map(|h| (h, button));
-            None
+            });
         }
+
+        // Selection routing. The selection hit-test is independent of
+        // the focusable hit: a `text(...).key("p").selectable()` leaf is
+        // both a (non-focusable) keyed PointerDown target and a
+        // selectable text leaf. Apps see both events; selection drag
+        // starts in either case. A press that lands on neither a
+        // selectable nor a focusable widget clears any active
+        // selection.
+        if let Some(point) = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| hit_test::selection_point_at(t, &self.ui_state, (x, y)))
+        {
+            self.start_selection_drag(point, &mut out, modifiers, (x, y));
+        } else if !self.ui_state.current_selection.is_empty() {
+            out.push(selection_event(
+                crate::selection::Selection::default(),
+                modifiers,
+                Some((x, y)),
+            ));
+            self.ui_state.current_selection = crate::selection::Selection::default();
+            self.ui_state.selection_drag = None;
+        }
+
+        out
+    }
+
+    /// Stamp a new [`crate::state::SelectionDrag`] and emit a
+    /// `SelectionChanged` event with anchor=head=`point`.
+    fn start_selection_drag(
+        &mut self,
+        point: crate::selection::SelectionPoint,
+        out: &mut Vec<UiEvent>,
+        modifiers: KeyModifiers,
+        pointer: (f32, f32),
+    ) {
+        let anchor_node_id = self
+            .ui_state
+            .selection_order
+            .iter()
+            .find(|t| t.key == point.key)
+            .map(|t| t.node_id.clone())
+            .unwrap_or_default();
+        let new_sel = crate::selection::Selection {
+            range: Some(crate::selection::SelectionRange {
+                anchor: point.clone(),
+                head: point.clone(),
+            }),
+        };
+        self.ui_state.current_selection = new_sel.clone();
+        self.ui_state.selection_drag = Some(crate::state::SelectionDrag {
+            anchor: point,
+            anchor_node_id,
+        });
+        out.push(selection_event(new_sel, modifiers, Some(pointer)));
     }
 
     /// Pointer released. For the primary button, fires `PointerUp`
@@ -356,6 +466,12 @@ impl RunnerCore {
             return Vec::new();
         }
 
+        // End any active text-selection drag. The selection itself
+        // persists; only the "currently dragging" flag goes away.
+        if matches!(button, PointerButton::Primary) {
+            self.ui_state.selection_drag = None;
+        }
+
         let hit = self
             .last_tree
             .as_ref()
@@ -372,6 +488,7 @@ impl RunnerCore {
                         pointer: Some((x, y)),
                         key_press: None,
                         text: None,
+                        selection: None,
                         modifiers,
                         kind: UiEventKind::PointerUp,
                     });
@@ -393,6 +510,7 @@ impl RunnerCore {
                             pointer: Some((x, y)),
                             key_press: None,
                             text: None,
+                            selection: None,
                             modifiers,
                             kind: UiEventKind::Click,
                         });
@@ -416,6 +534,7 @@ impl RunnerCore {
                         pointer: Some((x, y)),
                         key_press: None,
                         text: None,
+                        selection: None,
                         modifiers,
                         kind,
                     });
@@ -530,6 +649,7 @@ impl RunnerCore {
             pointer: None,
             key_press: None,
             text: Some(text),
+            selection: None,
             modifiers,
             kind: UiEventKind::TextInput,
         })
@@ -537,6 +657,14 @@ impl RunnerCore {
 
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
         self.ui_state.set_hotkeys(hotkeys);
+    }
+
+    /// Push the app's current [`crate::selection::Selection`] into the
+    /// runtime so the painter can draw highlight bands. Hosts call
+    /// this once per frame alongside `set_hotkeys`, sourcing the value
+    /// from [`crate::event::App::selection`].
+    pub fn set_selection(&mut self, selection: crate::selection::Selection) {
+        self.ui_state.current_selection = selection;
     }
 
     /// Queue toast specs onto the runtime's toast stack. Each spec
@@ -594,6 +722,7 @@ impl RunnerCore {
         let toast_pending = toast::synthesize_toasts(root, &mut self.ui_state, t0);
         layout::layout(root, &mut self.ui_state, viewport);
         self.ui_state.sync_focus_order(root);
+        self.ui_state.sync_selection_order(root);
         focus::sync_popover_focus(root, &mut self.ui_state);
         self.ui_state.apply_to_state();
         let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now())
@@ -885,6 +1014,67 @@ fn find_capture_keys(node: &El, id: &str) -> Option<bool> {
     node.children.iter().find_map(|c| find_capture_keys(c, id))
 }
 
+/// Construct a `SelectionChanged` event carrying the new selection.
+fn selection_event(
+    new_sel: crate::selection::Selection,
+    modifiers: KeyModifiers,
+    pointer: Option<(f32, f32)>,
+) -> UiEvent {
+    UiEvent {
+        kind: UiEventKind::SelectionChanged,
+        key: None,
+        target: None,
+        pointer,
+        key_press: None,
+        text: None,
+        selection: Some(new_sel),
+        modifiers,
+    }
+}
+
+/// During a selection drag, when the pointer leaves the anchor leaf's
+/// rect (P1a clamps drag to the anchor's leaf), pin the head to the
+/// nearest edge of the leaf. Returns the byte offset corresponding to
+/// `(x, y)` projected onto the anchor leaf's painted rect.
+fn byte_in_anchor_leaf(
+    root: &El,
+    ui_state: &UiState,
+    drag: &crate::state::SelectionDrag,
+    point: (f32, f32),
+) -> Option<crate::selection::SelectionPoint> {
+    let target = ui_state
+        .selection_order
+        .iter()
+        .find(|t| t.node_id == drag.anchor_node_id)?;
+    let rect = target.rect;
+    // Clamp the y onto the leaf so a drag below or above still hits;
+    // x is left raw so hit_text can place the byte at start / end of
+    // the line that the y projects to.
+    let cy = point.1.clamp(rect.y, rect.y + rect.h - 1.0);
+    let cx = point.0;
+    let resolved =
+        hit_test::selection_point_at(root, ui_state, (cx, cy)).filter(|p| p.key == drag.anchor.key);
+    if resolved.is_some() {
+        return resolved;
+    }
+    // Pointer is well outside the anchor leaf horizontally. Pick the
+    // edge of the leaf the pointer is on: x < leaf.x → byte 0, else
+    // byte = leaf.text.len().
+    let leaf_len = find_text_len(root, &drag.anchor_node_id).unwrap_or(0);
+    let byte = if point.0 < rect.x { 0 } else { leaf_len };
+    Some(crate::selection::SelectionPoint {
+        key: drag.anchor.key.clone(),
+        byte,
+    })
+}
+
+fn find_text_len(node: &El, id: &str) -> Option<usize> {
+    if node.computed_id == id {
+        return node.text.as_ref().map(|t| t.len());
+    }
+    node.children.iter().find_map(|c| find_text_len(c, id))
+}
+
 /// Recorded output from an icon draw op. Backends without a vector-icon
 /// path use `Text` fallback layers; wgpu can return dedicated icon runs.
 pub enum RecordedPaint {
@@ -1085,8 +1275,9 @@ mod tests {
         core.pointer_down(cx, cy, PointerButton::Primary);
         let drag = core
             .pointer_moved(cx + 30.0, cy)
+            .into_iter()
+            .find(|e| e.kind == UiEventKind::Drag)
             .expect("drag while pressed");
-        assert_eq!(drag.kind, UiEventKind::Drag);
         assert_eq!(drag.target.as_ref().map(|t| t.key.as_str()), Some("btn"));
         assert_eq!(drag.pointer, Some((cx + 30.0, cy)));
     }
@@ -1144,7 +1335,120 @@ mod tests {
     #[test]
     fn pointer_moved_without_press_emits_no_drag() {
         let mut core = lay_out_input_tree(false);
-        assert!(core.pointer_moved(50.0, 50.0).is_none());
+        assert!(core.pointer_moved(50.0, 50.0).is_empty());
+    }
+
+    fn lay_out_paragraph_tree() -> RunnerCore {
+        use crate::tree::*;
+        let mut tree = crate::column([
+            crate::widgets::text::text("First paragraph of text.")
+                .key("p1")
+                .selectable(),
+            crate::widgets::text::text("Second paragraph of text.")
+                .key("p2")
+                .selectable(),
+        ])
+        .padding(20.0);
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 400.0, 300.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        core.ui_state.sync_selection_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+        core
+    }
+
+    #[test]
+    fn pointer_down_on_selectable_text_emits_selection_changed() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let cx = p1.x + 4.0;
+        let cy = p1.y + p1.h * 0.5;
+        let events = core.pointer_down(cx, cy, PointerButton::Primary);
+        let sel_event = events
+            .iter()
+            .find(|e| e.kind == UiEventKind::SelectionChanged)
+            .expect("SelectionChanged emitted");
+        let new_sel = sel_event
+            .selection
+            .as_ref()
+            .expect("SelectionChanged carries a selection");
+        let range = new_sel.range.as_ref().expect("collapsed selection at hit");
+        assert_eq!(range.anchor.key, "p1");
+        assert_eq!(range.head.key, "p1");
+        assert_eq!(range.anchor.byte, range.head.byte);
+        assert!(core.ui_state.selection_drag.is_some());
+    }
+
+    #[test]
+    fn pointer_drag_on_selectable_text_extends_head() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let cx = p1.x + 4.0;
+        let cy = p1.y + p1.h * 0.5;
+        core.pointer_moved(cx, cy);
+        core.pointer_down(cx, cy, PointerButton::Primary);
+
+        // Drag to the right inside p1.
+        let events = core.pointer_moved(p1.x + p1.w - 10.0, cy);
+        let sel_event = events
+            .iter()
+            .find(|e| e.kind == UiEventKind::SelectionChanged)
+            .expect("Drag emits SelectionChanged");
+        let new_sel = sel_event.selection.as_ref().unwrap();
+        let range = new_sel.range.as_ref().unwrap();
+        assert_eq!(range.anchor.key, "p1");
+        assert_eq!(range.head.key, "p1");
+        assert!(
+            range.head.byte > range.anchor.byte,
+            "head should advance past anchor (anchor={}, head={})",
+            range.anchor.byte,
+            range.head.byte
+        );
+    }
+
+    #[test]
+    fn pointer_up_clears_drag_but_keeps_selection() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let cx = p1.x + 4.0;
+        let cy = p1.y + p1.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_moved(p1.x + p1.w - 10.0, cy);
+        let _ = core.pointer_up(p1.x + p1.w - 10.0, cy, PointerButton::Primary);
+        assert!(
+            core.ui_state.selection_drag.is_none(),
+            "drag flag should clear on pointer_up"
+        );
+        assert!(
+            !core.ui_state.current_selection.is_empty(),
+            "selection itself should persist after pointer_up"
+        );
+    }
+
+    #[test]
+    fn pointer_down_on_non_selectable_clears_existing_selection() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let cy = p1.y + p1.h * 0.5;
+        // Establish a selection in p1.
+        core.pointer_down(p1.x + 4.0, cy, PointerButton::Primary);
+        core.pointer_up(p1.x + 4.0, cy, PointerButton::Primary);
+        assert!(!core.ui_state.current_selection.is_empty());
+
+        // Press in empty space (no selectable, no focusable).
+        let events = core.pointer_down(2.0, 2.0, PointerButton::Primary);
+        let cleared = events
+            .iter()
+            .find(|e| e.kind == UiEventKind::SelectionChanged)
+            .expect("clearing emits SelectionChanged");
+        let new_sel = cleared.selection.as_ref().unwrap();
+        assert!(new_sel.is_empty(), "new selection should be empty");
+        assert!(core.ui_state.current_selection.is_empty());
     }
 
     /// Build a 200x200 viewport hosting a `scroll([rows...])` whose
@@ -1184,7 +1488,7 @@ mod tests {
             PointerButton::Primary,
         );
         assert!(
-            event.is_none(),
+            event.is_empty(),
             "thumb press should not emit PointerDown to the app"
         );
         let drag = core
@@ -1218,7 +1522,7 @@ mod tests {
             thumb.y + thumb.h + 10.0,
             PointerButton::Primary,
         );
-        assert!(evt.is_none(), "track press should not surface PointerDown");
+        assert!(evt.is_empty(), "track press should not surface PointerDown");
         assert!(
             core.ui_state.thumb_drag.is_none(),
             "track click outside the thumb should not start a drag",
@@ -1297,7 +1601,7 @@ mod tests {
         core.pointer_down(thumb.x + thumb.w * 0.5, press_y, PointerButton::Primary);
         // Drag 20 px down — offset should advance by `20 * max_offset / track_remaining`.
         let evt = core.pointer_moved(thumb.x + thumb.w * 0.5, press_y + 20.0);
-        assert!(evt.is_none(), "thumb-drag move should suppress Drag event");
+        assert!(evt.is_empty(), "thumb-drag move should suppress Drag event");
         let offset = core.ui_state.scroll_offset(&scroll_id);
         let expected = 20.0 * (metrics.max_offset / track_remaining);
         assert!(

@@ -479,7 +479,7 @@ mod web_entry {
                     let lx = position.x as f32 / scale;
                     let ly = position.y as f32 / scale;
                     self.last_pointer = Some((lx, ly));
-                    if let Some(event) = gfx.renderer.pointer_moved(lx, ly) {
+                    for event in gfx.renderer.pointer_moved(lx, ly) {
                         self.app.on_event(event);
                     }
                     gfx.window.request_redraw();
@@ -500,7 +500,7 @@ mod web_entry {
                     };
                     match state {
                         ElementState::Pressed => {
-                            if let Some(event) = gfx.renderer.pointer_down(lx, ly, button) {
+                            for event in gfx.renderer.pointer_down(lx, ly, button) {
                                 self.app.on_event(event);
                             }
                             gfx.window.request_redraw();
@@ -584,6 +584,7 @@ mod web_entry {
                     let mut tree = self.app.build();
                     gfx.renderer.set_theme(self.app.theme());
                     gfx.renderer.set_hotkeys(self.app.hotkeys());
+                    gfx.renderer.set_selection(self.app.selection());
                     let t_after_build = Instant::now();
 
                     let scale_factor = gfx.window.scale_factor() as f32;

@@ -242,6 +242,13 @@ pub struct UiEvent {
     pub key_press: Option<KeyPress>,
     /// Composed text payload for [`UiEventKind::TextInput`] events.
     pub text: Option<String>,
+    /// Library-emitted selection state for
+    /// [`UiEventKind::SelectionChanged`] events. Carries the new
+    /// [`crate::selection::Selection`] after the runtime resolved a
+    /// pointer interaction. The app folds this into its
+    /// `Selection` field the same way it folds `apply_event` results
+    /// into a [`crate::widgets::text_input::TextSelection`].
+    pub selection: Option<crate::selection::Selection>,
     /// Modifier mask captured at the moment this event was emitted. For
     /// keyboard events this duplicates `key_press.modifiers`; for
     /// pointer events it's the host-tracked modifier state at the time
@@ -265,6 +272,7 @@ impl UiEvent {
             pointer: None,
             key_press: None,
             text: None,
+            selection: None,
             modifiers: KeyModifiers::default(),
         }
     }
@@ -381,6 +389,13 @@ pub enum UiEventKind {
     /// `event.pointer` is the down position, and `event.modifiers`
     /// carries the modifier mask (Shift+click for extend-selection).
     PointerDown,
+    /// The library's selection manager resolved a pointer interaction
+    /// on selectable text and wants the app to update its
+    /// [`crate::selection::Selection`] state. `event.selection`
+    /// carries the new value (an empty `Selection` clears).
+    /// Emitted by `pointer_down`, `pointer_moved` (during a drag),
+    /// and the runtime's escape / dismiss paths.
+    SelectionChanged,
 }
 
 /// The application contract. Implement this on your state struct and
@@ -405,6 +420,15 @@ pub trait App {
 
     /// Update state in response to a routed event. Default: no-op.
     fn on_event(&mut self, _event: UiEvent) {}
+
+    /// The application's current text [`crate::selection::Selection`].
+    /// Read by the host once per frame so the library can paint
+    /// highlight bands and resolve `selected_text` for clipboard.
+    /// Apps that own a `Selection` field return a clone here; the
+    /// default returns the empty selection.
+    fn selection(&self) -> crate::selection::Selection {
+        crate::selection::Selection::default()
+    }
 
     /// App-level hotkey registry. The library matches incoming key
     /// presses against this list before its own focus-activation
