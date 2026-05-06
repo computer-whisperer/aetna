@@ -167,6 +167,7 @@ impl<A: App> ApplicationHandler for Host<A> {
             physical_device.clone(),
             DeviceCreateInfo {
                 enabled_extensions: device_extensions,
+                enabled_features: aetna_vulkano::required_device_features(),
                 queue_create_infos: vec![QueueCreateInfo {
                     queue_family_index,
                     ..Default::default()

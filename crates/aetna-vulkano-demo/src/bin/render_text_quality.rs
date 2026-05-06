@@ -73,6 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (device, mut queues) = Device::new(
         physical_device,
         DeviceCreateInfo {
+            enabled_features: aetna_vulkano::required_device_features(),
             queue_create_infos: vec![QueueCreateInfo {
                 queue_family_index,
                 ..Default::default()

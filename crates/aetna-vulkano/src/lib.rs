@@ -25,3 +25,20 @@ mod text;
 
 pub use naga_compile::{CompileError, wgsl_to_spirv};
 pub use runner::{PrepareResult, PrepareTimings, Runner};
+
+/// Vulkan device features the runner's stock pipelines depend on.
+/// Hosts must merge this with their own required features when calling
+/// `Device::new(..., DeviceCreateInfo { enabled_features, .. })` —
+/// otherwise pipeline construction panics with a SPIR-V validation
+/// error like "uses the SPIR-V capability `SampleRateShading`".
+///
+/// Currently this is just `sample_rate_shading`, used by
+/// `stock::rounded_rect`'s `@interpolate(perspective, sample)` to keep
+/// quad antialiasing one screen-pixel wide under MSAA. Wgpu's
+/// device-creation flow turns this on by default; vulkano's doesn't.
+pub fn required_device_features() -> vulkano::device::DeviceFeatures {
+    vulkano::device::DeviceFeatures {
+        sample_rate_shading: true,
+        ..vulkano::device::DeviceFeatures::empty()
+    }
+}
