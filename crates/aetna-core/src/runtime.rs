@@ -647,7 +647,7 @@ impl RunnerCore {
                 DrawOp::Icon {
                     rect,
                     scissor,
-                    name,
+                    source,
                     color,
                     size,
                     stroke_width,
@@ -670,7 +670,7 @@ impl RunnerCore {
                     let recorded = text.record_icon(
                         *rect,
                         phys,
-                        *name,
+                        source,
                         *color,
                         *size,
                         *stroke_width,
@@ -786,23 +786,29 @@ pub trait TextRecorder {
 
     /// Append a vector icon. Backends with a native vector painter
     /// override this; the default keeps experimental/simple backends on
-    /// the previous text-symbol fallback.
+    /// the previous text-symbol fallback. Built-in icons fall back to
+    /// their named glyph; app-supplied SVG icons fall back to a
+    /// generic placeholder since they have no canonical glyph.
     #[allow(clippy::too_many_arguments)]
     fn record_icon(
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
-        name: crate::tree::IconName,
+        source: &crate::svg_icon::IconSource,
         color: Color,
         size: f32,
         _stroke_width: f32,
         scale_factor: f32,
     ) -> RecordedPaint {
+        let glyph = match source {
+            crate::svg_icon::IconSource::Builtin(name) => name.fallback_glyph(),
+            crate::svg_icon::IconSource::Custom(_) => "?",
+        };
         RecordedPaint::Text(self.record(
             rect,
             scissor,
             color,
-            name.fallback_glyph(),
+            glyph,
             size,
             FontWeight::Regular,
             TextWrap::NoWrap,

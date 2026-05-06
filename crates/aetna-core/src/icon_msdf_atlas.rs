@@ -1,9 +1,13 @@
 //! Icon MTSDF atlas — backs the MSDF icon rendering path.
 //!
-//! Each `(IconName, base_px_per_unit, stroke_width_q)` slot caches one
+//! Each `(IconKey, base_px_per_unit, stroke_width_q)` slot caches one
 //! pre-rasterized MTSDF (RGB = MSDF, A = true single-channel SDF).
 //! Pages are RGBA8 — same format the text MTSDF atlas uses, so a
 //! backend can spin up the same texture/sampler layout for both.
+//!
+//! Built-in icons key on the [`IconName`] discriminant; app-supplied
+//! [`crate::SvgIcon`]s key on their content hash, so the same SVG used
+//! at multiple sites shares one atlas slot.
 //!
 //! Stroke width is baked into the MSDF at generation time and quantised
 //! to 0.25-px steps so we don't blow up the atlas if every record() call
@@ -13,7 +17,7 @@
 use std::collections::HashMap;
 
 use crate::icon_msdf::{IconMsdf, build_icon_msdf};
-use crate::icons::icon_vector_asset;
+use crate::svg_icon::IconSource;
 use crate::tree::IconName;
 
 /// Default atlas pixels per source view-box unit. 64 px/(24 unit
@@ -29,17 +33,37 @@ const PAGE_SIZE: u32 = 1024;
 const ICON_PADDING: u32 = 2;
 const BYTES_PER_PIXEL: u32 = 4;
 
+/// Identity for a unique vector icon source. Built-ins enumerate;
+/// custom SVGs are keyed by their content hash.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum IconKey {
+    Builtin(IconName),
+    Custom(u64),
+}
+
+impl IconKey {
+    pub fn from_source(source: &IconSource) -> Self {
+        match source {
+            IconSource::Builtin(name) => IconKey::Builtin(*name),
+            IconSource::Custom(svg) => IconKey::Custom(svg.content_hash()),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IconMsdfKey {
-    pub name: IconName,
+    pub icon: IconKey,
     /// Stroke width quantised to 0.25-unit steps (so 2.0 → 8, 1.5 → 6).
     pub stroke_q: u16,
 }
 
 impl IconMsdfKey {
-    pub fn new(name: IconName, stroke_width: f32) -> Self {
+    pub fn new(source: &IconSource, stroke_width: f32) -> Self {
         let q = ((stroke_width.max(0.25) * 4.0).round() as i32).clamp(1, u16::MAX as i32) as u16;
-        Self { name, stroke_q: q }
+        Self {
+            icon: IconKey::from_source(source),
+            stroke_q: q,
+        }
     }
 
     pub fn stroke_width(&self) -> f32 {
@@ -208,11 +232,12 @@ impl IconMsdfAtlas {
 
     /// Rasterise (or look up) the icon's MTSDF and return its slot.
     /// `None` is cached for icons that produce no renderable contours.
-    pub fn ensure(&mut self, key: IconMsdfKey) -> Option<IconMsdfSlot> {
+    pub fn ensure(&mut self, source: &IconSource, stroke_width: f32) -> Option<IconMsdfSlot> {
+        let key = IconMsdfKey::new(source, stroke_width);
         if let Some(entry) = self.map.get(&key) {
             return *entry;
         }
-        let asset = icon_vector_asset(key.name);
+        let asset = source.vector_asset();
         let msdf = build_icon_msdf(
             asset,
             self.px_per_unit,
@@ -309,12 +334,14 @@ fn merge_dirty(dirty: &mut Option<IconRect>, rect: IconRect) {
 mod tests {
     use super::*;
 
+    fn builtin(name: IconName) -> IconSource {
+        IconSource::Builtin(name)
+    }
+
     #[test]
     fn ensure_packs_x_into_first_page() {
         let mut atlas = IconMsdfAtlas::default();
-        let slot = atlas
-            .ensure(IconMsdfKey::new(IconName::X, 2.0))
-            .expect("X slot");
+        let slot = atlas.ensure(&builtin(IconName::X), 2.0).expect("X slot");
         assert_eq!(slot.page, 0);
         assert!(slot.rect.w > 0 && slot.rect.h > 0);
         assert_eq!(slot.view_box, [0.0, 0.0, 24.0, 24.0]);
@@ -323,10 +350,10 @@ mod tests {
     #[test]
     fn ensure_is_idempotent() {
         let mut atlas = IconMsdfAtlas::default();
-        let key = IconMsdfKey::new(IconName::Settings, 2.0);
-        let s1 = atlas.ensure(key).unwrap();
+        let src = builtin(IconName::Settings);
+        let s1 = atlas.ensure(&src, 2.0).unwrap();
         atlas.take_dirty();
-        let s2 = atlas.ensure(key).unwrap();
+        let s2 = atlas.ensure(&src, 2.0).unwrap();
         assert_eq!(s1, s2);
         assert!(atlas.take_dirty().is_empty());
     }
@@ -334,26 +361,48 @@ mod tests {
     #[test]
     fn distinct_icons_get_distinct_slots() {
         let mut atlas = IconMsdfAtlas::default();
-        let a = atlas.ensure(IconMsdfKey::new(IconName::X, 2.0)).unwrap();
-        let b = atlas
-            .ensure(IconMsdfKey::new(IconName::Check, 2.0))
-            .unwrap();
+        let a = atlas.ensure(&builtin(IconName::X), 2.0).unwrap();
+        let b = atlas.ensure(&builtin(IconName::Check), 2.0).unwrap();
         assert_ne!(a.rect, b.rect);
     }
 
     #[test]
     fn different_stroke_widths_get_distinct_slots() {
         let mut atlas = IconMsdfAtlas::default();
-        let thin = atlas.ensure(IconMsdfKey::new(IconName::X, 1.0)).unwrap();
-        let thick = atlas.ensure(IconMsdfKey::new(IconName::X, 3.0)).unwrap();
+        let thin = atlas.ensure(&builtin(IconName::X), 1.0).unwrap();
+        let thick = atlas.ensure(&builtin(IconName::X), 3.0).unwrap();
         assert_ne!(thin.rect, thick.rect);
     }
 
     #[test]
+    fn custom_svg_dedups_by_content_hash() {
+        use crate::SvgIcon;
+        const CIRCLE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ff0000"/></svg>"##;
+        let a = IconSource::Custom(SvgIcon::parse(CIRCLE).unwrap());
+        let b = IconSource::Custom(SvgIcon::parse(CIRCLE).unwrap());
+        let mut atlas = IconMsdfAtlas::default();
+        let sa = atlas.ensure(&a, 2.0).unwrap();
+        let sb = atlas.ensure(&b, 2.0).unwrap();
+        assert_eq!(sa, sb, "same SVG bytes must share an atlas slot");
+    }
+
+    #[test]
+    fn custom_svg_distinct_from_builtin_with_same_view_box() {
+        use crate::SvgIcon;
+        const CIRCLE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ff0000"/></svg>"##;
+        let custom = IconSource::Custom(SvgIcon::parse(CIRCLE).unwrap());
+        let mut atlas = IconMsdfAtlas::default();
+        let sa = atlas.ensure(&builtin(IconName::X), 2.0).unwrap();
+        let sb = atlas.ensure(&custom, 2.0).unwrap();
+        assert_ne!(sa.rect, sb.rect);
+    }
+
+    #[test]
     fn stroke_quantisation_round_trip() {
-        let k = IconMsdfKey::new(IconName::X, 2.0);
+        let src = builtin(IconName::X);
+        let k = IconMsdfKey::new(&src, 2.0);
         assert!((k.stroke_width() - 2.0).abs() < 1e-6);
-        let k = IconMsdfKey::new(IconName::X, 1.7);
+        let k = IconMsdfKey::new(&src, 1.7);
         // 1.7 * 4 = 6.8 → rounds to 7 → 1.75
         assert!((k.stroke_width() - 1.75).abs() < 1e-6);
     }
@@ -361,7 +410,7 @@ mod tests {
     #[test]
     fn spread_logical_scales_with_dest_size() {
         let mut atlas = IconMsdfAtlas::default();
-        let slot = atlas.ensure(IconMsdfKey::new(IconName::X, 2.0)).unwrap();
+        let slot = atlas.ensure(&builtin(IconName::X), 2.0).unwrap();
         // dest 24 logical px equals 1 logical px per unit. Spread of 6 atlas
         // px at ~2.67 atlas-px-per-unit ≈ 2.25 logical px.
         let s = slot.spread_logical(24.0);

@@ -2,10 +2,12 @@
 //!
 //! Two paths share one [`IconPaint`]:
 //!
-//! - **MSDF**: pre-rasterised once per `(IconName, stroke_width)` into
-//!   an MTSDF atlas (RGB = 3-channel SDF, A = true single-channel SDF)
-//!   and rendered through `stock::text_msdf` (one quad per icon). Used
-//!   for the default `Flat` material.
+//! - **MSDF**: pre-rasterised once per `(icon source, stroke_width)`
+//!   into an MTSDF atlas (RGB = 3-channel SDF, A = true single-channel
+//!   SDF) and rendered through `stock::text_msdf` (one quad per icon).
+//!   Used for the default `Flat` material. App-supplied
+//!   [`aetna_core::SvgIcon`]s share the same path, keyed on their
+//!   content hash.
 //! - **Tessellated**: lyon-tessellated triangles with analytic-AA
 //!   fringes drawn through the `stock::vector*` shader family. Kept
 //!   for the `Relief` and `Glass` materials, whose fragment shaders
@@ -19,13 +21,12 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use aetna_core::icon_msdf_atlas::{
-    DEFAULT_PX_PER_UNIT, DEFAULT_SPREAD, IconMsdfAtlas, IconMsdfKey, IconMsdfPage, IconMsdfSlot,
-    IconRect,
+    DEFAULT_PX_PER_UNIT, DEFAULT_SPREAD, IconMsdfAtlas, IconMsdfPage, IconMsdfSlot, IconRect,
 };
-use aetna_core::icons::icon_vector_asset;
 use aetna_core::paint::{IconRun, IconRunKind, PhysicalScissor, rgba_f32};
 use aetna_core::shader::stock_wgsl;
-use aetna_core::tree::{Color, IconName, Rect};
+use aetna_core::svg_icon::IconSource;
+use aetna_core::tree::{Color, Rect};
 use aetna_core::vector::{
     IconMaterial, VectorMeshOptions, VectorMeshVertex, append_vector_asset_mesh,
 };
@@ -203,7 +204,7 @@ impl IconPaint {
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
-        name: IconName,
+        source: &IconSource,
         color: Color,
         stroke_width: f32,
     ) -> Range<usize> {
@@ -214,7 +215,7 @@ impl IconPaint {
         let start = self.runs.len();
         match self.material {
             IconMaterial::Flat => {
-                if let Some(slot) = self.msdf_atlas.ensure(IconMsdfKey::new(name, stroke_width)) {
+                if let Some(slot) = self.msdf_atlas.ensure(source, stroke_width) {
                     let (page_w, page_h) = self.msdf_page_dims(slot.page);
                     let instance = msdf_instance_for_icon(rect, color, &slot, page_w, page_h);
                     let first = self.msdf_instances.len() as u32;
@@ -230,7 +231,7 @@ impl IconPaint {
                 }
             }
             material => {
-                let asset = icon_vector_asset(name);
+                let asset = source.vector_asset();
                 let first = self.tess_vertices.len() as u32;
                 let mesh_run = append_vector_asset_mesh(
                     asset,

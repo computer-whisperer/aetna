@@ -9,51 +9,32 @@ use std::panic::Location;
 use std::sync::OnceLock;
 
 use crate::style::StyleProfile;
+use crate::svg_icon::IntoIconSource;
 use crate::tokens;
 use crate::tree::*;
 use crate::vector::{VectorAsset, parse_current_color_svg_asset};
 
-pub trait IntoIconName {
-    fn into_icon_name(self) -> IconName;
-}
-
-impl IntoIconName for IconName {
-    fn into_icon_name(self) -> IconName {
-        self
-    }
-}
-
-/// Fallback when a string-typed icon name doesn't match a known
-/// variant. Renders as a visible alert-circle glyph and emits a
-/// one-line stderr warning so the author / agent can spot the typo
-/// without the program crashing — important when an LLM-generated
+/// Resolve a string-typed icon name to a built-in [`IconName`], with a
+/// visible `AlertCircle` fallback (and a one-line stderr warning) for
+/// unknown names. Used by both the built-in `icon("name")` path and
+/// the [`IntoIconSource`] string impls — important when an LLM-typed
 /// `icon("abrows-right")` would otherwise abort the whole UI.
-fn unknown_icon_fallback(name: &str) -> IconName {
-    eprintln!(
-        "aetna: unknown icon name `{name}` — rendering AlertCircle. \
-         See `aetna_core::all_icon_names()` for the available vocabulary."
-    );
-    IconName::AlertCircle
-}
-
-impl IntoIconName for &str {
-    fn into_icon_name(self) -> IconName {
-        IconName::parse(self).unwrap_or_else(|| unknown_icon_fallback(self))
-    }
-}
-
-impl IntoIconName for String {
-    fn into_icon_name(self) -> IconName {
-        IconName::parse(&self).unwrap_or_else(|| unknown_icon_fallback(&self))
-    }
+pub(crate) fn name_or_fallback(name: &str) -> IconName {
+    IconName::parse(name).unwrap_or_else(|| {
+        eprintln!(
+            "aetna: unknown icon name `{name}` — rendering AlertCircle. \
+             See `aetna_core::all_icon_names()` for the available vocabulary."
+        );
+        IconName::AlertCircle
+    })
 }
 
 #[track_caller]
-pub fn icon(name: impl IntoIconName) -> El {
+pub fn icon(source: impl IntoIconSource) -> El {
     El::new(Kind::Custom("icon"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::TextOnly)
-        .icon_name(name.into_icon_name())
+        .icon_source(source.into_icon_source())
         .icon_size(16.0)
         .icon_stroke_width(2.0)
         .text_color(tokens::TEXT_FOREGROUND)
@@ -460,8 +441,9 @@ mod tests {
 
     #[test]
     fn icon_builder_sets_vector_icon_defaults() {
+        use crate::svg_icon::IconSource;
         let el = icon("git-branch");
-        assert_eq!(el.icon, Some(IconName::GitBranch));
+        assert_eq!(el.icon, Some(IconSource::Builtin(IconName::GitBranch)));
         assert_eq!(el.width, Size::Fixed(16.0));
         assert_eq!(el.height, Size::Fixed(16.0));
         assert_eq!(el.text_color, Some(tokens::TEXT_FOREGROUND));
@@ -472,10 +454,11 @@ mod tests {
     /// surfaces visibly in the UI but doesn't take the whole program down.
     #[test]
     fn unknown_string_icon_falls_back_without_panic() {
+        use crate::svg_icon::IconSource;
         let el = icon("not-a-real-icon-name");
-        assert_eq!(el.icon, Some(IconName::AlertCircle));
+        assert_eq!(el.icon, Some(IconSource::Builtin(IconName::AlertCircle)));
         let el2 = icon(String::from("abrows-right"));
-        assert_eq!(el2.icon, Some(IconName::AlertCircle));
+        assert_eq!(el2.icon, Some(IconSource::Builtin(IconName::AlertCircle)));
     }
 
     #[test]

@@ -69,7 +69,7 @@ use aetna_core::ir::TextAnchor;
 use aetna_core::paint::{IconRunKind, PaintItem, PhysicalScissor, QuadInstance};
 use aetna_core::runtime::{RecordedPaint, RunnerCore, TextRecorder};
 use aetna_core::text::atlas::RunStyle;
-use aetna_core::tree::{Color, FontWeight, IconName, TextWrap};
+use aetna_core::tree::{Color, FontWeight, TextWrap};
 
 pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
 
@@ -203,13 +203,16 @@ impl TextRecorder for PaintRecorder<'_> {
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
-        name: IconName,
+        source: &aetna_core::svg_icon::IconSource,
         color: Color,
         _size: f32,
         stroke_width: f32,
         _scale_factor: f32,
     ) -> RecordedPaint {
-        RecordedPaint::Icon(self.icons.record(rect, scissor, name, color, stroke_width))
+        RecordedPaint::Icon(
+            self.icons
+                .record(rect, scissor, source, color, stroke_width),
+        )
     }
 }
 

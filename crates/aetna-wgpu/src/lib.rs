@@ -88,7 +88,7 @@ use aetna_core::shader::{ShaderHandle, StockShader, stock_wgsl};
 use aetna_core::state::{AnimationMode, UiState};
 use aetna_core::text::atlas::RunStyle;
 use aetna_core::theme::Theme;
-use aetna_core::tree::{Color, El, FontWeight, IconName, Rect, TextWrap};
+use aetna_core::tree::{Color, El, FontWeight, Rect, TextWrap};
 use aetna_core::vector::IconMaterial;
 
 pub use aetna_core::paint::PaintItem;
@@ -209,13 +209,16 @@ impl TextRecorder for PaintRecorder<'_> {
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
-        name: IconName,
+        source: &aetna_core::svg_icon::IconSource,
         color: Color,
         _size: f32,
         stroke_width: f32,
         _scale_factor: f32,
     ) -> RecordedPaint {
-        RecordedPaint::Icon(self.icons.record(rect, scissor, name, color, stroke_width))
+        RecordedPaint::Icon(
+            self.icons
+                .record(rect, scissor, source, color, stroke_width),
+        )
     }
 }
 

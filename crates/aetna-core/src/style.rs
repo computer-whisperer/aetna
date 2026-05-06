@@ -384,7 +384,7 @@ mod tests {
     #[test]
     fn icon_button_uses_same_solid_style_surface_as_button() {
         let el = icon_button("menu").primary();
-        assert_eq!(el.icon, Some(IconName::Menu));
+        assert_eq!(el.icon, Some(crate::IconSource::Builtin(IconName::Menu)));
         assert_eq!(el.fill, Some(tokens::PRIMARY));
         assert_eq!(el.text_color, Some(tokens::TEXT_ON_SOLID_DARK));
         assert_eq!(el.surface_role, SurfaceRole::Raised);
@@ -394,7 +394,10 @@ mod tests {
     fn button_with_icon_propagates_variant_content_color() {
         let el = button_with_icon("upload", "Publish").primary();
         assert_eq!(el.fill, Some(tokens::PRIMARY));
-        assert_eq!(el.children[0].icon, Some(IconName::Upload));
+        assert_eq!(
+            el.children[0].icon,
+            Some(crate::IconSource::Builtin(IconName::Upload))
+        );
         assert_eq!(el.children[0].text_color, Some(tokens::TEXT_ON_SOLID_DARK));
         assert_eq!(el.children[1].text.as_deref(), Some("Publish"));
         assert_eq!(el.children[1].text_color, Some(tokens::TEXT_ON_SOLID_DARK));

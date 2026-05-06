@@ -17,9 +17,10 @@
 //! custom shader bindings before a backend records GPU commands.
 
 use crate::shader::{ShaderHandle, UniformBlock};
+use crate::svg_icon::IconSource;
 use crate::text::atlas::RunStyle;
 use crate::text::metrics::TextLayout;
-use crate::tree::{Color, FontWeight, IconName, Rect, TextWrap};
+use crate::tree::{Color, FontWeight, Rect, TextWrap};
 
 /// One paint operation in the laid-out frame.
 #[derive(Clone, Debug)]
@@ -71,15 +72,17 @@ pub enum DrawOp {
         anchor: TextAnchor,
         layout: TextLayout,
     },
-    /// A built-in vector icon in a 24x24 coordinate system, scaled into
-    /// `rect`. SVG renders the vector path directly; wgpu backends use
-    /// tessellated SVG geometry; backends without a native vector icon
-    /// painter may fall back to a glyph.
+    /// A vector icon scaled into `rect`. The `source` is either a
+    /// built-in [`crate::tree::IconName`] (24x24 lucide-style) or an
+    /// app-supplied [`crate::SvgIcon`]. SVG bundle output renders the
+    /// vector paths directly; wgpu/vulkano backends bake an MTSDF (or
+    /// tessellate for non-flat materials); backends without a native
+    /// vector painter fall back to a glyph for built-ins.
     Icon {
         id: String,
         rect: Rect,
         scissor: Option<Rect>,
-        name: IconName,
+        source: IconSource,
         color: Color,
         size: f32,
         stroke_width: f32,

@@ -237,7 +237,7 @@ fn push_node(
         });
     }
 
-    if let Some(name) = n.icon {
+    if let Some(source) = &n.icon {
         let color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
         let icon_size = painted_font_size
             .min(inner_painted_rect.w)
@@ -253,7 +253,7 @@ fn push_node(
             id: n.computed_id.clone(),
             rect: icon_rect,
             scissor: own_scissor,
-            name,
+            source: source.clone(),
             color,
             size: icon_size,
             stroke_width: n.icon_stroke_width * n.scale,

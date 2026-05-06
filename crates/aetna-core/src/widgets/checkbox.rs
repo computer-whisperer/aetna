@@ -132,7 +132,10 @@ mod tests {
         // Check icon is the only child and visible at full opacity.
         assert_eq!(c.children.len(), 1);
         let glyph = &c.children[0];
-        assert_eq!(glyph.icon, Some(IconName::Check));
+        assert_eq!(
+            glyph.icon,
+            Some(crate::IconSource::Builtin(IconName::Check))
+        );
         assert_eq!(glyph.opacity, 1.0);
     }
 

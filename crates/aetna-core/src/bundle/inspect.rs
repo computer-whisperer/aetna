@@ -75,8 +75,8 @@ fn dump_node(n: &El, ui_state: &UiState, depth: usize, s: &mut String) {
             let _ = write!(s, " text_align={:?}", n.text_align);
         }
     }
-    if let Some(icon) = n.icon {
-        let _ = write!(s, " icon={}", icon.name());
+    if let Some(icon) = &n.icon {
+        let _ = write!(s, " icon={}", icon.label());
     }
     if let Some(fill) = n.fill {
         let _ = write!(s, " fill={}", color_label(fill));

@@ -24,12 +24,13 @@ pub use crate::event::{
     App, AppShader, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind, UiKey,
     UiTarget,
 };
-pub use crate::icons::{IntoIconName, all_icon_names, icon};
+pub use crate::icons::{all_icon_names, icon};
 pub use crate::ir::{DrawOp, TextAnchor};
 pub use crate::layout::{LayoutCtx, LayoutFn, VirtualItems};
 pub use crate::shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
 pub use crate::state::{AnimationMode, WidgetState};
 pub use crate::style::StyleProfile;
+pub use crate::svg_icon::{IconSource, IntoIconSource, SvgIcon};
 pub use crate::text::metrics::{
     MeasuredText, TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text, line_height,
     line_width, measure_text, selection_rects, wrap_lines,

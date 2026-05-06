@@ -264,7 +264,10 @@ mod tests {
         // last child and carries the chevron-down icon name so visual
         // affordance is unambiguous.
         let chevron = t.children.last().expect("trigger has chevron child");
-        assert_eq!(chevron.icon, Some(IconName::ChevronDown));
+        assert_eq!(
+            chevron.icon,
+            Some(crate::IconSource::Builtin(IconName::ChevronDown))
+        );
         // Trigger opts into focus + ring overhead so keyboard users
         // can tab through selects like any other interactive surface.
         assert!(t.focusable, "select_trigger must be focusable");

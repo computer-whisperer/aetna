@@ -27,7 +27,7 @@ use std::panic::Location;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
-use crate::{IntoIconName, icon, text};
+use crate::{IntoIconSource, icon, text};
 
 #[track_caller]
 pub fn button(label: impl Into<String>) -> El {
@@ -50,14 +50,14 @@ pub fn button(label: impl Into<String>) -> El {
 }
 
 #[track_caller]
-pub fn icon_button(name: impl IntoIconName) -> El {
+pub fn icon_button(source: impl IntoIconSource) -> El {
     El::new(Kind::Custom("icon_button"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Solid)
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
-        .icon_name(name.into_icon_name())
+        .icon_source(source)
         .icon_size(16.0)
         .icon_stroke_width(2.0)
         .fill(tokens::BG_MUTED)
@@ -69,7 +69,7 @@ pub fn icon_button(name: impl IntoIconName) -> El {
 }
 
 #[track_caller]
-pub fn button_with_icon(name: impl IntoIconName, label: impl Into<String>) -> El {
+pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -> El {
     El::new(Kind::Custom("button_with_icon"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Solid)
@@ -81,7 +81,7 @@ pub fn button_with_icon(name: impl IntoIconName, label: impl Into<String>) -> El
         .align(Align::Center)
         .justify(Justify::Center)
         .child(
-            icon(name)
+            icon(source)
                 .icon_size(tokens::FONT_BASE)
                 .color(tokens::TEXT_FOREGROUND),
         )

@@ -189,7 +189,7 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 id,
                 rect,
                 scissor,
-                name,
+                source,
                 color,
                 size,
                 stroke_width,
@@ -197,7 +197,7 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 let _ = write!(
                     s,
                     "Icon   name={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} color={} size={size:.1} stroke_width={stroke_width:.1}",
-                    name.name(),
+                    source.label(),
                     rect.x,
                     rect.y,
                     rect.w,

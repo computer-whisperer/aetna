@@ -24,9 +24,11 @@ use std::fmt::Write as _;
 use crate::icons;
 use crate::ir::*;
 use crate::shader::*;
+use crate::svg_icon::IconSource;
 use crate::text::metrics as text_metrics;
 use crate::tokens;
 use crate::tree::*;
+use crate::vector::{VectorAsset, VectorSegment};
 
 /// Render a `Vec<DrawOp>` to an SVG string.
 pub fn svg_from_ops(width: f32, height: f32, ops: &[DrawOp], bg: Color) -> String {
@@ -100,11 +102,11 @@ fn emit_op(s: &mut String, op: &DrawOp) {
         DrawOp::Icon {
             id,
             rect,
-            name,
+            source,
             color,
             stroke_width,
             ..
-        } => emit_icon(s, id, *rect, *name, *color, *stroke_width),
+        } => emit_icon(s, id, *rect, source, *color, *stroke_width),
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
 }
@@ -362,25 +364,115 @@ fn emit_icon(
     s: &mut String,
     id: &str,
     rect: Rect,
-    name: IconName,
+    source: &IconSource,
     color: Color,
     stroke_width: f32,
 ) {
-    let path = icons::icon_path(name);
-    let stroke = (stroke_width * 24.0 / rect.w.max(rect.h).max(1.0)).max(0.5);
-    let _ = writeln!(
-        s,
-        r#"<svg data-node="{}" data-icon="{}" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" viewBox="0 0 24 24" fill="none" stroke="{}" stroke-width="{:.2}" stroke-linecap="round" stroke-linejoin="round">{}</svg>"#,
-        esc(id),
-        name.name(),
-        rect.x,
-        rect.y,
-        rect.w,
-        rect.h,
-        color_svg(color),
-        stroke,
-        path
-    );
+    match source {
+        IconSource::Builtin(name) => {
+            let path = icons::icon_path(*name);
+            let stroke = (stroke_width * 24.0 / rect.w.max(rect.h).max(1.0)).max(0.5);
+            let _ = writeln!(
+                s,
+                r#"<svg data-node="{}" data-icon="{}" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" viewBox="0 0 24 24" fill="none" stroke="{}" stroke-width="{:.2}" stroke-linecap="round" stroke-linejoin="round">{}</svg>"#,
+                esc(id),
+                name.name(),
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                color_svg(color),
+                stroke,
+                path
+            );
+        }
+        IconSource::Custom(svg) => {
+            // Re-serialize the parsed asset back to SVG path commands.
+            // We don't keep the original source bytes, so this is a
+            // best-effort visualisation matching what the GPU pipeline
+            // sees (post-usvg normalisation). currentColor strokes
+            // resolve to the runtime color/stroke_width.
+            let asset = svg.vector_asset();
+            let [vx, vy, vw, vh] = asset.view_box;
+            let _ = writeln!(
+                s,
+                r#"<svg data-node="{}" data-icon="custom" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" viewBox="{} {} {} {}" stroke-linecap="round" stroke-linejoin="round">"#,
+                esc(id),
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                vx,
+                vy,
+                vw,
+                vh,
+            );
+            emit_custom_paths(s, asset, color, stroke_width);
+            s.push_str("</svg>\n");
+        }
+    }
+}
+
+fn emit_custom_paths(s: &mut String, asset: &VectorAsset, current_color: Color, stroke_width: f32) {
+    use crate::vector::VectorColor;
+    for path in &asset.paths {
+        let d = serialize_segments(&path.segments);
+        if d.is_empty() {
+            continue;
+        }
+        let fill_attr = match path.fill {
+            Some(f) => match f.color {
+                VectorColor::Solid(c) => format!(r#"fill="{}""#, color_svg(c)),
+                VectorColor::CurrentColor => format!(r#"fill="{}""#, color_svg(current_color)),
+            },
+            None => r#"fill="none""#.to_string(),
+        };
+        let stroke_attr = match path.stroke {
+            Some(st) => {
+                let color = match st.color {
+                    VectorColor::Solid(c) => color_svg(c),
+                    VectorColor::CurrentColor => color_svg(current_color),
+                };
+                let width = if matches!(st.color, VectorColor::CurrentColor) {
+                    stroke_width
+                } else {
+                    st.width
+                };
+                format!(r#"stroke="{}" stroke-width="{:.2}""#, color, width)
+            }
+            None => String::new(),
+        };
+        let _ = writeln!(s, r#"<path d="{}" {} {}/>"#, d, fill_attr, stroke_attr);
+    }
+}
+
+fn serialize_segments(segments: &[VectorSegment]) -> String {
+    let mut out = String::new();
+    for seg in segments {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        match *seg {
+            VectorSegment::MoveTo([x, y]) => {
+                let _ = write!(out, "M{:.3} {:.3}", x, y);
+            }
+            VectorSegment::LineTo([x, y]) => {
+                let _ = write!(out, "L{:.3} {:.3}", x, y);
+            }
+            VectorSegment::QuadTo([cx, cy], [x, y]) => {
+                let _ = write!(out, "Q{:.3} {:.3} {:.3} {:.3}", cx, cy, x, y);
+            }
+            VectorSegment::CubicTo([c1x, c1y], [c2x, c2y], [x, y]) => {
+                let _ = write!(
+                    out,
+                    "C{:.3} {:.3} {:.3} {:.3} {:.3} {:.3}",
+                    c1x, c1y, c2x, c2y, x, y
+                );
+            }
+            VectorSegment::Close => out.push('Z'),
+        }
+    }
+    out
 }
 
 fn as_color(v: &UniformValue) -> Option<Color> {
@@ -399,6 +491,53 @@ fn as_vec4(v: &UniformValue) -> Option<[f32; 4]> {
     match v {
         UniformValue::Vec4(a) => Some(*a),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::SvgIcon;
+    use crate::draw_ops::draw_ops;
+    use crate::layout::layout;
+    use crate::state::UiState;
+    use crate::tree::IconName;
+
+    const RED_CIRCLE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ff0000"/></svg>"##;
+
+    fn render(el: crate::tree::El) -> String {
+        let mut tree = el;
+        let viewport = Rect::new(0.0, 0.0, 64.0, 64.0);
+        let mut state = UiState::default();
+        layout(&mut tree, &mut state, viewport);
+        let ops = draw_ops(&tree, &state);
+        svg_from_ops(viewport.w, viewport.h, &ops, Color::rgb(255, 255, 255))
+    }
+
+    #[test]
+    fn builtin_icon_renders_via_named_path() {
+        let svg = render(crate::icons::icon(IconName::Check));
+        assert!(
+            svg.contains(r#"data-icon="check""#),
+            "expected built-in `data-icon=\"check\"`, got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn custom_svg_icon_renders_via_re_serialised_paths() {
+        let custom = SvgIcon::parse(RED_CIRCLE).unwrap();
+        let svg = render(crate::icons::icon(custom));
+        assert!(
+            svg.contains(r#"data-icon="custom""#),
+            "expected `data-icon=\"custom\"` for app-supplied SVG, got:\n{svg}"
+        );
+        // The fixture uses `fill="#ff0000"` which usvg normalises to
+        // a `Solid` color in the IR; the re-serialiser must emit that
+        // colour through (not the runtime `current_color`).
+        assert!(
+            svg.contains("fill=\"rgb(255,0,0)\"") || svg.contains("fill=\"#ff0000\""),
+            "expected the SVG fill to round-trip in the bundle, got:\n{svg}"
+        );
     }
 }
 
