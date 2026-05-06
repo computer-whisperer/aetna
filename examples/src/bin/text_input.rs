@@ -1,7 +1,7 @@
 //! Text input — smoke test for the single-line text widget.
 //!
-//! Two single-line `text_input` fields plus a live preview of the
-//! current `(value, selection)` state for each. Run interactively:
+//! Four fields plus a live preview of the global selection state.
+//! Run interactively:
 //!
 //! ```text
 //! cargo run -p aetna-examples --bin text_input
@@ -20,8 +20,7 @@
 //! - Type while a selection is active — the selection is replaced.
 //! - Ctrl+A selects all in the focused field.
 //! - Ctrl+C / Ctrl+X / Ctrl+V (Cmd on macOS) — copy / cut / paste via
-//!   the system clipboard. Try copying from one field and pasting
-//!   into the other, or pasting text from another application.
+//!   the system clipboard.
 //! - Tab / Shift+Tab moves focus between fields.
 //! - Empty fields show a muted placeholder hint until you type.
 //! - The PIN field is capped at 6 characters via `max_length`.
@@ -34,13 +33,13 @@ use aetna_core::widgets::text_input;
 
 struct Form {
     name: String,
-    name_sel: TextSelection,
     email: String,
-    email_sel: TextSelection,
     pin: String,
-    pin_sel: TextSelection,
     password: String,
-    password_sel: TextSelection,
+    /// Single global selection field — every input reads / writes its
+    /// slice through `selection.within(key)` instead of holding its
+    /// own `TextSelection`.
+    selection: Selection,
     clipboard: Option<arboard::Clipboard>,
 }
 
@@ -48,13 +47,10 @@ impl Default for Form {
     fn default() -> Self {
         Self {
             name: String::new(),
-            name_sel: TextSelection::default(),
             email: String::new(),
-            email_sel: TextSelection::default(),
             pin: String::new(),
-            pin_sel: TextSelection::default(),
             password: String::new(),
-            password_sel: TextSelection::default(),
+            selection: Selection::default(),
             // arboard fails to initialize on headless / display-less
             // environments. Treat clipboard as best-effort.
             clipboard: arboard::Clipboard::new().ok(),
@@ -84,6 +80,16 @@ impl Form {
             _ => TextInputOpts::default(),
         }
     }
+
+    fn value_for(&self, key: &str) -> Option<&str> {
+        match key {
+            "name" => Some(&self.name),
+            "email" => Some(&self.email),
+            "pin" => Some(&self.pin),
+            "password" => Some(&self.password),
+            _ => None,
+        }
+    }
 }
 
 impl App for Form {
@@ -92,20 +98,24 @@ impl App for Form {
             h2("Form"),
             field_row(
                 "Name",
-                text_input_with(&self.name, self.name_sel, self.opts_for("name")).key("name"),
+                text_input_with(&self.name, &self.selection, "name", self.opts_for("name")),
             ),
             field_row(
                 "Email",
-                text_input_with(&self.email, self.email_sel, self.opts_for("email")).key("email"),
+                text_input_with(&self.email, &self.selection, "email", self.opts_for("email")),
             ),
             field_row(
                 "PIN",
-                text_input_with(&self.pin, self.pin_sel, self.opts_for("pin")).key("pin"),
+                text_input_with(&self.pin, &self.selection, "pin", self.opts_for("pin")),
             ),
             field_row(
                 "Password",
-                text_input_with(&self.password, self.password_sel, self.opts_for("password"))
-                    .key("password"),
+                text_input_with(
+                    &self.password,
+                    &self.selection,
+                    "password",
+                    self.opts_for("password"),
+                ),
             ),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
             preview_block(self),
@@ -120,18 +130,29 @@ impl App for Form {
         .gap(tokens::SPACE_MD)
     }
 
+    fn selection(&self) -> Selection {
+        self.selection.clone()
+    }
+
     fn on_event(&mut self, event: UiEvent) {
-        // Click on a regular button.
+        // Library-emitted selection updates: the runtime doesn't
+        // touch text_input's own selection (text_input handles it
+        // inside apply_event), but `SelectionChanged` fires when a
+        // press lands somewhere non-selectable / non-focusable to
+        // clear the active static-text selection. Honor that.
+        if event.kind == UiEventKind::SelectionChanged
+            && let Some(sel) = event.selection.as_ref()
+        {
+            self.selection = sel.clone();
+            return;
+        }
         match (event.kind, event.route()) {
             (UiEventKind::Click | UiEventKind::Activate, Some("clear")) => {
                 self.name.clear();
-                self.name_sel = TextSelection::default();
                 self.email.clear();
-                self.email_sel = TextSelection::default();
                 self.pin.clear();
-                self.pin_sel = TextSelection::default();
                 self.password.clear();
-                self.password_sel = TextSelection::default();
+                self.selection = Selection::default();
                 return;
             }
             (UiEventKind::Click | UiEventKind::Activate, Some("submit")) => {
@@ -151,45 +172,66 @@ impl App for Form {
             None => return,
         };
         let opts = self.opts_for(&key);
-        let (value, sel): (&mut String, &mut TextSelection) = match key.as_str() {
-            "name" => (&mut self.name, &mut self.name_sel),
-            "email" => (&mut self.email, &mut self.email_sel),
-            "pin" => (&mut self.pin, &mut self.pin_sel),
-            "password" => (&mut self.password, &mut self.password_sel),
+        let (value, key_str): (&mut String, &str) = match key.as_str() {
+            "name" => (&mut self.name, "name"),
+            "email" => (&mut self.email, "email"),
+            "pin" => (&mut self.pin, "pin"),
+            "password" => (&mut self.password, "password"),
             _ => return,
         };
-        apply_with_clipboard(value, sel, &event, &opts, self.clipboard.as_mut());
+        apply_with_clipboard(
+            value,
+            &mut self.selection,
+            key_str,
+            &event,
+            &opts,
+            self.clipboard.as_mut(),
+        );
     }
 }
 
 fn apply_with_clipboard(
     value: &mut String,
-    sel: &mut TextSelection,
+    selection: &mut Selection,
+    key: &str,
     event: &UiEvent,
     opts: &TextInputOpts<'_>,
     clipboard: Option<&mut arboard::Clipboard>,
 ) {
     match text_input::clipboard_request_for(event, opts) {
         Some(ClipboardKind::Copy) => {
-            if let Some(cb) = clipboard {
-                let _ = cb.set_text(text_input::selected_text(value, *sel).to_string());
+            if let (Some(cb), Some(view)) = (clipboard, selection.within(key)) {
+                let _ = cb.set_text(text_input::selected_text(value, view).to_string());
             }
         }
         Some(ClipboardKind::Cut) => {
-            if let Some(cb) = clipboard {
-                let _ = cb.set_text(text_input::selected_text(value, *sel).to_string());
+            if let Some(view) = selection.within(key) {
+                if let Some(cb) = clipboard {
+                    let _ = cb.set_text(text_input::selected_text(value, view).to_string());
+                }
+                let mut local = view;
+                text_input::replace_selection(value, &mut local, "");
+                selection.set_within(key, local);
             }
-            text_input::replace_selection(value, sel, "");
         }
         Some(ClipboardKind::Paste) => {
             if let Some(cb) = clipboard
                 && let Ok(text) = cb.get_text()
             {
-                text_input::replace_selection_with(value, sel, &text, opts);
+                let mut local = selection.within(key).unwrap_or_default();
+                text_input::replace_selection_with(value, &mut local, &text, opts);
+                selection.set_within(key, local);
+                // If selection wasn't in our key, claim it now.
+                if selection.within(key).is_none() {
+                    selection.range = Some(SelectionRange {
+                        anchor: SelectionPoint::new(key, local.head),
+                        head: SelectionPoint::new(key, local.head),
+                    });
+                }
             }
         }
         None => {
-            text_input::apply_event_with(value, sel, event, opts);
+            text_input::apply_event_with(value, selection, key, event, opts);
         }
     }
 }
@@ -206,24 +248,31 @@ fn preview_block(form: &Form) -> El {
     card(
         "Live state",
         [
-            preview_line("name", &form.name, form.name_sel),
-            preview_line("email", &form.email, form.email_sel),
+            preview_line(form, "name"),
+            preview_line(form, "email"),
+            preview_line(form, "pin"),
+            mono(format!("global: {:?}", form.selection)).font_size(tokens::FONT_SM),
         ],
     )
 }
 
-fn preview_line(field: &str, value: &str, sel: TextSelection) -> El {
-    let (lo, hi) = sel.ordered();
-    let summary = if sel.is_collapsed() {
-        format!("{field:>5} = {:?}  caret={}", value, sel.head)
-    } else {
-        format!(
-            "{field:>5} = {:?}  selection={}..{}  ({:?})",
-            value,
-            lo,
-            hi,
-            &value[lo..hi]
-        )
+fn preview_line(form: &Form, key: &str) -> El {
+    let value = form.value_for(key).unwrap_or("");
+    let summary = match form.selection.within(key) {
+        Some(view) if view.is_collapsed() => {
+            format!("{key:>8} = {:?}  caret={}", value, view.head)
+        }
+        Some(view) => {
+            let (lo, hi) = view.ordered();
+            format!(
+                "{key:>8} = {:?}  selection={}..{}  ({:?})",
+                value,
+                lo,
+                hi,
+                &value[lo..hi]
+            )
+        }
+        None => format!("{key:>8} = {:?}  (not selected)", value),
     };
     mono(summary).font_size(tokens::FONT_SM)
 }

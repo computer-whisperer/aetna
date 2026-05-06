@@ -1,7 +1,7 @@
 //! Text area — smoke test for the multi-line text widget.
 //!
-//! Single multi-line `text_area` plus a live preview of `(value,
-//! selection)`. Run interactively:
+//! Single multi-line `text_area` plus a live preview of the global
+//! selection state. Run interactively:
 //!
 //! ```text
 //! cargo run -p aetna-examples --bin text_area
@@ -32,9 +32,11 @@ const PRESET: &str = "Multi-line text area.\n\
 Try Enter for new lines, Up/Down to move between them.\n\
 Shift+Arrow extends the selection across line breaks.";
 
+const BODY_KEY: &str = "body";
+
 struct Notes {
     body: String,
-    body_sel: TextSelection,
+    selection: Selection,
     clipboard: Option<arboard::Clipboard>,
 }
 
@@ -42,9 +44,7 @@ impl Default for Notes {
     fn default() -> Self {
         Self {
             body: PRESET.to_string(),
-            body_sel: TextSelection::caret(0),
-            // arboard fails to initialize on headless / display-less
-            // environments. Treat clipboard as best-effort.
+            selection: Selection::default(),
             clipboard: arboard::Clipboard::new().ok(),
         }
     }
@@ -54,9 +54,7 @@ impl App for Notes {
     fn build(&self) -> El {
         column([
             h2("Notes"),
-            text_area(&self.body, self.body_sel)
-                .key("body")
-                .height(Size::Fixed(180.0)),
+            text_area(&self.body, &self.selection, BODY_KEY).height(Size::Fixed(180.0)),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
             preview_block(self),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
@@ -70,24 +68,34 @@ impl App for Notes {
         .gap(tokens::SPACE_MD)
     }
 
+    fn selection(&self) -> Selection {
+        self.selection.clone()
+    }
+
     fn on_event(&mut self, event: UiEvent) {
+        if event.kind == UiEventKind::SelectionChanged
+            && let Some(sel) = event.selection.as_ref()
+        {
+            self.selection = sel.clone();
+            return;
+        }
         match (event.kind, event.route()) {
             (UiEventKind::Click | UiEventKind::Activate, Some("clear")) => {
                 self.body.clear();
-                self.body_sel = TextSelection::default();
+                self.selection = Selection::default();
                 return;
             }
             (UiEventKind::Click | UiEventKind::Activate, Some("reset")) => {
                 self.body = PRESET.to_string();
-                self.body_sel = TextSelection::caret(0);
+                self.selection = Selection::default();
                 return;
             }
             _ => {}
         }
-        if event.target_key() == Some("body") {
+        if event.target_key() == Some(BODY_KEY) {
             apply_with_clipboard(
                 &mut self.body,
-                &mut self.body_sel,
+                &mut self.selection,
                 &event,
                 self.clipboard.as_mut(),
             );
@@ -97,7 +105,7 @@ impl App for Notes {
 
 fn apply_with_clipboard(
     value: &mut String,
-    sel: &mut TextSelection,
+    selection: &mut Selection,
     event: &UiEvent,
     clipboard: Option<&mut arboard::Clipboard>,
 ) {
@@ -106,46 +114,65 @@ fn apply_with_clipboard(
     // body of the event.
     match text_input::clipboard_request(event) {
         Some(ClipboardKind::Copy) => {
-            if let Some(cb) = clipboard {
-                let _ = cb.set_text(text_input::selected_text(value, *sel).to_string());
+            if let (Some(cb), Some(view)) = (clipboard, selection.within(BODY_KEY)) {
+                let _ = cb.set_text(text_input::selected_text(value, view).to_string());
             }
         }
         Some(ClipboardKind::Cut) => {
-            if let Some(cb) = clipboard {
-                let _ = cb.set_text(text_input::selected_text(value, *sel).to_string());
+            if let Some(view) = selection.within(BODY_KEY) {
+                if let Some(cb) = clipboard {
+                    let _ = cb.set_text(text_input::selected_text(value, view).to_string());
+                }
+                let mut local = view;
+                text_input::replace_selection(value, &mut local, "");
+                selection.set_within(BODY_KEY, local);
             }
-            text_input::replace_selection(value, sel, "");
         }
         Some(ClipboardKind::Paste) => {
             if let Some(cb) = clipboard
                 && let Ok(text) = cb.get_text()
             {
-                text_input::replace_selection(value, sel, &text);
+                let mut local = selection.within(BODY_KEY).unwrap_or_default();
+                text_input::replace_selection(value, &mut local, &text);
+                if selection.within(BODY_KEY).is_some() {
+                    selection.set_within(BODY_KEY, local);
+                } else {
+                    selection.range = Some(SelectionRange {
+                        anchor: SelectionPoint::new(BODY_KEY, local.head),
+                        head: SelectionPoint::new(BODY_KEY, local.head),
+                    });
+                }
             }
         }
         None => {
-            text_area::apply_event(value, sel, event);
+            text_area::apply_event(value, selection, BODY_KEY, event);
         }
     }
 }
 
-fn preview_block(form: &Notes) -> El {
-    let (lo, hi) = form.body_sel.ordered();
-    let summary = if form.body_sel.is_collapsed() {
-        format!(
+fn preview_block(notes: &Notes) -> El {
+    let summary = match notes.selection.within(BODY_KEY) {
+        Some(view) if view.is_collapsed() => format!(
             "len={}  caret={}  lines={}",
-            form.body.len(),
-            form.body_sel.head,
-            form.body.lines().count().max(1)
-        )
-    } else {
-        format!(
-            "len={}  selection={}..{}  selected={:?}",
-            form.body.len(),
-            lo,
-            hi,
-            &form.body[lo..hi]
-        )
+            notes.body.len(),
+            view.head,
+            notes.body.lines().count().max(1)
+        ),
+        Some(view) => {
+            let (lo, hi) = view.ordered();
+            format!(
+                "len={}  selection={}..{}  selected={:?}",
+                notes.body.len(),
+                lo,
+                hi,
+                &notes.body[lo..hi]
+            )
+        }
+        None => format!(
+            "len={}  (selection elsewhere or empty)  lines={}",
+            notes.body.len(),
+            notes.body.lines().count().max(1)
+        ),
     };
     card("Live state", [mono(summary).font_size(tokens::FONT_SM)])
 }

@@ -40,6 +40,7 @@ use std::panic::Location;
 
 use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
+use crate::selection::{Selection, SelectionPoint, SelectionRange};
 use crate::style::StyleProfile;
 use crate::text::metrics::{self, hit_text};
 use crate::tokens;
@@ -167,9 +168,21 @@ impl TextSelection {
 /// The caret bar carries `alpha_follows_focused_ancestor()` so it only
 /// paints while the input is focused (and fades in/out via the
 /// library's standard focus animation).
+/// Build a single-line text input that participates in the global
+/// [`crate::selection::Selection`]. The widget reads its
+/// caret + selection band through `selection.within(key)`:
+///
+/// - Selection is in this `key` → render caret at `head.byte` and a
+///   band from `min(anchor.byte, head.byte)` to the max.
+/// - Selection lives in another key (or is empty) → render no band;
+///   caret falls back to byte 0 (still hidden by the focus envelope
+///   when the input isn't focused).
+///
+/// The widget sets `.key(key)` on the returned `El` itself — callers
+/// no longer chain `.key(...)` after this builder.
 #[track_caller]
-pub fn text_input(value: &str, selection: TextSelection) -> El {
-    text_input_with(value, selection, TextInputOpts::default())
+pub fn text_input(value: &str, selection: &Selection, key: &str) -> El {
+    text_input_with(value, selection, key, TextInputOpts::default())
 }
 
 /// Like [`text_input`], but takes an optional [`TextInputOpts`] for
@@ -177,7 +190,22 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
 /// `TextInputOpts::default()` for an output identical to
 /// [`text_input`].
 #[track_caller]
-pub fn text_input_with(value: &str, selection: TextSelection, opts: TextInputOpts<'_>) -> El {
+pub fn text_input_with(
+    value: &str,
+    selection: &Selection,
+    key: &str,
+    opts: TextInputOpts<'_>,
+) -> El {
+    let view = selection.within(key).unwrap_or_default();
+    build_text_input(value, view, opts).key(key)
+}
+
+/// Render the input El given an already-extracted local view. Pure
+/// rendering: doesn't touch [`Selection`], doesn't set the El's key.
+/// Public callers should go through [`text_input`] /
+/// [`text_input_with`] instead.
+#[track_caller]
+fn build_text_input(value: &str, selection: TextSelection, opts: TextInputOpts<'_>) -> El {
     let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     let lo = anchor.min(head);
@@ -311,14 +339,47 @@ fn prefix_width(value: &str, byte_index: usize) -> f32 {
 ///   established by the prior PointerDown / Drag sequence.
 ///
 /// All caret arithmetic respects UTF-8 grapheme boundaries.
-pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &UiEvent) -> bool {
-    apply_event_with(value, selection, event, &TextInputOpts::default())
+///
+/// The function operates on the global [`Selection`] through `key`:
+/// when an event mutates the input's contents, the result is written
+/// back as a single-leaf range under `key`, transferring selection
+/// ownership to this input. Callers route by `event.target_key()` for
+/// pointer events; key events flow naturally to whatever widget is
+/// focused (and the runtime targets the event accordingly).
+pub fn apply_event(
+    value: &mut String,
+    selection: &mut Selection,
+    key: &str,
+    event: &UiEvent,
+) -> bool {
+    apply_event_with(value, selection, key, event, &TextInputOpts::default())
 }
 
 /// Like [`apply_event`], but takes a [`TextInputOpts`] so the field
 /// honors `max_length` and password-masked pointer hits. Default opts
 /// produce identical behavior to [`apply_event`].
 pub fn apply_event_with(
+    value: &mut String,
+    selection: &mut Selection,
+    key: &str,
+    event: &UiEvent,
+    opts: &TextInputOpts<'_>,
+) -> bool {
+    let mut local = selection.within(key).unwrap_or_default();
+    let changed = fold_event_local(value, &mut local, event, opts);
+    if changed {
+        selection.range = Some(SelectionRange {
+            anchor: SelectionPoint::new(key, local.anchor),
+            head: SelectionPoint::new(key, local.head),
+        });
+    }
+    changed
+}
+
+/// Apply the event to the input's *local* (`TextSelection`) view of
+/// its slice. The internal worker behind [`apply_event_with`]; pure
+/// in the sense that it doesn't touch [`Selection`].
+fn fold_event_local(
     value: &mut String,
     selection: &mut TextSelection,
     event: &UiEvent,
@@ -738,6 +799,61 @@ mod tests {
     use crate::layout::layout;
     use crate::runtime::RunnerCore;
     use crate::state::UiState;
+
+    /// Test key for the local-view shim helpers below. Matches the
+    /// `.key("ti")` chain used by every fixture in this module so the
+    /// `text_input` and `text_input_with` shims (which set the El's
+    /// key internally) line up with the existing assertions.
+    const TEST_KEY: &str = "ti";
+
+    /// Wrap the old `text_input(value, TextSelection)` API by lifting
+    /// the local view into a single-leaf [`Selection`] under
+    /// [`TEST_KEY`]. Lets the existing test bodies stay readable
+    /// against the post-migration API.
+    #[track_caller]
+    fn text_input(value: &str, sel: TextSelection) -> El {
+        super::text_input(value, &as_selection(sel), TEST_KEY)
+    }
+
+    #[track_caller]
+    fn text_input_with(value: &str, sel: TextSelection, opts: TextInputOpts<'_>) -> El {
+        super::text_input_with(value, &as_selection(sel), TEST_KEY, opts)
+    }
+
+    fn apply_event(value: &mut String, sel: &mut TextSelection, event: &UiEvent) -> bool {
+        let mut g = as_selection(*sel);
+        let changed = super::apply_event(value, &mut g, TEST_KEY, event);
+        sync_back(sel, &g);
+        changed
+    }
+
+    fn apply_event_with(
+        value: &mut String,
+        sel: &mut TextSelection,
+        event: &UiEvent,
+        opts: &TextInputOpts<'_>,
+    ) -> bool {
+        let mut g = as_selection(*sel);
+        let changed = super::apply_event_with(value, &mut g, TEST_KEY, event, opts);
+        sync_back(sel, &g);
+        changed
+    }
+
+    fn as_selection(sel: TextSelection) -> Selection {
+        Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new(TEST_KEY, sel.anchor),
+                head: SelectionPoint::new(TEST_KEY, sel.head),
+            }),
+        }
+    }
+
+    fn sync_back(local: &mut TextSelection, global: &Selection) {
+        match global.within(TEST_KEY) {
+            Some(view) => *local = view,
+            None => *local = TextSelection::default(),
+        }
+    }
 
     fn ev_text(s: &str) -> UiEvent {
         ev_text_with_mods(s, KeyModifiers::default())
@@ -1625,6 +1741,119 @@ mod tests {
             "head={} value.len={}",
             sel.head,
             value.len()
+        );
+    }
+
+    // ---- Global-Selection integration ----
+    //
+    // The shimmed tests above exercise the local edit logic via the
+    // `(value, &mut Selection, key, event)` API by routing through a
+    // single fixed test key. The tests here verify the *integration*
+    // semantics that only the post-migration API can express.
+
+    #[test]
+    fn apply_event_writes_back_under_the_inputs_key() {
+        // Type a character: the resulting range lives under "name".
+        let mut value = String::new();
+        let mut sel = Selection::default();
+        let event = ev_text("h");
+        assert!(super::apply_event(&mut value, &mut sel, "name", &event));
+        assert_eq!(value, "h");
+        let r = sel.range.as_ref().expect("selection set");
+        assert_eq!(r.anchor.key, "name");
+        assert_eq!(r.head.key, "name");
+        assert_eq!(r.head.byte, 1);
+    }
+
+    #[test]
+    fn apply_event_claims_selection_when_event_routed_from_elsewhere() {
+        // Selection is currently in another key (e.g. a static text
+        // paragraph). The user is focused on the "email" input and
+        // types — the event arrives because the runtime routes
+        // capture_keys events to the focused element. apply_event
+        // claims the selection by writing back into the input's key.
+        let mut value = String::new();
+        let mut sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("para-a", 0),
+                head: SelectionPoint::new("para-a", 5),
+            }),
+        };
+        let event = ev_text("x");
+        assert!(super::apply_event(&mut value, &mut sel, "email", &event));
+        assert_eq!(value, "x");
+        let r = sel.range.as_ref().unwrap();
+        assert_eq!(r.anchor.key, "email", "selection ownership migrated");
+        assert_eq!(r.head.byte, 1);
+    }
+
+    #[test]
+    fn apply_event_leaves_selection_alone_when_event_is_unhandled() {
+        // A KeyDown the input doesn't recognize (e.g. F-key) should
+        // not perturb the global selection — even if it lives in
+        // another key. apply_event returns false; we don't write back.
+        let mut value = String::from("hi");
+        let mut sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("para-a", 0),
+                head: SelectionPoint::new("para-a", 3),
+            }),
+        };
+        let event = ev_key(UiKey::Other("F1".into()));
+        assert!(!super::apply_event(&mut value, &mut sel, "name", &event));
+        // Selection unchanged.
+        let r = sel.range.as_ref().unwrap();
+        assert_eq!(r.anchor.key, "para-a");
+        assert_eq!(r.head.byte, 3);
+    }
+
+    #[test]
+    fn text_input_renders_caret_at_local_byte_when_selection_is_within_key() {
+        let sel = Selection::caret("name", 2);
+        let el = super::text_input("hello", &sel, "name");
+        // Builder set the El's key.
+        assert_eq!(el.key.as_deref(), Some("name"));
+        // Caret child translates to the prefix width of "he".
+        let caret = el
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
+            .expect("caret child");
+        let expected = metrics::line_width("he", tokens::FONT_BASE, FontWeight::Regular, false);
+        assert!(
+            (caret.translate.0 - expected).abs() < 0.01,
+            "caret.x={} expected {}",
+            caret.translate.0,
+            expected
+        );
+    }
+
+    #[test]
+    fn text_input_falls_back_to_caret_zero_when_selection_lives_elsewhere() {
+        // Selection is in another paragraph — this input renders no
+        // band, and the caret falls back to byte 0 (still hidden by
+        // the focus envelope when the input isn't focused).
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("other", 0),
+                head: SelectionPoint::new("other", 5),
+            }),
+        };
+        let el = super::text_input("hello", &sel, "name");
+        let band = el
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Custom("text_input_selection")));
+        assert!(band.is_none(), "no band when selection lives elsewhere");
+        let caret = el
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
+            .expect("caret child");
+        assert!(
+            caret.translate.0.abs() < 0.01,
+            "caret pinned at x=0; got {}",
+            caret.translate.0
         );
     }
 }

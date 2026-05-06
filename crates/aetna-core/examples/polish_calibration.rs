@@ -245,8 +245,7 @@ fn command_card() -> El {
     card(
         "Command surface",
         [
-            text_input("Search commands...", TextSelection::caret(0))
-                .key("command-search")
+            text_input("Search commands...", &Selection::default(), "command-search")
                 .width(Size::Fill(1.0)),
             popover_panel([
                 menu_row("git-branch", "New branch", "Ctrl+B"),
@@ -295,13 +294,15 @@ fn icon_slot(icon_name: &'static str) -> El {
 fn form_probe() -> El {
     column([
         text("Form state probes").semibold(),
-        text_input("Valid input", TextSelection::caret(11))
-            .key("valid-input")
+        text_input("Valid input", &Selection::caret("valid-input", 11), "valid-input")
             .width(Size::Fill(1.0)),
-        text_input("Invalid input", TextSelection::caret(13))
-            .key("invalid-input")
-            .width(Size::Fill(1.0))
-            .invalid(),
+        text_input(
+            "Invalid input",
+            &Selection::caret("invalid-input", 13),
+            "invalid-input",
+        )
+        .width(Size::Fill(1.0))
+        .invalid(),
         row([
             button("Disabled").secondary().disabled(),
             button("Loading").primary().loading(),

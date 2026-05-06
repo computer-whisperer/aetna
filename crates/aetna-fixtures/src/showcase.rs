@@ -157,13 +157,14 @@ struct InputsState {
     volume: f32,
     /// Single-line text input — display name.
     name: String,
-    name_sel: TextSelection,
     /// Single-line text input — email address.
     email: String,
-    email_sel: TextSelection,
     /// Multi-line text area — bio.
     bio: String,
-    bio_sel: TextSelection,
+    /// Single global selection across all editable fields and any
+    /// selectable static text. Per-field selection fields are gone —
+    /// `Selection::within(key)` derives the slice each widget needs.
+    selection: Selection,
     /// Selected region token from the dropdown.
     region: String,
     /// Whether the region select dropdown is currently open.
@@ -175,11 +176,9 @@ impl Default for InputsState {
         Self {
             volume: 0.6,
             name: "Christian".into(),
-            name_sel: TextSelection::default(),
             email: "user@example.com".into(),
-            email_sel: TextSelection::default(),
             bio: "Building Aetna — a renderer-agnostic UI kit for Rust apps and AI agents.".into(),
-            bio_sel: TextSelection::default(),
+            selection: Selection::default(),
             region: "us-east".into(),
             region_open: false,
         }
@@ -1045,20 +1044,18 @@ fn inputs_view(state: &InputsState) -> El {
         [
             input_row(
                 "Display name",
-                text_input(&state.name, state.name_sel).key("inputs-name"),
+                text_input(&state.name, &state.selection, "inputs-name"),
             ),
             input_row(
                 "Email",
-                text_input(&state.email, state.email_sel).key("inputs-email"),
+                text_input(&state.email, &state.selection, "inputs-email"),
             ),
         ],
     );
 
     let bio = card(
         "Bio",
-        [text_area(&state.bio, state.bio_sel)
-            .key("inputs-bio")
-            .height(Size::Fixed(110.0))],
+        [text_area(&state.bio, &state.selection, "inputs-bio").height(Size::Fixed(110.0))],
     );
 
     let region = card(
@@ -1120,19 +1117,18 @@ fn inputs_on_event(state: &mut InputsState, e: UiEvent) {
         return;
     }
 
-    // Text inputs / area: dispatch by target_key. The showcase skips
-    // clipboard wiring (the `text_input` example demonstrates that
-    // separately); typing, navigation, drag-select, and shift-extend
-    // all work without it.
+    // Text inputs / area: dispatch by target_key, threading the one
+    // global `Selection` field. The showcase skips clipboard wiring
+    // (the `text_input` example demonstrates that separately).
     match e.target_key() {
         Some("inputs-name") => {
-            text_input::apply_event(&mut state.name, &mut state.name_sel, &e);
+            text_input::apply_event(&mut state.name, &mut state.selection, "inputs-name", &e);
         }
         Some("inputs-email") => {
-            text_input::apply_event(&mut state.email, &mut state.email_sel, &e);
+            text_input::apply_event(&mut state.email, &mut state.selection, "inputs-email", &e);
         }
         Some("inputs-bio") => {
-            text_area::apply_event(&mut state.bio, &mut state.bio_sel, &e);
+            text_area::apply_event(&mut state.bio, &mut state.selection, "inputs-bio", &e);
         }
         _ => {}
     }

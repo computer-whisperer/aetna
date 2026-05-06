@@ -51,6 +51,7 @@ use std::panic::Location;
 
 use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
+use crate::selection::{Selection, SelectionPoint, SelectionRange};
 use crate::style::StyleProfile;
 use crate::text::metrics::{self, caret_xy, hit_text, selection_rects};
 use crate::tokens;
@@ -58,10 +59,11 @@ use crate::tree::*;
 use crate::widgets::text::text;
 use crate::widgets::text_input::{TextSelection, replace_selection};
 
-/// Build a multi-line text area. `value` is the full string (with
-/// embedded `\n`s) and `selection` is the caret + selection state.
-/// Both are owned by the application — pass them in from your state
-/// and update them via [`apply_event`] in your event handler.
+/// Build a multi-line text area that participates in the global
+/// [`crate::selection::Selection`]. The widget reads its caret +
+/// selection band through `selection.within(key)`; an event-time
+/// edit writes back as a single-leaf range under `key` (transferring
+/// selection ownership into this area).
 ///
 /// # Layout
 ///
@@ -78,7 +80,13 @@ use crate::widgets::text_input::{TextSelection, replace_selection};
 /// standard `.height(Size::Fixed(...))` builder to give it a fixed
 /// shape (typical for forms).
 #[track_caller]
-pub fn text_area(value: &str, selection: TextSelection) -> El {
+pub fn text_area(value: &str, selection: &Selection, key: &str) -> El {
+    let view = selection.within(key).unwrap_or_default();
+    build_text_area(value, view).key(key)
+}
+
+#[track_caller]
+fn build_text_area(value: &str, selection: TextSelection) -> El {
     let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     let lo = anchor.min(head);
@@ -176,8 +184,8 @@ fn line_height_px() -> f32 {
     metrics::line_height(tokens::FONT_BASE)
 }
 
-/// Fold a routed [`UiEvent`] into `value` and `selection`. Returns
-/// `true` when either was mutated.
+/// Fold a routed [`UiEvent`] into `value` and the global
+/// [`Selection`]. Returns `true` when either was mutated.
 ///
 /// Same contract as [`crate::widgets::text_input::apply_event`] plus
 /// these multi-line additions:
@@ -190,7 +198,35 @@ fn line_height_px() -> f32 {
 /// - `Home` / `End` go to the start / end of the current visual line.
 /// - Pointer events use 2D coordinates: clicking inside any line
 ///   positions the caret at the hit-tested glyph column.
-pub fn apply_event(value: &mut String, selection: &mut TextSelection, event: &UiEvent) -> bool {
+///
+/// On any mutation the selection is written back as a single-leaf
+/// range under `key`, transferring ownership of the global selection
+/// into this area.
+pub fn apply_event(
+    value: &mut String,
+    selection: &mut Selection,
+    key: &str,
+    event: &UiEvent,
+) -> bool {
+    let mut local = selection.within(key).unwrap_or_default();
+    let changed = fold_event_local(value, &mut local, event);
+    if changed {
+        selection.range = Some(SelectionRange {
+            anchor: SelectionPoint::new(key, local.anchor),
+            head: SelectionPoint::new(key, local.head),
+        });
+    }
+    changed
+}
+
+/// Apply the event to the area's local view. Internal worker behind
+/// [`apply_event`]; pure in the sense that it doesn't touch
+/// [`Selection`].
+fn fold_event_local(
+    value: &mut String,
+    selection: &mut TextSelection,
+    event: &UiEvent,
+) -> bool {
     selection.anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     selection.head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     match event.kind {
@@ -487,6 +523,35 @@ fn next_char_boundary(s: &str, from: usize) -> usize {
 mod tests {
     use super::*;
     use crate::event::{KeyModifiers, KeyPress};
+
+    /// Test key for the local-view shim. Mirrors the one in
+    /// `text_input::tests`; lets the existing test bodies keep using
+    /// `apply_event(&mut value, &mut sel, &event)` against the new
+    /// `(value, &mut Selection, key, event)` API.
+    const TEST_KEY: &str = "ta";
+
+    fn text_area(value: &str, sel: TextSelection) -> El {
+        super::text_area(value, &as_selection(sel), TEST_KEY)
+    }
+
+    fn apply_event(value: &mut String, sel: &mut TextSelection, event: &UiEvent) -> bool {
+        let mut g = as_selection(*sel);
+        let changed = super::apply_event(value, &mut g, TEST_KEY, event);
+        match g.within(TEST_KEY) {
+            Some(view) => *sel = view,
+            None => *sel = TextSelection::default(),
+        }
+        changed
+    }
+
+    fn as_selection(sel: TextSelection) -> Selection {
+        Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new(TEST_KEY, sel.anchor),
+                head: SelectionPoint::new(TEST_KEY, sel.head),
+            }),
+        }
+    }
 
     fn ev_key(key: UiKey) -> UiEvent {
         ev_key_with_mods(key, KeyModifiers::default())

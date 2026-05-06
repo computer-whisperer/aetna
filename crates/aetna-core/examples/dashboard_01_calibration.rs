@@ -181,8 +181,7 @@ fn dashboard_header() -> El {
         divider().width(Size::Fixed(1.0)).height(Size::Fixed(22.0)),
         h3("Documents"),
         spacer(),
-        text_input("Search...", TextSelection::caret(0))
-            .key("dashboard-search")
+        text_input("Search...", &Selection::default(), "dashboard-search")
             .width(Size::Fixed(260.0)),
         icon_button("plus").ghost(),
         icon_button("bell").ghost(),
