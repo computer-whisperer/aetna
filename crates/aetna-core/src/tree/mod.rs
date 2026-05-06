@@ -45,7 +45,13 @@ use crate::style::StyleProfile;
 /// Construct via the component builders (`text`, `button`, `card`,
 /// `column`, …) and chain modifiers (`.padding`, `.gap`, `.fill`, …).
 /// Avoid building `El` directly — the builders set polished defaults.
+///
+/// `#[non_exhaustive]` — `El` is meant to be built through the
+/// component constructors, not by struct-literal syntax. Direct
+/// construction from outside this crate is intentionally disabled
+/// so adding new layout/style fields stays a non-breaking change.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct El {
     pub kind: Kind,
     pub style_profile: StyleProfile,

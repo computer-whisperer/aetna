@@ -94,20 +94,14 @@ impl App for Picker {
             (KeyChord::ctrl('l'), "clear-search".into()),
             (KeyChord::named(UiKey::Enter), "open".into()),
             (
-                KeyChord {
-                    key: UiKey::Character("/".into()),
-                    modifiers: KeyModifiers::default(),
-                },
+                KeyChord::named(UiKey::Character("/".into())),
                 "toggle-search".into(),
             ),
             (
-                KeyChord {
-                    key: UiKey::Character("G".into()),
-                    modifiers: KeyModifiers {
-                        shift: true,
-                        ..Default::default()
-                    },
-                },
+                KeyChord::named(UiKey::Character("G".into())).with_modifiers(KeyModifiers {
+                    shift: true,
+                    ..Default::default()
+                }),
                 "go-bottom".into(),
             ),
         ];

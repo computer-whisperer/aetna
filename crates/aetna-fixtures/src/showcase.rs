@@ -507,20 +507,14 @@ fn picker_hotkeys(state: &PickerState) -> Vec<(KeyChord, String)> {
         (KeyChord::ctrl('l'), "picker-clear-search".into()),
         (KeyChord::named(UiKey::Enter), "picker-open".into()),
         (
-            KeyChord {
-                key: UiKey::Character("/".into()),
-                modifiers: KeyModifiers::default(),
-            },
+            KeyChord::named(UiKey::Character("/".into())),
             "picker-toggle-search".into(),
         ),
         (
-            KeyChord {
-                key: UiKey::Character("G".into()),
-                modifiers: KeyModifiers {
-                    shift: true,
-                    ..Default::default()
-                },
-            },
+            KeyChord::named(UiKey::Character("G".into())).with_modifiers(KeyModifiers {
+                shift: true,
+                ..Default::default()
+            }),
             "picker-go-bottom".into(),
         ),
     ];
@@ -819,15 +813,7 @@ mod tests {
     use super::*;
 
     fn click(key: &'static str) -> UiEvent {
-        UiEvent {
-            kind: UiEventKind::Click,
-            key: Some(key.into()),
-            target: None,
-            pointer: None,
-            key_press: None,
-            text: None,
-            modifiers: aetna_core::KeyModifiers::default(),
-        }
+        UiEvent::synthetic_click(key)
     }
 
     #[test]

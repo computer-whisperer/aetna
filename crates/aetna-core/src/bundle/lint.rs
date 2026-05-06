@@ -24,6 +24,7 @@ use crate::tree::*;
 
 /// A single lint finding.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Finding {
     pub kind: FindingKind,
     pub node_id: String,
@@ -32,6 +33,7 @@ pub struct Finding {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FindingKind {
     RawColor,
     Overflow,
@@ -40,6 +42,7 @@ pub enum FindingKind {
 }
 
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct LintReport {
     pub findings: Vec<Finding>,
 }

@@ -101,6 +101,7 @@ impl std::fmt::Debug for LayoutFn {
 ///   layout pass. Fine for thousands of items; if it bottlenecks we
 ///   add a pool keyed by stable row keys.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct VirtualItems {
     pub count: usize,
     pub row_height: f32,
@@ -930,6 +931,104 @@ mod tests {
         assert!(
             (child_rect.y - 80.0).abs() < 0.5,
             "expected y≈80, got {}",
+            child_rect.y
+        );
+    }
+
+    /// CSS `justify-content: space-between`: when no main-axis Fill
+    /// children claim the slack, the leftover space is distributed
+    /// evenly *between* (not around) the children — outer edges flush.
+    #[test]
+    fn justify_space_between_distributes_evenly() {
+        let row_child = || {
+            crate::widgets::text::text("x")
+                .width(Size::Fixed(20.0))
+                .height(Size::Fixed(20.0))
+        };
+        let mut root = column([row_child(), row_child(), row_child()])
+            .justify(Justify::SpaceBetween)
+            .height(Size::Fixed(200.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 200.0));
+        // Used main = 3 * 20 = 60. Leftover = 140 over (n-1) = 2 gaps
+        // → 70 between. Positions: 0, 90, 180.
+        let y0 = state.rect(&root.children[0].computed_id).y;
+        let y1 = state.rect(&root.children[1].computed_id).y;
+        let y2 = state.rect(&root.children[2].computed_id).y;
+        assert!(
+            y0.abs() < 0.5,
+            "first child should be flush at y=0, got {y0}"
+        );
+        assert!(
+            (y1 - 90.0).abs() < 0.5,
+            "middle child should be at y≈90, got {y1}"
+        );
+        assert!(
+            (y2 - 180.0).abs() < 0.5,
+            "last child should be flush at y≈180, got {y2}"
+        );
+    }
+
+    /// CSS `flex: <weight>`: when multiple `Size::Fill` children share
+    /// a container, the available space is distributed in proportion
+    /// to their weights.
+    #[test]
+    fn fill_weight_distributes_proportionally() {
+        let big = crate::widgets::text::text("big")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fill(2.0));
+        let small = crate::widgets::text::text("small")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fill(1.0));
+        let mut root = column([big, small]).height(Size::Fixed(300.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 300.0));
+        // Total weight = 3, available = 300. Big = 200, small = 100.
+        let big_h = state.rect(&root.children[0].computed_id).h;
+        let small_h = state.rect(&root.children[1].computed_id).h;
+        assert!(
+            (big_h - 200.0).abs() < 0.5,
+            "Fill(2.0) should claim 2/3 of 300 ≈ 200, got {big_h}"
+        );
+        assert!(
+            (small_h - 100.0).abs() < 0.5,
+            "Fill(1.0) should claim 1/3 of 300 ≈ 100, got {small_h}"
+        );
+    }
+
+    /// `padding` on a `Hug`-sized container is included in the
+    /// container's intrinsic — matching CSS `box-sizing: content-box`
+    /// where padding adds to the rendered size.
+    #[test]
+    fn padding_on_hug_includes_in_intrinsic() {
+        let root = column([crate::widgets::text::text("x")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(40.0))])
+        .padding(Sides::all(20.0));
+        let (w, h) = intrinsic(&root);
+        // 40 content + 2*20 padding on each axis = 80.
+        assert!((w - 80.0).abs() < 0.5, "expected intrinsic w≈80, got {w}");
+        assert!((h - 80.0).abs() < 0.5, "expected intrinsic h≈80, got {h}");
+    }
+
+    /// Cross-axis `Align::End` on a row pins children to the bottom
+    /// edge — CSS `align-items: flex-end`. Mirror of `justify_end`
+    /// but on the cross axis instead of the main axis.
+    #[test]
+    fn align_end_pins_to_cross_axis_far_edge() {
+        let mut root = crate::row([crate::widgets::text::text("hi")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))])
+        .align(Align::End)
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(100.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let child_rect = state.rect(&root.children[0].computed_id);
+        // Row cross axis = height. End → child y = 100 - 20 = 80.
+        assert!(
+            (child_rect.y - 80.0).abs() < 0.5,
+            "expected y≈80 (pinned to bottom), got {}",
             child_rect.y
         );
     }

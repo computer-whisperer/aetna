@@ -87,6 +87,7 @@ use crate::{icon, text};
 ///   convert it back to their value type (`&str` → `String`,
 ///   `s.parse::<u32>()`, an enum lookup, …).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SelectAction<'a> {
     /// The trigger was clicked or activated. Toggle the open flag.
     Toggle,

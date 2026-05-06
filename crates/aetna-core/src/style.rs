@@ -34,6 +34,7 @@ use crate::tree::*;
 /// on this rather than on [`Kind`], so adding a new component never
 /// requires editing this file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum StyleProfile {
     Solid,
     Tinted,

@@ -33,6 +33,7 @@ use crate::tree::{El, Rect};
 
 /// Everything an agent loop wants from a single render.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Bundle {
     /// SVG source (approximate — see crate-level docs).
     pub svg: String,

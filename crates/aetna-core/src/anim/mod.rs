@@ -196,6 +196,7 @@ impl Timing {
 ///   [`crate::tree::El::animate`]. The tracker eases the value the build
 ///   closure produces from the previous frame's value to the new one.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AnimProp {
     /// 0..1 amount of the hover-state visual delta currently applied.
     /// Eases 0→1 on pointer enter, 1→0 on pointer leave.
@@ -239,6 +240,7 @@ const SPRING_MAX_SUBSTEP: f32 = 1.0 / 250.0;
 /// In-flight animation state for one (node, prop) pair. Stored on
 /// [`crate::state::UiState`] keyed by `(ComputedId, AnimProp)`.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Animation {
     pub current: AnimValue,
     pub target: AnimValue,

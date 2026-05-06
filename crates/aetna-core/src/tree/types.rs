@@ -6,7 +6,13 @@
 
 use std::panic::Location;
 
-/// A rectangle in pixel coordinates. Origin top-left, +y down.
+/// A rectangle in **logical pixels** — the host's `scale_factor` is
+/// applied at paint time, so layout, hit-testing, and `Rect`-shaped
+/// API arguments all speak the same un-scaled coordinate space
+/// regardless of HiDPI / scaling factors.
+///
+/// Origin top-left, +y down (the same convention CSS uses for the
+/// viewport box).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
     pub x: f32,
@@ -147,25 +153,35 @@ pub enum Axis {
     Row,
 }
 
-/// Cross-axis alignment of children within a container.
+/// Cross-axis sizing + alignment of children, mirroring CSS
+/// `align-items`. `Align` governs both how non-`Fixed` children are
+/// **sized** on the cross axis and where smaller children are
+/// **positioned** within the container's cross extent.
 ///
-/// `Align` positions Hug/Fixed children that are smaller than the
-/// container on the cross axis. It does **not** affect `Size::Fill`
-/// children — those always claim the container's full cross-axis
-/// extent (see [`Size`]).
+/// - `Stretch` — non-`Fixed` children claim the container's full
+///   cross extent (CSS `align-items: stretch`). Default for `row`,
+///   `column`, and `scroll`.
+/// - `Start` — non-`Fixed` children shrink to intrinsic and pin to
+///   the start of the cross axis (top for rows, left for columns).
+/// - `Center` — non-`Fixed` children shrink to intrinsic and center
+///   in the cross extent.
+/// - `End` — non-`Fixed` children shrink to intrinsic and pin to the
+///   end (bottom for rows, right for columns).
 ///
-/// - `Start` — pin to the start of the cross axis (top for rows, left for columns).
-/// - `Center` — center within the leftover slack.
-/// - `End` — pin to the end (bottom for rows, right for columns).
-/// - `Stretch` — currently equivalent to `Start` for positioning. The
-///   default for [`super::column`]. Reserved as the alignment under
-///   which a future "stretch Hug children to fill the cross axis"
-///   behavior would activate.
+/// `Size::Fixed` is always honored exactly; `Align` only positions
+/// Fixed children within the cross extent. Under non-`Stretch`
+/// alignments, `Hug` and `Fill` collapse to intrinsic — the same way
+/// CSS flex doesn't distinguish between them on the cross axis.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Align {
+    /// Pin to the start of the cross axis (top for rows, left for columns).
     Start,
+    /// Center in the cross extent.
     Center,
+    /// Pin to the end of the cross axis (bottom for rows, right for columns).
     End,
+    /// Stretch non-`Fixed` children to the container's cross extent
+    /// (CSS `align-items: stretch`). Default.
     #[default]
     Stretch,
 }
@@ -208,6 +224,7 @@ pub enum TextWrap {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum TextOverflow {
     #[default]
     Clip,
@@ -221,6 +238,7 @@ pub enum TextOverflow {
 /// familiar text primitives (`caption`, `label`, `title`, …) instead
 /// of scattering raw font sizes through product surfaces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum TextRole {
     #[default]
     Body,
@@ -234,7 +252,11 @@ pub enum TextRole {
 
 /// Built-in icon names. The string forms intentionally mirror common
 /// lucide/shadcn names so agents can reach for familiar labels.
+///
+/// `#[non_exhaustive]` because we expect to grow the icon set; new
+/// variants must not break exhaustive matches in downstream code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum IconName {
     Activity,
     AlertCircle,
@@ -463,6 +485,7 @@ impl SurfaceRole {
 /// draw-op resolution; the tree carries the resolved state flag and the
 /// renderer applies the appropriate transformation when emitting draw ops.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum InteractionState {
     #[default]
     Default,
@@ -476,6 +499,7 @@ pub enum InteractionState {
 /// Recorded source location for an element. Set automatically via
 /// `#[track_caller]` on every constructor.
 #[derive(Clone, Copy, Debug, Default)]
+#[non_exhaustive]
 pub struct Source {
     pub file: &'static str,
     pub line: u32,

@@ -64,6 +64,7 @@ const ANCHOR_GAP: f32 = tokens::SPACE_XS;
 /// top edges and stack on the main-axis. `AtPoint` places the panel's
 /// top-left corner at the anchor (used by context menus).
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Side {
     Below,
     Above,
@@ -74,6 +75,7 @@ pub enum Side {
 
 /// What a popover anchors to.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Anchor {
     /// Stick to another keyed element's laid-out rect. The library
     /// reads `LayoutCtx::rect_of_key(key)` at layout time; if the key

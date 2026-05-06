@@ -53,6 +53,7 @@ use crate::tree::{El, Rect};
 /// Hit-test target metadata. `key` is the author-facing route, while
 /// `node_id` is the stable laid-out tree path used by artifacts.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct UiTarget {
     pub key: String,
     pub node_id: String,
@@ -105,6 +106,10 @@ pub enum UiKey {
     Other(String),
 }
 
+/// OS modifier-key mask. The four fields mirror the platform-standard
+/// modifier set; this struct is intentionally **not** `#[non_exhaustive]`
+/// so callers can use struct-literal syntax with `..Default::default()`
+/// to spell precise modifier combinations.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct KeyModifiers {
     pub shift: bool,
@@ -114,6 +119,7 @@ pub struct KeyModifiers {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct KeyPress {
     pub key: UiKey,
     pub modifiers: KeyModifiers,
@@ -130,6 +136,7 @@ pub struct KeyPress {
 /// emits a [`UiEvent`] with `kind = UiEventKind::Hotkey` and `key`
 /// equal to the registered name.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct KeyChord {
     pub key: UiKey,
     pub modifiers: KeyModifiers,
@@ -214,6 +221,7 @@ fn key_eq(a: &UiKey, b: &UiKey) -> bool {
 /// # }
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct UiEvent {
     /// Route string for this event.
     ///
@@ -244,6 +252,23 @@ pub struct UiEvent {
 }
 
 impl UiEvent {
+    /// Synthesize a click event for the given route key.
+    ///
+    /// Intended for tests, headless automation, and snapshot
+    /// fixtures that drive UI logic without a real pointer history.
+    /// All optional fields default to `None`; modifiers are empty.
+    pub fn synthetic_click(key: impl Into<String>) -> Self {
+        Self {
+            kind: UiEventKind::Click,
+            key: Some(key.into()),
+            target: None,
+            pointer: None,
+            key_press: None,
+            text: None,
+            modifiers: KeyModifiers::default(),
+        }
+    }
+
     /// Route string for this event, if any.
     ///
     /// For pointer/focus events this is the target element key. For

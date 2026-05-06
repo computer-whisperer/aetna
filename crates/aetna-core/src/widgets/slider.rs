@@ -124,6 +124,7 @@ pub fn normalized_from_event(rect: Rect, x: f32) -> f32 {
 /// own typed value (e.g. `volume_pct: u32`) can take the abstract
 /// action without going through `f32`.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum SliderAction {
     /// Move the value by `delta` (in the same `0.0..=1.0` space the
     /// widget paints in). Negative steps decrement.
