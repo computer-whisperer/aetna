@@ -85,14 +85,7 @@ impl LintReport {
 pub fn lint(root: &El, ui_state: &UiState, app_path_marker: Option<&str>) -> LintReport {
     let mut r = LintReport::default();
     let mut seen_ids: std::collections::BTreeMap<String, usize> = Default::default();
-    walk(
-        root,
-        None,
-        ui_state,
-        &mut r,
-        &mut seen_ids,
-        app_path_marker,
-    );
+    walk(root, None, ui_state, &mut r, &mut seen_ids, app_path_marker);
     for (id, n) in seen_ids {
         if n > 1 {
             r.findings.push(Finding {

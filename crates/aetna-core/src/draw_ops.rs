@@ -247,10 +247,7 @@ fn push_node(
     if let Some(source) = &n.icon {
         let color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
         let inner = inner_painted_rect.inset(n.padding);
-        let icon_size = painted_font_size
-            .min(inner.w)
-            .min(inner.h)
-            .max(1.0);
+        let icon_size = painted_font_size.min(inner.w).min(inner.h).max(1.0);
         let icon_rect = Rect::new(
             inner.center_x() - icon_size * 0.5,
             inner.center_y() - icon_size * 0.5,

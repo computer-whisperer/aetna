@@ -494,53 +494,6 @@ fn as_vec4(v: &UniformValue) -> Option<[f32; 4]> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::SvgIcon;
-    use crate::draw_ops::draw_ops;
-    use crate::layout::layout;
-    use crate::state::UiState;
-    use crate::tree::IconName;
-
-    const RED_CIRCLE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ff0000"/></svg>"##;
-
-    fn render(el: crate::tree::El) -> String {
-        let mut tree = el;
-        let viewport = Rect::new(0.0, 0.0, 64.0, 64.0);
-        let mut state = UiState::default();
-        layout(&mut tree, &mut state, viewport);
-        let ops = draw_ops(&tree, &state);
-        svg_from_ops(viewport.w, viewport.h, &ops, Color::rgb(255, 255, 255))
-    }
-
-    #[test]
-    fn builtin_icon_renders_via_named_path() {
-        let svg = render(crate::icons::icon(IconName::Check));
-        assert!(
-            svg.contains(r#"data-icon="check""#),
-            "expected built-in `data-icon=\"check\"`, got:\n{svg}"
-        );
-    }
-
-    #[test]
-    fn custom_svg_icon_renders_via_re_serialised_paths() {
-        let custom = SvgIcon::parse(RED_CIRCLE).unwrap();
-        let svg = render(crate::icons::icon(custom));
-        assert!(
-            svg.contains(r#"data-icon="custom""#),
-            "expected `data-icon=\"custom\"` for app-supplied SVG, got:\n{svg}"
-        );
-        // The fixture uses `fill="#ff0000"` which usvg normalises to
-        // a `Solid` color in the IR; the re-serialiser must emit that
-        // colour through (not the runtime `current_color`).
-        assert!(
-            svg.contains("fill=\"rgb(255,0,0)\"") || svg.contains("fill=\"#ff0000\""),
-            "expected the SVG fill to round-trip in the bundle, got:\n{svg}"
-        );
-    }
-}
-
 // Explicit feMerge form instead of the convenient `feDropShadow`. Both
 // render the same shadow visually, but rsvg-convert's feDropShadow
 // silently round-trips SourceGraphic through linearRGB even with
@@ -596,4 +549,51 @@ fn esc(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::SvgIcon;
+    use crate::draw_ops::draw_ops;
+    use crate::layout::layout;
+    use crate::state::UiState;
+    use crate::tree::IconName;
+
+    const RED_CIRCLE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ff0000"/></svg>"##;
+
+    fn render(el: crate::tree::El) -> String {
+        let mut tree = el;
+        let viewport = Rect::new(0.0, 0.0, 64.0, 64.0);
+        let mut state = UiState::default();
+        layout(&mut tree, &mut state, viewport);
+        let ops = draw_ops(&tree, &state);
+        svg_from_ops(viewport.w, viewport.h, &ops, Color::rgb(255, 255, 255))
+    }
+
+    #[test]
+    fn builtin_icon_renders_via_named_path() {
+        let svg = render(crate::icons::icon(IconName::Check));
+        assert!(
+            svg.contains(r#"data-icon="check""#),
+            "expected built-in `data-icon=\"check\"`, got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn custom_svg_icon_renders_via_re_serialised_paths() {
+        let custom = SvgIcon::parse(RED_CIRCLE).unwrap();
+        let svg = render(crate::icons::icon(custom));
+        assert!(
+            svg.contains(r#"data-icon="custom""#),
+            "expected `data-icon=\"custom\"` for app-supplied SVG, got:\n{svg}"
+        );
+        // The fixture uses `fill="#ff0000"` which usvg normalises to
+        // a `Solid` color in the IR; the re-serialiser must emit that
+        // colour through (not the runtime `current_color`).
+        assert!(
+            svg.contains("fill=\"rgb(255,0,0)\"") || svg.contains("fill=\"#ff0000\""),
+            "expected the SVG fill to round-trip in the bundle, got:\n{svg}"
+        );
+    }
 }
