@@ -78,21 +78,19 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
       tooltips for keyboard-only users, multi-line wrapping at a
       max-width.
 
-### Slice 5 — list-row primitive
-
-- [ ] **`list_row` with leading slot / title+subtitle slot / trailing
-      slots, density-token driven.** Add a calibration fixture in
-      `aetna-fixtures` exercising ellipsis with realistic long names.
-      The pavucontrol-style row is a missing reference shape from
-      `docs/POLISH_CALIBRATION.md`.
-
 ### Slice 6 — async-into-redraw
 
-- [ ] **Documented host-agnostic story for backend threads waking the
-      UI loop** (e.g. winit `EventLoopProxy` exposed through a
-      `HostConfig::with_external_wakeup` hook). Use `aetna-volume`'s
-      PipeWire meters as the worked example. Today the volume app
-      polls at 33 ms via `HostConfig::with_redraw_interval`.
+- [x] **Document the meter-class vs event-class trade-off** in
+      `crates/aetna-winit-wgpu/README.md`. Apps with high-frequency
+      live data (peak meters, throughput graphs) keep
+      `HostConfig::with_redraw_interval`; apps with sparse events
+      (registry events, downloads, file watchers) drop down to
+      `EventLoopProxy::send_event` against `aetna-wgpu::Runner`
+      directly. Folding the push hook into `HostConfig` is deferred
+      until a non-meter use case inside the workspace pressure-tests
+      the shape — the original framing (PipeWire meters as the
+      worked example) had it backwards: meters are the case where
+      fixed cadence is right, not the case that needs push-wake.
 
 ### Slice 7 — recipes + helpers
 
