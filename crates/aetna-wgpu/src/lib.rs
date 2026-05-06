@@ -917,11 +917,15 @@ impl Runner {
                     set_scissor(pass, run.scissor, full);
                     pass.set_pipeline(self.text_paint.pipeline_for(run.kind));
                     pass.set_bind_group(0, &self.quad_bind_group, &[]);
-                    pass.set_bind_group(
-                        1,
-                        self.text_paint.page_bind_group(run.kind, run.page),
-                        &[],
-                    );
+                    // Highlight runs use a frame-uniform-only pipeline.
+                    // Glyph kinds bind the active atlas page at group 1.
+                    if !matches!(run.kind, crate::text::TextRunKind::Highlight) {
+                        pass.set_bind_group(
+                            1,
+                            self.text_paint.page_bind_group(run.kind, run.page),
+                            &[],
+                        );
+                    }
                     pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
                     pass.set_vertex_buffer(1, self.text_paint.instance_buf_for(run.kind).slice(..));
                     pass.draw(0..4, run.first..run.first + run.count);

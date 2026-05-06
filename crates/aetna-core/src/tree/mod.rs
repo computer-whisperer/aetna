@@ -179,6 +179,12 @@ pub struct El {
     /// the run renders as a link (themed) and runs sharing a URL group
     /// together for hit-test. Author-set via [`Self::link`].
     pub text_link: Option<String>,
+    /// Inline-run background. When set on a text leaf inside
+    /// [`Kind::Inlines`], the shaped span paints a solid quad behind
+    /// its glyphs (one rect per line if the span wraps). No effect on
+    /// standalone text Els — author wraps in a styled `row()` for
+    /// chip-shaped surfaces. Author-set via [`Self::background`].
+    pub text_bg: Option<Color>,
 
     // Icon
     pub icon: Option<crate::svg_icon::IconSource>,
@@ -262,6 +268,7 @@ impl Default for El {
             font_weight: FontWeight::Regular,
             font_mono: false,
             text_italic: false,
+            text_bg: None,
             text_underline: false,
             text_strikethrough: false,
             text_link: None,
@@ -574,6 +581,17 @@ impl El {
     /// text Els.
     pub fn italic(mut self) -> Self {
         self.text_italic = true;
+        self
+    }
+
+    /// Inline-run background. Honoured when this El is a styled text
+    /// leaf inside an [`Kind::Inlines`] parent: the shaped span paints
+    /// a solid quad behind its glyphs (per-line if the span wraps).
+    /// Mirrors HTML's `<mark>` / inline `background` — the rect tracks
+    /// the glyph extent rather than the El's layout box, so a wrapped
+    /// highlight follows the prose. No effect on standalone text Els.
+    pub fn background(mut self, color: Color) -> Self {
+        self.text_bg = Some(color);
         self
     }
 

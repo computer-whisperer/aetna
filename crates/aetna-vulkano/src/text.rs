@@ -99,10 +99,18 @@ pub(crate) struct MsdfGlyphInstance {
     pub params: [f32; 4],
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable, Debug)]
+pub(crate) struct HighlightInstance {
+    pub rect: [f32; 4],
+    pub color: [f32; 4],
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TextRunKind {
     Color,
     Msdf,
+    Highlight,
 }
 
 #[derive(Clone, Copy)]
@@ -139,6 +147,12 @@ pub(crate) struct TextPaint {
     msdf_pipeline: Arc<GraphicsPipeline>,
     msdf_sampler: Arc<Sampler>,
 
+    // Inline-run highlight path (solid quads behind glyphs).
+    highlight_instances: Vec<HighlightInstance>,
+    highlight_instance_buf: Subbuffer<[HighlightInstance]>,
+    highlight_instance_capacity: u64,
+    highlight_pipeline: Arc<GraphicsPipeline>,
+
     runs: Vec<TextRun>,
 
     memory_alloc: Arc<StandardMemoryAllocator>,
@@ -171,9 +185,9 @@ impl TextPaint {
         let color_instance_buf =
             create_color_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
 
-        let msdf_pipeline = build_msdf_pipeline(device.clone(), subpass);
+        let msdf_pipeline = build_msdf_pipeline(device.clone(), subpass.clone());
         let msdf_sampler = Sampler::new(
-            device,
+            device.clone(),
             SamplerCreateInfo {
                 mag_filter: Filter::Linear,
                 min_filter: Filter::Linear,
@@ -185,6 +199,11 @@ impl TextPaint {
         .expect("aetna-vulkano: text msdf sampler");
         let msdf_instance_buf =
             create_msdf_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
+
+        let highlight_pipeline = build_highlight_pipeline(device.clone(), subpass);
+        let highlight_instance_buf =
+            create_highlight_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
+        let _ = device;
 
         Self {
             atlas: GlyphAtlas::new(),
@@ -201,6 +220,10 @@ impl TextPaint {
             msdf_instance_capacity: INITIAL_INSTANCE_CAPACITY,
             msdf_pipeline,
             msdf_sampler,
+            highlight_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
+            highlight_instance_buf,
+            highlight_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            highlight_pipeline,
             runs: Vec::new(),
             memory_alloc,
             descriptor_alloc,
@@ -212,6 +235,7 @@ impl TextPaint {
     pub(crate) fn frame_begin(&mut self) {
         self.color_instances.clear();
         self.msdf_instances.clear();
+        self.highlight_instances.clear();
         self.runs.clear();
     }
 
@@ -248,7 +272,7 @@ impl TextPaint {
         scale_factor: f32,
     ) -> Range<usize> {
         let runs_start = self.runs.len();
-        if shaped.glyphs.is_empty() {
+        if shaped.glyphs.is_empty() && shaped.highlights.is_empty() {
             return runs_start..runs_start;
         }
 
@@ -260,6 +284,29 @@ impl TextPaint {
         };
         let origin_x = rect.x;
         let origin_y = rect.y + v_offset;
+
+        // Inline-run highlights ride at the front of the run sequence
+        // so they paint *behind* the glyphs on the same scissor / z
+        // band.
+        if !shaped.highlights.is_empty() {
+            let first = self.highlight_instances.len() as u32;
+            for h in &shaped.highlights {
+                self.highlight_instances.push(HighlightInstance {
+                    rect: [origin_x + h.x, origin_y + h.y, h.w, h.h],
+                    color: rgba_f32(h.color),
+                });
+            }
+            let count = self.highlight_instances.len() as u32 - first;
+            if count > 0 {
+                self.runs.push(TextRun {
+                    kind: TextRunKind::Highlight,
+                    page: 0,
+                    scissor,
+                    first,
+                    count,
+                });
+            }
+        }
 
         // Walk shaped glyphs. Each becomes either a colour or MSDF
         // instance, emitted into its own per-kind run. A run breaks
@@ -324,6 +371,7 @@ impl TextPaint {
         let new_start = match next_kind {
             TextRunKind::Color => self.color_instances.len() as u32,
             TextRunKind::Msdf => self.msdf_instances.len() as u32,
+            TextRunKind::Highlight => self.highlight_instances.len() as u32,
         };
         let needs_close = match current {
             Some((kind, page, _)) => *kind != next_kind || *page != next_page,
@@ -351,6 +399,7 @@ impl TextPaint {
         let len = match kind {
             TextRunKind::Color => self.color_instances.len() as u32,
             TextRunKind::Msdf => self.msdf_instances.len() as u32,
+            TextRunKind::Highlight => self.highlight_instances.len() as u32,
         };
         len.saturating_sub(first)
     }
@@ -549,6 +598,21 @@ impl TextPaint {
                 .expect("aetna-vulkano: text msdf instance buf write");
             write[..self.msdf_instances.len()].copy_from_slice(&self.msdf_instances);
         }
+
+        // ---- Resize + write the highlight instance buffer ----
+        if (self.highlight_instances.len() as u64) > self.highlight_instance_capacity {
+            let new_cap = (self.highlight_instances.len() as u64).next_power_of_two();
+            self.highlight_instance_buf =
+                create_highlight_instance_buffer(&self.memory_alloc, new_cap);
+            self.highlight_instance_capacity = new_cap;
+        }
+        if !self.highlight_instances.is_empty() {
+            let mut write = self
+                .highlight_instance_buf
+                .write()
+                .expect("aetna-vulkano: text highlight instance buf write");
+            write[..self.highlight_instances.len()].copy_from_slice(&self.highlight_instances);
+        }
     }
 
     fn append_buffer_to_image_copy(
@@ -671,13 +735,17 @@ impl TextPaint {
         match kind {
             TextRunKind::Color => &self.color_pipeline,
             TextRunKind::Msdf => &self.msdf_pipeline,
+            TextRunKind::Highlight => &self.highlight_pipeline,
         }
     }
 
+    /// Page descriptor set for textured glyph kinds. `Highlight` runs
+    /// have no page binding and must be filtered out before calling.
     pub(crate) fn page_descriptor(&self, kind: TextRunKind, page: u32) -> &Arc<DescriptorSet> {
         match kind {
             TextRunKind::Color => &self.color_pages[page as usize].descriptor_set,
             TextRunKind::Msdf => &self.msdf_pages[page as usize].descriptor_set,
+            TextRunKind::Highlight => unreachable!("highlight runs carry no page binding"),
         }
     }
 
@@ -687,6 +755,10 @@ impl TextPaint {
 
     pub(crate) fn instance_buf_msdf(&self) -> &Subbuffer<[MsdfGlyphInstance]> {
         &self.msdf_instance_buf
+    }
+
+    pub(crate) fn instance_buf_highlight(&self) -> &Subbuffer<[HighlightInstance]> {
+        &self.highlight_instance_buf
     }
 }
 
@@ -807,6 +879,26 @@ fn create_msdf_instance_buffer(
         capacity,
     )
     .expect("aetna-vulkano: msdf glyph instance buffer alloc")
+}
+
+fn create_highlight_instance_buffer(
+    allocator: &Arc<StandardMemoryAllocator>,
+    capacity: u64,
+) -> Subbuffer<[HighlightInstance]> {
+    Buffer::new_slice::<HighlightInstance>(
+        allocator.clone(),
+        BufferCreateInfo {
+            usage: BufferUsage::VERTEX_BUFFER,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+            ..Default::default()
+        },
+        capacity,
+    )
+    .expect("aetna-vulkano: highlight instance buffer alloc")
 }
 
 fn build_color_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
@@ -972,4 +1064,85 @@ fn build_msdf_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPip
         },
     )
     .expect("aetna-vulkano: text msdf GraphicsPipeline::new")
+}
+
+fn build_highlight_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
+    let words = wgsl_to_spirv("stock::text_highlight", stock_wgsl::TEXT_HIGHLIGHT)
+        .unwrap_or_else(|e| panic!("aetna-vulkano: text highlight WGSL compile: {e}"));
+    let module = unsafe {
+        ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&words))
+            .expect("aetna-vulkano: text highlight ShaderModule::new")
+    };
+    let vs = module
+        .entry_point("vs_main")
+        .expect("text_highlight.wgsl: missing vs_main");
+    let fs = module
+        .entry_point("fs_main")
+        .expect("text_highlight.wgsl: missing fs_main");
+    let stages = [
+        PipelineShaderStageCreateInfo::new(vs),
+        PipelineShaderStageCreateInfo::new(fs),
+    ];
+    let layout = crate::pipeline::build_shared_pipeline_layout(device.clone(), &stages);
+
+    let bind_vertex = VertexInputBindingDescription {
+        stride: (2 * std::mem::size_of::<f32>()) as u32,
+        input_rate: VertexInputRate::Vertex,
+        ..Default::default()
+    };
+    let bind_instance = VertexInputBindingDescription {
+        stride: std::mem::size_of::<HighlightInstance>() as u32,
+        input_rate: VertexInputRate::Instance { divisor: 1 },
+        ..Default::default()
+    };
+    let attr = |binding: u32, offset: u32, format: Format| VertexInputAttributeDescription {
+        binding,
+        offset,
+        format,
+        ..Default::default()
+    };
+    let vertex_input_state = VertexInputState::new()
+        .binding(0, bind_vertex)
+        .binding(1, bind_instance)
+        .attribute(0, attr(0, 0, Format::R32G32_SFLOAT))
+        .attribute(1, attr(1, 0, Format::R32G32B32A32_SFLOAT))
+        .attribute(2, attr(1, 16, Format::R32G32B32A32_SFLOAT));
+
+    let premultiplied = AttachmentBlend {
+        src_color_blend_factor: BlendFactor::One,
+        dst_color_blend_factor: BlendFactor::OneMinusSrcAlpha,
+        color_blend_op: BlendOp::Add,
+        src_alpha_blend_factor: BlendFactor::One,
+        dst_alpha_blend_factor: BlendFactor::OneMinusSrcAlpha,
+        alpha_blend_op: BlendOp::Add,
+    };
+
+    GraphicsPipeline::new(
+        device,
+        None,
+        GraphicsPipelineCreateInfo {
+            stages: stages.into_iter().collect(),
+            vertex_input_state: Some(vertex_input_state),
+            input_assembly_state: Some(InputAssemblyState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            }),
+            viewport_state: Some(ViewportState::default()),
+            rasterization_state: Some(RasterizationState::default()),
+            multisample_state: Some(MultisampleState::default()),
+            color_blend_state: Some(ColorBlendState::with_attachment_states(
+                subpass.num_color_attachments(),
+                ColorBlendAttachmentState {
+                    blend: Some(premultiplied),
+                    ..Default::default()
+                },
+            )),
+            dynamic_state: [DynamicState::Viewport, DynamicState::Scissor]
+                .into_iter()
+                .collect(),
+            subpass: Some(PipelineSubpassType::BeginRenderPass(subpass)),
+            ..GraphicsPipelineCreateInfo::layout(layout)
+        },
+    )
+    .expect("aetna-vulkano: text highlight GraphicsPipeline::new")
 }

@@ -170,9 +170,10 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 } else {
                     ""
                 };
+                let bg_runs = runs.iter().filter(|(_, st)| st.bg.is_some()).count();
                 let _ = write!(
                     s,
-                    "Attr   shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} attr=\"{preview}{suffix}\" runs={} size={size:.1} wrap={wrap:?} anchor={anchor:?}",
+                    "Attr   shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} attr=\"{preview}{suffix}\" runs={} bg_runs={bg_runs} size={size:.1} wrap={wrap:?} anchor={anchor:?}",
                     shader.name(),
                     rect.x,
                     rect.y,

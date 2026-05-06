@@ -298,6 +298,12 @@ fn emit_glyph_run(
 /// honest about the rendering layer's limits — the SVG fallback
 /// captures *which* runs flowed where in source order, even if it
 /// can't replicate the exact line breaks.
+///
+/// Inline-run backgrounds (`RunStyle.bg`) emit `<rect>` underlays
+/// using per-run measured widths accumulated left-to-right. This is
+/// approximate: it ignores wrapping (highlights ride on the first
+/// line only) and skips `Middle`/`End` anchors where browser-driven
+/// alignment can't be predicted without the rendered font's metrics.
 #[allow(clippy::too_many_arguments)]
 fn emit_attributed_text(
     s: &mut String,
@@ -324,6 +330,30 @@ fn emit_attributed_text(
         .map(|l| l.baseline)
         .unwrap_or(layout.line_height * 0.8);
     let y = line_top + baseline;
+
+    // Highlight underlays — emitted before the text so they paint
+    // behind the glyphs. Only Start-anchored paragraphs get accurate
+    // x positions; we skip the rects for Middle/End rather than guess.
+    if matches!(anchor, TextAnchor::Start) {
+        let mut cursor_x = rect.x;
+        for (text, style) in runs {
+            let run_w =
+                text_metrics::line_width(text, size, style.weight, style.mono);
+            if let Some(bg) = style.bg {
+                let _ = writeln!(
+                    s,
+                    r#"<rect data-node="{}.run-bg" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="{}" />"#,
+                    esc(id),
+                    cursor_x,
+                    line_top,
+                    run_w.max(0.0),
+                    layout.line_height,
+                    color_svg(bg),
+                );
+            }
+            cursor_x += run_w;
+        }
+    }
 
     let _ = write!(
         s,

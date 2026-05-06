@@ -906,21 +906,37 @@ impl Runner {
                     builder
                         .bind_pipeline_graphics(text_pipeline.clone())
                         .expect("bind_pipeline_graphics text");
-                    // set 0 = FrameUniforms (shared with rect pipelines);
-                    // set 1 = the per-page atlas image + sampler. The
-                    // descriptor sets must be passed as a tuple (not a
-                    // single set) so vulkano binds both at once.
-                    builder
-                        .bind_descriptor_sets(
-                            PipelineBindPoint::Graphics,
-                            text_pipeline.layout().clone(),
-                            0,
-                            (
-                                self.frame_descriptor_set.clone(),
-                                self.text_paint.page_descriptor(run.kind, run.page).clone(),
-                            ),
-                        )
-                        .expect("bind_descriptor_sets text");
+                    // Glyph kinds bind set 0 (FrameUniforms) + set 1
+                    // (per-page atlas image + sampler). Highlight kind
+                    // binds set 0 only — its pipeline carries no set 1.
+                    match run.kind {
+                        crate::text::TextRunKind::Color
+                        | crate::text::TextRunKind::Msdf => {
+                            builder
+                                .bind_descriptor_sets(
+                                    PipelineBindPoint::Graphics,
+                                    text_pipeline.layout().clone(),
+                                    0,
+                                    (
+                                        self.frame_descriptor_set.clone(),
+                                        self.text_paint
+                                            .page_descriptor(run.kind, run.page)
+                                            .clone(),
+                                    ),
+                                )
+                                .expect("bind_descriptor_sets text");
+                        }
+                        crate::text::TextRunKind::Highlight => {
+                            builder
+                                .bind_descriptor_sets(
+                                    PipelineBindPoint::Graphics,
+                                    text_pipeline.layout().clone(),
+                                    0,
+                                    self.frame_descriptor_set.clone(),
+                                )
+                                .expect("bind_descriptor_sets text highlight");
+                        }
+                    }
                     match run.kind {
                         crate::text::TextRunKind::Color => {
                             builder
@@ -943,6 +959,17 @@ impl Runner {
                                     ),
                                 )
                                 .expect("bind_vertex_buffers text msdf");
+                        }
+                        crate::text::TextRunKind::Highlight => {
+                            builder
+                                .bind_vertex_buffers(
+                                    0,
+                                    (
+                                        self.quad_vbo.clone(),
+                                        self.text_paint.instance_buf_highlight().clone(),
+                                    ),
+                                )
+                                .expect("bind_vertex_buffers text highlight");
                         }
                     }
                     unsafe {

@@ -107,10 +107,31 @@ pub struct ShapedGlyph {
 }
 
 /// One shaped + atlased run, the artifact a backend's text path consumes.
+///
+/// `highlights` carries the per-line background rects for runs whose
+/// `RunStyle.bg` is `Some`. Each rect spans one line of one styled run;
+/// a span that wraps across two lines produces two rects. Backends paint
+/// these as solid quads underneath the glyph layer in the same paint
+/// item, so highlights inherit the glyph layer's z-order and scissor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShapedRun {
     pub layout: TextLayout,
     pub glyphs: Vec<ShapedGlyph>,
+    pub highlights: Vec<HighlightRect>,
+}
+
+/// One inline-run highlight band: a solid background rect spanning one
+/// line of one styled run. Coordinates are in **logical pixels** relative
+/// to the shaped run's origin (same frame as [`ShapedGlyph::x`] /
+/// [`ShapedGlyph::y`]). `y` is the line top; the rect height is the
+/// shaped line's height.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct HighlightRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub color: Color,
 }
 
 /// Per-run styling for attributed text shaping. Used by
@@ -122,6 +143,10 @@ pub struct RunStyle {
     pub italic: bool,
     pub mono: bool,
     pub color: Color,
+    /// Optional inline-run background, painted as a solid quad behind
+    /// the glyphs that share this run's metadata. `None` skips the
+    /// highlight pass for this run.
+    pub bg: Option<Color>,
 }
 
 impl RunStyle {
@@ -131,6 +156,7 @@ impl RunStyle {
             italic: false,
             mono: false,
             color,
+            bg: None,
         }
     }
     pub fn italic(mut self) -> Self {
@@ -139,6 +165,12 @@ impl RunStyle {
     }
     pub fn mono(mut self) -> Self {
         self.mono = true;
+        self
+    }
+    /// Set the inline-run background colour. Backends paint a solid
+    /// quad spanning the run's per-line extent before the glyphs.
+    pub fn with_bg(mut self, bg: Color) -> Self {
+        self.bg = Some(bg);
         self
     }
 }
@@ -487,8 +519,14 @@ impl GlyphAtlas {
         // each unique CacheKey is rasterized into the atlas. Each
         // glyph's `metadata` carries the run index we packed into Attrs
         // above; we look up `runs[idx].color` to bake into the glyph.
+        //
+        // While walking, also accumulate per-line highlight rects for
+        // runs that carry a `bg`. A highlight is closed when the
+        // metadata index changes or the line ends, so a single styled
+        // span that wraps produces one rect per line.
         let mut lines = Vec::new();
         let mut shaped_glyphs = Vec::new();
+        let mut highlights: Vec<HighlightRect> = Vec::new();
         let mut height: f32 = 0.0;
         let mut max_width: f32 = 0.0;
         for run in buffer.layout_runs() {
@@ -503,6 +541,9 @@ impl GlyphAtlas {
                 rtl: run.rtl,
             });
 
+            // (run_idx, bg_color, x_min, x_max) — the open highlight on
+            // this line. `None` between runs / for runs with no bg.
+            let mut open: Option<(usize, Color, f32, f32)> = None;
             for glyph in run.glyphs.iter() {
                 let physical = glyph.physical((0.0, 0.0), 1.0);
                 let key = glyph_key(physical.cache_key);
@@ -514,6 +555,31 @@ impl GlyphAtlas {
                     .get(run_idx)
                     .map(|(_, s)| s.color)
                     .unwrap_or(Color::rgb(0, 0, 0));
+                let bg = runs.get(run_idx).and_then(|(_, s)| s.bg);
+
+                let g_left = glyph.x;
+                let g_right = glyph.x + glyph.w;
+                match (open, bg) {
+                    (Some((idx, c, lo, hi)), Some(_)) if idx == run_idx => {
+                        open = Some((idx, c, lo.min(g_left), hi.max(g_right)));
+                    }
+                    (Some((idx, c, lo, hi)), _) => {
+                        highlights.push(HighlightRect {
+                            x: lo,
+                            y: run.line_top,
+                            w: (hi - lo).max(0.0),
+                            h: run.line_height,
+                            color: c,
+                        });
+                        let _ = idx;
+                        open = bg.map(|c| (run_idx, c, g_left, g_right));
+                    }
+                    (None, Some(c)) => {
+                        open = Some((run_idx, c, g_left, g_right));
+                    }
+                    (None, None) => {}
+                }
+
                 shaped_glyphs.push(ShapedGlyph {
                     key,
                     x: glyph.x + glyph.x_offset,
@@ -521,6 +587,15 @@ impl GlyphAtlas {
                     byte_range: glyph.start..glyph.end,
                     color,
                     run_index: run_idx as u32,
+                });
+            }
+            if let Some((_, c, lo, hi)) = open {
+                highlights.push(HighlightRect {
+                    x: lo,
+                    y: run.line_top,
+                    w: (hi - lo).max(0.0),
+                    h: run.line_height,
+                    color: c,
                 });
             }
         }
@@ -535,6 +610,7 @@ impl GlyphAtlas {
         ShapedRun {
             layout,
             glyphs: shaped_glyphs,
+            highlights,
         }
     }
 
@@ -1019,6 +1095,106 @@ mod tests {
         // its font fallback chain; this assertion guards the regression.
         assert_ne!(shaped.glyphs[4].key.font, shaped.glyphs[0].key.font);
         assert_ne!(shaped.glyphs[4].key.font, shaped.glyphs[2].key.font);
+    }
+
+    #[test]
+    fn run_with_bg_emits_one_highlight_per_line() {
+        // Two single-line runs: only the second one carries a bg.
+        // Expect exactly one highlight rect, spanning the second run's
+        // glyph extent at the line's vertical bounds.
+        let mut atlas = GlyphAtlas::new();
+        let yellow = Color::rgb(220, 200, 60);
+        let runs = [
+            ("plain ", RunStyle::new(FontWeight::Regular, Color::rgb(0, 0, 0))),
+            (
+                "marked",
+                RunStyle::new(FontWeight::Regular, Color::rgb(0, 0, 0)).with_bg(yellow),
+            ),
+        ];
+        let shaped = atlas.shape_and_rasterize_runs(
+            &runs,
+            16.0,
+            TextWrap::NoWrap,
+            TextAnchor::Start,
+            None,
+        );
+        assert_eq!(
+            shaped.highlights.len(),
+            1,
+            "expected one highlight rect, got {:?}",
+            shaped.highlights
+        );
+        let h = shaped.highlights[0];
+        assert_eq!(h.color, yellow);
+        assert!(h.w > 0.0, "zero-width highlight: {h:?}");
+        // Must sit at the line's top with the line's height.
+        assert_eq!(h.h, shaped.layout.line_height);
+        // First run's glyphs come before the highlight; their
+        // rightmost pen position must not exceed the highlight's left
+        // edge (within fp tolerance).
+        let last_plain = shaped
+            .glyphs
+            .iter()
+            .filter(|g| g.run_index == 0)
+            .map(|g| g.x)
+            .fold(0.0_f32, f32::max);
+        assert!(
+            h.x + 1e-3 >= last_plain,
+            "highlight starts before plain runs end: hx={} last_plain={}",
+            h.x,
+            last_plain,
+        );
+    }
+
+    #[test]
+    fn run_with_bg_wraps_to_two_highlight_rects() {
+        // One styled run that wraps. The shaper produces multiple
+        // lines; the highlight pass emits one rect per line for the
+        // span sitting on that line.
+        let mut atlas = GlyphAtlas::new();
+        let blue = Color::rgb(60, 120, 240);
+        let runs = [(
+            "the quick brown fox jumps over the lazy dog",
+            RunStyle::new(FontWeight::Regular, Color::rgb(0, 0, 0)).with_bg(blue),
+        )];
+        // Narrow available width forces wrapping.
+        let shaped = atlas.shape_and_rasterize_runs(
+            &runs,
+            16.0,
+            TextWrap::Wrap,
+            TextAnchor::Start,
+            Some(120.0),
+        );
+        assert!(
+            shaped.layout.lines.len() >= 2,
+            "expected wrapped layout, got {:?}",
+            shaped.layout.lines.len()
+        );
+        assert_eq!(
+            shaped.highlights.len(),
+            shaped.layout.lines.len(),
+            "expected one highlight per wrapped line: highlights={:?}",
+            shaped.highlights,
+        );
+        for h in &shaped.highlights {
+            assert_eq!(h.color, blue);
+            assert!(h.w > 0.0);
+        }
+    }
+
+    #[test]
+    fn run_without_bg_emits_no_highlights() {
+        let mut atlas = GlyphAtlas::new();
+        let shaped = atlas.shape_and_rasterize(
+            "no highlight",
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            TextAnchor::Start,
+            None,
+            Color::rgb(0, 0, 0),
+        );
+        assert!(shaped.highlights.is_empty());
     }
 
     #[test]

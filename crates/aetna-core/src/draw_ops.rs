@@ -339,6 +339,9 @@ fn collect_inline_runs(node: &El, opacity: f32) -> Vec<(String, RunStyle)> {
                     if c.font_mono {
                         style = style.mono();
                     }
+                    if let Some(bg) = c.text_bg {
+                        style = style.with_bg(opaque(bg, opacity));
+                    }
                     runs.push((text.clone(), style));
                 }
             }
@@ -515,6 +518,32 @@ mod tests {
             panic!("expected button surface quad");
         };
         assert_eq!(*scissor, Some(Rect::new(0.0, 0.0, 120.0, 36.0)));
+    }
+
+    #[test]
+    fn inline_text_bg_propagates_to_run_style() {
+        // text_runs([..text("hit").background(...)..]) flows into the
+        // Inlines collector and lands on the per-run RunStyle.bg of
+        // the AttributedText draw op. Other runs keep `bg: None`.
+        let highlight = Color::rgb(220, 200, 60);
+        let mut root = crate::text_runs([
+            crate::text("plain "),
+            crate::text("marked").background(highlight),
+            crate::text(" rest"),
+        ]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 320.0, 80.0));
+
+        let ops = draw_ops(&root, &state);
+        let DrawOp::AttributedText { runs, .. } =
+            ops.iter().find(|op| matches!(op, DrawOp::AttributedText { .. })).expect("attr op")
+        else {
+            unreachable!()
+        };
+        assert_eq!(runs.len(), 3);
+        assert_eq!(runs[0].1.bg, None);
+        assert_eq!(runs[1].1.bg, Some(highlight));
+        assert_eq!(runs[2].1.bg, None);
     }
 
     #[test]

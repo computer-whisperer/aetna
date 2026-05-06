@@ -54,6 +54,11 @@ const MSDF_INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array!
     4 => Float32x4,  // params (x = atlas-space spread, y/z/w reserved)
 ];
 
+const HIGHLIGHT_INSTANCE_ATTRS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![
+    1 => Float32x4,  // rect  (xy = top-left logical px, zw = size logical px)
+    2 => Float32x4,  // color (linear rgba 0..1)
+];
+
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub(crate) struct ColorGlyphInstance {
@@ -71,10 +76,18 @@ pub(crate) struct MsdfGlyphInstance {
     pub params: [f32; 4],
 }
 
-#[derive(Clone, Copy)]
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable, Debug)]
+pub(crate) struct HighlightInstance {
+    pub rect: [f32; 4],
+    pub color: [f32; 4],
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TextRunKind {
     Color,
     Msdf,
+    Highlight,
 }
 
 #[derive(Clone, Copy)]
@@ -112,6 +125,12 @@ pub(crate) struct TextPaint {
     msdf_pipeline: wgpu::RenderPipeline,
     msdf_page_bind_layout: wgpu::BindGroupLayout,
     msdf_sampler: wgpu::Sampler,
+
+    // Inline-run highlight path (solid quads behind glyphs).
+    highlight_instances: Vec<HighlightInstance>,
+    highlight_instance_buf: wgpu::Buffer,
+    highlight_instance_capacity: usize,
+    highlight_pipeline: wgpu::RenderPipeline,
 
     runs: Vec<TextRun>,
 }
@@ -320,6 +339,72 @@ impl TextPaint {
             mapped_at_creation: false,
         });
 
+        // ---- Inline-run highlight pipeline (`stock::text_highlight`) ----
+        // Solid colour quads only — no page texture, just frame uniforms.
+        let highlight_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("aetna_wgpu::text::highlight_pipeline_layout"),
+                bind_group_layouts: &[Some(frame_bind_layout)],
+                immediate_size: 0,
+            });
+
+        let highlight_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("stock::text_highlight"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(stock_wgsl::TEXT_HIGHLIGHT)),
+        });
+
+        let highlight_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("aetna_wgpu::text::highlight_pipeline"),
+            layout: Some(&highlight_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &highlight_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: (2 * std::mem::size_of::<f32>()) as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[wgpu::VertexAttribute {
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 0,
+                        }],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<HighlightInstance>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &HIGHLIGHT_INSTANCE_ATTRS,
+                    },
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &highlight_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(premultiplied_blend()),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: triangle_strip(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let highlight_instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("aetna_wgpu::text::highlight_instance_buf"),
+            size: (INITIAL_INSTANCE_CAPACITY * std::mem::size_of::<HighlightInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
             atlas: GlyphAtlas::new(),
             msdf_atlas: MsdfAtlas::new(DEFAULT_BASE_EM, DEFAULT_SPREAD),
@@ -337,6 +422,10 @@ impl TextPaint {
             msdf_pipeline,
             msdf_page_bind_layout,
             msdf_sampler,
+            highlight_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
+            highlight_instance_buf,
+            highlight_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            highlight_pipeline,
             runs: Vec::new(),
         }
     }
@@ -344,6 +433,7 @@ impl TextPaint {
     pub(crate) fn frame_begin(&mut self) {
         self.color_instances.clear();
         self.msdf_instances.clear();
+        self.highlight_instances.clear();
         self.runs.clear();
     }
 
@@ -380,7 +470,7 @@ impl TextPaint {
         scale_factor: f32,
     ) -> std::ops::Range<usize> {
         let runs_start = self.runs.len();
-        if shaped.glyphs.is_empty() {
+        if shaped.glyphs.is_empty() && shaped.highlights.is_empty() {
             return runs_start..runs_start;
         }
 
@@ -392,6 +482,31 @@ impl TextPaint {
         };
         let origin_x = rect.x;
         let origin_y = rect.y + v_offset;
+
+        // Inline-run highlights ride at the front of the run sequence
+        // so they paint *behind* the glyphs on the same scissor / z
+        // band. Each shaped highlight already represents one line's
+        // span of one styled run; we emit them all into a single
+        // Highlight TextRun.
+        if !shaped.highlights.is_empty() {
+            let first = self.highlight_instances.len() as u32;
+            for h in &shaped.highlights {
+                self.highlight_instances.push(HighlightInstance {
+                    rect: [origin_x + h.x, origin_y + h.y, h.w, h.h],
+                    color: rgba_f32(h.color),
+                });
+            }
+            let count = self.highlight_instances.len() as u32 - first;
+            if count > 0 {
+                self.runs.push(TextRun {
+                    kind: TextRunKind::Highlight,
+                    page: 0,
+                    scissor,
+                    first,
+                    count,
+                });
+            }
+        }
 
         // Walk shaped glyphs. Each becomes either a colour or MSDF
         // instance, emitted into its own per-kind run. A run breaks
@@ -457,6 +572,7 @@ impl TextPaint {
         let new_start = match next_kind {
             TextRunKind::Color => self.color_instances.len() as u32,
             TextRunKind::Msdf => self.msdf_instances.len() as u32,
+            TextRunKind::Highlight => self.highlight_instances.len() as u32,
         };
         let needs_close = match current {
             Some((kind, page, _)) => !same_kind(*kind, next_kind) || *page != next_page,
@@ -484,6 +600,7 @@ impl TextPaint {
         let len = match kind {
             TextRunKind::Color => self.color_instances.len() as u32,
             TextRunKind::Msdf => self.msdf_instances.len() as u32,
+            TextRunKind::Highlight => self.highlight_instances.len() as u32,
         };
         len.saturating_sub(first)
     }
@@ -662,6 +779,25 @@ impl TextPaint {
                 bytemuck::cast_slice(&self.msdf_instances),
             );
         }
+
+        // Highlight instance buffer.
+        if self.highlight_instances.len() > self.highlight_instance_capacity {
+            let new_cap = self.highlight_instances.len().next_power_of_two();
+            self.highlight_instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("aetna_wgpu::text::highlight_instance_buf (resized)"),
+                size: (new_cap * std::mem::size_of::<HighlightInstance>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.highlight_instance_capacity = new_cap;
+        }
+        if !self.highlight_instances.is_empty() {
+            queue.write_buffer(
+                &self.highlight_instance_buf,
+                0,
+                bytemuck::cast_slice(&self.highlight_instances),
+            );
+        }
     }
 
     pub(crate) fn run(&self, index: usize) -> TextRun {
@@ -672,6 +808,7 @@ impl TextPaint {
         match kind {
             TextRunKind::Color => &self.color_pipeline,
             TextRunKind::Msdf => &self.msdf_pipeline,
+            TextRunKind::Highlight => &self.highlight_pipeline,
         }
     }
 
@@ -679,22 +816,24 @@ impl TextPaint {
         match kind {
             TextRunKind::Color => &self.color_instance_buf,
             TextRunKind::Msdf => &self.msdf_instance_buf,
+            TextRunKind::Highlight => &self.highlight_instance_buf,
         }
     }
 
+    /// Page bind group for textured glyph kinds. `Highlight` runs are
+    /// painted from a frame-uniform-only pipeline and have no page
+    /// binding — callers must check the run kind before invoking.
     pub(crate) fn page_bind_group(&self, kind: TextRunKind, page: u32) -> &wgpu::BindGroup {
         match kind {
             TextRunKind::Color => &self.color_pages[page as usize].bind_group,
             TextRunKind::Msdf => &self.msdf_pages[page as usize].bind_group,
+            TextRunKind::Highlight => unreachable!("highlight runs carry no page binding"),
         }
     }
 }
 
 fn same_kind(a: TextRunKind, b: TextRunKind) -> bool {
-    matches!(
-        (a, b),
-        (TextRunKind::Color, TextRunKind::Color) | (TextRunKind::Msdf, TextRunKind::Msdf)
-    )
+    a == b
 }
 
 fn premultiplied_blend() -> wgpu::BlendState {
