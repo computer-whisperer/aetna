@@ -278,6 +278,11 @@ fn counter_view(state: &CounterState) -> El {
     ])
     .gap(tokens::SPACE_LG)
     .align(Align::Center)
+    // Claim the full content area and center the small demo
+    // vertically, so the counter sits in the middle of the panel
+    // instead of pinned to the top.
+    .height(Size::Fill(1.0))
+    .justify(Justify::Center)
 }
 
 fn counter_on_event(state: &mut CounterState, e: UiEvent) {
@@ -405,7 +410,9 @@ fn palette_view(state: &PaletteState) -> El {
     column([
         h2("Animated palette"),
         text("Cards spring up on tap; status fades on change.").muted(),
-        row(swatches).gap(tokens::SPACE_MD),
+        // Hug the swatch row so the parent column's `align(Center)`
+        // can actually center it; same gotcha as `counter_view`.
+        row(swatches).gap(tokens::SPACE_MD).width(Size::Hug),
         text(status)
             .key("palette-status")
             .center_text()
@@ -414,6 +421,8 @@ fn palette_view(state: &PaletteState) -> El {
     ])
     .gap(tokens::SPACE_LG)
     .align(Align::Center)
+    .height(Size::Fill(1.0))
+    .justify(Justify::Center)
 }
 
 fn palette_on_event(state: &mut PaletteState, e: UiEvent) {

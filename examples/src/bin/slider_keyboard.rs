@@ -41,6 +41,7 @@ impl App for VolumeDemo {
         .gap(tokens::SPACE_MD)
         .padding(tokens::SPACE_XL)
         .align(Align::Center)
+        .justify(Justify::Center)
     }
 
     fn on_event(&mut self, event: UiEvent) {

@@ -48,11 +48,13 @@ impl App for Demo {
                     .ghost()
                     .tooltip("Application preferences"),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(tokens::SPACE_MD)
+            .width(Size::Hug),
         ])
         .gap(tokens::SPACE_MD)
         .padding(tokens::SPACE_XL)
         .align(Align::Center)
+        .justify(Justify::Center)
     }
 
     fn on_event(&mut self, event: UiEvent) {

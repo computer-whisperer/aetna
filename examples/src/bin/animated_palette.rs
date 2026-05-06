@@ -88,7 +88,10 @@ impl App for Palette {
         column([
             h2("Animated palette"),
             text("Cards spring up on tap; status fades on change.").muted(),
-            row(swatches).gap(tokens::SPACE_MD),
+            // `.width(Size::Hug)` so the parent column's `align(Center)`
+            // can actually center the row — a Fill-width row would
+            // claim the full content width and silently neutralize it.
+            row(swatches).gap(tokens::SPACE_MD).width(Size::Hug),
             // The status line cross-fades by easing its opacity to 1
             // each rebuild — when `self.selected` changes, the build
             // produces a different text node; opacity 0 → 1 eases in.
@@ -101,6 +104,7 @@ impl App for Palette {
         .gap(tokens::SPACE_LG)
         .padding(tokens::SPACE_XL)
         .align(Align::Center)
+        .justify(Justify::Center)
     }
 
     fn on_event(&mut self, event: UiEvent) {

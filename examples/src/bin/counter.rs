@@ -60,6 +60,7 @@ impl App for Counter {
         .gap(tokens::SPACE_LG)
         .padding(tokens::SPACE_XL)
         .align(Align::Center)
+        .justify(Justify::Center)
     }
 
     fn on_event(&mut self, event: UiEvent) {
