@@ -268,7 +268,10 @@ mod tests {
         let item = radio_item("theme", "dark", "Dark", false);
         let indicator = &item.children[0];
         assert!(indicator.animate.is_some(), "ring eases stroke");
-        assert!(indicator.children[0].animate.is_some(), "dot eases opacity/scale");
+        assert!(
+            indicator.children[0].animate.is_some(),
+            "dot eases opacity/scale"
+        );
     }
 
     #[test]
@@ -276,7 +279,11 @@ mod tests {
         let g = radio_group(
             "theme",
             &"dark",
-            [("system", "Match system"), ("light", "Light"), ("dark", "Dark")],
+            [
+                ("system", "Match system"),
+                ("light", "Light"),
+                ("dark", "Dark"),
+            ],
         );
         assert_eq!(g.key.as_deref(), Some("theme"));
         assert_eq!(g.children.len(), 3);
@@ -346,12 +353,9 @@ mod tests {
         assert_eq!(theme, "dark");
 
         // Unrelated event leaves state alone.
-        assert!(!apply_event(
-            &mut theme,
-            &click("save"),
-            "theme",
-            |s| Some(s.to_string()),
-        ));
+        assert!(!apply_event(&mut theme, &click("save"), "theme", |s| Some(
+            s.to_string()
+        ),));
         assert_eq!(theme, "dark");
     }
 

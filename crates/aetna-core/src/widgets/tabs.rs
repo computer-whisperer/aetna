@@ -187,7 +187,11 @@ pub fn tab_trigger(
     // adding `.animate(SPRING_QUICK)` after them eases all three
     // between rebuilds, so switching tabs cross-fades the active
     // surface instead of snapping.
-    let styled = if selected { base.current() } else { base.ghost() };
+    let styled = if selected {
+        base.current()
+    } else {
+        base.ghost()
+    };
     styled.animate(Timing::SPRING_QUICK)
 }
 
@@ -204,7 +208,11 @@ pub fn tab_trigger(
 /// `{key}:tab:{value}`. Apps fold those back into their value field
 /// with [`apply_event`].
 #[track_caller]
-pub fn tabs_list<I, V, L>(key: impl Into<String>, current: &impl std::fmt::Display, options: I) -> El
+pub fn tabs_list<I, V, L>(
+    key: impl Into<String>,
+    current: &impl std::fmt::Display,
+    options: I,
+) -> El
 where
     I: IntoIterator<Item = (V, L)>,
     V: std::fmt::Display,
@@ -255,11 +263,11 @@ mod tests {
     fn tab_option_key_matches_widget_format() {
         // Apps decoding routed events should use the same helper to
         // avoid format drift.
-        assert_eq!(tab_option_key("settings", &"account"), "settings:tab:account");
         assert_eq!(
-            tab_option_key("dashboard:7", &42u32),
-            "dashboard:7:tab:42"
+            tab_option_key("settings", &"account"),
+            "settings:tab:account"
         );
+        assert_eq!(tab_option_key("dashboard:7", &42u32), "dashboard:7:tab:42");
     }
 
     #[test]
@@ -296,11 +304,8 @@ mod tests {
         assert_eq!(list.key.as_deref(), Some("settings"));
         assert_eq!(list.children.len(), 3);
 
-        let [account, appearance, advanced] = [
-            &list.children[0],
-            &list.children[1],
-            &list.children[2],
-        ];
+        let [account, appearance, advanced] =
+            [&list.children[0], &list.children[1], &list.children[2]];
         // Per-trigger routed keys.
         assert_eq!(account.key.as_deref(), Some("settings:tab:account"));
         assert_eq!(appearance.key.as_deref(), Some("settings:tab:appearance"));
@@ -318,7 +323,11 @@ mod tests {
         // Mirrors the select_option_key Display contract: an `enum` or
         // `u32` value can drive the comparison as long as it formats
         // the same way as the option-list values.
-        let list = tabs_list("page", &7u32, [(0u32, "Zero"), (7u32, "Seven"), (42u32, "Forty-two")]);
+        let list = tabs_list(
+            "page",
+            &7u32,
+            [(0u32, "Zero"), (7u32, "Seven"), (42u32, "Forty-two")],
+        );
         let [zero, seven, fortytwo] = [&list.children[0], &list.children[1], &list.children[2]];
         assert_ne!(zero.surface_role, SurfaceRole::Current);
         assert_eq!(seven.surface_role, SurfaceRole::Current);
@@ -422,15 +431,27 @@ mod tests {
         // Without `.animate()` on the trigger, `.current()` →
         // `.ghost()` (and back) snaps fill/text_color on every
         // rebuild, which reads as a hard cut between tabs.
-        assert!(tab_trigger("settings", "account", "Account", true).animate.is_some());
-        assert!(tab_trigger("settings", "account", "Account", false).animate.is_some());
+        assert!(
+            tab_trigger("settings", "account", "Account", true)
+                .animate
+                .is_some()
+        );
+        assert!(
+            tab_trigger("settings", "account", "Account", false)
+                .animate
+                .is_some()
+        );
     }
 
     #[test]
     fn tabs_list_paints_a_segmented_pill_around_the_triggers() {
         // The row carries the muted pill background, so the active
         // trigger's raised surface visually nests inside it.
-        let list = tabs_list("settings", &"account", [("account", "Account"), ("settings", "Settings")]);
+        let list = tabs_list(
+            "settings",
+            &"account",
+            [("account", "Account"), ("settings", "Settings")],
+        );
         assert_eq!(list.fill, Some(tokens::BG_MUTED));
         assert_eq!(list.radius, tokens::RADIUS_MD);
         // Row axis with a small gap so triggers are visually distinct.
@@ -458,7 +479,9 @@ mod tests {
             modifiers: KeyModifiers::default(),
         };
         let mut tab = String::from("account");
-        assert!(apply_event(&mut tab, &ev, "settings", |s| Some(s.to_string())));
+        assert!(apply_event(&mut tab, &ev, "settings", |s| Some(
+            s.to_string()
+        )));
         assert_eq!(tab, "advanced");
     }
 }

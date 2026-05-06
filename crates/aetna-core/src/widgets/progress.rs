@@ -83,7 +83,11 @@ mod tests {
         let p = progress(0.5, tokens::PRIMARY);
         assert_eq!(p.children.len(), 2);
         assert_eq!(p.children[0].fill, Some(tokens::BG_MUTED), "track is muted");
-        assert_eq!(p.children[1].fill, Some(tokens::PRIMARY), "fill uses caller's color");
+        assert_eq!(
+            p.children[1].fill,
+            Some(tokens::PRIMARY),
+            "fill uses caller's color"
+        );
         // Both rounded pills so the bar reads as one piece.
         assert_eq!(p.children[0].radius, tokens::RADIUS_PILL);
         assert_eq!(p.children[1].radius, tokens::RADIUS_PILL);

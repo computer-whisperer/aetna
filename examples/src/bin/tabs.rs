@@ -30,9 +30,7 @@ impl App for Demo {
             "advanced" => advanced_panel(),
             // Defensive default in case the value is somehow stale —
             // don't render an empty page silently.
-            other => column([
-                text(format!("Unknown tab: {other}")).muted(),
-            ]),
+            other => column([text(format!("Unknown tab: {other}")).muted()]),
         };
 
         column([
@@ -53,9 +51,7 @@ impl App for Demo {
     }
 
     fn on_event(&mut self, event: UiEvent) {
-        tabs::apply_event(&mut self.tab, &event, "settings", |s| {
-            Some(s.to_string())
-        });
+        tabs::apply_event(&mut self.tab, &event, "settings", |s| Some(s.to_string()));
     }
 }
 

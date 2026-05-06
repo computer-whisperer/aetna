@@ -815,12 +815,9 @@ fn forms_view(state: &FormsState) -> El {
 fn checkbox_row(key: &str, value: bool, label: &str, description: &str) -> El {
     row([
         checkbox(value).key(key.to_string()),
-        column([
-            text(label).label(),
-            text(description).muted().small(),
-        ])
-        .gap(tokens::SPACE_XS)
-        .width(Size::Fill(1.0)),
+        column([text(label).label(), text(description).muted().small()])
+            .gap(tokens::SPACE_XS)
+            .width(Size::Fill(1.0)),
     ])
     .gap(tokens::SPACE_MD)
     .align(Align::Center)
@@ -831,12 +828,9 @@ fn checkbox_row(key: &str, value: bool, label: &str, description: &str) -> El {
 /// convention for boolean toggles inside a settings list).
 fn switch_row(key: &str, value: bool, label: &str, description: &str) -> El {
     row([
-        column([
-            text(label).label(),
-            text(description).muted().small(),
-        ])
-        .gap(tokens::SPACE_XS)
-        .width(Size::Fill(1.0)),
+        column([text(label).label(), text(description).muted().small()])
+            .gap(tokens::SPACE_XS)
+            .width(Size::Fill(1.0)),
         switch(value).key(key.to_string()),
     ])
     .gap(tokens::SPACE_MD)
@@ -847,15 +841,16 @@ fn forms_on_event(state: &mut FormsState, e: UiEvent) {
     // Radio group folds first; its routed-key shape (`forms-theme:radio:*`)
     // wouldn't match the bool checkboxes/switches anyway, but folding it
     // up front keeps the bool dispatch flat.
-    if radio::apply_event(&mut state.theme, &e, "forms-theme", |s| {
-        Some(s.to_string())
-    }) {
+    if radio::apply_event(&mut state.theme, &e, "forms-theme", |s| Some(s.to_string())) {
         return;
     }
     // Checkboxes and switches share `apply_event(&mut bool, ...)`, so
     // a single dispatch table covers both.
-    let _ = checkbox::apply_event(&mut state.push_notifications, &e, "forms-push-notifications")
-        || checkbox::apply_event(&mut state.email_digest, &e, "forms-email-digest")
+    let _ = checkbox::apply_event(
+        &mut state.push_notifications,
+        &e,
+        "forms-push-notifications",
+    ) || checkbox::apply_event(&mut state.email_digest, &e, "forms-email-digest")
         || checkbox::apply_event(&mut state.weekly_summary, &e, "forms-weekly-summary")
         || switch::apply_event(&mut state.auto_lock, &e, "forms-auto-lock")
         || switch::apply_event(&mut state.share_usage, &e, "forms-share-usage");

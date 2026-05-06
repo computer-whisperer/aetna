@@ -51,9 +51,7 @@ pub use crate::widgets::popover::{
     Anchor, Side, anchor_rect, context_menu, dropdown, menu_item, popover, popover_panel,
 };
 pub use crate::widgets::progress::{self, progress};
-pub use crate::widgets::radio::{
-    self, RadioAction, radio_group, radio_item, radio_option_key,
-};
+pub use crate::widgets::radio::{self, RadioAction, radio_group, radio_item, radio_option_key};
 pub use crate::widgets::select::{
     self, SelectAction, select_menu, select_option_key, select_trigger,
 };
