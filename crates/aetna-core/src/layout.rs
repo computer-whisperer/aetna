@@ -549,7 +549,17 @@ fn child_intrinsic(
 }
 
 fn overlay_rect(c: &El, parent: Rect, align: Align, justify: Justify) -> Rect {
-    let (iw, ih) = intrinsic(c);
+    // Wrap-text height depends on width, so constrain the intrinsic
+    // measurement to the width the child will actually be laid out at
+    // — same shape as `child_intrinsic` does for column/row children.
+    // Without this, a Fixed-width modal with a wrappable paragraph
+    // measures as a single-line block and the modal's Hug height ends
+    // up shorter than the actual content needs, eating bottom padding.
+    let constrained_width = match c.width {
+        Size::Fixed(v) => Some(v),
+        Size::Fill(_) | Size::Hug => Some(parent.w),
+    };
+    let (iw, ih) = intrinsic_constrained(c, constrained_width);
     let w = match c.width {
         Size::Fixed(v) => v,
         Size::Hug => iw.min(parent.w),
@@ -1467,6 +1477,68 @@ mod tests {
             child_rect.h > crate::tokens::FONT_BASE * 1.4,
             "expected multiline paragraph height, got {}",
             child_rect.h
+        );
+    }
+
+    #[test]
+    fn overlay_child_with_wrapped_text_measures_against_its_resolved_width() {
+        // Regression: overlay_rect used to call `intrinsic(c)` with no
+        // width hint, so a Fixed-width modal containing a wrappable
+        // paragraph measured the paragraph as a single line — leaving
+        // the modal's Hug height short by the wrapped lines and
+        // crowding the buttons against the bottom edge of the panel
+        // (rumble cert-pending modal showed this).
+        //
+        // The fix: pass the child's resolved width as the available
+        // width for intrinsic measurement, mirroring what column/row
+        // already do.
+        const PANEL_W: f32 = 240.0;
+        const PADDING: f32 = 18.0;
+        const GAP: f32 = 12.0;
+
+        let panel = column([
+            crate::paragraph(
+                "A long enough warning paragraph that it has to wrap onto a second line \
+                 inside this narrow panel.",
+            ),
+            crate::widgets::button::button("OK").key("ok"),
+        ])
+        .width(Size::Fixed(PANEL_W))
+        .height(Size::Hug)
+        .padding(Sides::all(PADDING))
+        .gap(GAP)
+        .align(Align::Stretch);
+
+        let mut root = crate::stack([panel])
+            .width(Size::Fill(1.0))
+            .height(Size::Fill(1.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 800.0, 600.0));
+
+        let panel_rect = state.rect(&root.children[0].computed_id);
+        assert_eq!(panel_rect.w, PANEL_W, "panel keeps its Fixed width");
+
+        let para_rect = state.rect(&root.children[0].children[0].computed_id);
+        let button_rect = state.rect(&root.children[0].children[1].computed_id);
+
+        // Paragraph wrapped to ≥ 2 lines (exact line count depends on
+        // glyph metrics; just guard against the single-line bug).
+        assert!(
+            para_rect.h > crate::tokens::FONT_BASE * 1.4,
+            "paragraph should wrap to multiple lines inside the Fixed-width panel; \
+             got h={}",
+            para_rect.h
+        );
+
+        // Panel height must accommodate top padding + paragraph +
+        // gap + button + bottom padding. The bug was that the panel
+        // came out exactly `padding + gap + 1-line-paragraph + button`
+        // — short by the second wrap line — and the button overshot
+        // the inner area, leaving zero pixels of bottom padding.
+        let bottom_padding = (panel_rect.y + panel_rect.h) - (button_rect.y + button_rect.h);
+        assert!(
+            (bottom_padding - PADDING).abs() < 0.5,
+            "expected {PADDING}px between button and panel bottom, got {bottom_padding}",
         );
     }
 }
