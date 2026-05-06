@@ -66,6 +66,7 @@ use crate::shader::ShaderHandle;
 use crate::state::{AnimationMode, UiState};
 use crate::text::atlas::RunStyle;
 use crate::theme::Theme;
+use crate::toast;
 use crate::tooltip;
 use crate::tree::{Color, El, FontWeight, Rect, TextWrap};
 
@@ -380,15 +381,24 @@ impl RunnerCore {
                 if let (Some(p), Some(h)) = (pressed, hit)
                     && p.node_id == h.node_id
                 {
-                    out.push(UiEvent {
-                        key: Some(p.key.clone()),
-                        target: Some(p),
-                        pointer: Some((x, y)),
-                        key_press: None,
-                        text: None,
-                        modifiers,
-                        kind: UiEventKind::Click,
-                    });
+                    // Toast dismiss buttons are runtime-managed —
+                    // the click drops the matching toast from the
+                    // queue and is *not* surfaced to the app, so
+                    // `on_event` doesn't have to know about toast
+                    // bookkeeping.
+                    if let Some(id) = toast::parse_dismiss_key(&p.key) {
+                        self.ui_state.dismiss_toast(id);
+                    } else {
+                        out.push(UiEvent {
+                            key: Some(p.key.clone()),
+                            target: Some(p),
+                            pointer: Some((x, y)),
+                            key_press: None,
+                            text: None,
+                            modifiers,
+                            kind: UiEventKind::Click,
+                        });
+                    }
                 }
             }
             PointerButton::Secondary | PointerButton::Middle => {
@@ -531,6 +541,25 @@ impl RunnerCore {
         self.ui_state.set_hotkeys(hotkeys);
     }
 
+    /// Queue toast specs onto the runtime's toast stack. Each spec
+    /// is stamped with a monotonic id and `expires_at = now + ttl`;
+    /// the next `prepare_layout` call drops expired entries and
+    /// synthesizes a `toast_stack` floating layer over the rest.
+    /// Hosts wire this from `App::drain_toasts` once per frame.
+    pub fn push_toasts(&mut self, specs: Vec<crate::toast::ToastSpec>) {
+        let now = Instant::now();
+        for spec in specs {
+            self.ui_state.push_toast(spec, now);
+        }
+    }
+
+    /// Programmatically dismiss a single toast by id. Mostly useful
+    /// when the app wants to cancel a long-TTL toast in response to
+    /// some external event (e.g., the connection reconnected).
+    pub fn dismiss_toast(&mut self, id: u64) {
+        self.ui_state.dismiss_toast(id);
+    }
+
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {
         self.ui_state.set_animation_mode(mode);
     }
@@ -556,20 +585,22 @@ impl RunnerCore {
         timings: &mut PrepareTimings,
     ) -> (Vec<DrawOp>, bool) {
         let t0 = Instant::now();
-        // Tooltip synthesis runs before the real layout: assign ids
-        // first so we can find the hovered node by computed_id, then
-        // append a tooltip layer if one is due. The subsequent
-        // `layout::layout` call re-assigns (idempotently — same path
-        // shapes produce the same ids) and lays out the appended
-        // layer alongside everything else.
+        // Tooltip + toast synthesis run before the real layout: assign
+        // ids first so the tooltip pass can resolve the hover anchor
+        // by computed_id, then append the runtime-managed floating
+        // layers. The subsequent `layout::layout` call re-assigns
+        // (idempotently — same path shapes produce the same ids) and
+        // lays out the appended layers alongside everything else.
         layout::assign_ids(root);
         let tooltip_pending = tooltip::synthesize_tooltip(root, &self.ui_state, t0);
+        let toast_pending = toast::synthesize_toasts(root, &mut self.ui_state, t0);
         layout::layout(root, &mut self.ui_state, viewport);
         self.ui_state.sync_focus_order(root);
         focus::sync_popover_focus(root, &mut self.ui_state);
         self.ui_state.apply_to_state();
-        let needs_redraw =
-            self.ui_state.tick_visual_animations(root, Instant::now()) || tooltip_pending;
+        let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now())
+            || tooltip_pending
+            || toast_pending;
         self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
             (
                 (viewport.w * scale_factor).ceil().max(1.0) as u32,
@@ -1011,6 +1042,54 @@ mod tests {
         assert_eq!(drag.kind, UiEventKind::Drag);
         assert_eq!(drag.target.as_ref().map(|t| t.key.as_str()), Some("btn"));
         assert_eq!(drag.pointer, Some((cx + 30.0, cy)));
+    }
+
+    #[test]
+    fn toast_dismiss_click_removes_toast_and_suppresses_click_event() {
+        use crate::toast::ToastSpec;
+        use crate::tree::Size;
+        // Build a fresh runner, queue a toast, prepare once so the
+        // toast layer is laid out, then synthesize a click on its
+        // dismiss button.
+        let mut core = RunnerCore::new();
+        core.ui_state
+            .push_toast(ToastSpec::success("hi"), Instant::now());
+        let toast_id = core.ui_state.toasts[0].id;
+
+        // Build & lay out a tree with the toast layer appended.
+        let mut tree: El = crate::column(std::iter::empty::<El>())
+            .width(Size::Fill(1.0))
+            .height(Size::Fill(1.0));
+        crate::layout::assign_ids(&mut tree);
+        let _ = crate::toast::synthesize_toasts(&mut tree, &mut core.ui_state, Instant::now());
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 800.0, 600.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+
+        let dismiss_key = format!("toast-dismiss-{toast_id}");
+        let dismiss_rect = core.rect_of_key(&dismiss_key).expect("dismiss button");
+        let cx = dismiss_rect.x + dismiss_rect.w * 0.5;
+        let cy = dismiss_rect.y + dismiss_rect.h * 0.5;
+
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let events = core.pointer_up(cx, cy, PointerButton::Primary);
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
+        // PointerUp still fires (kept generic so drag-aware widgets
+        // observe drag-end); Click is intercepted by the toast
+        // bookkeeping.
+        assert!(
+            !kinds.contains(&UiEventKind::Click),
+            "Click on toast-dismiss should not be surfaced: {kinds:?}",
+        );
+        assert!(
+            core.ui_state.toasts.iter().all(|t| t.id != toast_id),
+            "toast {toast_id} should be dropped after dismiss-click",
+        );
     }
 
     #[test]

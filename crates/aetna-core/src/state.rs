@@ -196,6 +196,17 @@ pub struct UiState {
     /// `pointer_up`. Pre-empts normal hit-test so thumb drags don't
     /// also fire app-level pointer events.
     pub(crate) thumb_drag: Option<ThumbDrag>,
+    /// Currently visible toast queue. Each `prepare_layout` call drains
+    /// new specs from `App::drain_toasts`, stamps them with monotonic
+    /// `id`s + `expires_at = now + ttl`, then `synthesize_toasts` drops
+    /// expired entries and synthesizes a `toast_stack` layer covering
+    /// the rest. Click on a `toast-dismiss-{id}` button removes the
+    /// matching entry without surfacing an app-level Click event.
+    pub(crate) toasts: Vec<crate::toast::Toast>,
+    /// Monotonic id for the next toast pushed onto `toasts`. Used as
+    /// the dismiss-button suffix so each toast has a unique key in
+    /// the synthesized layer.
+    pub(crate) next_toast_id: u64,
     /// App-level hotkey registry; the host snapshots `App::hotkeys()`
     /// each frame and stores it here. Matched in `key_down` ahead of
     /// focus activation.
@@ -376,6 +387,36 @@ impl UiState {
 
     pub fn focus_prev(&mut self) -> Option<&UiTarget> {
         self.move_focus(-1)
+    }
+
+    /// Queue a toast for the next frame. Stamps an `id` (monotonic)
+    /// and computes the `expires_at` deadline from `now + spec.ttl`.
+    /// The runtime re-walks the queue each frame and drops expired
+    /// entries before synthesizing the toast layer.
+    pub fn push_toast(&mut self, spec: crate::toast::ToastSpec, now: Instant) {
+        let id = self.next_toast_id;
+        self.next_toast_id = self.next_toast_id.wrapping_add(1);
+        self.toasts.push(crate::toast::Toast {
+            id,
+            level: spec.level,
+            message: spec.message,
+            expires_at: now + spec.ttl,
+        });
+    }
+
+    /// Remove the toast with the given id. Used by the runtime when
+    /// the user clicks a `toast-dismiss-{id}` button; apps that want
+    /// to programmatically cancel a toast can call this directly via
+    /// the `Runner::dismiss_toast` host accessor.
+    pub fn dismiss_toast(&mut self, id: u64) {
+        self.toasts.retain(|t| t.id != id);
+    }
+
+    /// Read-only view of the current toast queue (post-expiry).
+    /// Used by hosts that want to drive cursor / accessibility state
+    /// from the visible stack.
+    pub fn toasts(&self) -> &[crate::toast::Toast] {
+        &self.toasts
     }
 
     /// Iterate `(scroll_node_id, track_rect)` for every scrollable

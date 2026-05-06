@@ -661,6 +661,22 @@ impl Runner {
         self.core.set_hotkeys(hotkeys);
     }
 
+    /// Queue toast specs onto the runtime's toast stack. Hosts call
+    /// this once per frame with `app.drain_toasts()`. Each spec is
+    /// stamped with a monotonic id and an `expires_at` deadline
+    /// (`now + ttl`); the next `prepare` call drops expired entries
+    /// and synthesizes a `toast_stack` floating layer over the rest.
+    pub fn push_toasts(&mut self, specs: Vec<aetna_core::toast::ToastSpec>) {
+        self.core.push_toasts(specs);
+    }
+
+    /// Programmatically dismiss a toast by id. Useful for cancelling
+    /// long-TTL toasts when an external condition resolves (e.g.,
+    /// "reconnecting…" turning into "connected").
+    pub fn dismiss_toast(&mut self, id: u64) {
+        self.core.dismiss_toast(id);
+    }
+
     /// Switch animation pacing. Default is [`AnimationMode::Live`].
     /// Headless render binaries should call this with
     /// [`AnimationMode::Settled`] so a single-frame snapshot reflects

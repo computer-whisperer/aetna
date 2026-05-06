@@ -418,6 +418,20 @@ pub trait App {
         Vec::new()
     }
 
+    /// Drain pending toast notifications produced since the last
+    /// frame. The runtime calls this once per `prepare_layout`,
+    /// stamps each spec with a monotonic id and `expires_at = now +
+    /// ttl`, queues it onto [`crate::state::UiState::toasts`], and
+    /// synthesizes a `toast_stack` layer at the El root so the
+    /// rendered tree mirrors the visible state. Apps typically
+    /// accumulate specs in a `Vec<ToastSpec>` field from event
+    /// handlers, then `mem::take` it here.
+    ///
+    /// Default: no toasts.
+    fn drain_toasts(&mut self) -> Vec<crate::toast::ToastSpec> {
+        Vec::new()
+    }
+
     /// Custom shaders this app needs registered. Each tuple is
     /// `(name, wgsl_source, samples_backdrop)`. The host runner
     /// registers them once at startup via

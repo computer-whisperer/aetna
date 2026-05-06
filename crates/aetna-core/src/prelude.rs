@@ -36,6 +36,7 @@ pub use crate::text::metrics::{
     line_width, measure_text, selection_rects, wrap_lines,
 };
 pub use crate::theme::Theme;
+pub use crate::toast::{Toast, ToastLevel, ToastSpec};
 pub use crate::tokens;
 pub use crate::tree::{
     Align, Axis, Color, El, FontWeight, IconName, InteractionState, Justify, Kind, Rect, Sides,

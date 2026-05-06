@@ -116,6 +116,10 @@ impl<A: App> App for BasicApp<A> {
         self.0.hotkeys()
     }
 
+    fn drain_toasts(&mut self) -> Vec<aetna_core::toast::ToastSpec> {
+        self.0.drain_toasts()
+    }
+
     fn shaders(&self) -> Vec<aetna_core::AppShader> {
         self.0.shaders()
     }
@@ -478,6 +482,11 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         // reflects current state (apps can return different
                         // hotkeys per mode, e.g. `j/k` only in list view).
                         gfx.renderer.set_hotkeys(self.app.hotkeys());
+                        // Drain any toasts the app accumulated since
+                        // the last frame and queue them onto the
+                        // runtime's toast stack. The synthesize pass
+                        // inside `prepare` then renders the layer.
+                        gfx.renderer.push_toasts(self.app.drain_toasts());
                         // Window is configured at physical size; layout works
                         // in logical pixels so divide by the OS-reported scale.
                         let scale_factor = gfx.window.scale_factor() as f32;

@@ -124,6 +124,7 @@ pub mod style;
 pub mod svg_icon;
 pub mod text;
 pub mod theme;
+pub mod toast;
 pub mod tokens;
 pub mod tooltip;
 pub mod tree;

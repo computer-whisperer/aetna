@@ -218,8 +218,14 @@ fn walk(
     // whole point — so don't flag children of a scroll viewport.
     // Inlines parents intentionally zero-size their children (the
     // paragraph paints them as one AttributedText), so per-child rect
-    // checks would always fire — suppress.
-    let suppress_overflow = n.scrollable || matches!(n.kind, Kind::Inlines);
+    // checks would always fire — suppress. The runtime-synthesized
+    // toast_stack uses a custom layout that pins cards to the
+    // viewport regardless of its own (parent-allocated) rect, so its
+    // children naturally extend past the layer's bounds — also
+    // suppress.
+    let suppress_overflow = n.scrollable
+        || matches!(n.kind, Kind::Inlines)
+        || matches!(n.kind, Kind::Custom("toast_stack"));
     for c in &n.children {
         let c_rect = ui_state.rect(&c.computed_id);
         if !suppress_overflow && !rect_contains(computed, c_rect, 0.5) {
