@@ -231,16 +231,15 @@ impl RunnerCore {
         let mut out = Vec::new();
 
         // Selection drag-extend takes precedence over the focusable
-        // Drag emission. Cross-leaf in P1b: if the pointer hits a
-        // different selectable leaf, head migrates to that leaf.
-        // Otherwise we project onto the anchor leaf (head pins to the
-        // edge of the original leaf when the pointer is in
-        // non-selectable space).
+        // Drag emission. Cross-leaf: if the pointer hits a selectable
+        // leaf, head migrates there. Otherwise we project the pointer
+        // onto the closest selectable leaf in document order so that
+        // dragging *past* the last leaf extends to its end (rather
+        // than snapping the head home to the anchor leaf).
         if let Some(drag) = self.ui_state.selection_drag.clone()
             && let Some(tree) = self.last_tree.as_ref()
         {
-            let head_point = hit_test::selection_point_at(tree, &self.ui_state, (x, y))
-                .or_else(|| byte_in_anchor_leaf(tree, &self.ui_state, &drag, (x, y)))
+            let head_point = head_for_drag(tree, &self.ui_state, (x, y))
                 .unwrap_or_else(|| drag.anchor.clone());
             let new_sel = crate::selection::Selection {
                 range: Some(crate::selection::SelectionRange {
@@ -1021,40 +1020,67 @@ fn selection_event(
     }
 }
 
-/// During a selection drag, when the pointer leaves the anchor leaf's
-/// rect (P1a clamps drag to the anchor's leaf), pin the head to the
-/// nearest edge of the leaf. Returns the byte offset corresponding to
-/// `(x, y)` projected onto the anchor leaf's painted rect.
-fn byte_in_anchor_leaf(
+/// Resolve the head's [`SelectionPoint`] for the current pointer
+/// position during a drag. Browser-style projection rules:
+///
+/// - If the pointer hits a selectable leaf, head goes there.
+/// - Otherwise, head goes to the closest selectable leaf in document
+///   order, with `(x, y)` projected onto that leaf's vertical extent.
+///   Above all leaves → first leaf at byte 0; below all → last leaf
+///   at end; in the gap between two adjacent leaves → whichever is
+///   nearer in y.
+/// - Horizontally outside the chosen leaf's text → snap to the
+///   leaf's left edge (byte 0) or right edge (`text.len()`).
+fn head_for_drag(
     root: &El,
     ui_state: &UiState,
-    drag: &crate::state::SelectionDrag,
     point: (f32, f32),
 ) -> Option<crate::selection::SelectionPoint> {
-    let target = ui_state
-        .selection_order
-        .iter()
-        .find(|t| t.node_id == drag.anchor_node_id)?;
-    let rect = target.rect;
-    // Clamp the y onto the leaf so a drag below or above still hits;
-    // x is left raw so hit_text can place the byte at start / end of
-    // the line that the y projects to.
-    let cy = point.1.clamp(rect.y, rect.y + rect.h - 1.0);
-    let cx = point.0;
-    let resolved =
-        hit_test::selection_point_at(root, ui_state, (cx, cy)).filter(|p| p.key == drag.anchor.key);
-    if resolved.is_some() {
-        return resolved;
+    if let Some(p) = hit_test::selection_point_at(root, ui_state, point) {
+        return Some(p);
     }
-    // Pointer is well outside the anchor leaf horizontally. Pick the
-    // edge of the leaf the pointer is on: x < leaf.x → byte 0, else
-    // byte = leaf.text.len().
-    let leaf_len = find_text_len(root, &drag.anchor_node_id).unwrap_or(0);
-    let byte = if point.0 < rect.x { 0 } else { leaf_len };
+
+    let order = &ui_state.selection_order;
+    if order.is_empty() {
+        return None;
+    }
+    // Prefer a leaf whose vertical extent contains the pointer's y;
+    // otherwise pick the y-closest leaf. min_by visits in document
+    // order so ties (multiple leaves at the same y-distance) resolve
+    // to the earliest one.
+    let target = order
+        .iter()
+        .find(|t| point.1 >= t.rect.y && point.1 < t.rect.y + t.rect.h)
+        .or_else(|| {
+            order.iter().min_by(|a, b| {
+                let da = y_distance(a.rect, point.1);
+                let db = y_distance(b.rect, point.1);
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })?;
+    let target_rect = target.rect;
+    let cy = point.1.clamp(target_rect.y, target_rect.y + target_rect.h - 1.0);
+    if let Some(p) = hit_test::selection_point_at(root, ui_state, (point.0, cy)) {
+        return Some(p);
+    }
+    // Couldn't hit-test (likely because the pointer's x is outside
+    // the leaf's rendered text width). Snap to the nearest edge.
+    let leaf_len = find_text_len(root, &target.node_id).unwrap_or(0);
+    let byte = if point.0 < target_rect.x { 0 } else { leaf_len };
     Some(crate::selection::SelectionPoint {
-        key: drag.anchor.key.clone(),
+        key: target.key.clone(),
         byte,
     })
+}
+
+fn y_distance(rect: Rect, y: f32) -> f32 {
+    if y < rect.y {
+        rect.y - y
+    } else if y > rect.y + rect.h {
+        y - (rect.y + rect.h)
+    } else {
+        0.0
+    }
 }
 
 fn find_text_len(node: &El, id: &str) -> Option<usize> {
@@ -1416,6 +1442,38 @@ mod tests {
         assert!(
             !core.ui_state.current_selection.is_empty(),
             "selection itself should persist after pointer_up"
+        );
+    }
+
+    #[test]
+    fn drag_past_a_leaf_bottom_keeps_head_in_that_leaf_not_anchor() {
+        // Regression: a previous helper (`byte_in_anchor_leaf`)
+        // projected any out-of-leaf pointer back onto the anchor leaf.
+        // That meant moving the cursor below p2's bottom edge while
+        // dragging from p1 caused the head to snap home to p1 — the
+        // selection band visibly shrank back instead of extending.
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let p2 = core.rect_of_key("p2").expect("p2 rect");
+        // Anchor in p1.
+        core.pointer_down(p1.x + 4.0, p1.y + p1.h * 0.5, PointerButton::Primary);
+        // Drag into p2 first — head migrates.
+        core.pointer_moved(p2.x + 8.0, p2.y + p2.h * 0.5);
+        // Now move WELL BELOW p2's rect (well below all selectables).
+        // Head should remain in p2 (last leaf in this fixture is p2).
+        let events = core.pointer_moved(p2.x + 8.0, p2.y + p2.h + 200.0);
+        let sel = events
+            .iter()
+            .find(|e| e.kind == UiEventKind::SelectionChanged)
+            .map(|e| e.selection.as_ref().unwrap().clone())
+            // No SelectionChanged emitted means the value didn't move
+            // — read it back from the live UiState directly.
+            .unwrap_or_else(|| core.ui_state.current_selection.clone());
+        let r = sel.range.as_ref().expect("selection still active");
+        assert_eq!(r.anchor.key, "p1", "anchor unchanged");
+        assert_eq!(
+            r.head.key, "p2",
+            "head must stay in p2 even when pointer is below p2's rect"
         );
     }
 
