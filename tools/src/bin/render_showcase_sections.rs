@@ -60,6 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Section::Forms,
         Section::Split,
         Section::Glass,
+        Section::Toasts,
     ] {
         let msaa = MsaaTarget::new(&device, format, extent, sample_count);
         let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -88,8 +89,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
         }
 
+        // Toasts: simulate a click on each level button so the
+        // snapshot captures the floating stack instead of an empty
+        // viewport. Each click adds a ToastSpec to pending; the
+        // renderer's `push_toasts(app.drain_toasts())` call below
+        // hands them off to the runtime.
+        if matches!(section, Section::Toasts) {
+            for key in [
+                "toast-success",
+                "toast-warning",
+                "toast-error",
+                "toast-info",
+            ] {
+                app.on_event(aetna_core::UiEvent::synthetic_click(key));
+            }
+        }
+
         app.before_build();
         let mut tree = app.build();
+        renderer.push_toasts(app.drain_toasts());
         renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -169,6 +187,7 @@ fn section_slug(s: Section) -> &'static str {
         Section::Forms => "forms",
         Section::Split => "split",
         Section::Glass => "glass",
+        Section::Toasts => "toasts",
     }
 }
 

@@ -39,6 +39,7 @@ pub enum Section {
     Forms,
     Split,
     Glass,
+    Toasts,
 }
 
 impl Section {
@@ -52,6 +53,7 @@ impl Section {
             Section::Forms => "Forms",
             Section::Split => "Split",
             Section::Glass => "Glass",
+            Section::Toasts => "Toasts",
         }
     }
 
@@ -65,10 +67,11 @@ impl Section {
             Section::Forms => "nav-forms",
             Section::Split => "nav-split",
             Section::Glass => "nav-glass",
+            Section::Toasts => "nav-toasts",
         }
     }
 
-    const ALL: [Section; 8] = [
+    const ALL: [Section; 9] = [
         Section::Counter,
         Section::List,
         Section::Palette,
@@ -77,6 +80,7 @@ impl Section {
         Section::Forms,
         Section::Split,
         Section::Glass,
+        Section::Toasts,
     ];
 }
 
@@ -154,6 +158,18 @@ impl Default for SplitState {
 }
 
 #[derive(Default)]
+struct ToastsState {
+    /// Pending toasts the runtime should drain at the start of the
+    /// next frame. The view's buttons push to this vec; the runtime
+    /// auto-stamps each entry with an id + expiry and synthesizes the
+    /// floating layer.
+    pending: Vec<ToastSpec>,
+    /// Click counter — used so demo toasts have unique-looking
+    /// messages instead of all reading "Saved".
+    fires: u32,
+}
+
+#[derive(Default)]
 struct GlassState {
     /// Index into `GLASS_PRESETS` — cycles on the "Next preset"
     /// button so the same fixture exercises a few corners of the
@@ -181,6 +197,7 @@ pub struct Showcase {
     forms: FormsState,
     split: SplitState,
     glass: GlassState,
+    toasts: ToastsState,
 }
 
 impl Showcase {
@@ -230,7 +247,12 @@ impl App for Showcase {
             Section::Forms => forms_on_event(&mut self.forms, event),
             Section::Split => split_on_event(&mut self.split, event),
             Section::Glass => glass_on_event(&mut self.glass, event),
+            Section::Toasts => toasts_on_event(&mut self.toasts, event),
         }
+    }
+
+    fn drain_toasts(&mut self) -> Vec<ToastSpec> {
+        std::mem::take(&mut self.toasts.pending)
     }
 
     fn shaders(&self) -> Vec<AppShader> {
@@ -289,6 +311,7 @@ fn content(app: &Showcase) -> El {
                 .width(Size::Fill(1.0))
                 .height(Size::Fill(1.0));
         }
+        Section::Toasts => toasts_view(&app.toasts),
     };
     column([body])
         .padding(tokens::SPACE_XL)
@@ -1129,6 +1152,59 @@ fn glass_on_event(state: &mut GlassState, e: UiEvent) {
         Some("glass-drift") => state.drift = (state.drift + 1) % DRIFT_OFFSETS.len(),
         _ => {}
     }
+}
+
+// ---- Toasts section ----
+//
+// Demonstrates the runtime-managed toast stack. Each button click
+// pushes a `ToastSpec` of the matching level onto `state.pending`;
+// `App::drain_toasts` hands those over to the runtime, which stamps
+// each with an id + TTL and synthesizes the `toast_stack` floating
+// layer over the entire viewport. Click the X on any card to dismiss.
+
+fn toasts_view(state: &ToastsState) -> El {
+    column([
+        h2("Toasts"),
+        paragraph(
+            "Each button queues a toast onto state.pending; the runtime \
+             drains them via App::drain_toasts at the start of the next \
+             frame, stacks the cards at the bottom-right, and dismisses \
+             them on click or auto-expiry (4s default).",
+        )
+        .muted(),
+        row([
+            button("Success").key("toast-success").primary(),
+            button("Warning").key("toast-warning"),
+            button("Error").key("toast-error").destructive(),
+            button("Info").key("toast-info").ghost(),
+        ])
+        .gap(tokens::SPACE_SM),
+        text(format!(
+            "fired {} toast{} this session",
+            state.fires,
+            if state.fires == 1 { "" } else { "s" }
+        ))
+        .small()
+        .muted(),
+    ])
+    .gap(tokens::SPACE_LG)
+    .padding(tokens::SPACE_XL)
+    .align(Align::Start)
+}
+
+fn toasts_on_event(state: &mut ToastsState, e: UiEvent) {
+    if !matches!(e.kind, UiEventKind::Click | UiEventKind::Activate) {
+        return;
+    }
+    let spec = match e.route() {
+        Some("toast-success") => ToastSpec::success("Settings saved"),
+        Some("toast-warning") => ToastSpec::warning("Battery low — connect charger"),
+        Some("toast-error") => ToastSpec::error("Failed to reach update server"),
+        Some("toast-info") => ToastSpec::info("New version available"),
+        _ => return,
+    };
+    state.pending.push(spec);
+    state.fires += 1;
 }
 
 #[cfg(test)]
