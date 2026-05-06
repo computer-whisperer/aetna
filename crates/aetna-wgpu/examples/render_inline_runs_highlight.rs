@@ -243,16 +243,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     if green_pixels < 200 {
-        return Err(format!(
-            "expected diff-add green pixels; got only {green_pixels}"
-        )
-        .into());
+        return Err(format!("expected diff-add green pixels; got only {green_pixels}").into());
     }
     if red_pixels < 200 {
-        return Err(format!(
-            "expected diff-remove red pixels; got only {red_pixels}"
-        )
-        .into());
+        return Err(format!("expected diff-remove red pixels; got only {red_pixels}").into());
     }
     Ok(())
 }

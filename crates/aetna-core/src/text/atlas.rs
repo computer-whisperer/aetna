@@ -1105,19 +1105,17 @@ mod tests {
         let mut atlas = GlyphAtlas::new();
         let yellow = Color::rgb(220, 200, 60);
         let runs = [
-            ("plain ", RunStyle::new(FontWeight::Regular, Color::rgb(0, 0, 0))),
+            (
+                "plain ",
+                RunStyle::new(FontWeight::Regular, Color::rgb(0, 0, 0)),
+            ),
             (
                 "marked",
                 RunStyle::new(FontWeight::Regular, Color::rgb(0, 0, 0)).with_bg(yellow),
             ),
         ];
-        let shaped = atlas.shape_and_rasterize_runs(
-            &runs,
-            16.0,
-            TextWrap::NoWrap,
-            TextAnchor::Start,
-            None,
-        );
+        let shaped =
+            atlas.shape_and_rasterize_runs(&runs, 16.0, TextWrap::NoWrap, TextAnchor::Start, None);
         assert_eq!(
             shaped.highlights.len(),
             1,

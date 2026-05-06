@@ -141,6 +141,7 @@ fn build_row(c: &FakeCommit, idx: usize, selected: bool) -> El {
     .align(Align::Center)
 }
 
+#[rustfmt::skip]
 const COMMITS: &[FakeCommit] = &[
     FakeCommit { sha: "8a3f1c9", subject: "fix race condition in scheduler",  author: "ada",     when: "12m", lane: 0 },
     FakeCommit { sha: "1b07d4e", subject: "tweak token tooltip wording",      author: "linus",   when: "1h",  lane: 0 },
@@ -200,7 +201,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let sample_count = 4;
-    let extent = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+    let extent = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
     let msaa = MsaaTarget::new(&device, format, extent, sample_count);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("aetna_wgpu::example::custom_paint::target"),
@@ -270,14 +275,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rows_per_image: Some(height),
             },
         },
-        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
 
     let buffer_slice = readback_buf.slice(..);
     let (sender, receiver) = std::sync::mpsc::channel::<Result<(), wgpu::BufferAsyncError>>();
-    buffer_slice.map_async(wgpu::MapMode::Read, move |r| { sender.send(r).ok(); });
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("device poll");
+    buffer_slice.map_async(wgpu::MapMode::Read, move |r| {
+        sender.send(r).ok();
+    });
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("device poll");
     receiver.recv()??;
 
     let padded = buffer_slice.get_mapped_range();
@@ -315,5 +328,9 @@ fn bg_color() -> wgpu::Color {
 }
 
 fn srgb_to_linear(c: f64) -> f64 {
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
 }

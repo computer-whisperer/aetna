@@ -167,14 +167,7 @@ fn make_commits(n: usize) -> Vec<FakeCommit> {
         "graph: collapse degenerate fork lanes",
     ];
     const AUTHORS: &[&str] = &[
-        "ada",
-        "linus",
-        "joelle",
-        "raphael",
-        "mei",
-        "isabel",
-        "noor",
-        "kira",
+        "ada", "linus", "joelle", "raphael", "mei", "isabel", "noor", "kira",
     ];
 
     let mut lane: u8 = 0;
@@ -337,9 +330,7 @@ impl App for Demo {
         }
 
         // Outside-click dismisses the context menu.
-        if matches!(event.kind, UiEventKind::Click)
-            && event.route() == Some("ctx-menu:dismiss")
-        {
+        if matches!(event.kind, UiEventKind::Click) && event.route() == Some("ctx-menu:dismiss") {
             self.close_context();
             return;
         }

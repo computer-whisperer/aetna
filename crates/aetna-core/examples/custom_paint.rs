@@ -81,6 +81,7 @@ fn build_row(c: &FakeCommit, idx: usize, selected: bool) -> El {
 }
 
 fn fixture() -> El {
+    #[rustfmt::skip]
     let commits = [
         FakeCommit { sha: "8a3f1c9", subject: "fix race condition in scheduler", author: "ada",     when: "12m", lane: 0 },
         FakeCommit { sha: "1b07d4e", subject: "tweak token tooltip wording",     author: "linus",   when: "1h",  lane: 0 },
