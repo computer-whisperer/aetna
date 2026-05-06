@@ -23,15 +23,28 @@ impl IntoIconName for IconName {
     }
 }
 
+/// Fallback when a string-typed icon name doesn't match a known
+/// variant. Renders as a visible alert-circle glyph and emits a
+/// one-line stderr warning so the author / agent can spot the typo
+/// without the program crashing — important when an LLM-generated
+/// `icon("abrows-right")` would otherwise abort the whole UI.
+fn unknown_icon_fallback(name: &str) -> IconName {
+    eprintln!(
+        "aetna: unknown icon name `{name}` — rendering AlertCircle. \
+         See `aetna_core::all_icon_names()` for the available vocabulary."
+    );
+    IconName::AlertCircle
+}
+
 impl IntoIconName for &str {
     fn into_icon_name(self) -> IconName {
-        IconName::parse(self).unwrap_or_else(|| panic!("unknown Aetna icon name: {self}"))
+        IconName::parse(self).unwrap_or_else(|| unknown_icon_fallback(self))
     }
 }
 
 impl IntoIconName for String {
     fn into_icon_name(self) -> IconName {
-        IconName::parse(&self).unwrap_or_else(|| panic!("unknown Aetna icon name: {self}"))
+        IconName::parse(&self).unwrap_or_else(|| unknown_icon_fallback(&self))
     }
 }
 
@@ -452,6 +465,17 @@ mod tests {
         assert_eq!(el.width, Size::Fixed(16.0));
         assert_eq!(el.height, Size::Fixed(16.0));
         assert_eq!(el.text_color, Some(tokens::TEXT_FOREGROUND));
+    }
+
+    /// Unknown string-typed icon names render the AlertCircle fallback
+    /// glyph rather than panicking. Important so an LLM-generated typo
+    /// surfaces visibly in the UI but doesn't take the whole program down.
+    #[test]
+    fn unknown_string_icon_falls_back_without_panic() {
+        let el = icon("not-a-real-icon-name");
+        assert_eq!(el.icon, Some(IconName::AlertCircle));
+        let el2 = icon(String::from("abrows-right"));
+        assert_eq!(el2.icon, Some(IconName::AlertCircle));
     }
 
     #[test]
