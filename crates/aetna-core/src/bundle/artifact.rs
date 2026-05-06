@@ -16,6 +16,55 @@
 //! custom shaders as placeholder rects). The wgpu renderer is the source
 //! of truth for visual fidelity; SVG stays as a layout/structure
 //! debugging artifact.
+//!
+//! # Wiring this into your app
+//!
+//! The bundle pipeline is also the cheapest layout-review path *during
+//! app development*. It runs CPU-only, exercises the same layout +
+//! draw-op stack the GPU does, and produces a diffable tree dump that
+//! catches regressions long before they hit a window. The shape every
+//! aetna app converges on:
+//!
+//! ```ignore
+//! // crates/your-app/src/bin/dump_bundles.rs
+//! use aetna_core::prelude::*;
+//! use std::path::PathBuf;
+//!
+//! struct MockBackend { state: AppState }
+//! impl UiBackend for MockBackend { /* return canned `state` */ }
+//!
+//! enum Scene { Empty, Loaded, ErrorDialog /* ... */ }
+//!
+//! fn main() -> std::io::Result<()> {
+//!     let viewport = Rect::new(0.0, 0.0, 1280.0, 800.0);
+//!     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
+//!
+//!     for scene in Scene::ALL {
+//!         let mut app = MyApp::new(MockBackend { state: scene.canned_state() });
+//!         // Local UI flags? Drive them through the real on_event path:
+//!         scene.drive_setup(&mut app);
+//!
+//!         let mut tree = app.build();
+//!         let bundle = render_bundle(&mut tree, viewport, Some("crates/your-app/src"));
+//!         write_bundle(&bundle, &out_dir, &scene.slug())?;
+//!         if !bundle.lint.findings.is_empty() {
+//!             eprint!("{}", bundle.lint.text());
+//!         }
+//!     }
+//!     Ok(())
+//! }
+//! ```
+//!
+//! Three to six scenes is plenty for a typical app chrome. Output goes
+//! to `crates/<app>/out/` (gitignore the directory). Worked examples in
+//! the workspace: `tools/src/bin/dump_showcase_bundles.rs` (aetna's own
+//! showcase), and the `render_artifacts` / `dump_bundles` bins in the
+//! external `aetna-volume` and `rumble-aetna` apps.
+//!
+//! Driving local UI state via [`crate::event::UiEvent::synthetic_click`]
+//! is preferred over fixture-only setters: the dumped scene is exactly
+//! what the user sees after performing the same interaction, so the
+//! fixture and production code can't drift.
 
 use std::path::Path;
 

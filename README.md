@@ -117,6 +117,7 @@ When scaffolding a UI, prefer the named affordance over the underlying primitive
 | Indent inside a list (e.g. tree depth) | `.padding(Sides { left: indent, ..Sides::zero() })` | `row([spacer().width(Fixed(indent)), ...])` |
 | Toggle (preferences) | `switch(self.value).key(k)` + `switch::apply_event(...)` | a button with two text labels |
 | Standard tooltip | `.tooltip("...")` on any element | a manually-positioned popover |
+| Layout review without GPU | `render_bundle(&mut tree, viewport, Some("crates/X/src"))` + `write_bundle(...)` per scene — see [Per-app artifact dumps](#per-app-artifact-dumps) | spinning up a wgpu window every time you want to eyeball a layout change |
 
 Smells that mean an affordance is being missed: `.gap(0.0)` (already the default — delete it), `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier), wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly), an explicit `.fill(tokens::BG_APP)` on the root (the host already paints it), and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
 
@@ -226,12 +227,42 @@ cargo run -p aetna-examples --bin tabs                # tabs_list controlled tab
 cargo run -p aetna-examples --bin tooltip             # .tooltip(text) modifier with hover delay + focus restore
 cargo run -p aetna-examples --bin slider_keyboard     # ArrowKeys + PgUp/PgDn + Home/End on a focused slider
 cargo run -p aetna-tools --bin render_showcase_sections   # headless PNG of every Showcase section → tools/out/
+cargo run -p aetna-tools --bin dump_showcase_bundles      # CPU-only svg + tree + draw_ops + lint per section → crates/aetna-fixtures/out/
 cargo run -p aetna-wgpu --example render_counter      # headless wgpu PNG snapshot
 cargo run -p aetna-vulkano-demo --bin counter         # same Counter, native vulkano (A/B vs wgpu demo counter)
 cargo run -p aetna-vulkano-demo --bin custom          # gradient.wgsl through Runner::register_shader
 cargo run -p aetna-vulkano-demo --bin showcase        # aetna-fixtures::Showcase through native vulkano
 cargo test --workspace --lib                          # 200+ unit tests across aetna-core + demo/backend crates
 ```
+
+## Per-app artifact dumps
+
+Aetna ships the bundle pipeline as the agent-loop feedback channel — but it's also the cheapest way to verify your *own* app's layout during development. A single CPU-only call produces five artifacts per scene:
+
+- `*.svg` — visual fixture (approximate; layout-accurate; convert to PNG with `tools/svg_to_png.sh` when you want one).
+- `*.tree.txt` — semantic walk of the laid-out tree with computed rects, source locations, roles.
+- `*.draw_ops.txt` — the same draw-op IR a wgpu / vulkano `Runner` consumes.
+- `*.lint.txt` — findings (raw colors instead of tokens, text overflowing nowrap boxes, duplicate IDs).
+- `*.shader_manifest.txt` — every shader the tree uses, with resolved uniform values.
+
+The four-line core is in the prelude:
+
+```rust
+use aetna_core::prelude::*;
+
+let mut tree = app.build();
+let bundle = render_bundle(&mut tree, viewport, Some("crates/your-app/src"));
+write_bundle(&bundle, &out_dir, "scene_name")?;
+if !bundle.lint.findings.is_empty() { eprint!("{}", bundle.lint.text()); }
+```
+
+Around that, the per-app shape is small: a `MockBackend` returning a canned snapshot, a `Scene` enum enumerating the views worth dumping, and — for views that depend on local UI flags — `app.on_event(UiEvent::synthetic_click(key))` to drive state through the same `on_event` path users hit. Output goes to `crates/<app>/out/` (gitignored). Three reference implementations, all the same shape:
+
+- `tools/src/bin/dump_showcase_bundles.rs` — aetna's own showcase, every section.
+- [`aetna-volume::render_artifacts`](https://github.com/computer-whisperer/aetna-volume) — a real PipeWire control panel, one bundle per tab.
+- [`rumble-aetna::dump_bundles`](https://github.com/u6bkep/rumble) — a chat client with a richer `State` (rooms + users + chat), one bundle per connection state.
+
+Why ship one for your app: the SVG pass exercises the same layout + draw-op pipeline the GPU does, but without spinning up a window, device, or backend. Layout regressions (a sidebar collapsing to zero width, a wrap that didn't trigger, a focus ring overflowing the wrong way) appear as a diff in the tree dump. The lint pass catches color drift, missed-token usage, and overflow before review does. Three to six scenes is enough to cover a typical app chrome — and unlike the GPU PNG path, the dump is fast enough to run on every save.
 
 For the browser:
 
