@@ -280,15 +280,22 @@ fn push_node(
 
         // Selection band — emit behind the glyph run when this leaf is
         // selectable, keyed, and (part of) its bytes fall inside the
-        // active selection range. Only single-leaf selections paint
-        // here in P1a; cross-element selections need the
-        // selection_order walk and ship in P1b.
+        // active selection range. Single-leaf and cross-leaf both go
+        // through `slice_for_leaf`, which consults the document-order
+        // selection list to compute the per-leaf byte range:
+        //   - selection lives in this leaf only → (lo, hi)
+        //   - this leaf is the anchor → (anchor.byte, text_len)
+        //   - this leaf is the head → (0, head.byte)
+        //   - this leaf is between anchor and head → (0, text_len)
         if n.selectable
             && let Some(key) = &n.key
-            && let Some(view) = ui_state.current_selection.within(key)
-            && !view.is_collapsed()
+            && let Some((lo, hi)) = crate::selection::slice_for_leaf(
+                &ui_state.current_selection,
+                &ui_state.selection_order,
+                key,
+                display.len(),
+            )
         {
-            let (lo, hi) = view.ordered();
             let rects = text_metrics::selection_rects(
                 &display,
                 lo,
@@ -821,6 +828,50 @@ mod tests {
             (thumb_fill.r, thumb_fill.g, thumb_fill.b),
             (expected.r, expected.g, expected.b),
             "flagged thumb borrows the container's press envelope",
+        );
+    }
+
+    #[test]
+    fn cross_leaf_selection_paints_a_band_on_each_spanned_leaf() {
+        use crate::selection::{Selection, SelectionPoint, SelectionRange};
+
+        let mut tree = column([
+            crate::widgets::text::paragraph("First").key("a").selectable(),
+            crate::widgets::text::paragraph("Second").key("b").selectable(),
+            crate::widgets::text::paragraph("Third").key("c").selectable(),
+        ])
+        .padding(20.0);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 300.0));
+        state.sync_selection_order(&tree);
+
+        // anchor at byte 2 in "First", head at byte 3 in "Third":
+        // span includes a partial of a, all of b, partial of c.
+        state.current_selection = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("a", 2),
+                head: SelectionPoint::new("c", 3),
+            }),
+        };
+
+        let ops = draw_ops(&tree, &state);
+        let band_ids: Vec<&str> = ops
+            .iter()
+            .filter_map(|op| {
+                if let DrawOp::Quad { id, .. } = op
+                    && id.contains("selection-band")
+                {
+                    Some(id.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // One band per spanned leaf (3 leaves: a, b, c).
+        assert_eq!(
+            band_ids.len(),
+            3,
+            "cross-leaf selection should emit a band on each of {{a, b, c}}; got {band_ids:?}"
         );
     }
 

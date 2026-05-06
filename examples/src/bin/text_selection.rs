@@ -17,9 +17,11 @@
 //! - Ctrl+C / Cmd+C copies the current selection to the system
 //!   clipboard. The "Last copy:" line below echoes what was sent.
 //!
-//! Cross-leaf drag (drag from one paragraph into the next) is
-//! deliberately out of scope for P1a — the head clamps to the anchor
-//! paragraph. P1b adds the cross-leaf path.
+//! Cross-leaf drag (drag from one paragraph into the next) works:
+//! the head migrates into whichever selectable leaf the pointer is
+//! over, and the painter renders a band on every leaf the range
+//! spans (anchor leaf from anchor.byte to end, middle leaves fully,
+//! head leaf from start to head.byte).
 
 use aetna_core::prelude::*;
 use aetna_core::selection;

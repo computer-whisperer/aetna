@@ -137,6 +137,65 @@ impl Selection {
     }
 }
 
+/// Compute the byte range within `key`'s text that should be
+/// highlighted, given the current `selection` and the document-order
+/// list of selectable leaves. Returns `None` when `key` isn't part
+/// of the selection range.
+///
+/// The painter calls this for each selectable leaf to decide whether
+/// (and where) to draw a highlight band:
+///
+/// - Single-leaf selection: returns the `(lo, hi)` byte range when
+///   `key` matches both endpoints.
+/// - Anchor leaf (in cross-leaf): returns `(anchor.byte, text_len)`
+///   for the leaf where the drag started.
+/// - Head leaf (in cross-leaf): returns `(0, head.byte)` for the
+///   leaf where the drag currently ends.
+/// - Middle leaf: returns `(0, text_len)` — fully selected.
+///
+/// Anchor / head are normalized to document order using
+/// `order` (keys in tree order, e.g. `selection_order` from
+/// [`crate::state::UiState::selection_order`]).
+pub fn slice_for_leaf(
+    selection: &Selection,
+    order: &[crate::event::UiTarget],
+    key: &str,
+    text_len: usize,
+) -> Option<(usize, usize)> {
+    let r = selection.range.as_ref()?;
+    if r.anchor.key == r.head.key {
+        if r.anchor.key != key {
+            return None;
+        }
+        let (lo, hi) = (
+            r.anchor.byte.min(r.head.byte).min(text_len),
+            r.anchor.byte.max(r.head.byte).min(text_len),
+        );
+        return (lo < hi).then_some((lo, hi));
+    }
+    let pos = |k: &str| order.iter().position(|t| t.key == k);
+    let (a_idx, h_idx, key_idx) = (pos(&r.anchor.key)?, pos(&r.head.key)?, pos(key)?);
+    let (lo_idx, lo_byte, hi_idx, hi_byte) = if a_idx <= h_idx {
+        (a_idx, r.anchor.byte, h_idx, r.head.byte)
+    } else {
+        (h_idx, r.head.byte, a_idx, r.anchor.byte)
+    };
+    if key_idx < lo_idx || key_idx > hi_idx {
+        return None;
+    }
+    let lo = if key_idx == lo_idx {
+        lo_byte.min(text_len)
+    } else {
+        0
+    };
+    let hi = if key_idx == hi_idx {
+        hi_byte.min(text_len)
+    } else {
+        text_len
+    };
+    (lo < hi).then_some((lo, hi))
+}
+
 /// Walk `tree` and return the substring covered by `selection`.
 /// Returns `None` for an empty selection or when the selection
 /// references a key with no matching keyed text leaf in the tree.
@@ -300,6 +359,94 @@ mod tests {
             selected_text(&tree, &sel).as_deref(),
             Some("pha\nbravo\nchar")
         );
+    }
+
+    #[test]
+    fn slice_for_leaf_single_leaf() {
+        let order = order_for(&["a", "b", "c"]);
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("b", 2),
+                head: SelectionPoint::new("b", 5),
+            }),
+        };
+        assert_eq!(slice_for_leaf(&sel, &order, "b", 10), Some((2, 5)));
+        assert_eq!(slice_for_leaf(&sel, &order, "a", 10), None);
+        assert_eq!(slice_for_leaf(&sel, &order, "c", 10), None);
+    }
+
+    #[test]
+    fn slice_for_leaf_cross_leaf_anchor_to_head_in_doc_order() {
+        // anchor = a@2, head = c@4: spans a, b, c.
+        let order = order_for(&["a", "b", "c"]);
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("a", 2),
+                head: SelectionPoint::new("c", 4),
+            }),
+        };
+        assert_eq!(
+            slice_for_leaf(&sel, &order, "a", 10),
+            Some((2, 10)),
+            "anchor leaf: from anchor.byte to text_len"
+        );
+        assert_eq!(
+            slice_for_leaf(&sel, &order, "b", 8),
+            Some((0, 8)),
+            "middle leaf: fully selected"
+        );
+        assert_eq!(
+            slice_for_leaf(&sel, &order, "c", 10),
+            Some((0, 4)),
+            "head leaf: from 0 to head.byte"
+        );
+    }
+
+    #[test]
+    fn slice_for_leaf_cross_leaf_reversed_drag() {
+        // anchor in c (later), head in a (earlier) — order shouldn't
+        // matter; the slice is the same as forward drag.
+        let order = order_for(&["a", "b", "c"]);
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("c", 3),
+                head: SelectionPoint::new("a", 1),
+            }),
+        };
+        // Forward in doc order: a@1..end, b full, c 0..3.
+        assert_eq!(slice_for_leaf(&sel, &order, "a", 5), Some((1, 5)));
+        assert_eq!(slice_for_leaf(&sel, &order, "b", 6), Some((0, 6)));
+        assert_eq!(slice_for_leaf(&sel, &order, "c", 9), Some((0, 3)));
+    }
+
+    #[test]
+    fn slice_for_leaf_returns_none_for_leaves_outside_range() {
+        // 5-leaf order; selection covers only b..d.
+        let order = order_for(&["a", "b", "c", "d", "e"]);
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("b", 0),
+                head: SelectionPoint::new("d", 0),
+            }),
+        };
+        assert_eq!(slice_for_leaf(&sel, &order, "a", 10), None);
+        assert_eq!(slice_for_leaf(&sel, &order, "e", 10), None);
+        // Boundary leaves with collapsed endpoints: anchor at b@0
+        // means b's slice is (0, len). head at d@0 means d's slice is
+        // (0, 0) which collapses → None.
+        assert_eq!(slice_for_leaf(&sel, &order, "b", 4), Some((0, 4)));
+        assert_eq!(slice_for_leaf(&sel, &order, "c", 7), Some((0, 7)));
+        assert_eq!(slice_for_leaf(&sel, &order, "d", 5), None);
+    }
+
+    fn order_for(keys: &[&str]) -> Vec<crate::event::UiTarget> {
+        keys.iter()
+            .map(|k| crate::event::UiTarget {
+                key: (*k).to_string(),
+                node_id: format!("root.{k}"),
+                rect: crate::tree::Rect::new(0.0, 0.0, 0.0, 0.0),
+            })
+            .collect()
     }
 
     #[test]

@@ -231,32 +231,21 @@ impl RunnerCore {
         let mut out = Vec::new();
 
         // Selection drag-extend takes precedence over the focusable
-        // Drag emission: while the user is selecting on a static
-        // paragraph, there's no `pressed` (static text isn't focusable)
-        // so the focusable Drag arm wouldn't fire anyway. We compute a
-        // new head and emit a SelectionChanged.
+        // Drag emission. Cross-leaf in P1b: if the pointer hits a
+        // different selectable leaf, head migrates to that leaf.
+        // Otherwise we project onto the anchor leaf (head pins to the
+        // edge of the original leaf when the pointer is in
+        // non-selectable space).
         if let Some(drag) = self.ui_state.selection_drag.clone()
             && let Some(tree) = self.last_tree.as_ref()
         {
-            // P1a: clamp the drag to the anchor leaf — the head stays
-            // in the same key as the anchor. P1b will let head escape
-            // into a sibling selectable leaf.
-            let head_byte = if let Some(point) = hit_test::selection_point_at(tree, &self.ui_state, (x, y))
-                && point.key == drag.anchor.key
-            {
-                point.byte
-            } else if let Some(point) = byte_in_anchor_leaf(tree, &self.ui_state, &drag, (x, y)) {
-                point.byte
-            } else {
-                drag.anchor.byte
-            };
+            let head_point = hit_test::selection_point_at(tree, &self.ui_state, (x, y))
+                .or_else(|| byte_in_anchor_leaf(tree, &self.ui_state, &drag, (x, y)))
+                .unwrap_or_else(|| drag.anchor.clone());
             let new_sel = crate::selection::Selection {
                 range: Some(crate::selection::SelectionRange {
                     anchor: drag.anchor.clone(),
-                    head: crate::selection::SelectionPoint {
-                        key: drag.anchor.key.clone(),
-                        byte: head_byte,
-                    },
+                    head: head_point,
                 }),
             };
             if new_sel != self.ui_state.current_selection {
@@ -1428,6 +1417,25 @@ mod tests {
             !core.ui_state.current_selection.is_empty(),
             "selection itself should persist after pointer_up"
         );
+    }
+
+    #[test]
+    fn drag_into_a_sibling_selectable_extends_head_into_that_leaf() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let p2 = core.rect_of_key("p2").expect("p2 rect");
+        // Anchor at the start of p1.
+        core.pointer_down(p1.x + 4.0, p1.y + p1.h * 0.5, PointerButton::Primary);
+        // Drag down into p2.
+        let events = core.pointer_moved(p2.x + 8.0, p2.y + p2.h * 0.5);
+        let sel_event = events
+            .iter()
+            .find(|e| e.kind == UiEventKind::SelectionChanged)
+            .expect("Drag emits SelectionChanged");
+        let new_sel = sel_event.selection.as_ref().unwrap();
+        let range = new_sel.range.as_ref().unwrap();
+        assert_eq!(range.anchor.key, "p1", "anchor stays in p1");
+        assert_eq!(range.head.key, "p2", "head migrates into p2");
     }
 
     #[test]
