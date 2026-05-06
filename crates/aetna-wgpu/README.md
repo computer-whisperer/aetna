@@ -1,6 +1,6 @@
 # aetna-wgpu
 
-![Liquid-glass section — custom shader sampling the wgpu backdrop](../../assets/showcase_glass.png)
+![Liquid-glass section — custom shader sampling the wgpu backdrop](https://raw.githubusercontent.com/computer-whisperer/aetna/v0.2.0/assets/showcase_glass.png)
 
 `wgpu` backend for Aetna.
 

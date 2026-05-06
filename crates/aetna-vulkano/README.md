@@ -1,6 +1,6 @@
 # aetna-vulkano
 
-![Showcase — Settings section. The same fixture renders identically through wgpu and vulkano](../../assets/showcase_settings.png)
+![Showcase — Settings section. The same fixture renders identically through wgpu and vulkano](https://raw.githubusercontent.com/computer-whisperer/aetna/v0.2.0/assets/showcase_settings.png)
 
 Native Vulkan backend for Aetna using `vulkano`.
 

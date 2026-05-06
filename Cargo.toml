@@ -7,3 +7,4 @@ authors = ["Christian Balcom <robot.inventor@gmail.com>"]
 repository = "https://github.com/computer-whisperer/aetna"
 homepage = "https://github.com/computer-whisperer/aetna"
 edition = "2024"
+rust-version = "1.85"

@@ -1,19 +1,19 @@
 [package]
 name = "aetna-fonts"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "Bundled font assets for Aetna (Roboto + Noto fallback faces)"
-license = "(MIT OR Apache-2.0) AND Apache-2.0 AND OFL-1.1"
+license = "MIT OR Apache-2.0"
 readme = "README.md"
 documentation = "https://docs.rs/aetna-fonts"
 keywords = ["fonts", "ui", "noto", "roboto", "typography"]
 categories = ["gui"]
 include = [
     "src/**/*.rs",
-    "fonts/**",
     "Cargo.toml",
     "README.md",
     "LICENSE-MIT",
@@ -24,14 +24,20 @@ include = [
 path = "src/lib.rs"
 
 [features]
-# Generous LLM-friendly default: Latin + color emoji + arrows/math/
-# box-drawing. CJK is opt-in because it adds ~16 MB to the binary.
+# Generous LLM-friendly default: Latin + color emoji + arrows / math /
+# box-drawing. Each feature pulls in a sibling crate that bundles the
+# matching font family — split out so each published `.crate`
+# artifact stays under crates.io's per-crate upload size limit.
 default = ["default_fonts"]
 default_fonts = ["roboto", "emoji", "symbols"]
-roboto = []
+roboto = ["dep:aetna-fonts-roboto"]
 # NotoColorEmoji (CBDT bitmaps). Requires aetna-core's atlas RGBA path
 # (introduced alongside this feature) to render in color rather than as
 # B&W silhouettes.
-emoji = []
-symbols = []
-cjk = []
+emoji = ["dep:aetna-fonts-emoji"]
+symbols = ["dep:aetna-fonts-symbols"]
+
+[dependencies]
+aetna-fonts-roboto = { version = "0.1.0", path = "../aetna-fonts-roboto", optional = true }
+aetna-fonts-emoji = { version = "0.1.0", path = "../aetna-fonts-emoji", optional = true }
+aetna-fonts-symbols = { version = "0.1.0", path = "../aetna-fonts-symbols", optional = true }
