@@ -143,6 +143,8 @@ That pattern is intentional. It keeps generated application code
 obvious: state lives in the app struct, `build()` projects it into an
 `El`, and `on_event()` folds routed events back into the state.
 
+The same shape extends to selection-style widgets. `tabs_list("k", &self.tab, [...])` paints a segmented row of triggers; `tabs::apply_event(&mut self.tab, &event, "k", parse)` folds clicks into the app's tab field. The page body is a plain `match self.tab` — there is no implicit "tab content" sibling; Rust's match is more honest than a wrapper that hides itself when not active. The naming and routed-key shape (`{key}:tab:{value}`) mirror shadcn / Radix Tabs and the WAI-ARIA tablist pattern so an LLM author finds familiar terrain. `select_trigger` + `select_menu` follow the same rule with `{key}:option:{value}`.
+
 There is also an advanced `UiState::widget_state::<T>` typed bucket used
 by tests, diagnostics, and future host/widget experiments. Normal widget
 builders do not receive `UiState`, so do not reach for it when writing

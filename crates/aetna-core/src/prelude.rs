@@ -53,6 +53,7 @@ pub use crate::widgets::select::{
     self, SelectAction, select_menu, select_option_key, select_trigger,
 };
 pub use crate::widgets::slider::{self, SliderAction, slider};
+pub use crate::widgets::tabs::{self, TabsAction, tab_option_key, tab_trigger, tabs_list};
 pub use crate::widgets::text::{h1, h2, h3, mono, paragraph, text};
 pub use crate::widgets::text_area::{self, text_area};
 pub use crate::widgets::text_input::{self, ClipboardKind, TextSelection, text_input};

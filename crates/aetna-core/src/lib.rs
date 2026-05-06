@@ -194,6 +194,7 @@ pub use widgets::popover::{
 };
 pub use widgets::select::{SelectAction, select_menu, select_option_key, select_trigger};
 pub use widgets::slider::{SliderAction, slider};
+pub use widgets::tabs::{TabsAction, tab_option_key, tab_trigger, tabs_list};
 pub use widgets::text::{h1, h2, h3, mono, paragraph, text};
 pub use widgets::text_area::text_area;
 pub use widgets::text_input::{ClipboardKind, TextSelection, text_input};

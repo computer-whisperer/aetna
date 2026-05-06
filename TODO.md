@@ -104,6 +104,20 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
       `widgets/overlay.rs`. Filters `None`s; tidies the root-level
       layer composition pattern. Volume uses it for the profile menu.
 
+### Slice 8 — tabs / segmented control
+
+- [x] **`tabs_list(key, &current, options)` + `tab_trigger` + the
+      `tabs::classify_event` / `tabs::apply_event` pair** in
+      `widgets/tabs.rs`. Mirrors shadcn / Radix Tabs (`<TabsList>` +
+      `<TabsTrigger value=...>`) and the WAI-ARIA tablist pattern, so
+      LLM authors hit familiar terrain. Routed key convention
+      `{key}:tab:{value}` parallels `select`'s `{key}:option:{value}`.
+      Demonstrated end-to-end in `examples/src/bin/tabs.rs` and
+      mentioned in `widget_kit.md` §6. No `tab_panel` wrapper —
+      Rust's `match` on the controlled value is more honest than a
+      hidden-when-not-active sibling, and shadcn's `<TabsContent>`
+      adds no visual beyond a plain block.
+
 ## Pre-release housekeeping
 
 - [x] Crate-level rustdoc skim. `cargo doc -p aetna-{core,wgpu,vulkano,winit-wgpu}`
@@ -122,8 +136,12 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 
 Out of scope for the current cycle; flagged so they don't get rediscovered:
 
-- Tab / segmented-control widget. The volume port styles buttons; works
-  fine for now.
 - Slider tick marks (e.g. nominal-100% mark). Audio-app-specific.
 - Variable-height list virtualization, drag-resizable splits. Not surfaced
   by any port yet.
+- Roving-tabindex arrow-key nav inside `tabs_list` (Left/Right cycling
+  the active tab as in WAI-ARIA's full tablist pattern). The runtime's
+  `arrow_nav_siblings` only wires Up/Down/Home/End today; teaching it
+  about a horizontal axis would let `tabs_list` opt in. For now, Tab +
+  Enter activate each trigger one-by-one, which matches the simpler
+  shadcn default.

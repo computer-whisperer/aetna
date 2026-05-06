@@ -13,6 +13,7 @@ pub mod overlay;
 pub mod popover;
 pub mod select;
 pub mod slider;
+pub mod tabs;
 pub mod text;
 pub mod text_area;
 pub mod text_input;
