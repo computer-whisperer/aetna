@@ -77,6 +77,21 @@ pub struct El {
     /// the input is focused, fading via the standard focus animation.
     /// Documented in `widget_kit.md` as part of the public surface.
     pub alpha_follows_focused_ancestor: bool,
+    /// When true, this node's hover and press visual envelopes are
+    /// borrowed from its nearest focusable ancestor instead of being
+    /// driven by its own (always-zero) envelope.
+    ///
+    /// The hit-test only ever resolves to a focusable target, so a
+    /// child of an interactive container — a slider thumb, a select
+    /// trigger's chevron, the dot inside a radio — never receives
+    /// hover or press envelopes of its own. Flagged children pick up
+    /// the ancestor's envelopes so they can lighten / darken / ring
+    /// out alongside the surface that captured the input.
+    ///
+    /// Used by `slider`'s thumb so grabbing the slider visibly
+    /// reacts on the thumb itself, mirroring shadcn's
+    /// `hover:ring-4 hover:ring-ring/50`.
+    pub state_follows_interactive_ancestor: bool,
     pub source: Source,
 
     // Layout
@@ -260,6 +275,7 @@ impl Default for El {
             focusable: false,
             capture_keys: false,
             alpha_follows_focused_ancestor: false,
+            state_follows_interactive_ancestor: false,
             source: Source::default(),
             axis: Axis::Overlay,
             gap: 0.0,
@@ -358,6 +374,15 @@ impl El {
     /// the focused element" behavior.
     pub fn alpha_follows_focused_ancestor(mut self) -> Self {
         self.alpha_follows_focused_ancestor = true;
+        self
+    }
+    /// Borrow hover and press visual envelopes from the nearest
+    /// focusable ancestor. Useful for child elements of an interactive
+    /// container (a slider thumb, a select trigger's chevron) that
+    /// should react to grab / hover even though hit-test only resolves
+    /// to the focusable container above them.
+    pub fn state_follows_interactive_ancestor(mut self) -> Self {
+        self.state_follows_interactive_ancestor = true;
         self
     }
     pub fn at(mut self, file: &'static str, line: u32) -> Self {

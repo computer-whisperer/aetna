@@ -138,11 +138,16 @@ pub fn resize_handle(axis: Axis) -> El {
         Axis::Row => El::new(Kind::Custom("resize-handle-hairline"))
             .width(Size::Fixed(HAIRLINE_THICKNESS))
             .height(Size::Fill(1.0))
-            .fill(tokens::BORDER),
+            .fill(tokens::BORDER)
+            // Hit-test lands on the focusable outer wrapper; without
+            // the cascade the hairline would never lighten on hover or
+            // darken under a drag.
+            .state_follows_interactive_ancestor(),
         Axis::Column | Axis::Overlay => El::new(Kind::Custom("resize-handle-hairline"))
             .width(Size::Fill(1.0))
             .height(Size::Fixed(HAIRLINE_THICKNESS))
-            .fill(tokens::BORDER),
+            .fill(tokens::BORDER)
+            .state_follows_interactive_ancestor(),
     };
     // No `capture_keys()` — Tab must keep traversing past the handle.
     // Arrow / PageUp / PageDown / Home / End still arrive as `KeyDown`

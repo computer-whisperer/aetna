@@ -118,6 +118,19 @@ pub const FONT_XXL: f32 = 26.0;
 pub const PRESS_DARKEN: f32 = 0.12;
 /// How much to lighten a fill on hover, as a 0..1 factor.
 pub const HOVER_LIGHTEN: f32 = 0.06;
+/// Peak alpha contribution from a fully-eased hover envelope on a
+/// surface with no resting fill (`.ghost()`, inactive tab triggers,
+/// `.outline()`). Hover/press envelopes only modulate an existing
+/// fill, so without a synthesized state-only fill these surfaces show
+/// no interaction feedback. Mirrors the shadcn idiom
+/// `hover:bg-accent active:bg-accent/80` — transparent at rest, a faint
+/// raised surface fades in on interaction.
+pub const STATE_FILL_HOVER_ALPHA: f32 = 0.40;
+/// Additional peak alpha contribution from a fully-eased press
+/// envelope. Sums with [`STATE_FILL_HOVER_ALPHA`] (clamped to 1.0) so
+/// a press while hovered reads slightly more committed than hover
+/// alone, but still quieter than the active/current treatment.
+pub const STATE_FILL_PRESS_ALPHA: f32 = 0.25;
 /// Opacity multiplier when an element is disabled.
 pub const DISABLED_ALPHA: f32 = 0.5;
 /// Focus ring color (typically a tinted accent).

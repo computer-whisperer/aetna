@@ -99,12 +99,17 @@ pub fn switch(value: bool) -> El {
             .fill(track_fill)
             .stroke(tokens::BORDER)
             .radius(tokens::RADIUS_PILL)
-            .animate(Timing::SPRING_QUICK),
+            .animate(Timing::SPRING_QUICK)
+            // Hit-test resolves to the focusable outer; without the
+            // cascade, the track and thumb would never react to hover
+            // / press on the switch.
+            .state_follows_interactive_ancestor(),
         El::new(Kind::Custom("switch-thumb"))
             .fill(tokens::TEXT_FOREGROUND)
             .radius(tokens::RADIUS_PILL)
             .translate(thumb_translate_x, 0.0)
-            .animate(Timing::SPRING_QUICK),
+            .animate(Timing::SPRING_QUICK)
+            .state_follows_interactive_ancestor(),
     ])
     .at_loc(Location::caller())
     .focusable()

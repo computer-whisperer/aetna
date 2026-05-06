@@ -98,7 +98,13 @@ pub fn slider(value: f32, fill_color: Color) -> El {
             .height(Size::Fixed(THUMB_SIZE))
             .fill(tokens::TEXT_FOREGROUND)
             .stroke(tokens::BORDER)
-            .radius(tokens::RADIUS_PILL),
+            .radius(tokens::RADIUS_PILL)
+            // The hit-test resolves to the focusable container above,
+            // so the thumb never receives hover / press envelopes of
+            // its own. Borrow the ancestor's so grabbing the slider
+            // visibly reacts on the thumb itself — mirrors shadcn's
+            // `hover:ring-4 hover:ring-ring/50`.
+            .state_follows_interactive_ancestor(),
     ])
     .at_loc(Location::caller())
     .focusable()
@@ -300,6 +306,35 @@ mod tests {
             classify_event(&key_event("k", UiKey::ArrowLeft), "k", 0.1, 0.25),
             Some(SliderAction::Step(-0.1)),
         );
+    }
+
+    #[test]
+    fn thumb_borrows_state_envelopes_from_focusable_container() {
+        // The hit-test resolves to the focusable container above the
+        // thumb, so the thumb never receives its own hover / press
+        // envelope. Without the cascade flag, grabbing the slider
+        // would produce zero feedback on the thumb (the most visible
+        // surface).
+        let s = slider(0.5, tokens::PRIMARY);
+        assert!(s.focusable, "container is the focusable / hit target");
+        let thumb = s
+            .children
+            .iter()
+            .find(|c| matches!(&c.kind, Kind::Custom(name) if *name == "slider-thumb"))
+            .expect("thumb child");
+        assert!(
+            thumb.state_follows_interactive_ancestor,
+            "thumb borrows hover / press from the slider container",
+        );
+        // Track and fill paint behind the thumb and have their own
+        // resting visuals; they don't need the cascade.
+        for c in &s.children {
+            if let Kind::Custom(name) = &c.kind
+                && (*name == "slider-track" || *name == "slider-fill")
+            {
+                assert!(!c.state_follows_interactive_ancestor);
+            }
+        }
     }
 
     #[test]

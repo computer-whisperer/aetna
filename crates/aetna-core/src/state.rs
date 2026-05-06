@@ -308,23 +308,34 @@ impl UiState {
     }
 
     /// Rebuild the resolved per-node interaction-state side map from
-    /// the current focused/pressed/
-    /// hovered trackers. Press wins over Focus on a same-node match;
-    /// Hover only applies when the node isn't already pressed or focused.
+    /// the current focused/pressed/hovered trackers. Press wins over
+    /// Focus on a same-node match; Hover only applies when the node
+    /// isn't already pressed or focused.
+    ///
+    /// Press is gated on the pointer being currently over the
+    /// originally-pressed target — drag the cursor off and the press
+    /// visual decays, drag back on and it returns. Mirrors the HTML /
+    /// Tailwind `:active` behaviour: the visual reflects "would
+    /// release-here activate?", not "was pointer_down captured?".
+    /// Drag events still route to `pressed` regardless of pointer
+    /// position (see `runtime::pointer_moved`); this gating only
+    /// affects the visual envelope.
     pub fn apply_to_state(&mut self) {
         self.node_states.clear();
         if let Some(target) = &self.focused {
             self.node_states
                 .insert(target.node_id.clone(), InteractionState::Focus);
         }
-        if let Some(target) = &self.pressed {
+        let press_target = match (&self.pressed, &self.hovered) {
+            (Some(pressed), Some(hovered)) if pressed.node_id == hovered.node_id => Some(pressed),
+            _ => None,
+        };
+        if let Some(target) = press_target {
             self.node_states
                 .insert(target.node_id.clone(), InteractionState::Press);
         }
         if let Some(target) = &self.hovered {
-            let already = self
-                .pressed
-                .as_ref()
+            let already = press_target
                 .map(|p| p.node_id == target.node_id)
                 .unwrap_or(false)
                 || self
@@ -821,6 +832,60 @@ mod tests {
         state.pressed = Some(inc);
         state.apply_to_state();
         assert_eq!(node_state(&tree, &state, "inc"), InteractionState::Press);
+    }
+
+    #[test]
+    fn ui_state_press_decays_when_pointer_drags_off_pressed_target() {
+        // `:active`-style behaviour: the press visual only renders while
+        // the pointer is still over the originally-pressed node. Drag
+        // off → pressed target falls back to Default; the newly-hovered
+        // node gets its own Hover.
+        let (tree, mut state) = lay_out_counter();
+        let inc = target(&tree, &state, "inc");
+        let dec = target(&tree, &state, "dec");
+
+        // Press on inc, pointer still on inc → Press.
+        state.hovered = Some(inc.clone());
+        state.pressed = Some(inc.clone());
+        state.apply_to_state();
+        assert_eq!(node_state(&tree, &state, "inc"), InteractionState::Press);
+
+        // Drag off inc onto dec while still holding the button.
+        state.hovered = Some(dec);
+        state.apply_to_state();
+        assert_eq!(
+            node_state(&tree, &state, "inc"),
+            InteractionState::Default,
+            "press visual cancels when pointer leaves the pressed target",
+        );
+        assert_eq!(
+            node_state(&tree, &state, "dec"),
+            InteractionState::Hover,
+            "the newly-hovered node still gets its own hover state",
+        );
+
+        // Drag back onto inc → Press resumes.
+        state.hovered = Some(inc);
+        state.apply_to_state();
+        assert_eq!(node_state(&tree, &state, "inc"), InteractionState::Press);
+    }
+
+    #[test]
+    fn ui_state_press_decays_when_pointer_leaves_window() {
+        // Same shape as drag-off, but the pointer leaves the window
+        // entirely (hovered = None). The press visual should decay so
+        // the user sees "release here cancels" feedback even when the
+        // cursor is outside the surface.
+        let (tree, mut state) = lay_out_counter();
+        let inc = target(&tree, &state, "inc");
+        state.hovered = Some(inc.clone());
+        state.pressed = Some(inc);
+        state.apply_to_state();
+        assert_eq!(node_state(&tree, &state, "inc"), InteractionState::Press);
+
+        state.hovered = None;
+        state.apply_to_state();
+        assert_eq!(node_state(&tree, &state, "inc"), InteractionState::Default);
     }
 
     #[test]

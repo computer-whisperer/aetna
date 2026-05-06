@@ -29,15 +29,26 @@ pub fn draw_ops(root: &El, ui_state: &UiState) -> Vec<DrawOp> {
 /// Walk the laid-out tree and emit draw ops using a caller-supplied theme.
 pub fn draw_ops_with_theme(root: &El, ui_state: &UiState, theme: &Theme) -> Vec<DrawOp> {
     let mut out = Vec::new();
-    push_node(root, ui_state, theme, &mut out, None, (0.0, 0.0), 1.0, 1.0);
+    push_node(
+        root,
+        ui_state,
+        theme,
+        &mut out,
+        None,
+        (0.0, 0.0),
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+    );
     out
 }
 
-// Recursion threads four "inherited from parent" paint values
-// (scissor, translate, opacity, focus envelope) plus the four shared
-// references (node, ui_state, theme, out accumulator). The explicit
-// signature documents the dataflow more clearly than a bundling
-// struct would.
+// Recursion threads six "inherited from parent" paint values
+// (scissor, translate, opacity, focus / hover / press envelopes) plus
+// the four shared references (node, ui_state, theme, out accumulator).
+// The explicit signature documents the dataflow more clearly than a
+// bundling struct would.
 #[allow(clippy::too_many_arguments)]
 fn push_node(
     n: &El,
@@ -48,6 +59,8 @@ fn push_node(
     inherited_translate: (f32, f32),
     inherited_opacity: f32,
     inherited_focus_envelope: f32,
+    inherited_hover_envelope: f32,
+    inherited_press_envelope: f32,
 ) {
     let computed = ui_state.rect(&n.computed_id);
     let state = ui_state.node_state(&n.computed_id);
@@ -55,8 +68,20 @@ fn push_node(
     let press_amount = ui_state.envelope(&n.computed_id, EnvelopeKind::Press);
     let focus_ring_alpha = ui_state.envelope(&n.computed_id, EnvelopeKind::FocusRing);
 
+    // `state_follows_interactive_ancestor` borrows the nearest
+    // focusable ancestor's hover / press envelopes for paint. The
+    // hit-test only ever lands on the focusable container above, so
+    // child elements (slider thumb, etc.) never receive their own
+    // envelope — without this, hover / press are dead on those
+    // children.
+    let (effective_hover, effective_press) = if n.state_follows_interactive_ancestor {
+        (inherited_hover_envelope, inherited_press_envelope)
+    } else {
+        (hover_amount, press_amount)
+    };
+
     let (fill, stroke, text_color, weight, suffix) =
-        apply_state(n, state, hover_amount, press_amount);
+        apply_state(n, state, effective_hover, effective_press);
 
     // `translate` is subtree-inheriting: descendants paint at their
     // computed rect plus all ancestor `translate` accumulated through
@@ -82,10 +107,23 @@ fn push_node(
     // Children inherit the *immediate* focusable ancestor's envelope.
     // When this node is itself focusable, its envelope replaces the
     // inherited one; otherwise the inherited value passes through.
+    // Hover / press follow the same rule so opt-in descendants can
+    // borrow their interactive ancestor's state envelopes (see
+    // `state_follows_interactive_ancestor`).
     let child_focus_envelope = if n.focusable {
         focus_ring_alpha
     } else {
         inherited_focus_envelope
+    };
+    let child_hover_envelope = if n.focusable {
+        hover_amount
+    } else {
+        inherited_hover_envelope
+    };
+    let child_press_envelope = if n.focusable {
+        press_amount
+    } else {
+        inherited_press_envelope
     };
 
     let translated_rect = translated(computed, total_translate);
@@ -337,6 +375,8 @@ fn push_node(
             total_translate,
             opacity,
             child_focus_envelope,
+            child_hover_envelope,
+            child_press_envelope,
         );
     }
 
@@ -514,6 +554,21 @@ fn opaque(c: Color, opacity: f32) -> Color {
 /// a button's colour during a hover and the new colour appears with
 /// the same eased lighten amount, no fighting between trackers.
 ///
+/// Surfaces with no resting fill (`.ghost()`, `.outline()`, inactive tab
+/// triggers) get a **synthesized state-only fill** instead — a faint
+/// `BG_RAISED` whose alpha rises with hover and press. Mirrors the
+/// shadcn idiom `hover:bg-accent active:bg-accent/80`: transparent at
+/// rest, a soft surface fades in on interaction. Without this, the
+/// envelope mix above has nothing to land on (`None.map(...)` is
+/// `None`) and ghost surfaces show no feedback at all.
+///
+/// The synthesis only fires when the node already declares some
+/// surface affordance — a non-zero radius or an explicit stroke. That
+/// excludes layout-only focusable containers (the `stack(...)` outers
+/// of `slider`, `switch`, `resize_handle`) where a translucent
+/// rectangle behind the actual visual would compete with the widget's
+/// own thumb / track / hairline.
+///
 /// Disabled (alpha multiply) and Loading (text suffix) aren't eased
 /// and are still applied here, branching on the resolved `state`.
 fn apply_state(
@@ -542,6 +597,13 @@ fn apply_state(
     if press > 0.0 {
         fill = fill.map(|c| c.mix(c.darken(tokens::PRESS_DARKEN), press));
         stroke = stroke.map(|c| c.mix(c.darken(tokens::PRESS_DARKEN), press));
+        text_color = text_color.map(|c| c.mix(c.darken(tokens::PRESS_DARKEN * 0.5), press));
+    }
+    if n.fill.is_none() && (hover > 0.0 || press > 0.0) && (n.radius > 0.0 || n.stroke.is_some()) {
+        let alpha = (hover * tokens::STATE_FILL_HOVER_ALPHA
+            + press * tokens::STATE_FILL_PRESS_ALPHA)
+            .clamp(0.0, 1.0);
+        fill = Some(tokens::BG_RAISED.with_alpha((alpha * 255.0).round() as u8));
     }
 
     match state {
@@ -581,6 +643,144 @@ mod tests {
     use super::*;
     use crate::state::UiState;
     use crate::{button, column, row};
+
+    #[test]
+    fn ghost_surface_synthesizes_state_fill_for_hover_and_press() {
+        // Surfaces with no resting fill (`.ghost()`, inactive tab
+        // triggers, `.outline()`) must still show interaction feedback.
+        // The hover/press envelope mix is `fill.map(...)` which
+        // collapses to `None` when there's nothing to lerp from, so
+        // `apply_state` synthesizes a translucent BG_RAISED fill whose
+        // alpha rises with hover and press.
+        // `.ghost()` clears fill / stroke; a real tab trigger or
+        // ghost button also carries a radius (the visual affordance
+        // the synthesis gates on).
+        let ghost = El::new(Kind::Custom("tab_trigger"))
+            .ghost()
+            .radius(tokens::RADIUS_SM);
+        assert!(ghost.fill.is_none(), "ghost has no resting fill");
+
+        let (rest_fill, ..) = apply_state(&ghost, InteractionState::Default, 0.0, 0.0);
+        assert_eq!(rest_fill, None, "no envelope, no synthesized fill");
+
+        let (hover_fill, ..) = apply_state(&ghost, InteractionState::Hover, 1.0, 0.0);
+        let hover_alpha = (tokens::STATE_FILL_HOVER_ALPHA * 255.0).round() as u8;
+        assert_eq!(
+            hover_fill,
+            Some(tokens::BG_RAISED.with_alpha(hover_alpha)),
+            "hover at peak fades a faint BG_RAISED in",
+        );
+
+        let (press_fill, ..) = apply_state(&ghost, InteractionState::Press, 1.0, 1.0);
+        let press_alpha = ((tokens::STATE_FILL_HOVER_ALPHA + tokens::STATE_FILL_PRESS_ALPHA)
+            * 255.0)
+            .round() as u8;
+        assert_eq!(
+            press_fill,
+            Some(tokens::BG_RAISED.with_alpha(press_alpha)),
+            "press while hovered sums the two envelope contributions",
+        );
+    }
+
+    #[test]
+    fn state_follows_interactive_ancestor_borrows_envelopes() {
+        // A child flagged with `state_follows_interactive_ancestor` —
+        // the slider thumb pattern — borrows hover and press
+        // envelopes from its focusable container, since hit-test
+        // never resolves to it directly.
+        use crate::layout::layout;
+
+        let mut tree = column([row([crate::stack([El::new(Kind::Custom("thumb"))
+            .key("thumb")
+            .width(Size::Fixed(14.0))
+            .height(Size::Fixed(14.0))
+            .fill(tokens::TEXT_FOREGROUND)
+            .radius(tokens::RADIUS_PILL)
+            .state_follows_interactive_ancestor()])
+        .key("container")
+        .focusable()
+        .width(Size::Fixed(120.0))
+        .height(Size::Fixed(18.0))])])
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+
+        // Drive the container into Press by setting both `pressed` and
+        // `hovered` (post-fix gating requires hover==pressed for press
+        // to fire) and snap envelopes via Settled mode.
+        let container_target = state
+            .target_of_key(&tree, "container")
+            .expect("container target");
+        state.hovered = Some(container_target.clone());
+        state.pressed = Some(container_target);
+        state.apply_to_state();
+        state.set_animation_mode(crate::state::AnimationMode::Settled);
+        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+
+        // The thumb's *own* envelopes stay zero — only the container
+        // got the press. But via the cascade flag, the thumb's paint
+        // sees the container's press envelope.
+        let ops = draw_ops(&tree, &state);
+        let thumb_op = ops
+            .iter()
+            .find(|op| op.id().contains("thumb"))
+            .expect("thumb quad");
+        let DrawOp::Quad { uniforms, .. } = thumb_op else {
+            panic!("expected thumb quad");
+        };
+        let UniformValue::Color(thumb_fill) = uniforms.get("fill").expect("thumb fill") else {
+            panic!("expected color uniform");
+        };
+        // Press darkens TEXT_FOREGROUND by PRESS_DARKEN. Without the
+        // cascade, the thumb would paint at TEXT_FOREGROUND unchanged.
+        let expected =
+            tokens::TEXT_FOREGROUND.mix(tokens::TEXT_FOREGROUND.darken(tokens::PRESS_DARKEN), 1.0);
+        assert_eq!(
+            (thumb_fill.r, thumb_fill.g, thumb_fill.b),
+            (expected.r, expected.g, expected.b),
+            "flagged thumb borrows the container's press envelope",
+        );
+    }
+
+    #[test]
+    fn layout_only_focusable_container_does_not_synthesize_fill() {
+        // The outer wrappers of `slider`, `switch`, and `resize_handle`
+        // are `focusable` `stack(...)`s with no fill, no radius, and no
+        // stroke — they exist purely to capture pointer/keyboard events
+        // for the visible children below. Synthesizing a state fill
+        // here would paint a translucent rectangle across the widget's
+        // hit area on hover / press, competing with the actual thumb /
+        // track / hairline. Gate the synthesis on the node having some
+        // surface affordance of its own.
+        let layout_only = El::new(Kind::Custom("slider")).focusable();
+        assert!(layout_only.fill.is_none());
+        assert_eq!(layout_only.radius, 0.0);
+        assert!(layout_only.stroke.is_none());
+
+        let (rest_fill, ..) = apply_state(&layout_only, InteractionState::Default, 0.0, 0.0);
+        let (hover_fill, ..) = apply_state(&layout_only, InteractionState::Hover, 1.0, 0.0);
+        let (press_fill, ..) = apply_state(&layout_only, InteractionState::Press, 1.0, 1.0);
+        assert_eq!(rest_fill, None);
+        assert_eq!(hover_fill, None);
+        assert_eq!(press_fill, None);
+    }
+
+    #[test]
+    fn solid_surface_keeps_envelope_mix_unchanged() {
+        // Surfaces with a resting fill still go through the existing
+        // lighten/darken envelope mix — the synthesized state fill only
+        // kicks in when the resting fill is None.
+        let solid = El::new(Kind::Custom("button")).fill(tokens::BG_MUTED);
+        let (rest_fill, ..) = apply_state(&solid, InteractionState::Default, 0.0, 0.0);
+        assert_eq!(rest_fill, Some(tokens::BG_MUTED));
+
+        let (hover_fill, ..) = apply_state(&solid, InteractionState::Hover, 1.0, 0.0);
+        assert_eq!(
+            hover_fill,
+            Some(tokens::BG_MUTED.mix(tokens::BG_MUTED.lighten(tokens::HOVER_LIGHTEN), 1.0)),
+            "solid surfaces lighten existing fill, not synthesize a new one",
+        );
+    }
 
     #[test]
     fn clip_sets_scissor_on_descendant_ops() {
