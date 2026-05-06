@@ -797,18 +797,9 @@ fn glass_card(preset: &GlassPreset, drift_x: f32) -> El {
 fn glass_view(state: &GlassState) -> El {
     let preset = &GLASS_PRESETS[state.preset % GLASS_PRESETS.len()];
     let drift_x = DRIFT_OFFSETS[state.drift % DRIFT_OFFSETS.len()];
-    stack([
-        glass_backdrop(),
-        // Centering chrome: column of [spacer, row with glass, spacer]
-        // lets the fixed-size glass card float in the middle of the
-        // backdrop. The inner row's height: Hug stops it from
-        // claiming the full column extent.
-        column([
-            spacer(),
-            row([spacer(), glass_card(preset, drift_x), spacer()]).height(Size::Hug),
-            spacer(),
-        ]),
-    ])
+    stack([glass_backdrop(), glass_card(preset, drift_x)])
+        .align(Align::Center)
+        .justify(Justify::Center)
 }
 
 fn glass_on_event(state: &mut GlassState, e: UiEvent) {
