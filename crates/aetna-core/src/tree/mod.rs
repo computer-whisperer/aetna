@@ -152,6 +152,16 @@ pub struct El {
     /// anchors the tooltip via the trigger's `computed_id`.
     pub tooltip: Option<String>,
 
+    /// Pointer cursor declared for this element. `None` falls through
+    /// to whatever an ancestor declared, else [`Cursor::Default`].
+    /// Resolution lives in [`crate::state::UiState::cursor`]: if a
+    /// press is captured, the cursor follows the press target;
+    /// otherwise the hovered node is walked root-ward for the first
+    /// explicit declaration. Disabled state is *not* auto-mapped —
+    /// widgets that want [`Cursor::NotAllowed`] when disabled set it
+    /// explicitly in their build closure.
+    pub cursor: Option<crate::cursor::Cursor>,
+
     /// Override the implicit `stock::rounded_rect` binding for this
     /// node's surface. The escape hatch a user crate uses to bind a
     /// custom shader (e.g. `liquid_glass`).
@@ -295,6 +305,7 @@ impl Default for El {
             scrollable: false,
             arrow_nav_siblings: false,
             tooltip: None,
+            cursor: None,
             shader_override: None,
             layout_override: None,
             virtual_items: None,
@@ -513,6 +524,15 @@ impl El {
     /// press. Layout-neutral — the trigger isn't resized.
     pub fn tooltip(mut self, text: impl Into<String>) -> Self {
         self.tooltip = Some(text.into());
+        self
+    }
+
+    /// Declare the pointer cursor when the pointer is over this
+    /// element. Layout-neutral. Inherits to descendants that don't
+    /// override (root-ward walk in the resolver). Press captures
+    /// override hover-derived cursor — see [`crate::cursor`].
+    pub fn cursor(mut self, cursor: crate::cursor::Cursor) -> Self {
+        self.cursor = Some(cursor);
         self
     }
 

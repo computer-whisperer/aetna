@@ -20,6 +20,7 @@ pub use crate::bundle::inspect::dump_tree;
 pub use crate::bundle::lint::{Finding, FindingKind, LintReport, lint};
 pub use crate::bundle::manifest::{draw_ops_text, shader_manifest};
 pub use crate::bundle::svg::svg_from_ops;
+pub use crate::cursor::Cursor;
 pub use crate::event::{
     App, AppShader, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind, UiKey,
     UiTarget,

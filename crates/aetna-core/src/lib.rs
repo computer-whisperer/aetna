@@ -104,6 +104,7 @@
 
 pub mod anim;
 pub mod bundle;
+pub mod cursor;
 pub mod draw_ops;
 pub mod event;
 pub mod focus;
@@ -142,6 +143,7 @@ pub use bundle::inspect::dump_tree;
 pub use bundle::lint::{Finding, FindingKind, LintReport, lint};
 pub use bundle::manifest::{draw_ops_text, shader_manifest};
 pub use bundle::svg::svg_from_ops;
+pub use cursor::Cursor;
 pub use draw_ops::{draw_ops, draw_ops_with_theme};
 pub use event::{
     App, AppShader, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind, UiKey,

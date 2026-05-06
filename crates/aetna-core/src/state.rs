@@ -22,6 +22,7 @@ use web_time::Instant;
 
 use crate::anim::tick::{is_in_flight, tick_node};
 use crate::anim::{AnimProp, Animation};
+use crate::cursor::Cursor;
 use crate::event::{
     KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind, UiKey, UiTarget,
 };
@@ -283,6 +284,33 @@ impl UiState {
     /// [`InteractionState::Default`] when no tracker matches.
     pub fn node_state(&self, id: &str) -> InteractionState {
         self.node_states.get(id).copied().unwrap_or_default()
+    }
+
+    /// Resolved pointer cursor for the current frame.
+    ///
+    /// Picks the cursor in this order:
+    /// 1. If [`Self::pressed`] is set, walk from the press target up
+    ///    to `root` and return the first explicit `.cursor(...)`. Press
+    ///    capture wins so a button drag that wanders onto a text
+    ///    region doesn't flicker the cursor mid-press.
+    /// 2. Else if [`Self::hovered`] is set, walk from the hovered
+    ///    target up to `root` for the first explicit declaration —
+    ///    so a panel that sets `.cursor(Move)` once propagates to
+    ///    children that don't override.
+    /// 3. Else [`Cursor::Default`].
+    ///
+    /// Disabled state isn't auto-mapped to [`Cursor::NotAllowed`];
+    /// widgets that want that affordance branch in their build closure.
+    pub fn cursor(&self, root: &El) -> Cursor {
+        let target_id = self
+            .pressed
+            .as_ref()
+            .map(|t| t.node_id.as_str())
+            .or_else(|| self.hovered.as_ref().map(|t| t.node_id.as_str()));
+        match target_id {
+            Some(id) => cursor_for_target(root, id).unwrap_or(Cursor::Default),
+            None => Cursor::Default,
+        }
     }
 
     /// Current eased state envelope amount in `[0, 1]` for `(id, kind)`.
@@ -776,6 +804,28 @@ fn find_target_by_key(root: &El, key: &str) -> Option<UiTarget> {
         .find_map(|child| find_target_by_key(child, key))
 }
 
+/// Resolve the cursor a node by `target_id` should display by walking
+/// from `root` down, carrying the closest-ancestor cursor declaration.
+/// Returns the target's own cursor if declared, else the nearest
+/// ancestor's, else `None` when no ancestor (or the target itself)
+/// declared one. Returns `None` when `target_id` isn't in the tree —
+/// callers fall back to the default in that case.
+fn cursor_for_target(root: &El, target_id: &str) -> Option<Cursor> {
+    fn walk(node: &El, target_id: &str, inherited: Option<Cursor>) -> Option<Option<Cursor>> {
+        let here = node.cursor.or(inherited);
+        if node.computed_id == target_id {
+            return Some(here);
+        }
+        for c in &node.children {
+            if let Some(found) = walk(c, target_id, here) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    walk(root, target_id, None).flatten()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -886,6 +936,71 @@ mod tests {
         state.hovered = None;
         state.apply_to_state();
         assert_eq!(node_state(&tree, &state, "inc"), InteractionState::Default);
+    }
+
+    fn lay_out_cursor_tree() -> (El, UiState) {
+        // Panel declares Move; one button overrides with Pointer, one
+        // is undeclared (and inherits Move), one row sits between them
+        // without a cursor of its own (still inherits from the panel).
+        let mut tree = column([row([
+            button("pan").key("undeclared"),
+            button("press").key("declared").cursor(Cursor::Pointer),
+        ])])
+        .key("panel")
+        .cursor(Cursor::Move)
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        (tree, state)
+    }
+
+    #[test]
+    fn cursor_is_default_when_no_hover_no_press() {
+        let (tree, state) = lay_out_cursor_tree();
+        assert_eq!(state.cursor(&tree), Cursor::Default);
+    }
+
+    #[test]
+    fn cursor_returns_hovered_targets_explicit_declaration() {
+        let (tree, mut state) = lay_out_cursor_tree();
+        state.hovered = Some(target(&tree, &state, "declared"));
+        assert_eq!(state.cursor(&tree), Cursor::Pointer);
+    }
+
+    #[test]
+    fn cursor_inherits_from_ancestor_when_target_undeclared() {
+        // The "undeclared" button has no `.cursor(...)`, so the panel's
+        // `Move` propagates down — the inheritance rule that lets a
+        // pan-surface declare cursor once on the container.
+        let (tree, mut state) = lay_out_cursor_tree();
+        state.hovered = Some(target(&tree, &state, "undeclared"));
+        assert_eq!(state.cursor(&tree), Cursor::Move);
+    }
+
+    #[test]
+    fn cursor_press_capture_overrides_hovered_target() {
+        // Press on the Pointer button, drag onto the Move-inheriting
+        // sibling. The cursor stays Pointer for the duration of the
+        // press — matches native press-and-hold behaviour.
+        let (tree, mut state) = lay_out_cursor_tree();
+        let declared = target(&tree, &state, "declared");
+        let undeclared = target(&tree, &state, "undeclared");
+        state.pressed = Some(declared);
+        state.hovered = Some(undeclared);
+        assert_eq!(state.cursor(&tree), Cursor::Pointer);
+    }
+
+    #[test]
+    fn cursor_falls_back_to_default_when_target_id_not_in_tree() {
+        // Stale tracker (target was removed from the tree mid-frame)
+        // shouldn't panic — fall through to Default.
+        let (tree, mut state) = lay_out_cursor_tree();
+        state.hovered = Some(UiTarget {
+            key: "ghost".into(),
+            node_id: "no-such-node".into(),
+            rect: Rect::default(),
+        });
+        assert_eq!(state.cursor(&tree), Cursor::Default);
     }
 
     #[test]
