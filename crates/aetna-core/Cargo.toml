@@ -1,11 +1,16 @@
 [package]
 name = "aetna-core"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "Aetna — backend-agnostic UI library core"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 documentation = "https://docs.rs/aetna-core"
+keywords = ["ui", "gui", "widgets", "framework", "renderer"]
+categories = ["gui", "rendering"]
 
 [lib]
 path = "src/lib.rs"

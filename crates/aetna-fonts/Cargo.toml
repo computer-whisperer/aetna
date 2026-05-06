@@ -1,16 +1,23 @@
 [package]
 name = "aetna-fonts"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "Bundled font assets for Aetna (Roboto + Noto fallback faces)"
 license = "(MIT OR Apache-2.0) AND Apache-2.0 AND OFL-1.1"
 readme = "README.md"
 documentation = "https://docs.rs/aetna-fonts"
+keywords = ["fonts", "ui", "noto", "roboto", "typography"]
+categories = ["gui"]
 include = [
     "src/**/*.rs",
     "fonts/**",
     "Cargo.toml",
     "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
 ]
 
 [lib]
