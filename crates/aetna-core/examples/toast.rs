@@ -29,26 +29,32 @@ use aetna_core::state::UiState;
 use aetna_core::toast::synthesize_toasts;
 
 fn fixture() -> El {
-    column([
-        h2("Toasts"),
-        paragraph(
-            "Apps queue toasts by returning ToastSpec values from \
-             App::drain_toasts. The runtime stamps each with a TTL, \
-             stacks them at the bottom-right corner, and dismisses \
-             them on click or auto-expiry.",
-        )
-        .muted(),
-        row([
-            button("Save changes").key("save"),
-            button("Trigger error").key("err"),
-            button("Show info").key("info"),
+    // Apps wrap their main view in `overlays(main, [])` so the
+    // runtime can append the synthesized toast layer as an overlay
+    // sibling — same convention as for popovers and modals.
+    overlays(
+        column([
+            h2("Toasts"),
+            paragraph(
+                "Apps queue toasts by returning ToastSpec values from \
+                 App::drain_toasts. The runtime stamps each with a TTL, \
+                 stacks them at the bottom-right corner, and dismisses \
+                 them on click or auto-expiry.",
+            )
+            .muted(),
+            row([
+                button("Save changes").key("save"),
+                button("Trigger error").key("err"),
+                button("Show info").key("info"),
+            ])
+            .gap(tokens::SPACE_SM),
         ])
-        .gap(tokens::SPACE_SM),
-    ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
-    .width(Size::Fill(1.0))
-    .height(Size::Fill(1.0))
+        .gap(tokens::SPACE_LG)
+        .padding(tokens::SPACE_XL)
+        .width(Size::Fill(1.0))
+        .height(Size::Fill(1.0)),
+        [],
+    )
 }
 
 fn main() -> std::io::Result<()> {

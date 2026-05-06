@@ -1057,7 +1057,9 @@ mod tests {
         let toast_id = core.ui_state.toasts[0].id;
 
         // Build & lay out a tree with the toast layer appended.
-        let mut tree: El = crate::column(std::iter::empty::<El>())
+        // Root is `stack(...)` (Axis::Overlay) so the synthesized
+        // toast layer overlays rather than competing for flex space.
+        let mut tree: El = crate::stack(std::iter::empty::<El>())
             .width(Size::Fill(1.0))
             .height(Size::Fill(1.0));
         crate::layout::assign_ids(&mut tree);

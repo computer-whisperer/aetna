@@ -427,6 +427,14 @@ pub trait App {
     /// accumulate specs in a `Vec<ToastSpec>` field from event
     /// handlers, then `mem::take` it here.
     ///
+    /// **Root requirement:** apps that produce toasts (or use
+    /// `.tooltip(text)` on any node) must wrap their
+    /// [`Self::build`] return value in `overlays(main, [])` so the
+    /// runtime can append the floating layer as an overlay sibling
+    /// — same convention used for popovers and modals. Debug
+    /// builds panic if the synthesizer runs against a non-overlay
+    /// root.
+    ///
     /// Default: no toasts.
     fn drain_toasts(&mut self) -> Vec<crate::toast::ToastSpec> {
         Vec::new()

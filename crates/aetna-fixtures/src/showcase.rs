@@ -218,7 +218,11 @@ impl Showcase {
 
 impl App for Showcase {
     fn build(&self) -> El {
-        row([sidebar(self.section), content(self)])
+        // Root is an overlay stack so the runtime can append
+        // tooltip / toast layers as siblings of the main view
+        // without those layers competing for row-axis space —
+        // same convention any app uses for popovers and modals.
+        overlays(row([sidebar(self.section), content(self)]), [])
     }
 
     fn hotkeys(&self) -> Vec<(KeyChord, String)> {

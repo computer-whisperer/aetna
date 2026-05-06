@@ -95,11 +95,26 @@ pub struct Toast {
 /// `prepare_layout` after [`crate::tooltip::synthesize_tooltip`].
 /// Returns `true` while any toast is pending so the host keeps the
 /// redraw loop alive long enough to drop the next-to-expire toast.
+///
+/// **Root precondition:** the synthesized layer is appended as a
+/// sibling of whatever the app returned from [`crate::App::build`].
+/// For it to overlay (rather than compete for flex space) the root
+/// must be an `Axis::Overlay` container — typically `overlays(main,
+/// [])`, which is the same convention apps use for user-composed
+/// popovers and modals. Debug builds panic on a non-overlay root.
 pub fn synthesize_toasts(root: &mut El, ui_state: &mut UiState, now: Instant) -> bool {
     ui_state.toasts.retain(|t| t.expires_at > now);
     if ui_state.toasts.is_empty() {
         return false;
     }
+    debug_assert_eq!(
+        root.axis,
+        Axis::Overlay,
+        "synthesize_toasts: root must be an Axis::Overlay container so the toast \
+         stack overlays the main view. Wrap your `App::build` return value in \
+         `overlays(main, [])`. Got axis = {:?}",
+        root.axis,
+    );
     let cards: Vec<El> = ui_state.toasts.iter().map(toast_card).collect();
     root.children.push(toast_stack(cards));
     true
@@ -196,7 +211,7 @@ mod tests {
 
     #[test]
     fn synthesize_appends_layer_per_active_toast() {
-        let mut tree = crate::column(std::iter::empty::<El>());
+        let mut tree = crate::stack(std::iter::empty::<El>());
         let mut state = UiState::new();
         let now = Instant::now();
         state.push_toast(ToastSpec::success("Saved"), now);
@@ -215,7 +230,7 @@ mod tests {
 
     #[test]
     fn synthesize_drops_expired_toasts() {
-        let mut tree = crate::column(std::iter::empty::<El>());
+        let mut tree = crate::stack(std::iter::empty::<El>());
         let mut state = UiState::new();
         let t0 = Instant::now();
         // Old TTL: already gone. New TTL: still fresh.
@@ -236,7 +251,7 @@ mod tests {
 
     #[test]
     fn synthesize_returns_false_when_no_toasts() {
-        let mut tree = crate::column(std::iter::empty::<El>());
+        let mut tree = crate::stack(std::iter::empty::<El>());
         let mut state = UiState::new();
         let pending = synthesize_toasts(&mut tree, &mut state, Instant::now());
         assert!(!pending);
@@ -253,9 +268,7 @@ mod tests {
 
     #[test]
     fn toast_stack_layer_lays_out_at_root() {
-        let mut tree = crate::column(std::iter::empty::<El>())
-            .width(Size::Fill(1.0))
-            .height(Size::Fill(1.0));
+        let mut tree = crate::stack(std::iter::empty::<El>()).fill_size();
         let mut state = UiState::new();
         let now = Instant::now();
         state.push_toast(ToastSpec::default("hello"), now);

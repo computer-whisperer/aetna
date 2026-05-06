@@ -50,6 +50,13 @@ pub const HOVER_DELAY: Duration = Duration::from_millis(500);
 /// has stable `computed_id`s to look up by) and before
 /// [`crate::layout::layout`] (so the appended layer goes through
 /// the same layout pass as everything else).
+///
+/// **Root precondition:** the appended layer is a sibling of the
+/// app's [`crate::App::build`] return value. For it to overlay (and
+/// not compete for flex space) the root must be an `Axis::Overlay`
+/// container — typically `overlays(main, [])`, the same convention
+/// used for user-composed popovers and modals. Debug builds panic
+/// on a non-overlay root.
 pub fn synthesize_tooltip(root: &mut El, ui_state: &UiState, now: Instant) -> bool {
     // Suppressed: pointer is pressed (about to click — don't pop a
     // tooltip in the user's face), or this hover already had its
@@ -79,6 +86,14 @@ pub fn synthesize_tooltip(root: &mut El, ui_state: &UiState, now: Instant) -> bo
         return true;
     }
 
+    debug_assert_eq!(
+        root.axis,
+        Axis::Overlay,
+        "synthesize_tooltip: root must be an Axis::Overlay container so the \
+         tooltip layer overlays the main view. Wrap your `App::build` return \
+         value in `overlays(main, [])`. Got axis = {:?}",
+        root.axis,
+    );
     root.children
         .push(tooltip_layer(text, hover.node_id.clone()));
     // Tooltip is now in the tree; further redraws are driven by
