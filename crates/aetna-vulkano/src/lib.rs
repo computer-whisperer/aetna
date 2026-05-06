@@ -16,6 +16,7 @@
 //! fixtures can be shared with the `wgpu` backend.
 
 mod icon;
+mod image;
 mod instance;
 pub mod naga_compile;
 mod pipeline;
