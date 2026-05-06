@@ -243,6 +243,11 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
         ShaderHandle::Stock(StockShader::Text) => {
             // text shouldn't appear as a Quad — skip silently.
         }
+        ShaderHandle::Stock(StockShader::Image) => {
+            // image shouldn't appear as a Quad — `DrawOp::Image`
+            // dispatches through `emit_image_placeholder`. Skip
+            // silently in case a custom op binds to this shader name.
+        }
         ShaderHandle::Custom(name) => {
             // Placeholder rect so layout is visible. Real paint requires
             // wgpu + the registered shader.

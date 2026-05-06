@@ -61,6 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Section::Split,
         Section::Glass,
         Section::Toasts,
+        Section::Images,
     ] {
         let msaa = MsaaTarget::new(&device, format, extent, sample_count);
         let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -188,6 +189,7 @@ fn section_slug(s: Section) -> &'static str {
         Section::Split => "split",
         Section::Glass => "glass",
         Section::Toasts => "toasts",
+        Section::Images => "images",
     }
 }
 

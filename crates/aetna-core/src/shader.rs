@@ -76,6 +76,10 @@ pub enum StockShader {
     Text,
     /// Antialiased 1px line.
     DividerLine,
+    /// Per-image raster sampling. Backend binds a per-image texture at
+    /// group 1 and the fragment shader composes `sampled * tint` with
+    /// rounded-corner AA. See `crate::image::Image` for the data side.
+    Image,
 }
 
 impl StockShader {
@@ -85,6 +89,7 @@ impl StockShader {
             StockShader::RoundedRect => "stock::rounded_rect",
             StockShader::Text => "stock::text",
             StockShader::DividerLine => "stock::divider_line",
+            StockShader::Image => "stock::image",
         }
     }
 }
@@ -173,4 +178,5 @@ pub mod stock_wgsl {
     pub const VECTOR: &str = include_str!("../shaders/vector.wgsl");
     pub const VECTOR_RELIEF: &str = include_str!("../shaders/vector_relief.wgsl");
     pub const VECTOR_GLASS: &str = include_str!("../shaders/vector_glass.wgsl");
+    pub const IMAGE: &str = include_str!("../shaders/image.wgsl");
 }

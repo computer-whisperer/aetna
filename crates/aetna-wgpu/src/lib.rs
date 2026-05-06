@@ -65,6 +65,7 @@
 //! uniforms (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`).
 
 mod icon;
+mod image;
 mod instance;
 mod msaa;
 mod pipeline;
@@ -95,6 +96,7 @@ pub use aetna_core::paint::PaintItem;
 pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
 
 use crate::icon::IconPaint;
+use crate::image::ImagePaint;
 use crate::instance::set_scissor;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
 use crate::text::TextPaint;
@@ -136,6 +138,8 @@ pub struct Runner {
     text_paint: TextPaint,
     // stock::icon_line resources — vector icon stroke instances.
     icon_paint: IconPaint,
+    // stock::image resources — per-image texture cache + instance buf.
+    image_paint: ImagePaint,
 
     /// Lazily-allocated snapshot of the color target, sized to match
     /// the current target on each `render()`. Backdrop-sampling
@@ -163,6 +167,9 @@ struct SnapshotTexture {
 struct PaintRecorder<'a> {
     text: &'a mut TextPaint,
     icons: &'a mut IconPaint,
+    images: &'a mut ImagePaint,
+    device: &'a wgpu::Device,
+    queue: &'a wgpu::Queue,
 }
 
 impl TextRecorder for PaintRecorder<'_> {
@@ -219,6 +226,20 @@ impl TextRecorder for PaintRecorder<'_> {
             self.icons
                 .record(rect, scissor, source, color, stroke_width),
         )
+    }
+
+    fn record_image(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        image: &aetna_core::image::Image,
+        tint: Option<Color>,
+        radius: f32,
+        _fit: aetna_core::image::ImageFit,
+        _scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.images
+            .record(self.device, self.queue, rect, scissor, image, tint, radius)
     }
 }
 
@@ -357,6 +378,7 @@ impl Runner {
         // Text pipeline + atlas (replaces glyphon).
         let text_paint = TextPaint::new(device, target_format, sample_count, &frame_bind_layout);
         let icon_paint = IconPaint::new(device, target_format, sample_count, &frame_bind_layout);
+        let image_paint = ImagePaint::new(device, target_format, sample_count, &frame_bind_layout);
 
         let mut core = RunnerCore::new();
         core.quad_scratch = Vec::with_capacity(INITIAL_INSTANCE_CAPACITY);
@@ -377,6 +399,7 @@ impl Runner {
             backdrop_shaders: HashSet::new(),
             text_paint,
             icon_paint,
+            image_paint,
             snapshot: None,
             backdrop_bind_group: None,
             start_time: Instant::now(),
@@ -529,11 +552,15 @@ impl Runner {
         // check itself into core).
         self.text_paint.frame_begin();
         self.icon_paint.frame_begin();
+        self.image_paint.frame_begin();
         let pipelines = &self.pipelines;
         let backdrop_shaders = &self.backdrop_shaders;
         let mut recorder = PaintRecorder {
             text: &mut self.text_paint,
             icons: &mut self.icon_paint,
+            images: &mut self.image_paint,
+            device,
+            queue,
         };
         self.core.prepare_paint(
             &ops,
@@ -570,6 +597,7 @@ impl Runner {
         }
         self.text_paint.flush(device, queue);
         self.icon_paint.flush(device, queue);
+        self.image_paint.flush(device, queue);
         let time = (Instant::now() - self.start_time).as_secs_f32();
         let frame = FrameUniforms {
             viewport: [viewport.w, viewport.h],
@@ -973,12 +1001,15 @@ impl Runner {
                         }
                     }
                 }
-                PaintItem::Image(_) => {
-                    // Raster image painter not yet wired up on this
-                    // backend — `TextRecorder::record_image` returns
-                    // an empty range so this arm is unreachable today.
-                    // Kept as an explicit no-op so adding the painter
-                    // is a focused diff.
+                PaintItem::Image(index) => {
+                    let run = self.image_paint.run(index);
+                    set_scissor(pass, run.scissor, full);
+                    pass.set_pipeline(self.image_paint.pipeline());
+                    pass.set_bind_group(0, &self.quad_bind_group, &[]);
+                    pass.set_bind_group(1, self.image_paint.bind_group_for_run(run), &[]);
+                    pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
+                    pass.set_vertex_buffer(1, self.image_paint.instance_buf().slice(..));
+                    pass.draw(0..4, run.first..run.first + run.count);
                 }
                 PaintItem::BackdropSnapshot => {
                     // Marker only — `render()` splits the slice on

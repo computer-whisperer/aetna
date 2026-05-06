@@ -40,6 +40,7 @@ pub enum Section {
     Split,
     Glass,
     Toasts,
+    Images,
 }
 
 impl Section {
@@ -54,6 +55,7 @@ impl Section {
             Section::Split => "Split",
             Section::Glass => "Glass",
             Section::Toasts => "Toasts",
+            Section::Images => "Images",
         }
     }
 
@@ -68,10 +70,11 @@ impl Section {
             Section::Split => "nav-split",
             Section::Glass => "nav-glass",
             Section::Toasts => "nav-toasts",
+            Section::Images => "nav-images",
         }
     }
 
-    const ALL: [Section; 9] = [
+    const ALL: [Section; 10] = [
         Section::Counter,
         Section::List,
         Section::Palette,
@@ -81,6 +84,7 @@ impl Section {
         Section::Split,
         Section::Glass,
         Section::Toasts,
+        Section::Images,
     ];
 }
 
@@ -252,6 +256,7 @@ impl App for Showcase {
             Section::Split => split_on_event(&mut self.split, event),
             Section::Glass => glass_on_event(&mut self.glass, event),
             Section::Toasts => toasts_on_event(&mut self.toasts, event),
+            Section::Images => {} // static fixture, no events
         }
     }
 
@@ -316,6 +321,7 @@ fn content(app: &Showcase) -> El {
                 .height(Size::Fill(1.0));
         }
         Section::Toasts => toasts_view(&app.toasts),
+        Section::Images => images_view(),
     };
     column([body])
         .padding(tokens::SPACE_XL)
@@ -1209,6 +1215,162 @@ fn toasts_on_event(state: &mut ToastsState, e: UiEvent) {
     };
     state.pending.push(spec);
     state.fires += 1;
+}
+
+// ---- Images section ----
+//
+// Apps construct `Image`s once (typically via `LazyLock` over a
+// decoded byte slice; here we generate test patterns in code so the
+// fixture is self-contained — no PNG dep). Equal pixel buffers share
+// a backend texture-cache slot, so the four `image(SOLID.clone())`
+// calls in the avatar row map to one GPU upload.
+
+use std::sync::LazyLock;
+
+static GRID_RG: LazyLock<Image> = LazyLock::new(|| make_gradient(64, 64, [255, 64, 64], [64, 96, 255]));
+static GRID_GB: LazyLock<Image> = LazyLock::new(|| make_gradient(64, 64, [64, 200, 100], [40, 40, 60]));
+static GRID_CHECKER: LazyLock<Image> = LazyLock::new(|| make_checker(64, 64, 8));
+static GRID_RING: LazyLock<Image> = LazyLock::new(|| make_ring(64, 64));
+static AVATAR_SOLID: LazyLock<Image> =
+    LazyLock::new(|| Image::from_rgba8(32, 32, vec![255; 32 * 32 * 4]));
+
+fn make_gradient(w: u32, h: u32, top_left: [u8; 3], bottom_right: [u8; 3]) -> Image {
+    let mut pixels = vec![0u8; (w as usize) * (h as usize) * 4];
+    for y in 0..h {
+        for x in 0..w {
+            let t = (x + y) as f32 / (w + h - 2) as f32;
+            let r = (top_left[0] as f32 * (1.0 - t) + bottom_right[0] as f32 * t) as u8;
+            let g = (top_left[1] as f32 * (1.0 - t) + bottom_right[1] as f32 * t) as u8;
+            let b = (top_left[2] as f32 * (1.0 - t) + bottom_right[2] as f32 * t) as u8;
+            let i = ((y * w + x) * 4) as usize;
+            pixels[i] = r;
+            pixels[i + 1] = g;
+            pixels[i + 2] = b;
+            pixels[i + 3] = 255;
+        }
+    }
+    Image::from_rgba8(w, h, pixels)
+}
+
+fn make_checker(w: u32, h: u32, cell: u32) -> Image {
+    let mut pixels = vec![0u8; (w as usize) * (h as usize) * 4];
+    for y in 0..h {
+        for x in 0..w {
+            let on = ((x / cell) + (y / cell)).is_multiple_of(2);
+            let v = if on { 240 } else { 32 };
+            let i = ((y * w + x) * 4) as usize;
+            pixels[i] = v;
+            pixels[i + 1] = v;
+            pixels[i + 2] = v;
+            pixels[i + 3] = 255;
+        }
+    }
+    Image::from_rgba8(w, h, pixels)
+}
+
+fn make_ring(w: u32, h: u32) -> Image {
+    let mut pixels = vec![0u8; (w as usize) * (h as usize) * 4];
+    let cx = w as f32 * 0.5;
+    let cy = h as f32 * 0.5;
+    let r_outer = w.min(h) as f32 * 0.45;
+    let r_inner = r_outer - 6.0;
+    for y in 0..h {
+        for x in 0..w {
+            let d = ((x as f32 - cx).powi(2) + (y as f32 - cy).powi(2)).sqrt();
+            let on = d <= r_outer && d >= r_inner;
+            let i = ((y * w + x) * 4) as usize;
+            if on {
+                pixels[i] = 255;
+                pixels[i + 1] = 255;
+                pixels[i + 2] = 255;
+                pixels[i + 3] = 255;
+            } else {
+                pixels[i + 3] = 0;
+            }
+        }
+    }
+    Image::from_rgba8(w, h, pixels)
+}
+
+fn images_view() -> El {
+    column([
+        h2("Images"),
+        paragraph(
+            "Apps construct `Image`s once and embed them via `image(...)`. \
+             Identity is content-hashed, so equal pixel buffers share a \
+             GPU texture; cloning the handle is a cheap Arc bump.",
+        )
+        .muted(),
+        // 4-cell grid showing each of the test patterns at natural size.
+        row([
+            tile(&GRID_RG, "gradient"),
+            tile(&GRID_GB, "moss"),
+            tile(&GRID_CHECKER, "checker"),
+            tile(&GRID_RING, "ring"),
+        ])
+        .gap(tokens::SPACE_MD),
+        // Avatar row: four references to the same Image with different
+        // tints — exercises the tint multiply + content-hash sharing.
+        h3("Tints share one texture (content-hashed)"),
+        row([
+            avatar(Color::rgb(96, 165, 250)),
+            avatar(Color::rgb(244, 114, 182)),
+            avatar(Color::rgb(248, 113, 113)),
+            avatar(Color::rgb(132, 204, 22)),
+        ])
+        .gap(tokens::SPACE_SM),
+        // Fit modes side-by-side: same image, four projections into
+        // identically-sized boxes so the differences are visible.
+        h3("ImageFit modes"),
+        row([
+            fit_demo("Contain", ImageFit::Contain),
+            fit_demo("Cover", ImageFit::Cover),
+            fit_demo("Fill", ImageFit::Fill),
+            fit_demo("None", ImageFit::None),
+        ])
+        .gap(tokens::SPACE_MD),
+    ])
+    .gap(tokens::SPACE_LG)
+    .padding(tokens::SPACE_XL)
+    .align(Align::Start)
+}
+
+fn tile(img: &LazyLock<Image>, label: &str) -> El {
+    column([
+        image((*img).clone())
+            .width(Size::Fixed(96.0))
+            .height(Size::Fixed(96.0))
+            .image_fit(ImageFit::Contain)
+            .radius(tokens::RADIUS_MD),
+        text(label.to_string()).small().muted(),
+    ])
+    .gap(tokens::SPACE_XS)
+    .align(Align::Center)
+}
+
+fn avatar(tint: Color) -> El {
+    image(AVATAR_SOLID.clone())
+        .width(Size::Fixed(48.0))
+        .height(Size::Fixed(48.0))
+        .image_fit(ImageFit::Fill)
+        .image_tint(tint)
+        .radius(24.0)
+}
+
+fn fit_demo(label: &str, fit: ImageFit) -> El {
+    column([
+        // 96x96 box; the gradient image is 64x64 so each fit produces
+        // visibly different geometry.
+        image(GRID_RG.clone())
+            .width(Size::Fixed(96.0))
+            .height(Size::Fixed(48.0))
+            .image_fit(fit)
+            .radius(tokens::RADIUS_SM)
+            .stroke(tokens::BORDER),
+        text(label.to_string()).small().muted(),
+    ])
+    .gap(tokens::SPACE_XS)
+    .align(Align::Center)
 }
 
 #[cfg(test)]
