@@ -6,11 +6,12 @@
 //! use aetna_core::prelude::*;
 //! ```
 //!
-//! The prelude intentionally avoids backend internals such as draw-op
-//! packing, glyph atlases, MSDF pages, and runner-core state. Use the
-//! explicit modules for those advanced surfaces.
+//! The prelude intentionally avoids backend-implementer surface
+//! (`runtime::RunnerCore`, `paint::*`, `text::atlas::*`, vector mesh
+//! tessellation) and frame-internal hit-test/focus helpers. Reach for
+//! those via their explicit modules when needed.
 
-pub use crate::anim::{SpringConfig, Timing, TweenConfig};
+pub use crate::anim::{AnimProp, AnimValue, Animation, SpringConfig, Timing, TweenConfig};
 pub use crate::bundle::artifact::{
     Bundle, render_bundle, render_bundle_themed, render_bundle_with, render_bundle_with_theme,
     write_bundle,
@@ -24,12 +25,14 @@ pub use crate::event::{
     UiTarget,
 };
 pub use crate::icons::{IntoIconName, all_icon_names, icon};
-pub use crate::layout::{LayoutCtx, LayoutFn};
-pub use crate::shader::{ShaderBinding, UniformBlock, UniformValue};
+pub use crate::ir::{DrawOp, TextAnchor};
+pub use crate::layout::{LayoutCtx, LayoutFn, VirtualItems};
+pub use crate::shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
+pub use crate::state::{AnimationMode, WidgetState};
 pub use crate::style::StyleProfile;
 pub use crate::text::metrics::{
-    TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text, line_height, line_width,
-    measure_text, selection_rects, wrap_lines,
+    MeasuredText, TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text, line_height,
+    line_width, measure_text, selection_rects, wrap_lines,
 };
 pub use crate::theme::Theme;
 pub use crate::tokens;

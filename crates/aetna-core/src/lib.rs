@@ -113,8 +113,10 @@ pub mod icon_msdf_atlas;
 pub mod icons;
 pub mod ir;
 pub mod layout;
+#[doc(hidden)]
 pub mod paint;
 pub mod prelude;
+#[doc(hidden)]
 pub mod runtime;
 pub mod shader;
 pub mod state;
@@ -152,6 +154,11 @@ pub use layout::{LayoutCtx, LayoutFn, VirtualItems, layout};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
 pub use state::{AnimationMode, UiState, WidgetState};
 pub use style::StyleProfile;
+// Atlas/glyph types are backend-implementer surface (consumed by
+// `aetna-wgpu` / `aetna-vulkano` paint paths). App authors don't
+// touch them, so hide from docs.rs while keeping them resolvable
+// at the crate root for backend imports.
+#[doc(hidden)]
 pub use text::atlas::{
     AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, RunStyle, ShapedGlyph, ShapedRun,
 };
@@ -165,11 +172,17 @@ pub use tree::{
     Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column, divider,
     hard_break, row, scroll, spacer, stack, text_runs, virtual_list,
 };
+pub use vector::IconMaterial;
+// Vector path / mesh tessellation types are internal-tooling surface.
+// `aetna_core::vector::*` keeps them reachable for tools that need
+// raw mesh access; hide from docs.rs and the crate-root prelude so
+// app authors aren't tempted to depend on them.
+#[doc(hidden)]
 pub use vector::{
-    IconMaterial, VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorLineCap,
-    VectorLineJoin, VectorMesh, VectorMeshOptions, VectorMeshRun, VectorMeshVertex,
-    VectorParseError, VectorPath, VectorSegment, VectorStroke, append_vector_asset_mesh,
-    parse_svg_asset, tessellate_vector_asset,
+    VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorLineCap, VectorLineJoin,
+    VectorMesh, VectorMeshOptions, VectorMeshRun, VectorMeshVertex, VectorParseError, VectorPath,
+    VectorSegment, VectorStroke, append_vector_asset_mesh, parse_svg_asset,
+    tessellate_vector_asset,
 };
 
 pub use widgets::badge::badge;
