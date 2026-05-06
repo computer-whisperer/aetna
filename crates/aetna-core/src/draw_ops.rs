@@ -302,6 +302,13 @@ fn push_node(
                 },
             );
             for (rx, ry, rw, rh) in rects {
+                // The band must paint *behind* the glyph run; we emit
+                // the Quad with `inner_rect` matching `rect` so the
+                // SDF-based rounded_rect shader treats the whole band
+                // as inside (no overflow halo). `inner_rect` is also
+                // what the shader computes coverage against, so a
+                // mismatch with `rect` would partially or fully clip
+                // the fill.
                 let band = Rect::new(glyph_rect.x + rx, glyph_rect.y + ry, rw, rh);
                 let mut band_uniforms = UniformBlock::new();
                 band_uniforms.insert(
@@ -815,6 +822,106 @@ mod tests {
             (expected.r, expected.g, expected.b),
             "flagged thumb borrows the container's press envelope",
         );
+    }
+
+    #[test]
+    fn drag_select_through_runtime_paints_band_in_next_frame() {
+        // End-to-end: simulate pointer_down + pointer_moved on a
+        // selectable paragraph, then drive a fresh `prepare_layout`
+        // and verify the band is in the resulting DrawOps. Catches
+        // regressions where the runtime's per-frame updates would
+        // overwrite the live selection or where the painter doesn't
+        // see the manager's writes.
+        use crate::event::PointerButton;
+        use crate::runtime::{PrepareTimings, RunnerCore};
+
+        let mut core = RunnerCore::new();
+        let mut tree = column([crate::widgets::text::paragraph("Hello, world!")
+            .key("p")
+            .selectable()])
+        .padding(20.0);
+        let viewport = Rect::new(0.0, 0.0, 400.0, 200.0);
+        // First prepare_layout populates the selection_order, etc.
+        let mut t = PrepareTimings::default();
+        let _ = core.prepare_layout(&mut tree, viewport, 1.0, &mut t);
+        // Snapshot so pointer events can hit-test against this frame.
+        core.snapshot(&tree, &mut t);
+
+        let p_rect = core.rect_of_key("p").expect("p rect");
+        let cy = p_rect.y + p_rect.h * 0.5;
+        let _ = core.pointer_down(p_rect.x + 4.0, cy, PointerButton::Primary);
+        // Drag to extend.
+        let _ = core.pointer_moved(p_rect.x + p_rect.w - 8.0, cy);
+
+        // Selection in UiState must be a non-collapsed range now.
+        let sel = &core.ui_state.current_selection;
+        let r = sel.range.as_ref().expect("selection set");
+        assert!(
+            r.anchor.byte != r.head.byte,
+            "drag should extend head past anchor (anchor={}, head={})",
+            r.anchor.byte,
+            r.head.byte
+        );
+
+        // Re-run prepare_layout (the per-frame loop). The painter
+        // should emit a selection band Quad on this frame.
+        let mut t2 = PrepareTimings::default();
+        let (ops, _) = core.prepare_layout(&mut tree, viewport, 1.0, &mut t2);
+        let bands: Vec<&DrawOp> = ops
+            .iter()
+            .filter(|op| matches!(op, DrawOp::Quad { id, .. } if id.contains("selection-band")))
+            .collect();
+        assert!(
+            !bands.is_empty(),
+            "after drag-select, prepare_layout should emit a selection band Quad"
+        );
+        // Verify the band's painted rect overlaps the leaf's painted
+        // rect — otherwise the highlight is rendered, but off-screen.
+        if let DrawOp::Quad { rect, .. } = bands[0] {
+            assert!(
+                rect.intersect(p_rect).is_some(),
+                "band rect = {rect:?} doesn't overlap leaf rect = {p_rect:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn selectable_leaf_paints_selection_band_when_key_matches_active_selection() {
+        use crate::selection::{Selection, SelectionPoint, SelectionRange};
+
+        let mut tree = column([crate::widgets::text::paragraph("Hello, world!")
+            .key("p")
+            .selectable()])
+        .padding(20.0);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        // Pre-painter sanity: no current selection → no band.
+        let ops_pre = draw_ops(&tree, &state);
+        let bands_pre = ops_pre
+            .iter()
+            .filter(|op| matches!(op, DrawOp::Quad { id, .. } if id.contains("selection-band")))
+            .count();
+        assert_eq!(bands_pre, 0, "no band should paint when selection is empty");
+
+        state.current_selection = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("p", 0),
+                head: SelectionPoint::new("p", 5),
+            }),
+        };
+        let ops = draw_ops(&tree, &state);
+        let bands: Vec<&DrawOp> = ops
+            .iter()
+            .filter(|op| matches!(op, DrawOp::Quad { id, .. } if id.contains("selection-band")))
+            .collect();
+        assert!(
+            !bands.is_empty(),
+            "selection range over keyed selectable leaf should emit at least one band Quad"
+        );
+        if let DrawOp::Quad { rect, .. } = bands[0] {
+            // Band must overlap the leaf's painted rect (positive area).
+            assert!(rect.w > 0.0 && rect.h > 0.0, "band rect = {rect:?}");
+        }
     }
 
     #[test]
