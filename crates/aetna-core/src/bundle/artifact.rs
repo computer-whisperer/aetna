@@ -45,7 +45,7 @@
 //!         scene.drive_setup(&mut app);
 //!
 //!         let mut tree = app.build();
-//!         let bundle = render_bundle(&mut tree, viewport, Some("crates/your-app/src"));
+//!         let bundle = render_bundle(&mut tree, viewport, Some(env!("CARGO_PKG_NAME")));
 //!         write_bundle(&bundle, &out_dir, &scene.slug())?;
 //!         if !bundle.lint.findings.is_empty() {
 //!             eprint!("{}", bundle.lint.text());
@@ -98,16 +98,20 @@ pub struct Bundle {
 
 /// Lay out, resolve to draw ops, dump, lint.
 ///
-/// `library_marker` filters lint findings whose source path contains
-/// the marker — typically `"crates/aetna-core/src"` to ignore values
-/// inside library defaults. Pass `None` to see everything.
+/// `app_path_marker` scopes the lint to your own crate's findings.
+/// The recommended idiom is `Some(env!("CARGO_PKG_NAME"))` —
+/// `Location::caller()` records workspace-relative paths like
+/// `crates/your-app/src/...` which contain the package name as a
+/// directory, so the package name works as a substring marker
+/// without depending on workspace layout. Pass `None` to see every
+/// finding.
 ///
 /// Constructs a fresh [`UiState`] internally — bundle artifacts are a
 /// snapshot of the tree at rest, with no hover/press/focus state. For
 /// fixtures that need to demonstrate non-trivial state (a scroll
 /// position, a hovered button), see [`render_bundle_with`].
-pub fn render_bundle(root: &mut El, viewport: Rect, library_marker: Option<&str>) -> Bundle {
-    render_bundle_with(root, &mut UiState::new(), viewport, library_marker)
+pub fn render_bundle(root: &mut El, viewport: Rect, app_path_marker: Option<&str>) -> Bundle {
+    render_bundle_with(root, &mut UiState::new(), viewport, app_path_marker)
 }
 
 /// Same as [`render_bundle`], but resolves implicit surfaces through a
@@ -115,10 +119,10 @@ pub fn render_bundle(root: &mut El, viewport: Rect, library_marker: Option<&str>
 pub fn render_bundle_themed(
     root: &mut El,
     viewport: Rect,
-    library_marker: Option<&str>,
+    app_path_marker: Option<&str>,
     theme: &Theme,
 ) -> Bundle {
-    render_bundle_with_theme(root, &mut UiState::new(), viewport, library_marker, theme)
+    render_bundle_with_theme(root, &mut UiState::new(), viewport, app_path_marker, theme)
 }
 
 /// Same as [`render_bundle`], but threads a caller-built [`UiState`]
@@ -133,9 +137,9 @@ pub fn render_bundle_with(
     root: &mut El,
     ui_state: &mut UiState,
     viewport: Rect,
-    library_marker: Option<&str>,
+    app_path_marker: Option<&str>,
 ) -> Bundle {
-    render_bundle_with_theme(root, ui_state, viewport, library_marker, &Theme::default())
+    render_bundle_with_theme(root, ui_state, viewport, app_path_marker, &Theme::default())
 }
 
 /// Same as [`render_bundle_with`], but resolves implicit surfaces through
@@ -144,7 +148,7 @@ pub fn render_bundle_with_theme(
     root: &mut El,
     ui_state: &mut UiState,
     viewport: Rect,
-    library_marker: Option<&str>,
+    app_path_marker: Option<&str>,
     theme: &Theme,
 ) -> Bundle {
     layout::layout(root, ui_state, viewport);
@@ -152,7 +156,7 @@ pub fn render_bundle_with_theme(
     let svg = svg_from_ops(viewport.w, viewport.h, &draw_ops, tokens::BG_APP);
     let tree_dump = inspect::dump_tree(root, ui_state);
     let shader_manifest = manifest::shader_manifest(&draw_ops);
-    let lint = lint(root, ui_state, library_marker);
+    let lint = lint(root, ui_state, app_path_marker);
     Bundle {
         svg,
         tree_dump,

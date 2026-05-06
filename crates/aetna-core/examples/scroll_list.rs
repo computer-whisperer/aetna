@@ -59,7 +59,7 @@ fn main() -> std::io::Result<()> {
         &mut root,
         &mut ui_state,
         viewport,
-        Some("crates/aetna-core/src"),
+        Some(env!("CARGO_PKG_NAME")),
     );
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");

@@ -9,7 +9,7 @@ use aetna_core::prelude::*;
 fn main() -> std::io::Result<()> {
     let mut root = dashboard_01_calibration();
     let viewport = Rect::new(0.0, 0.0, 1180.0, 780.0);
-    let bundle = render_bundle(&mut root, viewport, Some("crates/aetna-core/src"));
+    let bundle = render_bundle(&mut root, viewport, Some(env!("CARGO_PKG_NAME")));
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     let written = write_bundle(&bundle, &out_dir, "dashboard_01_calibration")?;

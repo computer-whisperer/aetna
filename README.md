@@ -117,7 +117,7 @@ When scaffolding a UI, prefer the named affordance over the underlying primitive
 | Indent inside a list (e.g. tree depth) | `.padding(Sides { left: indent, ..Sides::zero() })` | `row([spacer().width(Fixed(indent)), ...])` |
 | Toggle (preferences) | `switch(self.value).key(k)` + `switch::apply_event(...)` | a button with two text labels |
 | Standard tooltip | `.tooltip("...")` on any element | a manually-positioned popover |
-| Layout review without GPU | `render_bundle(&mut tree, viewport, Some("crates/X/src"))` + `write_bundle(...)` per scene — see [Per-app artifact dumps](#per-app-artifact-dumps) | spinning up a wgpu window every time you want to eyeball a layout change |
+| Layout review without GPU | `render_bundle(&mut tree, viewport, Some(env!("CARGO_PKG_NAME")))` + `write_bundle(...)` per scene — see [Per-app artifact dumps](#per-app-artifact-dumps) | spinning up a wgpu window every time you want to eyeball a layout change |
 
 Smells that mean an affordance is being missed: `.gap(0.0)` (already the default — delete it), `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier), wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly), an explicit `.fill(tokens::BG_APP)` on the root (the host already paints it), and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
 
@@ -251,10 +251,12 @@ The four-line core is in the prelude:
 use aetna_core::prelude::*;
 
 let mut tree = app.build();
-let bundle = render_bundle(&mut tree, viewport, Some("crates/your-app/src"));
+let bundle = render_bundle(&mut tree, viewport, Some(env!("CARGO_PKG_NAME")));
 write_bundle(&bundle, &out_dir, "scene_name")?;
 if !bundle.lint.findings.is_empty() { eprint!("{}", bundle.lint.text()); }
 ```
+
+The third argument to `render_bundle` scopes lint findings to your own crate's source paths so library defaults don't drown out your code's issues. `env!("CARGO_PKG_NAME")` expands at compile time to the crate name (e.g. `"rumble-aetna"`), which `Location::caller()` records as a directory in workspace-relative source paths. If your dump bin lives in a different crate from the code you're rendering — like aetna's `dump_showcase_bundles` calling `aetna-fixtures::Showcase` — pass that crate's name as a literal instead.
 
 Around that, the per-app shape is small: a `MockBackend` returning a canned snapshot, a `Scene` enum enumerating the views worth dumping, and — for views that depend on local UI flags — `app.on_event(UiEvent::synthetic_click(key))` to drive state through the same `on_event` path users hit. Output goes to `crates/<app>/out/` (gitignored). Three reference implementations, all the same shape:
 

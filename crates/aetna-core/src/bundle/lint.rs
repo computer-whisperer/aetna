@@ -11,10 +11,14 @@
 //!   possible via explicit `.key(...)` collisions; pure path IDs are
 //!   unique by construction).
 //!
-//! Provenance: every finding records the source location of the offending
-//! node. By default, findings whose source path is inside this crate's
-//! `src/` directory are filtered out — those represent library-internal
-//! defaults the user can't fix. The crate path filter is configurable.
+//! Provenance: every finding records the source location of the
+//! offending node (via `#[track_caller]` propagation up to the user's
+//! call site). The lint accepts an optional `app_path_marker` —
+//! findings are kept only when the source path contains this marker.
+//! The recommended idiom is to pass `Some(env!("CARGO_PKG_NAME"))`
+//! so the filter scopes to the calling crate without having to type
+//! out a workspace path. Pass `None` to see everything (including
+//! anything that fell through `track_caller`).
 
 use std::fmt::Write as _;
 
@@ -71,11 +75,14 @@ impl LintReport {
     }
 }
 
-/// Run the lint pass. Findings whose source path contains
-/// `library_path_marker` are filtered out so the report focuses on
-/// user code. Pass `Some("crates/aetna-core/src")` (or similar) to
-/// scrub library-internal raw values; pass `None` to see everything.
-pub fn lint(root: &El, ui_state: &UiState, library_path_marker: Option<&str>) -> LintReport {
+/// Run the lint pass. When `app_path_marker` is `Some(m)`, findings
+/// are kept only if the source path of the offending node contains
+/// `m`. The recommended idiom is `Some(env!("CARGO_PKG_NAME"))` —
+/// `Location::caller()` records workspace-relative paths like
+/// `crates/your-app/src/...`, which contain the package name as a
+/// directory component. Pass `None` to see every finding (including
+/// any that fell through `track_caller` propagation).
+pub fn lint(root: &El, ui_state: &UiState, app_path_marker: Option<&str>) -> LintReport {
     let mut r = LintReport::default();
     let mut seen_ids: std::collections::BTreeMap<String, usize> = Default::default();
     walk(
@@ -84,7 +91,7 @@ pub fn lint(root: &El, ui_state: &UiState, library_path_marker: Option<&str>) ->
         ui_state,
         &mut r,
         &mut seen_ids,
-        library_path_marker,
+        app_path_marker,
     );
     for (id, n) in seen_ids {
         if n > 1 {
@@ -105,13 +112,13 @@ fn walk(
     ui_state: &UiState,
     r: &mut LintReport,
     seen: &mut std::collections::BTreeMap<String, usize>,
-    lib_marker: Option<&str>,
+    app_marker: Option<&str>,
 ) {
     *seen.entry(n.computed_id.clone()).or_default() += 1;
     let computed = ui_state.rect(&n.computed_id);
 
-    let from_user = match lib_marker {
-        Some(marker) => !n.source.file.contains(marker),
+    let from_user = match app_marker {
+        Some(marker) => n.source.file.contains(marker),
         None => true,
     };
     // Children of an Inlines paragraph are encoded into one
@@ -237,7 +244,7 @@ fn walk(
                 ),
             });
         }
-        walk(c, Some(&n.kind), ui_state, r, seen, lib_marker);
+        walk(c, Some(&n.kind), ui_state, r, seen, app_marker);
     }
 }
 
