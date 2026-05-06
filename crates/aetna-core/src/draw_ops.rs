@@ -179,6 +179,13 @@ fn push_node(
     }
 
     if let Some(text) = &n.text {
+        // `padding` on a text-bearing node insets the glyph rect the
+        // same way it insets the children of a container node — so
+        // `text("X").padding(...)` and `column([text("X")]).padding(...)`
+        // produce visually identical results. Without this, padding on
+        // a text node would silently inflate intrinsic measurement only
+        // and disappear once `Align::Stretch` flattened the Hug width.
+        let glyph_rect = inner_painted_rect.inset(n.padding);
         let display = match suffix {
             Some(s) => format!("{text}{s}"),
             None => text.clone(),
@@ -189,7 +196,7 @@ fn push_node(
                 painted_font_size,
                 weight,
                 n.font_mono,
-                inner_painted_rect.w,
+                glyph_rect.w,
                 max_lines,
             ),
             _ => display,
@@ -200,7 +207,7 @@ fn push_node(
                 painted_font_size,
                 weight,
                 n.font_mono,
-                inner_painted_rect.w,
+                glyph_rect.w,
             ),
             _ => display,
         };
@@ -218,12 +225,12 @@ fn push_node(
             n.text_wrap,
             match n.text_wrap {
                 TextWrap::NoWrap => None,
-                TextWrap::Wrap => Some(inner_painted_rect.w),
+                TextWrap::Wrap => Some(glyph_rect.w),
             },
         );
         out.push(DrawOp::GlyphRun {
             id: n.computed_id.clone(),
-            rect: inner_painted_rect,
+            rect: glyph_rect,
             scissor: own_scissor,
             shader: ShaderHandle::Stock(StockShader::Text),
             color: text_color,
@@ -239,13 +246,14 @@ fn push_node(
 
     if let Some(source) = &n.icon {
         let color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
+        let inner = inner_painted_rect.inset(n.padding);
         let icon_size = painted_font_size
-            .min(inner_painted_rect.w)
-            .min(inner_painted_rect.h)
+            .min(inner.w)
+            .min(inner.h)
             .max(1.0);
         let icon_rect = Rect::new(
-            inner_painted_rect.center_x() - icon_size * 0.5,
-            inner_painted_rect.center_y() - icon_size * 0.5,
+            inner.center_x() - icon_size * 0.5,
+            inner.center_y() - icon_size * 0.5,
             icon_size,
             icon_size,
         );
@@ -266,6 +274,7 @@ fn push_node(
     // into children — they're encoded in the runs and don't paint
     // independently.
     if matches!(n.kind, Kind::Inlines) {
+        let glyph_rect = inner_painted_rect.inset(n.padding);
         let runs = collect_inline_runs(n, opacity);
         let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
         let inline_size = inline_paragraph_font_size(n) * n.scale;
@@ -282,12 +291,12 @@ fn push_node(
             n.text_wrap,
             match n.text_wrap {
                 TextWrap::NoWrap => None,
-                TextWrap::Wrap => Some(inner_painted_rect.w),
+                TextWrap::Wrap => Some(glyph_rect.w),
             },
         );
         out.push(DrawOp::AttributedText {
             id: n.computed_id.clone(),
-            rect: inner_painted_rect,
+            rect: glyph_rect,
             scissor: own_scissor,
             shader: ShaderHandle::Stock(StockShader::Text),
             runs,
@@ -536,6 +545,79 @@ mod tests {
             panic!("expected glyph run");
         };
         assert_eq!(*wrap, TextWrap::Wrap);
+    }
+
+    #[test]
+    fn padding_on_text_node_insets_glyph_rect() {
+        // Regression: `text("X").padding(...)` used to inflate the
+        // node's intrinsic size but emit the GlyphRun against the full
+        // (uninset) layout rect, so glyphs anchored at the parent's
+        // edge whenever Stretch flattened the Hug width. The fix is
+        // for draw_ops to inset the glyph rect by `node.padding`,
+        // making text padding behave the same as container padding.
+        let mut root = column([crate::text("Chat").padding(Sides::xy(12.0, 8.0))])
+            .width(Size::Fixed(320.0))
+            .height(Size::Fill(1.0));
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 320.0, 600.0));
+
+        let ops = draw_ops(&root, &state);
+        let DrawOp::GlyphRun { rect, .. } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::GlyphRun { .. }))
+            .expect("text node emits a glyph run")
+        else {
+            unreachable!()
+        };
+        // Column stretched the text element to 320×(text_height + 16);
+        // the glyph rect should be inset by the padding on each side.
+        assert!(
+            (rect.x - 12.0).abs() < 1e-3,
+            "glyph rect.x = {}, expected 12 (left padding)",
+            rect.x,
+        );
+        assert!(
+            (rect.w - (320.0 - 24.0)).abs() < 1e-3,
+            "glyph rect.w = {}, expected 296 (320 minus 12+12)",
+            rect.w,
+        );
+        assert!(
+            (rect.y - 8.0).abs() < 1e-3,
+            "glyph rect.y = {}, expected 8 (top padding)",
+            rect.y,
+        );
+    }
+
+    #[test]
+    fn padding_on_icon_node_insets_icon_rect() {
+        // Same fix applies to icon nodes: the centered icon should
+        // center in the inset rect, not the full layout rect. Override
+        // the Fixed width that `icon_size(...)` sets so the padding
+        // has room — without the override, padding(20) on a 16-wide
+        // element would produce a negative inset.
+        let mut root = column([crate::icon(IconName::Folder)
+            .icon_size(16.0)
+            .width(Size::Fixed(80.0))
+            .height(Size::Fixed(40.0))
+            .padding(Sides::xy(20.0, 0.0))]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 100.0));
+
+        let ops = draw_ops(&root, &state);
+        let DrawOp::Icon { rect, .. } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::Icon { .. }))
+            .expect("icon node emits an icon op")
+        else {
+            unreachable!()
+        };
+        // Element 80×40, inner after Sides::xy(20, 0) → (20, 0, 40, 40),
+        // inner.center_x() = 40, 16px icon → x = 32.
+        assert!(
+            (rect.x - 32.0).abs() < 1e-3,
+            "icon rect.x = {}, expected 32 (centered in inset rect)",
+            rect.x,
+        );
     }
 
     #[test]
