@@ -61,34 +61,64 @@ The architectural decision: `El` is the author's description of the scene; every
 Author surface today — the entire interactive contract:
 
 ```rust
-struct Counter { value: i32 }
+struct Account { online: bool }
 
-impl App for Counter {
+impl App for Account {
     fn build(&self) -> El {
-        column([
-            h1(format!("{}", self.value)),
+        card("Account", [
+            row([text("Email").label(), text("user@example.com").muted()])
+                .align(Align::Center).justify(Justify::SpaceBetween),
             row([
-                button("−").key("dec").secondary(),
-                button("Reset").key("reset").ghost(),
-                button("+").key("inc").primary(),
-            ]).gap(tokens::SPACE_MD),
+                text("Status").label(),
+                if self.online { badge("Online").success() }
+                else           { badge("Offline").muted() },
+            ])
+            .align(Align::Center).justify(Justify::SpaceBetween),
+            row([
+                button(if self.online { "Go offline" } else { "Go online" })
+                    .key("toggle"),
+                spacer(),
+                button("Sign out").key("signout").destructive(),
+            ])
+            .align(Align::Center),
         ])
-        .gap(tokens::SPACE_LG).padding(tokens::SPACE_XL).align(Align::Center)
+        .padding(tokens::SPACE_XL)
     }
 
     fn on_event(&mut self, e: UiEvent) {
-        if e.is_click_or_activate("inc") {
-            self.value += 1;
-        } else if e.is_click_or_activate("dec") {
-            self.value -= 1;
-        } else if e.is_click_or_activate("reset") {
-            self.value = 0;
+        if e.is_click_or_activate("toggle") {
+            self.online = !self.online;
+        } else if e.is_click_or_activate("signout") {
+            // ...
         }
     }
 }
 ```
 
 No JSX, no signals, no `useState`, no retained-mode component identity. Hover, press, and focus visuals are applied automatically by the library — the author never tags a node "this one is hovered." `key` is the hit-test target *and* the event-routing identifier — same string, no separate `.on_click(...)` registration that can drift.
+
+Notice the affordances doing work in seven lines of `build()`: `card("Title", [...])` for grouped content (theme-routed surface, padding, radius), `.label()` / `.muted()` / `.success()` for typography and status colors that stay coherent across themes, `badge(...)` for status pills, `button().destructive()` for the danger action, `row().justify(SpaceBetween)` for the label/value split. **Reach for these before raw `font_size` / `font_weight` / `text_color`** — see the [reach-for-these-first](#reach-for-these-first) lookup below.
+
+### Reach for these first
+
+When scaffolding a UI, prefer the named affordance over the underlying primitives. The list is short:
+
+| Intent | Idiomatic call | Avoid |
+|---|---|---|
+| Grouped content (settings card, panel of fields) | `card("Title", [...])` | `column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` |
+| Status indicator (Online, Pending, Failed) | `badge("Online").success()` (also `.warning()` / `.destructive()` / `.info()` / `.muted()`) | `text("● Online").text_color(SUCCESS)` |
+| Section heading / page title | `.heading()` / `h2(...)` (or `.title()` / `h3(...)`) | `.font_size(FONT_LG).font_weight(Bold).text_color(...)` |
+| Field label | `.label()` | `.font_weight(Semibold).text_color(...)` |
+| Helper / hint text | `.caption()` or `.muted()` | `.font_size(FONT_SM).text_color(TEXT_MUTED_FOREGROUND)` |
+| Inline code / mono | `.code()` or `mono(...)` | `.font_family("monospace")` (no such API) |
+| Pinned sidebar | `.width(Size::Fixed(tokens::SIDEBAR_WIDTH))` plus `.surface_role(SurfaceRole::Panel)` | a magic-number width |
+| Sectioned tab content | `tabs_list(key, &current, opts)` + `match self.tab { ... }` | a `Vec<El>` with manual show/hide |
+| Resizable divider | `resize_handle(Axis::Row).key(...)` + `resize_handle::apply_event_fixed(...)` | `divider()` (which is non-interactive) plus drag plumbing |
+| Indent inside a list (e.g. tree depth) | `.padding(Sides { left: indent, ..Sides::zero() })` | `row([spacer().width(Fixed(indent)), ...])` |
+| Toggle (preferences) | `switch(self.value).key(k)` + `switch::apply_event(...)` | a button with two text labels |
+| Standard tooltip | `.tooltip("...")` on any element | a manually-positioned popover |
+
+Smells that mean an affordance is being missed: `.gap(0.0)` (already the default — delete it), `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier), wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly), an explicit `.fill(tokens::BG_APP)` on the root (the host already paints it), and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
 
 ## Gallery
 

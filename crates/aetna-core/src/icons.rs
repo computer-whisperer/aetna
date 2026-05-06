@@ -29,6 +29,34 @@ pub(crate) fn name_or_fallback(name: &str) -> IconName {
     })
 }
 
+/// A vector icon — accepts a built-in [`IconName`], a `&str`
+/// resolved against the built-in vocabulary
+/// (see [`all_icon_names`]), or an app-supplied
+/// [`SvgIcon`][crate::SvgIcon] for product-specific glyphs.
+///
+/// ```ignore
+/// use aetna_core::prelude::*;
+///
+/// // Built-in lucide-shaped vocabulary.
+/// icon(IconName::Folder)
+/// icon("settings")  // string-typed, with an AlertCircle fallback
+///
+/// // App-supplied SVG. Parse once (typically as a LazyLock) and
+/// // pass the resulting SvgIcon — same `text_color` tinting and
+/// // `icon_size` scaling as the built-ins.
+/// use aetna_core::SvgIcon;
+/// use std::sync::LazyLock;
+/// static MY_GLYPH: LazyLock<SvgIcon> = LazyLock::new(|| {
+///     SvgIcon::parse_current_color(include_str!("path/to/glyph.svg")).unwrap()
+/// });
+/// icon(MY_GLYPH.clone()).text_color(tokens::PRIMARY)
+/// ```
+///
+/// Use `.icon_size(...)` to override the default 16 px, and
+/// `.text_color(...)` to tint (matters for `parse_current_color`
+/// SVGs and the built-in lucide-style monochrome icons; full-color
+/// SVGs parsed with [`SvgIcon::parse`][crate::SvgIcon::parse] keep
+/// their authored paint).
 #[track_caller]
 pub fn icon(source: impl IntoIconSource) -> El {
     El::new(Kind::Custom("icon"))

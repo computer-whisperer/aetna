@@ -233,6 +233,21 @@ A handful of `UiState` methods exist for **host code** — backend `Runner` shel
 
 These all interact with library-owned bookkeeping (focus tracker, animations, computed-rect map). They aren't backdoors past the kit — they're a different audience's surface. If a widget ever wants one of these, that's a sign the kit is missing a primitive, and the right move is to add it under §1–§7, not to reach for the host method.
 
+## Common smells
+
+The library has a small, named vocabulary precisely so a widget — or an app `build()` — doesn't need to invent one. The patterns below mean an existing affordance is being missed:
+
+- **`.font_size(...).font_weight(...).text_color(...)` on a single text node.** That's what role modifiers exist for. `.heading()`, `.title()`, `.label()`, `.caption()`, `.code()` set size + weight + theme-aware color in one call. Reaching for the underlying primitives is how typography drifts (one `Semibold + FONT_LG` looks subtly different from another).
+- **`column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` for grouped content.** That's `card("Title", [...])`. Cards route through `SurfaceRole::Panel` so the theme can swap the material later (shader, shadow, inset) without touching the call site.
+- **Status as a unicode bullet or emoji** (`text("● Online")`, `text("⚠ Failed")`). That's `badge("Online").success()` / `badge("Failed").destructive()`. Badges read as proper status pills and pick the theme color through the StyleProfile.
+- **`.gap(0.0)`.** The default *is* `0.0`. Setting it explicitly is noise that signals the author misremembered the default — and usually means actual gap is missing somewhere else where it should be added.
+- **Wrapping a single child in `row([single])` to apply padding.** `.padding(Sides::all(...))` is on every `El`. The wrapper is dead weight.
+- **Tree indent built from `row([spacer().width(Fixed(indent)), ...])`.** Use `.padding(Sides { left: indent, ..Sides::zero() })` on the row — left-only padding does the job without an extra child. `Sides::xy(h, v)` is also there for symmetric horizontal/vertical padding.
+- **Explicit `.fill(tokens::BG_APP)` on the root.** The host paints `BG_APP` behind the tree before draw-ops run; the root fill is redundant.
+- **A built-in `IconName::*` standing in for an app-specific SVG.** Apps ship `SvgIcon::parse_current_color(include_str!("..."))` once (typically as a `LazyLock`) and pass the result to `icon(...)` — same pipeline, same `text_color` tinting as the built-ins.
+
+These aren't style nits — they're load-bearing in keeping LLM-authored UI from drifting into raw-rectangle territory. If you find yourself writing one of them, that's a kit-discoverability problem worth flagging in this doc rather than coding around.
+
 ## What you don't get
 
 These would be symmetry violations and aren't part of the kit:
