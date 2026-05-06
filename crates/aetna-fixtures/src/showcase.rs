@@ -36,6 +36,7 @@ pub enum Section {
     Palette,
     Picker,
     Settings,
+    Forms,
     Glass,
 }
 
@@ -47,6 +48,7 @@ impl Section {
             Section::Palette => "Palette",
             Section::Picker => "Picker",
             Section::Settings => "Settings",
+            Section::Forms => "Forms",
             Section::Glass => "Glass",
         }
     }
@@ -58,16 +60,18 @@ impl Section {
             Section::Palette => "nav-palette",
             Section::Picker => "nav-picker",
             Section::Settings => "nav-settings",
+            Section::Forms => "nav-forms",
             Section::Glass => "nav-glass",
         }
     }
 
-    const ALL: [Section; 6] = [
+    const ALL: [Section; 7] = [
         Section::Counter,
         Section::List,
         Section::Palette,
         Section::Picker,
         Section::Settings,
+        Section::Forms,
         Section::Glass,
     ];
 }
@@ -95,6 +99,39 @@ struct PickerState {
     search_active: bool,
 }
 
+struct FormsState {
+    /// Push notifications toggle (checkbox).
+    push_notifications: bool,
+    /// Email-digest toggle (checkbox).
+    email_digest: bool,
+    /// Weekly-summary toggle (checkbox).
+    weekly_summary: bool,
+    /// Currently picked theme (radio_group). Stored as the string token
+    /// emitted by the radio key (`system` / `light` / `dark`).
+    theme: String,
+    /// Auto-lock after idle (switch).
+    auto_lock: bool,
+    /// Share anonymous usage stats (switch).
+    share_usage: bool,
+}
+
+impl Default for FormsState {
+    fn default() -> Self {
+        // Defaults that show all four widgets in non-degenerate states
+        // when the section is rendered headlessly: at least one
+        // checkbox on, at least one off, a non-default radio choice,
+        // both switches in non-default positions.
+        Self {
+            push_notifications: true,
+            email_digest: true,
+            weekly_summary: false,
+            theme: "light".into(),
+            auto_lock: true,
+            share_usage: false,
+        }
+    }
+}
+
 #[derive(Default)]
 struct GlassState {
     /// Index into `GLASS_PRESETS` — cycles on the "Next preset"
@@ -120,6 +157,7 @@ pub struct Showcase {
     list: ListState,
     palette: PaletteState,
     picker: PickerState,
+    forms: FormsState,
     glass: GlassState,
 }
 
@@ -167,6 +205,7 @@ impl App for Showcase {
             Section::Palette => palette_on_event(&mut self.palette, event),
             Section::Picker => picker_on_event(&mut self.picker, event),
             Section::Settings => {} // static fixture, no events
+            Section::Forms => forms_on_event(&mut self.forms, event),
             Section::Glass => glass_on_event(&mut self.glass, event),
         }
     }
@@ -220,6 +259,7 @@ fn content(app: &Showcase) -> El {
         Section::Palette => palette_view(&app.palette),
         Section::Picker => picker_view(&app.picker),
         Section::Settings => settings_view(),
+        Section::Forms => forms_view(&app.forms),
         Section::Glass => {
             return glass_view(&app.glass)
                 .width(Size::Fill(1.0))
@@ -637,6 +677,190 @@ fn settings_view() -> El {
     .gap(tokens::SPACE_LG)
 }
 
+// ---- Forms section ----
+
+const FORMS_THEME_OPTIONS: &[(&str, &str)] = &[
+    ("system", "Match system"),
+    ("light", "Light"),
+    ("dark", "Dark"),
+];
+
+/// Profile-completion percentage derived from the form state. Drives
+/// the read-only `progress` bar at the top of the section so the bar's
+/// motion is visibly tied to user input on the controls below.
+fn forms_completion(state: &FormsState) -> f32 {
+    // Six fields, each on/off (or in radio's case "default vs not").
+    // Counting "not the default" as a step toward completion gives the
+    // progress bar movement on every interaction without any field
+    // dominating.
+    let mut steps = 0u32;
+    if state.push_notifications {
+        steps += 1;
+    }
+    if state.email_digest {
+        steps += 1;
+    }
+    if state.weekly_summary {
+        steps += 1;
+    }
+    if state.theme != "system" {
+        steps += 1;
+    }
+    if state.auto_lock {
+        steps += 1;
+    }
+    if state.share_usage {
+        steps += 1;
+    }
+    steps as f32 / 6.0
+}
+
+fn forms_view(state: &FormsState) -> El {
+    let completion = forms_completion(state);
+    // Color the progress fill based on how full it is — primary by
+    // default, success once everything is on. Apps that want a
+    // different palette can pass any token (DESTRUCTIVE near full,
+    // WARNING mid-range, etc.).
+    let progress_color = if completion >= 0.999 {
+        tokens::SUCCESS
+    } else {
+        tokens::PRIMARY
+    };
+
+    let header = column([
+        h1("Form preferences"),
+        row([
+            text("Profile completeness").muted().label(),
+            spacer(),
+            text(format!("{}%", (completion * 100.0).round() as u32)).muted(),
+        ])
+        .align(Align::Center),
+        progress(completion, progress_color),
+    ])
+    .gap(tokens::SPACE_XS);
+
+    let notifications = card(
+        "Notifications",
+        [
+            checkbox_row(
+                "forms-push-notifications",
+                state.push_notifications,
+                "Push notifications",
+                "Send a system notification on new activity.",
+            ),
+            checkbox_row(
+                "forms-email-digest",
+                state.email_digest,
+                "Email digest",
+                "A bundled daily summary, instead of per-event email.",
+            ),
+            checkbox_row(
+                "forms-weekly-summary",
+                state.weekly_summary,
+                "Weekly summary",
+                "Sunday-evening recap of the week's activity.",
+            ),
+        ],
+    );
+
+    let theme = card(
+        "Theme",
+        [radio_group(
+            "forms-theme",
+            &state.theme,
+            FORMS_THEME_OPTIONS.iter().copied(),
+        )],
+    );
+
+    let privacy = card(
+        "Privacy",
+        [
+            switch_row(
+                "forms-auto-lock",
+                state.auto_lock,
+                "Auto-lock after 5 minutes",
+                "Require the password again when idle.",
+            ),
+            switch_row(
+                "forms-share-usage",
+                state.share_usage,
+                "Share anonymous usage statistics",
+                "Help us understand how Aetna is used in the wild.",
+            ),
+        ],
+    );
+
+    // The cards stack taller than the showcase viewport (~640 px),
+    // so route the body through a scroll viewport like the List
+    // section does. Header stays outside the scroll so the progress
+    // bar remains visible while the cards scroll. Fill-height column
+    // for the same reason as `list_view` — the inner scroll's
+    // `Fill(1.0)` only resolves correctly when the parent column has
+    // bounded height.
+    column([
+        header,
+        scroll([notifications, theme, privacy])
+            .key("forms-scroll")
+            .height(Size::Fill(1.0))
+            .padding(Sides::xy(0.0, tokens::SPACE_SM))
+            .gap(tokens::SPACE_LG),
+    ])
+    .gap(tokens::SPACE_LG)
+    .height(Size::Fill(1.0))
+}
+
+/// Helper: a row pairing a [`checkbox`] with a label + helper-text
+/// description. The whole row layout comes from `row` + spacer; the
+/// widget itself is a single line.
+fn checkbox_row(key: &str, value: bool, label: &str, description: &str) -> El {
+    row([
+        checkbox(value).key(key.to_string()),
+        column([
+            text(label).label(),
+            text(description).muted().small(),
+        ])
+        .gap(tokens::SPACE_XS)
+        .width(Size::Fill(1.0)),
+    ])
+    .gap(tokens::SPACE_MD)
+    .align(Align::Center)
+}
+
+/// Helper: the same shape as [`checkbox_row`] but for a `switch`
+/// trailing the description (the right-aligned position is the shadcn
+/// convention for boolean toggles inside a settings list).
+fn switch_row(key: &str, value: bool, label: &str, description: &str) -> El {
+    row([
+        column([
+            text(label).label(),
+            text(description).muted().small(),
+        ])
+        .gap(tokens::SPACE_XS)
+        .width(Size::Fill(1.0)),
+        switch(value).key(key.to_string()),
+    ])
+    .gap(tokens::SPACE_MD)
+    .align(Align::Center)
+}
+
+fn forms_on_event(state: &mut FormsState, e: UiEvent) {
+    // Radio group folds first; its routed-key shape (`forms-theme:radio:*`)
+    // wouldn't match the bool checkboxes/switches anyway, but folding it
+    // up front keeps the bool dispatch flat.
+    if radio::apply_event(&mut state.theme, &e, "forms-theme", |s| {
+        Some(s.to_string())
+    }) {
+        return;
+    }
+    // Checkboxes and switches share `apply_event(&mut bool, ...)`, so
+    // a single dispatch table covers both.
+    let _ = checkbox::apply_event(&mut state.push_notifications, &e, "forms-push-notifications")
+        || checkbox::apply_event(&mut state.email_digest, &e, "forms-email-digest")
+        || checkbox::apply_event(&mut state.weekly_summary, &e, "forms-weekly-summary")
+        || switch::apply_event(&mut state.auto_lock, &e, "forms-auto-lock")
+        || switch::apply_event(&mut state.share_usage, &e, "forms-share-usage");
+}
+
 // ---- Glass section ----
 
 /// One configuration of the `liquid_glass.wgsl` parameter space — the
@@ -856,6 +1080,76 @@ mod tests {
                 "drift offset {offset} exceeds safe range"
             );
         }
+    }
+
+    #[test]
+    fn forms_checkbox_toggles_via_apply_event() {
+        let mut s = FormsState::default();
+        let was = s.weekly_summary;
+        forms_on_event(&mut s, click("forms-weekly-summary"));
+        assert_eq!(s.weekly_summary, !was);
+    }
+
+    #[test]
+    fn forms_switch_toggles_via_apply_event() {
+        let mut s = FormsState::default();
+        let was = s.auto_lock;
+        forms_on_event(&mut s, click("forms-auto-lock"));
+        assert_eq!(s.auto_lock, !was);
+    }
+
+    #[test]
+    fn forms_radio_swaps_theme() {
+        let mut s = FormsState::default();
+        assert_eq!(s.theme, "light");
+        forms_on_event(&mut s, click("forms-theme:radio:dark"));
+        assert_eq!(s.theme, "dark");
+        forms_on_event(&mut s, click("forms-theme:radio:system"));
+        assert_eq!(s.theme, "system");
+    }
+
+    #[test]
+    fn forms_completion_reaches_full_when_everything_is_on() {
+        let mut s = FormsState {
+            push_notifications: true,
+            email_digest: true,
+            weekly_summary: true,
+            theme: "dark".into(),
+            auto_lock: true,
+            share_usage: true,
+        };
+        assert!((forms_completion(&s) - 1.0).abs() < 1e-3);
+        // Switching theme back to the default reduces completion.
+        s.theme = "system".into();
+        assert!(forms_completion(&s) < 1.0);
+    }
+
+    #[test]
+    fn forms_section_routes_unrelated_events_without_panic() {
+        // Events that don't match any of the form keys must not cause
+        // the dispatch chain to misroute (e.g. apply_event short-
+        // circuiting onto the wrong field).
+        let mut s = FormsState::default();
+        let before = (
+            s.push_notifications,
+            s.email_digest,
+            s.weekly_summary,
+            s.theme.clone(),
+            s.auto_lock,
+            s.share_usage,
+        );
+        forms_on_event(&mut s, click("nav-forms"));
+        forms_on_event(&mut s, click("save"));
+        forms_on_event(&mut s, click("forms-theme")); // group key, not a value
+        let after = (
+            s.push_notifications,
+            s.email_digest,
+            s.weekly_summary,
+            s.theme.clone(),
+            s.auto_lock,
+            s.share_usage,
+        );
+        assert_eq!(before, after, "unrelated events left state unchanged");
     }
 
     #[test]

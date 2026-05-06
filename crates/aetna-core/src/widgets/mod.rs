@@ -9,10 +9,14 @@
 pub mod badge;
 pub mod button;
 pub mod card;
+pub mod checkbox;
 pub mod overlay;
 pub mod popover;
+pub mod progress;
+pub mod radio;
 pub mod select;
 pub mod slider;
+pub mod switch;
 pub mod tabs;
 pub mod text;
 pub mod text_area;

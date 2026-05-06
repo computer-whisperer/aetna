@@ -118,6 +118,24 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
       hidden-when-not-active sibling, and shadcn's `<TabsContent>`
       adds no visual beyond a plain block.
 
+### Slice 9 — form primitives + read-only data display
+
+- [x] **`switch`, `checkbox`, `radio_group` / `radio_item`,
+      `progress`** in `widgets/{switch,checkbox,radio,progress}.rs`.
+      Switch and checkbox are controlled bools sharing the same
+      `apply_event(&mut bool, &event, key)` shape. Radio_group is a
+      vertical column-of-radios paralleling tabs_list with the routed
+      key convention `{key}:radio:{value}`. Progress is non-interactive
+      — track + fill — and takes a caller-chosen fill color so apps
+      can swap to `tokens::DESTRUCTIVE` near full. Switch / checkbox /
+      radio / tab_trigger ship with animated state changes (thumb
+      slide via animatable `translate`; check + dot via opacity +
+      scale; tab fill / text-color cross-fade), since polish on those
+      transitions is what makes a toggle widget feel native rather
+      than a hard cut. All four widgets are mentioned in
+      `widget_kit.md` §6 and exercised together in the showcase
+      `Forms` section.
+
 ## Pre-release housekeeping
 
 - [x] Crate-level rustdoc skim. `cargo doc -p aetna-{core,wgpu,vulkano,winit-wgpu}`
