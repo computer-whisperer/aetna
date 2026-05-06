@@ -162,6 +162,16 @@ pub struct El {
     /// explicitly in their build closure.
     pub cursor: Option<crate::cursor::Cursor>,
 
+    /// Cursor to show *only while a press is captured at this exact
+    /// node*. Powers the natural Grab → Grabbing transition: the
+    /// slider sets `cursor=Grab` + `cursor_pressed=Grabbing`, and the
+    /// resolver picks the latter while the press anchors here. Unlike
+    /// [`Self::cursor`], this does **not** walk up: an ancestor's
+    /// `cursor_pressed` doesn't apply to a descendant press target.
+    /// The press target's own `cursor` is the fallback when this is
+    /// `None`.
+    pub cursor_pressed: Option<crate::cursor::Cursor>,
+
     /// Override the implicit `stock::rounded_rect` binding for this
     /// node's surface. The escape hatch a user crate uses to bind a
     /// custom shader (e.g. `liquid_glass`).
@@ -306,6 +316,7 @@ impl Default for El {
             arrow_nav_siblings: false,
             tooltip: None,
             cursor: None,
+            cursor_pressed: None,
             shader_override: None,
             layout_override: None,
             virtual_items: None,
@@ -533,6 +544,15 @@ impl El {
     /// override hover-derived cursor — see [`crate::cursor`].
     pub fn cursor(mut self, cursor: crate::cursor::Cursor) -> Self {
         self.cursor = Some(cursor);
+        self
+    }
+
+    /// Declare the cursor shown only while a press is captured at
+    /// this exact node — the Grab → Grabbing transition idiom. Does
+    /// not inherit; an ancestor's `cursor_pressed` won't apply when
+    /// a descendant is the press target.
+    pub fn cursor_pressed(mut self, cursor: crate::cursor::Cursor) -> Self {
+        self.cursor_pressed = Some(cursor);
         self
     }
 

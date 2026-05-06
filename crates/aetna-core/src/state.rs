@@ -289,10 +289,16 @@ impl UiState {
     /// Resolved pointer cursor for the current frame.
     ///
     /// Picks the cursor in this order:
-    /// 1. If [`Self::pressed`] is set, walk from the press target up
-    ///    to `root` and return the first explicit `.cursor(...)`. Press
-    ///    capture wins so a button drag that wanders onto a text
-    ///    region doesn't flicker the cursor mid-press.
+    /// 1. If [`Self::pressed`] is set:
+    ///    a. If the press target itself declares `.cursor_pressed(...)`,
+    ///    use that — drives the slider's Grab → Grabbing transition and
+    ///    the more general "press has its own affordance" idiom. Does
+    ///    not inherit: an ancestor's `cursor_pressed` doesn't apply to a
+    ///    descendant press target.
+    ///    b. Otherwise walk from the press target up to `root` for the
+    ///    first explicit `.cursor(...)`. Press capture wins so a button
+    ///    drag that wanders onto a text region doesn't flicker the
+    ///    cursor mid-press.
     /// 2. Else if [`Self::hovered`] is set, walk from the hovered
     ///    target up to `root` for the first explicit declaration —
     ///    so a panel that sets `.cursor(Move)` once propagates to
@@ -302,15 +308,17 @@ impl UiState {
     /// Disabled state isn't auto-mapped to [`Cursor::NotAllowed`];
     /// widgets that want that affordance branch in their build closure.
     pub fn cursor(&self, root: &El) -> Cursor {
-        let target_id = self
-            .pressed
-            .as_ref()
-            .map(|t| t.node_id.as_str())
-            .or_else(|| self.hovered.as_ref().map(|t| t.node_id.as_str()));
-        match target_id {
-            Some(id) => cursor_for_target(root, id).unwrap_or(Cursor::Default),
-            None => Cursor::Default,
+        if let Some(pressed) = &self.pressed {
+            let id = pressed.node_id.as_str();
+            if let Some(c) = cursor_pressed_at_target(root, id) {
+                return c;
+            }
+            return cursor_for_target(root, id).unwrap_or(Cursor::Default);
         }
+        if let Some(hovered) = &self.hovered {
+            return cursor_for_target(root, hovered.node_id.as_str()).unwrap_or(Cursor::Default);
+        }
+        Cursor::Default
     }
 
     /// Current eased state envelope amount in `[0, 1]` for `(id, kind)`.
@@ -804,6 +812,25 @@ fn find_target_by_key(root: &El, key: &str) -> Option<UiTarget> {
         .find_map(|child| find_target_by_key(child, key))
 }
 
+/// Find the node by `target_id` and return its `cursor_pressed`, if
+/// any. Unlike [`cursor_for_target`] this does **not** walk up — only
+/// the literal press target's `cursor_pressed` matters (an ancestor's
+/// pressed-cursor declaration shouldn't override a descendant press).
+fn cursor_pressed_at_target(root: &El, target_id: &str) -> Option<Cursor> {
+    fn walk(node: &El, target_id: &str) -> Option<Option<Cursor>> {
+        if node.computed_id == target_id {
+            return Some(node.cursor_pressed);
+        }
+        for c in &node.children {
+            if let Some(found) = walk(c, target_id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    walk(root, target_id).flatten()
+}
+
 /// Resolve the cursor a node by `target_id` should display by walking
 /// from `root` down, carrying the closest-ancestor cursor declaration.
 /// Returns the target's own cursor if declared, else the nearest
@@ -988,6 +1015,63 @@ mod tests {
         let undeclared = target(&tree, &state, "undeclared");
         state.pressed = Some(declared);
         state.hovered = Some(undeclared);
+        assert_eq!(state.cursor(&tree), Cursor::Pointer);
+    }
+
+    #[test]
+    fn cursor_pressed_overrides_resting_cursor_on_press_target() {
+        // `cursor` at rest, `cursor_pressed` while the press anchors
+        // here. Mirrors the slider's Grab → Grabbing transition idiom.
+        let mut tree = column([El::new(Kind::Group)
+            .key("handle")
+            .cursor(Cursor::Grab)
+            .cursor_pressed(Cursor::Grabbing)]);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let handle = target(&tree, &state, "handle");
+
+        // Hover → resting cursor.
+        state.hovered = Some(handle.clone());
+        assert_eq!(state.cursor(&tree), Cursor::Grab);
+
+        // Press → pressed-cursor wins (and stays once the pointer
+        // wanders off — press capture anchors the cursor).
+        state.pressed = Some(handle);
+        assert_eq!(state.cursor(&tree), Cursor::Grabbing);
+        state.hovered = None;
+        assert_eq!(
+            state.cursor(&tree),
+            Cursor::Grabbing,
+            "press capture keeps the pressed cursor stable when the pointer drags off",
+        );
+    }
+
+    #[test]
+    fn cursor_pressed_does_not_inherit_from_ancestor_to_descendant() {
+        // Only the literal press target's `cursor_pressed` matters.
+        // A parent that declared `cursor_pressed` shouldn't re-skin a
+        // descendant's press — ancestors should use `cursor` (which
+        // does inherit) when they want subtree-wide affordances.
+        let mut tree = column([row([El::new(Kind::Group).key("inner")])
+            .key("outer")
+            .cursor_pressed(Cursor::Grabbing)]);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        state.pressed = Some(target(&tree, &state, "inner"));
+        // Outer's `cursor_pressed` doesn't leak to the inner press
+        // target; with no `cursor` chain at all, falls through to
+        // Default.
+        assert_eq!(state.cursor(&tree), Cursor::Default);
+    }
+
+    #[test]
+    fn cursor_pressed_falls_through_to_resting_cursor_when_unset() {
+        // Press target without `cursor_pressed` still resolves via
+        // the standard walk-up — the new branch is purely additive.
+        let mut tree = column([El::new(Kind::Group).key("btn").cursor(Cursor::Pointer)]);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        state.pressed = Some(target(&tree, &state, "btn"));
         assert_eq!(state.cursor(&tree), Cursor::Pointer);
     }
 

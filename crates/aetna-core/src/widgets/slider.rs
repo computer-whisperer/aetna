@@ -109,11 +109,11 @@ pub fn slider(value: f32, fill_color: Color) -> El {
     ])
     .at_loc(Location::caller())
     .focusable()
-    // Grab affords "you can drag the thumb." Press → Grabbing would be
-    // the natural transition, but the explicit-cursor model has no
-    // state-aware hook today; press capture keeps Grab stable for the
-    // duration of the drag, which still reads correctly as "active."
+    // Grab at rest, Grabbing while the press is anchored here — the
+    // resolver picks `cursor_pressed` only on the literal press target,
+    // so an ancestor's `cursor_pressed` won't leak into descendants.
     .cursor(Cursor::Grab)
+    .cursor_pressed(Cursor::Grabbing)
     .layout(layout)
     .height(Size::Fixed(DEFAULT_HEIGHT))
     .width(Size::Fill(1.0))
@@ -344,12 +344,14 @@ mod tests {
     }
 
     #[test]
-    fn slider_declares_grab_cursor() {
-        // Grab affords "draggable handle" — Press → Grabbing isn't
-        // wired today; the press capture keeps Grab stable through
-        // the drag, which still reads as active.
+    fn slider_declares_grab_at_rest_and_grabbing_while_pressed() {
+        // The resolver picks `cursor_pressed` while a press is
+        // captured on the slider container, falling back to `cursor`
+        // otherwise. Hover shows Grab; press anywhere on the track
+        // shows Grabbing.
         let s = slider(0.5, tokens::PRIMARY);
         assert_eq!(s.cursor, Some(Cursor::Grab));
+        assert_eq!(s.cursor_pressed, Some(Cursor::Grabbing));
     }
 
     #[test]
