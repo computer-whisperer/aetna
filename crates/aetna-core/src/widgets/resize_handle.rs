@@ -101,10 +101,12 @@ use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::tokens;
 use crate::tree::*;
 
-/// Thickness of the handle's interactive bar in logical pixels.
-/// Visually thin (the bar reads as a 2px hairline) with a wider hit
-/// area so the pointer doesn't have to land pixel-perfect.
-pub const HANDLE_THICKNESS: f32 = 6.0;
+/// Thickness of the handle's interactive bar in logical pixels. The
+/// hit area is intentionally wider than the painted hairline so the
+/// pointer doesn't have to land pixel-perfect — comparable to
+/// VS Code's ~6–8px and Slack's ~10px native handles, and roughly
+/// double shadcn's ~5px effective hit area (`w-px` + `after:w-1`).
+pub const HANDLE_THICKNESS: f32 = 8.0;
 
 /// Visual width of the painted hairline inside the wider hit area.
 const HAIRLINE_THICKNESS: f32 = 2.0;
@@ -142,10 +144,13 @@ pub fn resize_handle(axis: Axis) -> El {
             .height(Size::Fixed(HAIRLINE_THICKNESS))
             .fill(tokens::BORDER),
     };
+    // No `capture_keys()` — Tab must keep traversing past the handle.
+    // Arrow / PageUp / PageDown / Home / End still arrive as `KeyDown`
+    // events on the focused handle by default, which `apply_event_*`
+    // folds into the size value.
     stack([hairline])
         .at_loc(Location::caller())
         .focusable()
-        .capture_keys()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
         .width(width)
         .height(height)
@@ -387,6 +392,17 @@ mod tests {
         let col_handle = resize_handle(Axis::Column);
         assert_eq!(col_handle.width, Size::Fill(1.0));
         assert_eq!(col_handle.height, Size::Fixed(HANDLE_THICKNESS));
+    }
+
+    #[test]
+    fn handle_does_not_capture_keys() {
+        // Regression guard: an earlier sketch added `capture_keys()`
+        // which silently swallowed Tab and trapped focus on the
+        // handle. The handle must let the runtime's default Tab
+        // traversal move focus past it; arrow keys still arrive as
+        // `KeyDown` without opting in.
+        assert!(!resize_handle(Axis::Row).capture_keys);
+        assert!(!resize_handle(Axis::Column).capture_keys);
     }
 
     #[test]
