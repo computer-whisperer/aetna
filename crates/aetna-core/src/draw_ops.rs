@@ -169,7 +169,17 @@ fn push_node(
     } else if fill.is_some() || stroke.is_some() || focus_ring_alpha > 0.0 {
         let mut uniforms = UniformBlock::new();
         if let Some(c) = fill {
-            uniforms.insert("fill", UniformValue::Color(opaque(c, opacity)));
+            // `dim_fill` lerps the painted color toward `fill` as the
+            // inherited focus envelope rises. `inherited_focus_envelope`
+            // here is the nearest focusable ancestor's envelope (the
+            // band's parent text_input / text_area), so the band reads
+            // as muted while the input is unfocused and saturates as
+            // the focus animation completes.
+            let resolved = match n.dim_fill {
+                Some(dim) => dim.mix(c, inherited_focus_envelope),
+                None => c,
+            };
+            uniforms.insert("fill", UniformValue::Color(opaque(resolved, opacity)));
         }
         if let Some(c) = stroke {
             uniforms.insert("stroke", UniformValue::Color(opaque(c, opacity)));

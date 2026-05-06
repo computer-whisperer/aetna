@@ -118,6 +118,7 @@ fn build_text_area(value: &str, selection: TextSelection) -> El {
             El::new(Kind::Custom("text_area_selection"))
                 .style_profile(StyleProfile::Solid)
                 .fill(tokens::SELECTION_BG)
+                .dim_fill(tokens::SELECTION_BG_UNFOCUSED)
                 .radius(2.0)
                 .width(Size::Fixed(rw))
                 .height(Size::Fixed(rh))

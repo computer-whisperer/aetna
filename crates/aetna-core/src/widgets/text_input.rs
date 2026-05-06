@@ -229,12 +229,16 @@ fn build_text_input(value: &str, selection: TextSelection, opts: TextInputOpts<'
 
     let mut children: Vec<El> = Vec::with_capacity(4);
 
-    // Selection band paints first (behind text, behind caret).
+    // Selection band paints first (behind text, behind caret). The
+    // band is fill-only and inherits its parent input's focus
+    // envelope, so `dim_fill` produces the macOS-style muted-when-
+    // unfocused color without any per-frame state plumbing here.
     if lo < hi {
         children.push(
             El::new(Kind::Custom("text_input_selection"))
                 .style_profile(StyleProfile::Solid)
                 .fill(tokens::SELECTION_BG)
+                .dim_fill(tokens::SELECTION_BG_UNFOCUSED)
                 .radius(2.0)
                 .width(Size::Fixed(hi_px - lo_px))
                 .height(Size::Fixed(line_h))
@@ -1009,6 +1013,77 @@ mod tests {
             .expect("caret child");
         // caret head clamped to 0 → translate.x = 0.
         assert!(caret.translate.0.abs() < 0.01);
+    }
+
+    #[test]
+    fn selection_band_fill_dims_when_input_unfocused() {
+        // When the input lacks focus, the band paints in
+        // SELECTION_BG_UNFOCUSED. As focus animates in, dim_fill lerps
+        // the painted color toward SELECTION_BG.
+        use crate::draw_ops::draw_ops;
+        use crate::ir::DrawOp;
+        use crate::shader::UniformValue;
+        use crate::state::AnimationMode;
+        use web_time::Instant;
+
+        let mut tree =
+            crate::column([text_input("hello", TextSelection::range(0, 5)).key("ti")])
+                .padding(20.0);
+        let mut state = UiState::new();
+        state.set_animation_mode(AnimationMode::Settled);
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.sync_focus_order(&tree);
+
+        // Unfocused: focus envelope settles to 0 → band fill matches
+        // SELECTION_BG_UNFOCUSED rgb (alpha is multiplied by `opacity`
+        // so we compare rgb only).
+        state.apply_to_state();
+        state.tick_visual_animations(&mut tree, Instant::now());
+        let unfocused = band_fill(&tree, &state).expect("band quad emitted");
+        assert_eq!(
+            (unfocused.r, unfocused.g, unfocused.b),
+            (
+                tokens::SELECTION_BG_UNFOCUSED.r,
+                tokens::SELECTION_BG_UNFOCUSED.g,
+                tokens::SELECTION_BG_UNFOCUSED.b
+            ),
+            "unfocused → band rgb is the muted token"
+        );
+
+        // Focused: focus envelope settles to 1 → band fill matches
+        // SELECTION_BG.
+        let target = state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "ti")
+            .expect("ti in focus order")
+            .clone();
+        state.set_focus(Some(target));
+        state.apply_to_state();
+        state.tick_visual_animations(&mut tree, Instant::now());
+        let focused = band_fill(&tree, &state).expect("band quad emitted");
+        assert_eq!(
+            (focused.r, focused.g, focused.b),
+            (
+                tokens::SELECTION_BG.r,
+                tokens::SELECTION_BG.g,
+                tokens::SELECTION_BG.b
+            ),
+            "focused → band rgb is the saturated token"
+        );
+
+        fn band_fill(tree: &El, state: &UiState) -> Option<crate::tree::Color> {
+            let ops = draw_ops(tree, state);
+            for op in ops {
+                if let DrawOp::Quad { id, uniforms, .. } = op
+                    && id.contains("text_input_selection")
+                    && let Some(UniformValue::Color(c)) = uniforms.get("fill")
+                {
+                    return Some(*c);
+                }
+            }
+            None
+        }
     }
 
     #[test]

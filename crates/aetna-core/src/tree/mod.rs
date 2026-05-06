@@ -121,6 +121,13 @@ pub struct El {
     // `stock::rounded_rect` (or whatever `shader_override` specifies)
     // when emitting [`crate::ir::DrawOp`]s.
     pub fill: Option<Color>,
+    /// Alternate fill used when the nearest focusable ancestor's focus
+    /// envelope is below 1.0; the painter linearly interpolates from
+    /// `dim_fill` toward `fill` as the envelope approaches 1.0. Used by
+    /// `text_input` / `text_area` selection bands so the highlight
+    /// remains visible (in a muted color) even when the input loses
+    /// focus, matching the macOS convention.
+    pub dim_fill: Option<Color>,
     pub stroke: Option<Color>,
     pub stroke_width: f32,
     pub radius: f32,
@@ -318,6 +325,7 @@ impl Default for El {
             width: Size::Hug,
             height: Size::Hug,
             fill: None,
+            dim_fill: None,
             stroke: None,
             stroke_width: 0.0,
             radius: 0.0,
@@ -479,6 +487,13 @@ impl El {
     // ---- Visual ----
     pub fn fill(mut self, c: Color) -> Self {
         self.fill = Some(c);
+        self
+    }
+    /// Fill applied when the nearest focusable ancestor isn't focused;
+    /// the painter lerps from `dim_fill` toward `fill` as the focus
+    /// envelope rises from 0 to 1. See [`Self::dim_fill`] field doc.
+    pub fn dim_fill(mut self, c: Color) -> Self {
+        self.dim_fill = Some(c);
         self
     }
     pub fn stroke(mut self, c: Color) -> Self {

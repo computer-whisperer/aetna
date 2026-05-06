@@ -141,3 +141,10 @@ pub const FOCUS_RING_WIDTH: f32 = 2.0;
 /// Tinted accent at low alpha so glyphs stay readable through the
 /// selection rectangle.
 pub const SELECTION_BG: Color = Color::token("selection-bg", 92, 170, 255, 96);
+/// Selection-band fill applied while a text input lacks focus. A
+/// neutral, low-saturation cousin of [`SELECTION_BG`]; the painter
+/// lerps from this toward `SELECTION_BG` as the input regains focus
+/// (see [`crate::tree::El::dim_fill`]). Matches the macOS convention
+/// where unfocused selection reads as gray rather than blue.
+pub const SELECTION_BG_UNFOCUSED: Color =
+    Color::token("selection-bg-unfocused", 160, 160, 160, 64);
