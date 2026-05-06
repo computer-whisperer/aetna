@@ -74,7 +74,20 @@ pub const RADIUS_LG: f32 = 12.0;
 pub const RADIUS_PILL: f32 = 999.0;
 
 // ---- Scrollbar thumb (overlay indicator on scrollable viewports) ----
+/// Visible thumb width when idle. Kept thin so it doesn't crowd
+/// content; the hitbox is wider so the thumb still feels grabbable
+/// (Fitts's law).
 pub const SCROLLBAR_THUMB_WIDTH: f32 = 6.0;
+/// Visible thumb width while hovered or being dragged. The thumb
+/// expands toward the viewport interior so the cursor sits inside
+/// it instead of pinning the right edge.
+pub const SCROLLBAR_THUMB_WIDTH_ACTIVE: f32 = 10.0;
+/// Track / thumb hitbox width — the column on the right edge that
+/// accepts pointer presses for thumb-grab and click-to-page. Always
+/// wider than the visible thumb (idle or active) so grabbing a
+/// thin idle thumb is still easy. Matches the shadcn ScrollArea
+/// track width convention.
+pub const SCROLLBAR_HITBOX_WIDTH: f32 = 14.0;
 pub const SCROLLBAR_TRACK_INSET: f32 = 2.0;
 pub const SCROLLBAR_THUMB_MIN_H: f32 = 24.0;
 /// Idle thumb fill — subtle on bg-app/bg-card.

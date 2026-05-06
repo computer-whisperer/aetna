@@ -323,10 +323,25 @@ fn push_node(
     // clip but is otherwise free of the scroll offset (the layout
     // pass shifts the children, not the thumb). `thumb_rects` is
     // populated only when the scrollable opted in and content
-    // overflows, so the gating is implicit.
+    // overflows, so the gating is implicit. When the pointer is
+    // anywhere within the track or a drag is active, the visible
+    // thumb expands to `SCROLLBAR_THUMB_WIDTH_ACTIVE` (right-anchored)
+    // so the cursor sits inside the thumb instead of pinning the
+    // track's right edge.
     if let Some(thumb_rect) = ui_state.thumb_rects.get(&n.computed_id) {
-        let painted_thumb = translated(*thumb_rect, total_translate);
-        let active = thumb_is_active(n, ui_state, *thumb_rect);
+        let active = thumb_is_active(n, ui_state);
+        let visible = if active {
+            let new_w = tokens::SCROLLBAR_THUMB_WIDTH_ACTIVE.max(thumb_rect.w);
+            Rect::new(
+                thumb_rect.right() - new_w,
+                thumb_rect.y,
+                new_w,
+                thumb_rect.h,
+            )
+        } else {
+            *thumb_rect
+        };
+        let painted_thumb = translated(visible, total_translate);
         let base_fill = if active {
             tokens::SCROLLBAR_THUMB_FILL_ACTIVE
         } else {
@@ -336,7 +351,7 @@ fn push_node(
         uniforms.insert("fill", UniformValue::Color(opaque(base_fill, opacity)));
         uniforms.insert(
             "radius",
-            UniformValue::F32(thumb_rect.w.min(thumb_rect.h) * 0.5),
+            UniformValue::F32(visible.w.min(visible.h) * 0.5),
         );
         uniforms.insert("inner_rect", inner_rect_uniform(painted_thumb));
         out.push(DrawOp::Quad {
@@ -350,16 +365,21 @@ fn push_node(
 }
 
 /// Active when the user is actively dragging this scrollable's thumb
-/// or hovering it. Hover is computed against the *un-translated*
-/// thumb_rect since the pointer position is captured pre-translate.
-fn thumb_is_active(n: &El, ui_state: &UiState, thumb_rect: Rect) -> bool {
+/// or the pointer is hovering anywhere inside its track (the
+/// generous-hitbox column on the right). Hover is computed against
+/// the *un-translated* track rect since the pointer position is
+/// captured pre-translate.
+fn thumb_is_active(n: &El, ui_state: &UiState) -> bool {
     if let Some(drag) = ui_state.thumb_drag.as_ref()
         && drag.scroll_id == n.computed_id
     {
         return true;
     }
-    if let Some((px, py)) = ui_state.pointer_pos {
-        return thumb_rect.contains(px, py);
+    if let (Some((px, py)), Some(track)) = (
+        ui_state.pointer_pos,
+        ui_state.thumb_tracks.get(&n.computed_id),
+    ) {
+        return track.contains(px, py);
     }
     false
 }

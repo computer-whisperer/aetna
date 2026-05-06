@@ -139,6 +139,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
     let mut tree = fixture();
+    // Two-pass render: first lay out so thumb_tracks exist, then
+    // park the pointer at the centre of the right-hand virtual_list's
+    // track so its thumb paints in its expanded "hover" state. The
+    // left list stays idle, giving us a side-by-side visual diff in
+    // one PNG.
+    renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
+    let right_track = renderer
+        .ui_state()
+        .scrollbar_tracks()
+        .map(|(_id, rect)| *rect)
+        .max_by(|a, b| a.x.total_cmp(&b.x))
+        .expect("at least one scrollable should have a track");
+    renderer.pointer_moved(
+        right_track.x + right_track.w * 0.5,
+        right_track.y + right_track.h * 0.5,
+    );
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

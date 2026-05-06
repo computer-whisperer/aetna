@@ -69,6 +69,13 @@ use crate::theme::Theme;
 use crate::tooltip;
 use crate::tree::{Color, El, FontWeight, Rect, TextWrap};
 
+/// Logical-pixel overlap kept between the pre-page and post-page
+/// viewport when the user clicks the scroll track above/below the
+/// thumb. Matches browser convention: paging by `viewport_h - overlap`
+/// preserves the bottom (resp. top) row across the jump so context
+/// isn't lost.
+const SCROLL_PAGE_OVERLAP: f32 = 24.0;
+
 /// Reported back from each backend's `prepare(...)` per frame. The
 /// host uses `needs_redraw` to keep the redraw loop ticking only
 /// while there is in-flight motion (a hover spring still settling, a
@@ -250,13 +257,16 @@ impl RunnerCore {
     /// anchor before any drag extends it). Secondary/middle store on a
     /// separate channel and never emit a `PointerDown`.
     pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Option<UiEvent> {
-        // Scrollbar thumb pre-empts normal hit-test: a primary press
-        // inside a thumb's rect captures a drag on its scroll
-        // container and suppresses the focus / press / event chain
-        // for the press itself. Subsequent `pointer_moved` updates
-        // the scroll offset; `pointer_up` clears the drag.
+        // Scrollbar track pre-empts normal hit-test: a primary press
+        // inside a scrollable's track column either captures a thumb
+        // drag (when the press lands inside the visible thumb rect)
+        // or pages the scroll offset by a viewport (when it lands
+        // above or below the thumb). Both branches suppress focus /
+        // press / event chains for the press itself; `pointer_moved`
+        // then drives the drag (no-op for paged clicks) and
+        // `pointer_up` clears the drag.
         if matches!(button, PointerButton::Primary)
-            && let Some((scroll_id, thumb_rect)) = self.ui_state.thumb_at(x, y)
+            && let Some((scroll_id, _track, thumb_rect)) = self.ui_state.thumb_at(x, y)
         {
             let metrics = self
                 .ui_state
@@ -264,20 +274,37 @@ impl RunnerCore {
                 .get(&scroll_id)
                 .copied()
                 .unwrap_or_default();
-            let track_remaining = (metrics.viewport_h - thumb_rect.h).max(0.0);
             let start_offset = self
                 .ui_state
                 .scroll_offsets
                 .get(&scroll_id)
                 .copied()
                 .unwrap_or(0.0);
-            self.ui_state.thumb_drag = Some(crate::state::ThumbDrag {
-                scroll_id,
-                start_pointer_y: y,
-                start_offset,
-                track_remaining,
-                max_offset: metrics.max_offset,
-            });
+
+            // Grab when the press lands inside the visible thumb;
+            // page otherwise. The track is wider than the thumb
+            // horizontally, so this branch is decided by `y` alone.
+            let grabbed = y >= thumb_rect.y && y <= thumb_rect.y + thumb_rect.h;
+            if grabbed {
+                let track_remaining = (metrics.viewport_h - thumb_rect.h).max(0.0);
+                self.ui_state.thumb_drag = Some(crate::state::ThumbDrag {
+                    scroll_id,
+                    start_pointer_y: y,
+                    start_offset,
+                    track_remaining,
+                    max_offset: metrics.max_offset,
+                });
+            } else {
+                // Click-to-page. Browser convention: each press
+                // shifts the offset by ~one viewport with a small
+                // overlap so context isn't lost. Direction is
+                // decided by which side of the thumb the press
+                // landed on.
+                let page = (metrics.viewport_h - SCROLL_PAGE_OVERLAP).max(0.0);
+                let delta = if y < thumb_rect.y { -page } else { page };
+                let new_offset = (start_offset + delta).clamp(0.0, metrics.max_offset);
+                self.ui_state.scroll_offsets.insert(scroll_id, new_offset);
+            }
             return None;
         }
 
@@ -1038,6 +1065,83 @@ mod tests {
             .as_ref()
             .expect("thumb_drag should be set after pointer_down on thumb");
         assert_eq!(drag.scroll_id, scroll_id);
+    }
+
+    #[test]
+    fn track_click_above_thumb_pages_up_below_pages_down() {
+        let (mut core, scroll_id) = lay_out_scroll_tree();
+        let track = core
+            .ui_state
+            .thumb_tracks
+            .get(&scroll_id)
+            .copied()
+            .expect("scrollable should have a track");
+        let thumb = core.ui_state.thumb_rects.get(&scroll_id).copied().unwrap();
+        let metrics = core.ui_state.scroll_metrics.get(&scroll_id).copied().unwrap();
+
+        // Press in the track below the thumb at offset 0 → page down.
+        let evt = core.pointer_down(
+            track.x + track.w * 0.5,
+            thumb.y + thumb.h + 10.0,
+            PointerButton::Primary,
+        );
+        assert!(evt.is_none(), "track press should not surface PointerDown");
+        assert!(
+            core.ui_state.thumb_drag.is_none(),
+            "track click outside the thumb should not start a drag",
+        );
+        let after_down = core.ui_state.scroll_offset(&scroll_id);
+        let expected_page = (metrics.viewport_h - SCROLL_PAGE_OVERLAP).max(0.0);
+        assert!(
+            (after_down - expected_page.min(metrics.max_offset)).abs() < 0.5,
+            "page-down offset = {after_down} (expected ~{expected_page})",
+        );
+        // pointer_up after a track-page is a no-op (no drag to clear).
+        let _ = core.pointer_up(0.0, 0.0, PointerButton::Primary);
+
+        // Re-layout to refresh the thumb position at the new offset,
+        // then click-to-page up.
+        let mut tree = lay_out_scroll_tree_only();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 300.0, 200.0),
+        );
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+        let track = core
+            .ui_state
+            .thumb_tracks
+            .get(&tree.computed_id)
+            .copied()
+            .unwrap();
+        let thumb = core
+            .ui_state
+            .thumb_rects
+            .get(&tree.computed_id)
+            .copied()
+            .unwrap();
+
+        core.pointer_down(track.x + track.w * 0.5, thumb.y - 4.0, PointerButton::Primary);
+        let after_up = core.ui_state.scroll_offset(&tree.computed_id);
+        assert!(
+            after_up < after_down,
+            "page-up should reduce offset: before={after_down} after={after_up}",
+        );
+    }
+
+    /// Same fixture as `lay_out_scroll_tree` but doesn't build a
+    /// fresh `RunnerCore` — useful when tests want to re-layout
+    /// against an existing core to refresh thumb rects after a
+    /// scroll offset change.
+    fn lay_out_scroll_tree_only() -> El {
+        use crate::tree::*;
+        crate::scroll(
+            (0..6)
+                .map(|i| crate::widgets::text::text(format!("row {i}")).height(Size::Fixed(50.0))),
+        )
+        .gap(12.0)
+        .height(Size::Fixed(200.0))
     }
 
     #[test]

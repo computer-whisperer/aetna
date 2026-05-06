@@ -179,11 +179,17 @@ pub struct UiState {
     pub(crate) scroll_metrics: HashMap<String, ScrollMetrics>,
     /// Per-scrollable thumb rect (logical pixels), populated alongside
     /// `scroll_metrics` when the scrollable has `scrollbar` enabled and
-    /// its content overflows. Read by `draw_ops` to paint the thumb
-    /// and by the runtime to detect thumb hits in `pointer_down`. An
-    /// entry is *absent* when the scrollbar is disabled or the content
-    /// fits the viewport.
+    /// its content overflows. Read by `draw_ops` to paint the thumb.
+    /// An entry is *absent* when the scrollbar is disabled or the
+    /// content fits the viewport.
     pub(crate) thumb_rects: HashMap<String, Rect>,
+    /// Per-scrollable track rect — the full vertical column that
+    /// accepts pointer presses (wider than the visible thumb so the
+    /// thumb is easy to grab; full viewport height so a click on the
+    /// track above/below the thumb pages by a viewport). Same x-extent
+    /// as `thumb_rects` but expanded to `SCROLLBAR_HITBOX_WIDTH` and
+    /// the inner-rect height. Populated alongside `thumb_rects`.
+    pub(crate) thumb_tracks: HashMap<String, Rect>,
     /// Active scrollbar drag, set by `pointer_down` when the press
     /// lands inside a thumb rect, consumed by `pointer_moved` to update
     /// the corresponding `scroll_offsets` entry, cleared by
@@ -372,16 +378,33 @@ impl UiState {
         self.move_focus(-1)
     }
 
-    /// Look up the scrollable whose thumb rect contains `(x, y)`,
-    /// returning its `computed_id` and the thumb rect. Returns `None`
-    /// if no thumb is currently visible at that point. Iterates the
-    /// per-scrollable thumb_rects (a small map: one entry per
-    /// scrollable currently overflowing). Used by the runtime to
-    /// pre-empt normal hit-test on `pointer_down`.
-    pub fn thumb_at(&self, x: f32, y: f32) -> Option<(String, Rect)> {
-        for (id, rect) in &self.thumb_rects {
-            if rect.contains(x, y) {
-                return Some((id.clone(), *rect));
+    /// Iterate `(scroll_node_id, track_rect)` for every scrollable
+    /// whose visible scrollbar is currently active. Hosts use this to
+    /// drive cursor changes (e.g., a vertical-resize cursor over the
+    /// thumb), to drive screenshot tools, or to test interaction
+    /// flows. The map is rebuilt every layout pass.
+    pub fn scrollbar_tracks(&self) -> impl Iterator<Item = (&str, &Rect)> {
+        self.thumb_tracks
+            .iter()
+            .map(|(id, rect)| (id.as_str(), rect))
+    }
+
+    /// Look up the scrollable whose track rect contains `(x, y)`,
+    /// returning its `computed_id`, the track rect, and the visible
+    /// thumb rect. Returns `None` if no track is currently visible at
+    /// that point. The track rect is wider than the visible thumb
+    /// (Fitts's law) and spans the full viewport height so callers
+    /// can branch on whether `y` lands inside the thumb (grab) or
+    /// above/below (click-to-page).
+    pub fn thumb_at(&self, x: f32, y: f32) -> Option<(String, Rect, Rect)> {
+        for (id, track) in &self.thumb_tracks {
+            if track.contains(x, y) {
+                let thumb = self
+                    .thumb_rects
+                    .get(id)
+                    .copied()
+                    .unwrap_or_else(|| Rect::new(track.x, track.y, track.w, 0.0));
+                return Some((id.clone(), *track, thumb));
             }
         }
         None

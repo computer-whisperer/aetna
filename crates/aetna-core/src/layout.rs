@@ -179,6 +179,7 @@ pub fn layout(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
     // thumb rects behind for hit-test or paint to find.
     ui_state.scroll_metrics.clear();
     ui_state.thumb_rects.clear();
+    ui_state.thumb_tracks.clear();
     layout_children(root, viewport, ui_state);
 }
 
@@ -445,10 +446,13 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
     write_thumb_rect(node, inner, content_h, max_offset, clamped, ui_state);
 }
 
-/// Compute and store the scrollbar thumb rect for `node` when the
-/// author opted into a visible scrollbar AND content overflows. The
-/// rect is anchored to the right edge of `inner`, sized proportionally
-/// to `viewport / content`, and slid by the current offset.
+/// Compute and store the scrollbar thumb + track rects for `node`
+/// when the author opted into a visible scrollbar AND content
+/// overflows. Both rects are anchored to the right edge of `inner`.
+/// The visible thumb is `SCROLLBAR_THUMB_WIDTH` wide and tracks the
+/// scroll offset; the track is `SCROLLBAR_HITBOX_WIDTH` wide and
+/// covers the full inner height so a press above/below the thumb
+/// can page-scroll.
 fn write_thumb_rect(
     node: &El,
     inner: Rect,
@@ -461,15 +465,21 @@ fn write_thumb_rect(
         return;
     }
     let thumb_w = crate::tokens::SCROLLBAR_THUMB_WIDTH;
+    let track_w = crate::tokens::SCROLLBAR_HITBOX_WIDTH;
     let track_inset = crate::tokens::SCROLLBAR_TRACK_INSET;
     let min_thumb_h = crate::tokens::SCROLLBAR_THUMB_MIN_H;
     let thumb_h = ((inner.h * inner.h / content_h).max(min_thumb_h)).min(inner.h);
     let track_remaining = (inner.h - thumb_h).max(0.0);
     let thumb_y = inner.y + track_remaining * (offset / max_offset);
     let thumb_x = inner.right() - thumb_w - track_inset;
+    let track_x = inner.right() - track_w - track_inset;
     ui_state.thumb_rects.insert(
         node.computed_id.clone(),
         Rect::new(thumb_x, thumb_y, thumb_w, thumb_h),
+    );
+    ui_state.thumb_tracks.insert(
+        node.computed_id.clone(),
+        Rect::new(track_x, inner.y, track_w, inner.h),
     );
 }
 
@@ -1259,6 +1269,45 @@ mod tests {
             (thumb.y - expected_y).abs() < 0.5,
             "thumb at half-scroll y = {} (expected {expected_y})",
             thumb.y,
+        );
+    }
+
+    #[test]
+    fn scrollbar_track_is_wider_than_thumb_and_full_height() {
+        // The track is the click hitbox: wider than the visible
+        // thumb (Fitts's law) and tall enough to detect track
+        // clicks above and below the thumb for paging.
+        let mut root = scroll(
+            (0..6)
+                .map(|i| crate::widgets::text::text(format!("row {i}")).height(Size::Fixed(50.0))),
+        )
+        .gap(12.0)
+        .height(Size::Fixed(200.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        let thumb = state
+            .thumb_rects
+            .get(&root.computed_id)
+            .copied()
+            .unwrap();
+        let track = state
+            .thumb_tracks
+            .get(&root.computed_id)
+            .copied()
+            .unwrap();
+        // Track wider than thumb on the same right edge.
+        assert!(track.w > thumb.w, "track.w {} thumb.w {}", track.w, thumb.w);
+        assert!(
+            (track.right() - thumb.right()).abs() < 0.01,
+            "track and thumb must share the right edge",
+        );
+        // Track spans the full inner viewport (so above/below thumb
+        // are both inside it for click-to-page).
+        assert!(
+            (track.h - 200.0).abs() < 0.01,
+            "track height = {} (expected 200)",
+            track.h,
         );
     }
 
