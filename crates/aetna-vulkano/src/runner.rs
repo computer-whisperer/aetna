@@ -628,7 +628,7 @@ impl Runner {
         key: UiKey,
         modifiers: KeyModifiers,
         repeat: bool,
-    ) -> Option<UiEvent> {
+    ) -> Vec<UiEvent> {
         self.core.key_down(key, modifiers, repeat)
     }
 

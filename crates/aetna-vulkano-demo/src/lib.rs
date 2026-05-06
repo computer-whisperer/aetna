@@ -297,10 +297,10 @@ impl<A: App> ApplicationHandler for Host<A> {
                 is_synthetic: false,
                 ..
             } => {
-                if let Some(key) = map_key(&key_event.logical_key)
-                    && let Some(ev) = rcx.runner.key_down(key, self.modifiers, key_event.repeat)
-                {
-                    self.app.on_event(ev);
+                if let Some(key) = map_key(&key_event.logical_key) {
+                    for ev in rcx.runner.key_down(key, self.modifiers, key_event.repeat) {
+                        self.app.on_event(ev);
+                    }
                 }
                 if let Some(text) = &key_event.text
                     && let Some(ev) = rcx.runner.text_input(text.to_string())

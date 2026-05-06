@@ -443,11 +443,12 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         is_synthetic: false,
                         ..
                     } => {
-                        if let Some(key) = map_key(&key_event.logical_key)
-                            && let Some(event) =
+                        if let Some(key) = map_key(&key_event.logical_key) {
+                            for event in
                                 gfx.renderer.key_down(key, self.modifiers, key_event.repeat)
-                        {
-                            self.app.on_event(event);
+                            {
+                                self.app.on_event(event);
+                            }
                         }
                         // Composed text payload (handles Shift+a → "A", dead
                         // keys, etc). winit attaches this on the same press

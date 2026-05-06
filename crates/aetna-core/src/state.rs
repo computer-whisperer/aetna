@@ -121,9 +121,6 @@ pub struct ScrollMetrics {
 #[derive(Clone, Debug)]
 pub(crate) struct SelectionDrag {
     pub anchor: crate::selection::SelectionPoint,
-    /// `node_id` of the anchor leaf — used to find the leaf's rect /
-    /// El during pointer_moved without re-walking selection_order.
-    pub anchor_node_id: String,
 }
 
 /// relationship stays 1:1.

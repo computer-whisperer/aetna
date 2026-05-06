@@ -541,11 +541,12 @@ mod web_entry {
                     is_synthetic: false,
                     ..
                 } => {
-                    if let Some(key) = map_key(&key_event.logical_key)
-                        && let Some(event) =
+                    if let Some(key) = map_key(&key_event.logical_key) {
+                        for event in
                             gfx.renderer.key_down(key, self.modifiers, key_event.repeat)
-                    {
-                        self.app.on_event(event);
+                        {
+                            self.app.on_event(event);
+                        }
                     }
                     if let Some(text) = &key_event.text
                         && let Some(event) = gfx.renderer.text_input(text.to_string())

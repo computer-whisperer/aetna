@@ -416,13 +416,6 @@ impl RunnerCore {
         modifiers: KeyModifiers,
         pointer: (f32, f32),
     ) {
-        let anchor_node_id = self
-            .ui_state
-            .selection_order
-            .iter()
-            .find(|t| t.key == point.key)
-            .map(|t| t.node_id.clone())
-            .unwrap_or_default();
         let new_sel = crate::selection::Selection {
             range: Some(crate::selection::SelectionRange {
                 anchor: point.clone(),
@@ -430,10 +423,7 @@ impl RunnerCore {
             }),
         };
         self.ui_state.current_selection = new_sel.clone();
-        self.ui_state.selection_drag = Some(crate::state::SelectionDrag {
-            anchor: point,
-            anchor_node_id,
-        });
+        self.ui_state.selection_drag = Some(crate::state::SelectionDrag { anchor: point });
         out.push(selection_event(new_sel, modifiers, Some(pointer)));
     }
 
@@ -537,7 +527,7 @@ impl RunnerCore {
         key: UiKey,
         modifiers: KeyModifiers,
         repeat: bool,
-    ) -> Option<UiEvent> {
+    ) -> Vec<UiEvent> {
         // Capture path: when the focused node opted into raw key
         // capture, the library's Tab/Enter/Escape interpretation is
         // bypassed and the event is delivered as a raw `KeyDown` to
@@ -545,9 +535,9 @@ impl RunnerCore {
         // global Ctrl+S beats a text input's local consumption of S.
         if self.focused_captures_keys() {
             if let Some(event) = self.ui_state.try_hotkey(&key, modifiers, repeat) {
-                return Some(event);
+                return vec![event];
             }
-            return self.ui_state.key_down_raw(key, modifiers, repeat);
+            return self.ui_state.key_down_raw(key, modifiers, repeat).into_iter().collect();
         }
 
         // Arrow-nav: if the focused node sits inside an arrow-navigable
@@ -561,13 +551,38 @@ impl RunnerCore {
         ) && let Some(siblings) = self.focused_arrow_nav_group()
         {
             if let Some(event) = self.ui_state.try_hotkey(&key, modifiers, repeat) {
-                return Some(event);
+                return vec![event];
             }
             self.move_focus_in_group(&key, &siblings);
-            return None;
+            return Vec::new();
         }
 
-        self.ui_state.key_down(key, modifiers, repeat)
+        let mut out: Vec<UiEvent> = self
+            .ui_state
+            .key_down(key, modifiers, repeat)
+            .into_iter()
+            .collect();
+
+        // Esc clears any active text selection (parallels the
+        // pointer_down "press lands outside selectable+focusable"
+        // path). The Escape event itself still fires so apps can
+        // dismiss popovers / modals; the SelectionChanged is emitted
+        // alongside it. This only runs in the non-capture-keys path,
+        // so pressing Esc while typing in an input doesn't clobber
+        // the input's selection — matching browser behavior.
+        if matches!(out.first().map(|e| e.kind), Some(UiEventKind::Escape))
+            && !self.ui_state.current_selection.is_empty()
+        {
+            self.ui_state.current_selection = crate::selection::Selection::default();
+            self.ui_state.selection_drag = None;
+            out.push(selection_event(
+                crate::selection::Selection::default(),
+                modifiers,
+                None,
+            ));
+        }
+
+        out
     }
 
     /// Look up the focused node's nearest [`El::arrow_nav_siblings`]
@@ -1517,6 +1532,45 @@ mod tests {
         assert!(core.ui_state.current_selection.is_empty());
     }
 
+    #[test]
+    fn escape_clears_active_selection_and_emits_selection_changed() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let cy = p1.y + p1.h * 0.5;
+        // Drag-select inside p1 to establish a non-empty selection.
+        core.pointer_down(p1.x + 4.0, cy, PointerButton::Primary);
+        core.pointer_moved(p1.x + p1.w - 10.0, cy);
+        core.pointer_up(p1.x + p1.w - 10.0, cy, PointerButton::Primary);
+        assert!(!core.ui_state.current_selection.is_empty());
+
+        let events = core.key_down(UiKey::Escape, KeyModifiers::default(), false);
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![UiEventKind::Escape, UiEventKind::SelectionChanged],
+            "Esc emits Escape (for popover dismiss) AND SelectionChanged"
+        );
+        let cleared = events
+            .iter()
+            .find(|e| e.kind == UiEventKind::SelectionChanged)
+            .unwrap();
+        assert!(cleared.selection.as_ref().unwrap().is_empty());
+        assert!(core.ui_state.current_selection.is_empty());
+    }
+
+    #[test]
+    fn escape_with_no_selection_emits_only_escape() {
+        let mut core = lay_out_paragraph_tree();
+        assert!(core.ui_state.current_selection.is_empty());
+        let events = core.key_down(UiKey::Escape, KeyModifiers::default(), false);
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![UiEventKind::Escape],
+            "no selection → no SelectionChanged side-effect"
+        );
+    }
+
     /// Build a 200x200 viewport hosting a `scroll([rows...])` whose
     /// content overflows so the thumb is present.
     fn lay_out_scroll_tree() -> (RunnerCore, String) {
@@ -1752,9 +1806,9 @@ mod tests {
             "primary click on capture_keys node still focuses it"
         );
 
-        let event = core
-            .key_down(UiKey::Tab, KeyModifiers::default(), false)
-            .expect("Tab → KeyDown to focused");
+        let events = core.key_down(UiKey::Tab, KeyModifiers::default(), false);
+        assert_eq!(events.len(), 1, "Tab → exactly one KeyDown");
+        let event = &events[0];
         assert_eq!(event.kind, UiEventKind::KeyDown);
         assert_eq!(event.target.as_ref().map(|t| t.key.as_str()), Some("ti"));
         assert_eq!(
@@ -1830,7 +1884,7 @@ mod tests {
         // ArrowDown moves to next sibling, no event emitted (it was
         // consumed by the navigation path).
         let down = core.key_down(UiKey::ArrowDown, KeyModifiers::default(), false);
-        assert!(down.is_none(), "arrow-nav consumes the key event");
+        assert!(down.is_empty(), "arrow-nav consumes the key event");
         assert_eq!(
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("opt-blue"),
@@ -2132,10 +2186,9 @@ mod tests {
             .find(|t| t.key == "btn")
             .cloned();
         core.ui_state.set_focus(target);
-        let event = core
-            .key_down(UiKey::ArrowDown, KeyModifiers::default(), false)
-            .expect("ArrowDown without navigable parent → event");
-        assert_eq!(event.kind, UiEventKind::KeyDown);
+        let events = core.key_down(UiKey::ArrowDown, KeyModifiers::default(), false);
+        assert_eq!(events.len(), 1, "ArrowDown without navigable parent → event");
+        assert_eq!(events[0].kind, UiEventKind::KeyDown);
     }
 
     fn quad(shader: ShaderHandle) -> DrawOp {
