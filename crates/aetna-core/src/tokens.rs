@@ -73,6 +73,16 @@ pub const RADIUS_MD: f32 = 8.0;
 pub const RADIUS_LG: f32 = 12.0;
 pub const RADIUS_PILL: f32 = 999.0;
 
+// ---- Scrollbar thumb (overlay indicator on scrollable viewports) ----
+pub const SCROLLBAR_THUMB_WIDTH: f32 = 6.0;
+pub const SCROLLBAR_TRACK_INSET: f32 = 2.0;
+pub const SCROLLBAR_THUMB_MIN_H: f32 = 24.0;
+/// Idle thumb fill — subtle on bg-app/bg-card.
+pub const SCROLLBAR_THUMB_FILL: Color = Color::token("scrollbar-thumb", 148, 160, 176, 130);
+/// Active (hovered or dragged) thumb fill — fully opaque accent.
+pub const SCROLLBAR_THUMB_FILL_ACTIVE: Color =
+    Color::token("scrollbar-thumb-active", 200, 210, 224, 220);
+
 // ---- Shadow (passed to renderer as a "level"; backend interprets) ----
 pub const SHADOW_SM: f32 = 4.0;
 pub const SHADOW_MD: f32 = 12.0;

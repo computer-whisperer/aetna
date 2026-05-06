@@ -195,6 +195,26 @@ impl RunnerCore {
     /// host via `set_modifiers`).
     pub fn pointer_moved(&mut self, x: f32, y: f32) -> Option<UiEvent> {
         self.ui_state.pointer_pos = Some((x, y));
+
+        // Active scrollbar drag: translate cursor delta into
+        // `scroll_offsets` updates. The drag is captured at
+        // `pointer_down` so we can map directly onto the scroll
+        // container without going through hit-test, and we suppress
+        // the normal hover/Drag event emission while it's in flight.
+        if let Some(drag) = self.ui_state.thumb_drag.clone() {
+            let dy = y - drag.start_pointer_y;
+            let new_offset = if drag.track_remaining > 0.0 {
+                drag.start_offset + dy * (drag.max_offset / drag.track_remaining)
+            } else {
+                drag.start_offset
+            };
+            let clamped = new_offset.clamp(0.0, drag.max_offset);
+            self.ui_state
+                .scroll_offsets
+                .insert(drag.scroll_id, clamped);
+            return None;
+        }
+
         let hit = self
             .last_tree
             .as_ref()
@@ -230,6 +250,37 @@ impl RunnerCore {
     /// anchor before any drag extends it). Secondary/middle store on a
     /// separate channel and never emit a `PointerDown`.
     pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Option<UiEvent> {
+        // Scrollbar thumb pre-empts normal hit-test: a primary press
+        // inside a thumb's rect captures a drag on its scroll
+        // container and suppresses the focus / press / event chain
+        // for the press itself. Subsequent `pointer_moved` updates
+        // the scroll offset; `pointer_up` clears the drag.
+        if matches!(button, PointerButton::Primary)
+            && let Some((scroll_id, thumb_rect)) = self.ui_state.thumb_at(x, y)
+        {
+            let metrics = self
+                .ui_state
+                .scroll_metrics
+                .get(&scroll_id)
+                .copied()
+                .unwrap_or_default();
+            let track_remaining = (metrics.viewport_h - thumb_rect.h).max(0.0);
+            let start_offset = self
+                .ui_state
+                .scroll_offsets
+                .get(&scroll_id)
+                .copied()
+                .unwrap_or(0.0);
+            self.ui_state.thumb_drag = Some(crate::state::ThumbDrag {
+                scroll_id,
+                start_pointer_y: y,
+                start_offset,
+                track_remaining,
+                max_offset: metrics.max_offset,
+            });
+            return None;
+        }
+
         let hit = self
             .last_tree
             .as_ref()
@@ -270,6 +321,15 @@ impl RunnerCore {
     /// same node; no analogue of `PointerUp` since drag is a primary-
     /// button concept here.
     pub fn pointer_up(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
+        // Scrollbar drag ends without producing app-level events —
+        // the press never went through `pressed` / `pressed_secondary`
+        // so there's nothing else to clean up. Released from anywhere;
+        // the drag is global once captured, matching native scrollbars.
+        if matches!(button, PointerButton::Primary) && self.ui_state.thumb_drag.is_some() {
+            self.ui_state.thumb_drag = None;
+            return Vec::new();
+        }
+
         let hit = self
             .last_tree
             .as_ref()
@@ -930,6 +990,86 @@ mod tests {
     fn pointer_moved_without_press_emits_no_drag() {
         let mut core = lay_out_input_tree(false);
         assert!(core.pointer_moved(50.0, 50.0).is_none());
+    }
+
+    /// Build a 200x200 viewport hosting a `scroll([rows...])` whose
+    /// content overflows so the thumb is present.
+    fn lay_out_scroll_tree() -> (RunnerCore, String) {
+        use crate::tree::*;
+        let mut tree = crate::scroll(
+            (0..6)
+                .map(|i| crate::widgets::text::text(format!("row {i}")).height(Size::Fixed(50.0))),
+        )
+        .gap(12.0)
+        .height(Size::Fixed(200.0));
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 300.0, 200.0),
+        );
+        let scroll_id = tree.computed_id.clone();
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+        (core, scroll_id)
+    }
+
+    #[test]
+    fn thumb_pointer_down_captures_drag_and_suppresses_events() {
+        let (mut core, scroll_id) = lay_out_scroll_tree();
+        let thumb = core
+            .ui_state
+            .thumb_rects
+            .get(&scroll_id)
+            .copied()
+            .expect("scrollable should have a thumb");
+        let event = core.pointer_down(
+            thumb.x + thumb.w * 0.5,
+            thumb.y + thumb.h * 0.5,
+            PointerButton::Primary,
+        );
+        assert!(
+            event.is_none(),
+            "thumb press should not emit PointerDown to the app"
+        );
+        let drag = core
+            .ui_state
+            .thumb_drag
+            .as_ref()
+            .expect("thumb_drag should be set after pointer_down on thumb");
+        assert_eq!(drag.scroll_id, scroll_id);
+    }
+
+    #[test]
+    fn thumb_drag_translates_pointer_delta_into_scroll_offset() {
+        let (mut core, scroll_id) = lay_out_scroll_tree();
+        let thumb = core.ui_state.thumb_rects.get(&scroll_id).copied().unwrap();
+        let metrics = core.ui_state.scroll_metrics.get(&scroll_id).copied().unwrap();
+        let track_remaining = (metrics.viewport_h - thumb.h).max(0.0);
+
+        let press_y = thumb.y + thumb.h * 0.5;
+        core.pointer_down(thumb.x + thumb.w * 0.5, press_y, PointerButton::Primary);
+        // Drag 20 px down — offset should advance by `20 * max_offset / track_remaining`.
+        let evt = core.pointer_moved(thumb.x + thumb.w * 0.5, press_y + 20.0);
+        assert!(evt.is_none(), "thumb-drag move should suppress Drag event");
+        let offset = core.ui_state.scroll_offset(&scroll_id);
+        let expected = 20.0 * (metrics.max_offset / track_remaining);
+        assert!(
+            (offset - expected).abs() < 0.5,
+            "offset {offset} (expected {expected})",
+        );
+        // Overshooting clamps to max_offset.
+        core.pointer_moved(thumb.x + thumb.w * 0.5, press_y + 9999.0);
+        let offset = core.ui_state.scroll_offset(&scroll_id);
+        assert!(
+            (offset - metrics.max_offset).abs() < 0.5,
+            "overshoot offset {offset} (expected {})",
+            metrics.max_offset
+        );
+        // Release clears the drag without emitting events.
+        let events = core.pointer_up(thumb.x, press_y, PointerButton::Primary);
+        assert!(events.is_empty(), "thumb release shouldn't emit events");
+        assert!(core.ui_state.thumb_drag.is_none());
     }
 
     #[test]

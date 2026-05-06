@@ -156,6 +156,15 @@ pub struct El {
     /// node is automatically `scrollable` + `clip`.
     pub virtual_items: Option<VirtualItems>,
 
+    /// Show a draggable vertical scrollbar thumb when this node is
+    /// scrollable and its content overflows the viewport. The thumb
+    /// overlays the right edge of the viewport — it does not reflow
+    /// children. No effect on non-scrollable nodes. Defaults to
+    /// `false`; the [`crate::scroll`] and [`crate::virtual_list`]
+    /// constructors flip it on by default. Authors disable with
+    /// [`Self::no_scrollbar`].
+    pub scrollbar: bool,
+
     // Text
     pub text: Option<String>,
     pub text_color: Option<Color>,
@@ -257,6 +266,7 @@ impl Default for El {
             shader_override: None,
             layout_override: None,
             virtual_items: None,
+            scrollbar: false,
             text: None,
             text_color: None,
             text_align: TextAlign::Start,
@@ -423,6 +433,24 @@ impl El {
     }
     pub fn scrollable(mut self) -> Self {
         self.scrollable = true;
+        self
+    }
+
+    /// Show a draggable vertical scrollbar thumb when this scrollable
+    /// node's content overflows. The thumb overlays the right edge of
+    /// the viewport and does not reflow children. [`crate::scroll`] and
+    /// [`crate::virtual_list`] enable this by default; call to opt in
+    /// elsewhere.
+    pub fn scrollbar(mut self) -> Self {
+        self.scrollbar = true;
+        self
+    }
+
+    /// Suppress the default scrollbar thumb on this scrollable node
+    /// (only useful on `scroll()` / `virtual_list()`, which enable it
+    /// by default).
+    pub fn no_scrollbar(mut self) -> Self {
+        self.scrollbar = false;
         self
     }
     /// Treat this element's focusable children as a single arrow-navigable
@@ -750,6 +778,7 @@ where
         .height(Size::Fill(1.0))
         .clip()
         .scrollable()
+        .scrollbar()
 }
 
 /// Block whose direct children flow inline (text leaves + embeds +
@@ -816,7 +845,8 @@ where
         .width(Size::Fill(1.0))
         .height(Size::Fill(1.0))
         .clip()
-        .scrollable();
+        .scrollable()
+        .scrollbar();
     el.virtual_items = Some(VirtualItems::new(count, row_height, build_row));
     el
 }

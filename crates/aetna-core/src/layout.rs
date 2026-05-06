@@ -174,6 +174,11 @@ pub fn layout(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
         .computed_rects
         .insert(root.computed_id.clone(), viewport);
     rebuild_key_index(root, ui_state);
+    // Per-scrollable scratch is rebuilt every layout — entries for
+    // scrollables that disappeared mid-frame must not leave stale
+    // thumb rects behind for hit-test or paint to find.
+    ui_state.scroll_metrics.clear();
+    ui_state.thumb_rects.clear();
     layout_children(root, viewport, ui_state);
 }
 
@@ -343,6 +348,16 @@ fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state:
     ui_state
         .scroll_offsets
         .insert(node.computed_id.clone(), offset);
+    ui_state.scroll_metrics.insert(
+        node.computed_id.clone(),
+        crate::state::ScrollMetrics {
+            viewport_h: inner.h,
+            content_h: total_h,
+            max_offset,
+        },
+    );
+
+    write_thumb_rect(node, inner, total_h, max_offset, offset, ui_state);
 
     if items.count == 0 {
         node.children.clear();
@@ -387,6 +402,14 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
         ui_state
             .scroll_offsets
             .insert(node.computed_id.clone(), 0.0);
+        ui_state.scroll_metrics.insert(
+            node.computed_id.clone(),
+            crate::state::ScrollMetrics {
+                viewport_h: inner.h,
+                content_h: 0.0,
+                max_offset: 0.0,
+            },
+        );
         return;
     }
     let content_bottom = node
@@ -410,6 +433,44 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
     ui_state
         .scroll_offsets
         .insert(node.computed_id.clone(), clamped);
+    ui_state.scroll_metrics.insert(
+        node.computed_id.clone(),
+        crate::state::ScrollMetrics {
+            viewport_h: inner.h,
+            content_h,
+            max_offset,
+        },
+    );
+
+    write_thumb_rect(node, inner, content_h, max_offset, clamped, ui_state);
+}
+
+/// Compute and store the scrollbar thumb rect for `node` when the
+/// author opted into a visible scrollbar AND content overflows. The
+/// rect is anchored to the right edge of `inner`, sized proportionally
+/// to `viewport / content`, and slid by the current offset.
+fn write_thumb_rect(
+    node: &El,
+    inner: Rect,
+    content_h: f32,
+    max_offset: f32,
+    offset: f32,
+    ui_state: &mut UiState,
+) {
+    if !node.scrollbar || max_offset <= 0.0 || inner.h <= 0.0 || content_h <= 0.0 {
+        return;
+    }
+    let thumb_w = crate::tokens::SCROLLBAR_THUMB_WIDTH;
+    let track_inset = crate::tokens::SCROLLBAR_TRACK_INSET;
+    let min_thumb_h = crate::tokens::SCROLLBAR_THUMB_MIN_H;
+    let thumb_h = ((inner.h * inner.h / content_h).max(min_thumb_h)).min(inner.h);
+    let track_remaining = (inner.h - thumb_h).max(0.0);
+    let thumb_y = inner.y + track_remaining * (offset / max_offset);
+    let thumb_x = inner.right() - thumb_w - track_inset;
+    ui_state.thumb_rects.insert(
+        node.computed_id.clone(),
+        Rect::new(thumb_x, thumb_y, thumb_w, thumb_h),
+    );
 }
 
 fn shift_subtree_y(node: &El, dy: f32, ui_state: &mut UiState) {
@@ -1136,6 +1197,94 @@ mod tests {
                 .unwrap_or(0.0),
             0.0
         );
+    }
+
+    #[test]
+    fn scrollbar_thumb_size_and_position_track_overflow() {
+        // 6 rows x 50px + 5 gaps x 12 = 360 content; 200 viewport.
+        // viewport/content = 200/360 ≈ 0.555 → thumb_h ≈ 111.1.
+        let mut root = scroll(
+            (0..6)
+                .map(|i| crate::widgets::text::text(format!("row {i}")).height(Size::Fixed(50.0))),
+        )
+        .gap(12.0)
+        .height(Size::Fixed(200.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        let metrics = state
+            .scroll_metrics
+            .get(&root.computed_id)
+            .copied()
+            .expect("scrollable should have metrics");
+        assert!((metrics.viewport_h - 200.0).abs() < 0.01);
+        assert!((metrics.content_h - 360.0).abs() < 0.01);
+        assert!((metrics.max_offset - 160.0).abs() < 0.01);
+
+        let thumb = state
+            .thumb_rects
+            .get(&root.computed_id)
+            .copied()
+            .expect("scrollable with scrollbar() and overflow gets a thumb");
+        // viewport^2 / content_h = 200^2 / 360 = 111.11..
+        assert!(
+            (thumb.h - 111.111).abs() < 0.5,
+            "thumb h = {}",
+            thumb.h
+        );
+        assert!((thumb.w - crate::tokens::SCROLLBAR_THUMB_WIDTH).abs() < 0.01);
+        // At offset 0, thumb sits at the top of the inner rect.
+        assert!(thumb.y.abs() < 0.01);
+        // Right-anchored: thumb_x + thumb_w + track_inset == viewport_right.
+        assert!(
+            (thumb.x + thumb.w + crate::tokens::SCROLLBAR_TRACK_INSET - 300.0).abs() < 0.01,
+            "thumb anchored at {} (expected {})",
+            thumb.x,
+            300.0 - thumb.w - crate::tokens::SCROLLBAR_TRACK_INSET
+        );
+
+        // Slide to half — thumb should be at half the track_remaining.
+        state
+            .scroll_offsets
+            .insert(root.computed_id.clone(), 80.0);
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        let thumb = state
+            .thumb_rects
+            .get(&root.computed_id)
+            .copied()
+            .unwrap();
+        let track_remaining = 200.0 - thumb.h;
+        let expected_y = track_remaining * (80.0 / 160.0);
+        assert!(
+            (thumb.y - expected_y).abs() < 0.5,
+            "thumb at half-scroll y = {} (expected {expected_y})",
+            thumb.y,
+        );
+    }
+
+    #[test]
+    fn scrollbar_thumb_absent_when_disabled_or_no_overflow() {
+        // Same scrollable, but author opted out — no thumb_rect.
+        let mut suppressed = scroll(
+            (0..6)
+                .map(|i| crate::widgets::text::text(format!("row {i}")).height(Size::Fixed(50.0))),
+        )
+        .no_scrollbar()
+        .height(Size::Fixed(200.0));
+        let mut state = UiState::new();
+        layout(
+            &mut suppressed,
+            &mut state,
+            Rect::new(0.0, 0.0, 300.0, 200.0),
+        );
+        assert!(!state.thumb_rects.contains_key(&suppressed.computed_id));
+
+        // Same scrollable, content fits → no thumb either.
+        let mut tiny = scroll([crate::widgets::text::text("one row").height(Size::Fixed(20.0))])
+            .height(Size::Fixed(200.0));
+        let mut tiny_state = UiState::new();
+        layout(&mut tiny, &mut tiny_state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        assert!(!tiny_state.thumb_rects.contains_key(&tiny.computed_id));
     }
 
     #[test]

@@ -97,6 +97,37 @@ impl<T: WidgetState> AnyWidgetState for T {
     }
 }
 
+/// Layout snapshot for a scrollable node. Written each frame by
+/// `apply_scroll_offset`; read by the scrollbar thumb in `draw_ops`
+/// and by `runtime`'s thumb-drag plumbing. `viewport_h` is the
+/// scrollable's inner-rect height (post-padding); `content_h` is the
+/// total height of its children; `max_offset` is `(content_h -
+/// viewport_h).max(0.0)`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScrollMetrics {
+    pub viewport_h: f32,
+    pub content_h: f32,
+    pub max_offset: f32,
+}
+
+/// Active scrollbar thumb drag. `start_pointer_y` and `start_offset`
+/// are captured at `pointer_down`; `pointer_moved` updates
+/// `scroll_offsets[scroll_id]` to `start_offset + (dy *
+/// max_offset / track_remaining)` so the cursor-thumb pixel
+/// relationship stays 1:1.
+#[derive(Clone, Debug)]
+pub struct ThumbDrag {
+    pub scroll_id: String,
+    pub start_pointer_y: f32,
+    pub start_offset: f32,
+    /// Distance the thumb top can travel — `viewport_h - thumb_h`.
+    /// Captured at drag start so a content-resize mid-drag doesn't
+    /// retro-actively shift the cursor-thumb correspondence.
+    pub track_remaining: f32,
+    /// `max_offset` captured at drag start, for the same reason.
+    pub max_offset: f32,
+}
+
 /// Internal UI state — interaction trackers + the side maps the library
 /// writes during layout / state-apply / animation-tick passes. Owned by
 /// the renderer; the host doesn't interact with this directly.
@@ -141,6 +172,24 @@ pub struct UiState {
     /// `El::computed_id`. The layout pass reads this when positioning a
     /// scrollable's children and writes back the clamped value.
     pub(crate) scroll_offsets: HashMap<String, f32>,
+    /// Per-scrollable layout metrics — viewport height, content
+    /// height, max offset — written by the layout pass and read by
+    /// `draw_ops` (to size the scrollbar thumb) and the runtime (to
+    /// translate thumb-drag delta into offset delta).
+    pub(crate) scroll_metrics: HashMap<String, ScrollMetrics>,
+    /// Per-scrollable thumb rect (logical pixels), populated alongside
+    /// `scroll_metrics` when the scrollable has `scrollbar` enabled and
+    /// its content overflows. Read by `draw_ops` to paint the thumb
+    /// and by the runtime to detect thumb hits in `pointer_down`. An
+    /// entry is *absent* when the scrollbar is disabled or the content
+    /// fits the viewport.
+    pub(crate) thumb_rects: HashMap<String, Rect>,
+    /// Active scrollbar drag, set by `pointer_down` when the press
+    /// lands inside a thumb rect, consumed by `pointer_moved` to update
+    /// the corresponding `scroll_offsets` entry, cleared by
+    /// `pointer_up`. Pre-empts normal hit-test so thumb drags don't
+    /// also fire app-level pointer events.
+    pub(crate) thumb_drag: Option<ThumbDrag>,
     /// App-level hotkey registry; the host snapshots `App::hotkeys()`
     /// each frame and stores it here. Matched in `key_down` ahead of
     /// focus activation.
@@ -321,6 +370,21 @@ impl UiState {
 
     pub fn focus_prev(&mut self) -> Option<&UiTarget> {
         self.move_focus(-1)
+    }
+
+    /// Look up the scrollable whose thumb rect contains `(x, y)`,
+    /// returning its `computed_id` and the thumb rect. Returns `None`
+    /// if no thumb is currently visible at that point. Iterates the
+    /// per-scrollable thumb_rects (a small map: one entry per
+    /// scrollable currently overflowing). Used by the runtime to
+    /// pre-empt normal hit-test on `pointer_down`.
+    pub fn thumb_at(&self, x: f32, y: f32) -> Option<(String, Rect)> {
+        for (id, rect) in &self.thumb_rects {
+            if rect.contains(x, y) {
+                return Some((id.clone(), *rect));
+            }
+        }
+        None
     }
 
     /// Increment the scroll offset for the deepest scrollable container

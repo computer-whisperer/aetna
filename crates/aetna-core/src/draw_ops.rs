@@ -317,6 +317,51 @@ fn push_node(
             child_focus_envelope,
         );
     }
+
+    // Scrollbar thumb. Painted *after* children so it sits on top
+    // visually, with `own_scissor` so it inherits the scrollable's
+    // clip but is otherwise free of the scroll offset (the layout
+    // pass shifts the children, not the thumb). `thumb_rects` is
+    // populated only when the scrollable opted in and content
+    // overflows, so the gating is implicit.
+    if let Some(thumb_rect) = ui_state.thumb_rects.get(&n.computed_id) {
+        let painted_thumb = translated(*thumb_rect, total_translate);
+        let active = thumb_is_active(n, ui_state, *thumb_rect);
+        let base_fill = if active {
+            tokens::SCROLLBAR_THUMB_FILL_ACTIVE
+        } else {
+            tokens::SCROLLBAR_THUMB_FILL
+        };
+        let mut uniforms = UniformBlock::new();
+        uniforms.insert("fill", UniformValue::Color(opaque(base_fill, opacity)));
+        uniforms.insert(
+            "radius",
+            UniformValue::F32(thumb_rect.w.min(thumb_rect.h) * 0.5),
+        );
+        uniforms.insert("inner_rect", inner_rect_uniform(painted_thumb));
+        out.push(DrawOp::Quad {
+            id: format!("{}.scrollbar-thumb", n.computed_id),
+            rect: painted_thumb,
+            scissor: own_scissor,
+            shader: ShaderHandle::Stock(StockShader::RoundedRect),
+            uniforms,
+        });
+    }
+}
+
+/// Active when the user is actively dragging this scrollable's thumb
+/// or hovering it. Hover is computed against the *un-translated*
+/// thumb_rect since the pointer position is captured pre-translate.
+fn thumb_is_active(n: &El, ui_state: &UiState, thumb_rect: Rect) -> bool {
+    if let Some(drag) = ui_state.thumb_drag.as_ref()
+        && drag.scroll_id == n.computed_id
+    {
+        return true;
+    }
+    if let Some((px, py)) = ui_state.pointer_pos {
+        return thumb_rect.contains(px, py);
+    }
+    false
 }
 
 /// Walk an Inlines paragraph's children and produce source-order
