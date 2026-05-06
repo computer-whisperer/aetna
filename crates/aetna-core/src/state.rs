@@ -152,6 +152,12 @@ pub struct UiState {
     pub(crate) pressed_secondary: Option<(UiTarget, PointerButton)>,
     pub focused: Option<UiTarget>,
     pub(crate) focus_order: Vec<UiTarget>,
+    /// Selectable text leaves in document (tree) order. Built post-
+    /// layout by [`Self::sync_selection_order`], parallel to
+    /// [`Self::sync_focus_order`]; consulted by the selection manager
+    /// to map pointer hits to a [`crate::selection::SelectionPoint`]
+    /// and to walk cross-element selections.
+    pub(crate) selection_order: Vec<UiTarget>,
     /// LIFO of focus targets pushed when popover layers open. Each new
     /// `Kind::Custom("popover_layer")` snapshots the current focus here
     /// and auto-focuses into the layer; closing the layer pops and
@@ -400,6 +406,23 @@ impl UiState {
             }
             self.focused = None;
         }
+    }
+
+    /// Walk the laid-out tree and rebuild the selectable-text order.
+    /// Same shape as [`Self::sync_focus_order`] but filters for
+    /// `selectable` keyed leaves instead of `focusable` ones. Should
+    /// run on every frame post-layout, before the selection manager
+    /// processes pointer events.
+    pub fn sync_selection_order(&mut self, root: &El) {
+        let order = crate::focus::selection_order(root, self);
+        self.selection_order = order;
+    }
+
+    /// Read access to the current document-order list of selectable
+    /// leaves. Mainly for tests; the selection manager uses internal
+    /// access.
+    pub fn selection_order(&self) -> &[UiTarget] {
+        &self.selection_order
     }
 
     /// Update the hovered target. Maintains the hover-stable timer
@@ -1101,6 +1124,27 @@ mod tests {
         let (rebuilt, _) = lay_out_counter();
         state.sync_focus_order(&rebuilt);
         assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("inc"));
+    }
+
+    #[test]
+    fn sync_selection_order_collects_keyed_selectable_leaves_in_tree_order() {
+        let mut tree = column([
+            crate::text("Alpha").key("a").selectable(),
+            crate::text("Bravo (not selectable)"),
+            crate::text("Charlie").key("c").selectable(),
+            crate::text("Delta (selectable but unkeyed)").selectable(),
+        ])
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.sync_selection_order(&tree);
+
+        let order = state.selection_order();
+        let keys: Vec<&str> = order.iter().map(|t| t.key.as_str()).collect();
+        // Only the keyed-and-selectable leaves should appear, in tree
+        // order. The unkeyed selectable leaf is silently excluded —
+        // selection requires stable identity.
+        assert_eq!(keys, vec!["a", "c"]);
     }
 
     #[test]

@@ -98,6 +98,52 @@ pub fn focus_order(root: &El, ui_state: &UiState) -> Vec<UiTarget> {
     out
 }
 
+/// Collect selectable, keyed nodes in document (tree) order. Same
+/// clip rules as [`focus_order`]: nodes outside their inherited clip
+/// are skipped. The selection manager indexes into this list to
+/// resolve pointer hits against keys and to walk cross-element
+/// selections in document order.
+pub fn selection_order(root: &El, ui_state: &UiState) -> Vec<UiTarget> {
+    let mut out = Vec::new();
+    collect_selectable(root, ui_state, None, &mut out);
+    out
+}
+
+fn collect_selectable(
+    node: &El,
+    ui_state: &UiState,
+    inherited_clip: Option<Rect>,
+    out: &mut Vec<UiTarget>,
+) {
+    let computed = ui_state.rect(&node.computed_id);
+    let clip = if node.clip {
+        match inherited_clip {
+            Some(clip) => Some(
+                clip.intersect(computed)
+                    .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+            ),
+            None => Some(computed),
+        }
+    } else {
+        inherited_clip
+    };
+    if node.selectable
+        && let Some(key) = &node.key
+        && clip
+            .map(|c| c.intersect(computed).is_some())
+            .unwrap_or(true)
+    {
+        out.push(UiTarget {
+            key: key.clone(),
+            node_id: node.computed_id.clone(),
+            rect: computed,
+        });
+    }
+    for child in &node.children {
+        collect_selectable(child, ui_state, clip, out);
+    }
+}
+
 fn collect_focus(
     node: &El,
     ui_state: &UiState,

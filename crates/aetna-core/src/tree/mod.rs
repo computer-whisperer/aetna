@@ -59,6 +59,18 @@ pub struct El {
     pub key: Option<String>,
     pub block_pointer: bool,
     pub focusable: bool,
+    /// When true, this node is a pointer target for the library's
+    /// text-selection manager: pointer-down inside its rect starts (or
+    /// extends) the global [`crate::selection::Selection`] anchored at
+    /// this node's `key`. The leaf must also carry an explicit
+    /// `.key(...)` — same convention as focusable widgets — so the
+    /// selection survives tree rebuilds.
+    ///
+    /// Set via [`Self::selectable`]. Coordinates with focus on a
+    /// per-pointer-event basis: pointer-down on a focusable widget
+    /// transfers focus and clears selection; pointer-down on a
+    /// selectable-only leaf moves selection without disturbing focus.
+    pub selectable: bool,
     /// When true, all key events (other than registered hotkeys) route
     /// to this node as raw `KeyDown` instead of being interpreted by
     /// the library's defaults (Tab traversal, Enter/Space activation,
@@ -293,6 +305,7 @@ impl Default for El {
             key: None,
             block_pointer: false,
             focusable: false,
+            selectable: false,
             capture_keys: false,
             alpha_follows_focused_ancestor: false,
             state_follows_interactive_ancestor: false,
@@ -370,6 +383,14 @@ impl El {
     }
     pub fn focusable(mut self) -> Self {
         self.focusable = true;
+        self
+    }
+    /// Opt this node into the library's text-selection system. The
+    /// node must also carry an explicit `.key(...)` — selection
+    /// requires stable identity across rebuilds the same way focus
+    /// does. See [`Self::selectable`].
+    pub fn selectable(mut self) -> Self {
+        self.selectable = true;
         self
     }
     /// Opt this node into raw key capture when focused. While this
