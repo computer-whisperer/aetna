@@ -267,6 +267,7 @@ impl RunnerCore {
                 text: None,
                 selection: None,
                 modifiers,
+                click_count: 0,
                 kind: UiEventKind::Drag,
             });
         }
@@ -367,6 +368,13 @@ impl RunnerCore {
         self.ui_state.tooltip_dismissed_for_hover = true;
         let modifiers = self.ui_state.modifiers;
 
+        // Click counting: extend a multi-click sequence when the press
+        // lands on the same target inside the time + distance window.
+        let now = Instant::now();
+        let click_count =
+            self.ui_state
+                .next_click_count(now, (x, y), hit.as_ref().map(|t| t.node_id.as_str()));
+
         let mut out = Vec::new();
         if let Some(p) = hit.clone() {
             out.push(UiEvent {
@@ -377,6 +385,7 @@ impl RunnerCore {
                 text: None,
                 selection: None,
                 modifiers,
+                click_count,
                 kind: UiEventKind::PointerDown,
             });
         }
@@ -393,7 +402,7 @@ impl RunnerCore {
             .as_ref()
             .and_then(|t| hit_test::selection_point_at(t, &self.ui_state, (x, y)))
         {
-            self.start_selection_drag(point, &mut out, modifiers, (x, y));
+            self.start_selection_drag(point, &mut out, modifiers, (x, y), click_count);
         } else if !self.ui_state.current_selection.is_empty() {
             out.push(selection_event(
                 crate::selection::Selection::default(),
@@ -408,22 +417,43 @@ impl RunnerCore {
     }
 
     /// Stamp a new [`crate::state::SelectionDrag`] and emit a
-    /// `SelectionChanged` event with anchor=head=`point`.
+    /// `SelectionChanged` event seeded by `point`. For
+    /// `click_count == 2` the anchor / head pair expands to the word
+    /// range around `point.byte`; for `click_count >= 3` it expands to
+    /// the whole leaf (static-text triple-click typically wants the
+    /// paragraph). For other counts (single click, default) the
+    /// selection is collapsed at `point`.
     fn start_selection_drag(
         &mut self,
         point: crate::selection::SelectionPoint,
         out: &mut Vec<UiEvent>,
         modifiers: KeyModifiers,
         pointer: (f32, f32),
+        click_count: u8,
     ) {
+        let leaf_text = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| crate::selection::find_keyed_text(t, &point.key))
+            .unwrap_or_default();
+        let (anchor_byte, head_byte) = match click_count {
+            2 => crate::selection::word_range_at(&leaf_text, point.byte),
+            n if n >= 3 => (0, leaf_text.len()),
+            _ => (point.byte, point.byte),
+        };
+        let anchor = crate::selection::SelectionPoint::new(point.key.clone(), anchor_byte);
+        let head = crate::selection::SelectionPoint::new(point.key.clone(), head_byte);
         let new_sel = crate::selection::Selection {
             range: Some(crate::selection::SelectionRange {
-                anchor: point.clone(),
-                head: point.clone(),
+                anchor: anchor.clone(),
+                head,
             }),
         };
         self.ui_state.current_selection = new_sel.clone();
-        self.ui_state.selection_drag = Some(crate::state::SelectionDrag { anchor: point });
+        // The drag anchors at the multi-click range's start so a
+        // subsequent drag extends from there rather than from the
+        // initial click position.
+        self.ui_state.selection_drag = Some(crate::state::SelectionDrag { anchor });
         out.push(selection_event(new_sel, modifiers, Some(pointer)));
     }
 
@@ -459,6 +489,7 @@ impl RunnerCore {
         match button {
             PointerButton::Primary => {
                 let pressed = self.ui_state.pressed.take();
+                let click_count = self.ui_state.current_click_count();
                 if let Some(p) = pressed.clone() {
                     out.push(UiEvent {
                         key: Some(p.key.clone()),
@@ -468,6 +499,7 @@ impl RunnerCore {
                         text: None,
                         selection: None,
                         modifiers,
+                        click_count,
                         kind: UiEventKind::PointerUp,
                     });
                 }
@@ -490,6 +522,7 @@ impl RunnerCore {
                             text: None,
                             selection: None,
                             modifiers,
+                            click_count,
                             kind: UiEventKind::Click,
                         });
                     }
@@ -514,6 +547,7 @@ impl RunnerCore {
                         text: None,
                         selection: None,
                         modifiers,
+                        click_count: 1,
                         kind,
                     });
                 }
@@ -654,6 +688,7 @@ impl RunnerCore {
             text: Some(text),
             selection: None,
             modifiers,
+            click_count: 0,
             kind: UiEventKind::TextInput,
         })
     }
@@ -1032,6 +1067,7 @@ fn selection_event(
         text: None,
         selection: Some(new_sel),
         modifiers,
+        click_count: 0,
     }
 }
 
@@ -1556,6 +1592,157 @@ mod tests {
             .unwrap();
         assert!(cleared.selection.as_ref().unwrap().is_empty());
         assert!(core.ui_state.current_selection.is_empty());
+    }
+
+    #[test]
+    fn consecutive_clicks_on_same_target_extend_count() {
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+
+        // First press: count = 1.
+        let down1 = core.pointer_down(cx, cy, PointerButton::Primary);
+        let pd1 = down1
+            .iter()
+            .find(|e| e.kind == UiEventKind::PointerDown)
+            .expect("PointerDown emitted");
+        assert_eq!(pd1.click_count, 1, "first press starts the sequence");
+        let up1 = core.pointer_up(cx, cy, PointerButton::Primary);
+        let click1 = up1
+            .iter()
+            .find(|e| e.kind == UiEventKind::Click)
+            .expect("Click emitted");
+        assert_eq!(
+            click1.click_count, 1,
+            "Click carries the same count as its PointerDown"
+        );
+
+        // Second press immediately after, same target: count = 2.
+        let down2 = core.pointer_down(cx, cy, PointerButton::Primary);
+        let pd2 = down2
+            .iter()
+            .find(|e| e.kind == UiEventKind::PointerDown)
+            .unwrap();
+        assert_eq!(pd2.click_count, 2, "second press extends the sequence");
+        let up2 = core.pointer_up(cx, cy, PointerButton::Primary);
+        assert_eq!(
+            up2.iter()
+                .find(|e| e.kind == UiEventKind::Click)
+                .unwrap()
+                .click_count,
+            2
+        );
+
+        // Third: count = 3.
+        let down3 = core.pointer_down(cx, cy, PointerButton::Primary);
+        let pd3 = down3
+            .iter()
+            .find(|e| e.kind == UiEventKind::PointerDown)
+            .unwrap();
+        assert_eq!(pd3.click_count, 3, "third press → triple-click");
+        core.pointer_up(cx, cy, PointerButton::Primary);
+    }
+
+    #[test]
+    fn click_count_resets_when_target_changes() {
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let ti = core.rect_of_key("ti").expect("ti rect");
+
+        // Press on btn → count=1.
+        let down1 = core.pointer_down(
+            btn.x + btn.w * 0.5,
+            btn.y + btn.h * 0.5,
+            PointerButton::Primary,
+        );
+        assert_eq!(
+            down1
+                .iter()
+                .find(|e| e.kind == UiEventKind::PointerDown)
+                .unwrap()
+                .click_count,
+            1
+        );
+        let _ = core.pointer_up(
+            btn.x + btn.w * 0.5,
+            btn.y + btn.h * 0.5,
+            PointerButton::Primary,
+        );
+
+        // Press on ti (different target) → count resets to 1.
+        let down2 = core.pointer_down(
+            ti.x + ti.w * 0.5,
+            ti.y + ti.h * 0.5,
+            PointerButton::Primary,
+        );
+        let pd2 = down2
+            .iter()
+            .find(|e| e.kind == UiEventKind::PointerDown)
+            .unwrap();
+        assert_eq!(
+            pd2.click_count, 1,
+            "press on a new target resets the multi-click sequence"
+        );
+    }
+
+    #[test]
+    fn double_click_on_selectable_text_selects_word_at_hit() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let cy = p1.y + p1.h * 0.5;
+        // Click near the start of "First paragraph of text." — twice
+        // within the multi-click window.
+        let cx = p1.x + 4.0;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        // The current selection should now span the first word.
+        let sel = &core.ui_state.current_selection;
+        let r = sel.range.as_ref().expect("selection set");
+        assert_eq!(r.anchor.key, "p1");
+        assert_eq!(r.head.key, "p1");
+        // "First" is 5 bytes.
+        assert_eq!(r.anchor.byte.min(r.head.byte), 0);
+        assert_eq!(r.anchor.byte.max(r.head.byte), 5);
+    }
+
+    #[test]
+    fn triple_click_on_selectable_text_selects_whole_leaf() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let cy = p1.y + p1.h * 0.5;
+        let cx = p1.x + 4.0;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let sel = &core.ui_state.current_selection;
+        let r = sel.range.as_ref().expect("selection set");
+        assert_eq!(r.anchor.byte, 0);
+        // "First paragraph of text." is 24 bytes.
+        assert_eq!(r.head.byte, 24);
+    }
+
+    #[test]
+    fn click_count_resets_when_press_drifts_outside_distance_window() {
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+
+        let _ = core.pointer_down(cx, cy, PointerButton::Primary);
+        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+
+        // Move 10 px (well outside MULTI_CLICK_DIST=4.0). Even if same
+        // target, the second press starts a fresh sequence.
+        let down2 = core.pointer_down(cx + 10.0, cy, PointerButton::Primary);
+        let pd2 = down2
+            .iter()
+            .find(|e| e.kind == UiEventKind::PointerDown)
+            .unwrap();
+        assert_eq!(pd2.click_count, 1);
     }
 
     #[test]

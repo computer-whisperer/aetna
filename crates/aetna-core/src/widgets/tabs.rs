@@ -257,6 +257,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers: KeyModifiers::default(),
+            click_count: 1,
         }
     }
 
@@ -479,6 +480,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers: KeyModifiers::default(),
+            click_count: 1,
         };
         let mut tab = String::from("account");
         assert!(apply_event(&mut tab, &ev, "settings", |s| Some(

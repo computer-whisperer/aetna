@@ -123,6 +123,27 @@ pub(crate) struct SelectionDrag {
     pub anchor: crate::selection::SelectionPoint,
 }
 
+/// Tracks the latest primary `pointer_down` so the next press can
+/// extend a multi-click sequence. The runtime increments `count` when
+/// a fresh press lands within `MULTI_CLICK_TIME` and `MULTI_CLICK_DIST`
+/// of the previous press on the same hit-target; otherwise the
+/// sequence resets to 1.
+#[derive(Clone, Debug)]
+pub(crate) struct ClickSequence {
+    pub time: Instant,
+    pub pos: (f32, f32),
+    pub target_node_id: Option<String>,
+    pub count: u8,
+}
+
+/// Multi-click time window. A press within this duration of the
+/// previous matching press extends the sequence (count += 1).
+pub(crate) const MULTI_CLICK_TIME: std::time::Duration =
+    std::time::Duration::from_millis(500);
+/// Multi-click distance window in logical pixels. Wider than typical
+/// pointer jitter, narrower than a deliberate move to a new target.
+pub(crate) const MULTI_CLICK_DIST: f32 = 4.0;
+
 /// relationship stays 1:1.
 #[derive(Clone, Debug)]
 pub struct ThumbDrag {
@@ -177,6 +198,9 @@ pub struct UiState {
     /// the duration of the drag; head moves as the pointer moves.
     /// Cleared by `pointer_up`.
     pub(crate) selection_drag: Option<SelectionDrag>,
+    /// Most recent primary pointer-down record, used to compute the
+    /// next press's click count. `None` until the first primary press.
+    pub(crate) last_click: Option<ClickSequence>,
     /// LIFO of focus targets pushed when popover layers open. Each new
     /// `Kind::Custom("popover_layer")` snapshots the current focus here
     /// and auto-focuses into the layer; closing the layer pops and
@@ -353,6 +377,50 @@ impl UiState {
             .get(&(id.to_string(), kind))
             .copied()
             .unwrap_or(0.0)
+    }
+
+    /// Resolve the click count for a fresh primary-button press at
+    /// `(x, y)` and update the runtime's last-click record. Increments
+    /// the count when this press extends a multi-click sequence (same
+    /// target, within `MULTI_CLICK_TIME` and `MULTI_CLICK_DIST` of the
+    /// previous press); otherwise resets to 1.
+    pub(crate) fn next_click_count(
+        &mut self,
+        now: Instant,
+        pos: (f32, f32),
+        target_node_id: Option<&str>,
+    ) -> u8 {
+        let mut count = 1;
+        if let Some(prev) = self.last_click.as_ref() {
+            let dt = now.saturating_duration_since(prev.time);
+            let dx = pos.0 - prev.pos.0;
+            let dy = pos.1 - prev.pos.1;
+            let same_target = match (prev.target_node_id.as_deref(), target_node_id) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            };
+            if same_target
+                && dt < MULTI_CLICK_TIME
+                && (dx * dx + dy * dy).sqrt() <= MULTI_CLICK_DIST
+            {
+                count = prev.count.saturating_add(1);
+            }
+        }
+        self.last_click = Some(ClickSequence {
+            time: now,
+            pos,
+            target_node_id: target_node_id.map(str::to_owned),
+            count,
+        });
+        count
+    }
+
+    /// Current click count of the most recent primary press, or 1 if
+    /// no press has happened yet. Used by `pointer_up` to stamp the
+    /// matching `PointerUp` / `Click` events with the same count their
+    /// originating `PointerDown` carried.
+    pub(crate) fn current_click_count(&self) -> u8 {
+        self.last_click.as_ref().map(|c| c.count).unwrap_or(1)
     }
 
     /// Seed or read the persistent scroll offset for `id`. Use this to
@@ -719,6 +787,7 @@ impl UiState {
             text: None,
             selection: None,
             modifiers,
+            click_count: 0,
             kind: UiEventKind::Hotkey,
         })
     }
@@ -746,6 +815,7 @@ impl UiState {
             text: None,
             selection: None,
             modifiers,
+            click_count: 0,
             kind: UiEventKind::KeyDown,
         })
     }
@@ -791,6 +861,7 @@ impl UiState {
             text: None,
             selection: None,
             modifiers,
+            click_count: 0,
             kind,
         })
     }

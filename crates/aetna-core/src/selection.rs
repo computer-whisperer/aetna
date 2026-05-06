@@ -249,7 +249,7 @@ pub fn selected_text(tree: &El, selection: &Selection) -> Option<String> {
     if out.is_empty() { None } else { Some(out) }
 }
 
-fn find_keyed_text(node: &El, key: &str) -> Option<String> {
+pub(crate) fn find_keyed_text(node: &El, key: &str) -> Option<String> {
     if matches!(node.kind, Kind::Text | Kind::Heading)
         && node.key.as_deref() == Some(key)
         && let Some(t) = &node.text
@@ -268,6 +268,93 @@ fn collect_keyed_text_leaves(node: &El, out: &mut Vec<(String, String)>) {
     for c in &node.children {
         collect_keyed_text_leaves(c, out);
     }
+}
+
+/// Word range containing `byte`, returned as `(lo, hi)` byte offsets
+/// into `text`. A *word* is a maximal run of `is_word_char` scalars
+/// (alphanumeric, `_`, or `'`); when `byte` lands on a non-word
+/// character the result is just that single codepoint, matching the
+/// browser convention where double-clicking a punctuation mark
+/// selects only that mark rather than the surrounding whitespace.
+/// Used for double-click word selection.
+///
+/// `byte` is clamped to a UTF-8 char boundary; positions inside a
+/// multi-byte codepoint snap to the previous boundary. An empty
+/// `text` returns `(0, 0)`.
+pub fn word_range_at(text: &str, byte: usize) -> (usize, usize) {
+    if text.is_empty() {
+        return (0, 0);
+    }
+    let byte = clamp_to_char_boundary(text, byte.min(text.len()));
+    // At the very end of the text, point at the previous codepoint so
+    // double-click after the last word still selects that word rather
+    // than collapsing to (len, len).
+    let probe = if byte == text.len() {
+        prev_char_boundary(text, byte)
+    } else {
+        byte
+    };
+    let probe_char = text[probe..].chars().next().unwrap_or(' ');
+    if !is_word_char(probe_char) {
+        // Non-word char → select just this codepoint. Avoids the
+        // awkward "comma + space" double-select that grouping would
+        // produce.
+        return (probe, probe + probe_char.len_utf8());
+    }
+
+    // Word char → expand left and right through the run.
+    let mut lo = probe;
+    while lo > 0 {
+        let p = prev_char_boundary(text, lo);
+        let ch = text[p..].chars().next().unwrap();
+        if !is_word_char(ch) {
+            break;
+        }
+        lo = p;
+    }
+    let mut hi = probe;
+    while hi < text.len() {
+        let ch = text[hi..].chars().next().unwrap();
+        if !is_word_char(ch) {
+            break;
+        }
+        hi += ch.len_utf8();
+    }
+    (lo, hi)
+}
+
+/// Line range containing `byte`, returned as `(lo, hi)` byte offsets
+/// into `text`. The range excludes the trailing `\n` so the matching
+/// substring renders the visible line. An empty text returns `(0, 0)`.
+/// Used for triple-click line selection.
+pub fn line_range_at(text: &str, byte: usize) -> (usize, usize) {
+    let byte = byte.min(text.len());
+    let lo = text[..byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let hi = text[byte..]
+        .find('\n')
+        .map(|i| byte + i)
+        .unwrap_or(text.len());
+    (lo, hi)
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '\''
+}
+
+fn clamp_to_char_boundary(text: &str, byte: usize) -> usize {
+    let mut b = byte;
+    while b > 0 && !text.is_char_boundary(b) {
+        b -= 1;
+    }
+    b
+}
+
+fn prev_char_boundary(text: &str, byte: usize) -> usize {
+    let mut b = byte.saturating_sub(1);
+    while b > 0 && !text.is_char_boundary(b) {
+        b -= 1;
+    }
+    b
 }
 
 #[cfg(test)]
@@ -455,5 +542,70 @@ mod tests {
         assert!(selected_text(&tree, &Selection::default()).is_none());
         let unknown = Selection::caret("missing", 0);
         assert!(selected_text(&tree, &unknown).is_none());
+    }
+
+    #[test]
+    fn word_range_at_picks_run_around_byte() {
+        let text = "Hello, world!";
+        // Byte 0 in "Hello" → whole word.
+        assert_eq!(word_range_at(text, 0), (0, 5));
+        // Byte 3 (inside "Hello") → whole word.
+        assert_eq!(word_range_at(text, 3), (0, 5));
+        // Byte 5 (the comma) → run of non-word chars (just ",").
+        assert_eq!(word_range_at(text, 5), (5, 6));
+        // Byte 6 (the space) → run of non-word chars (just " ").
+        assert_eq!(word_range_at(text, 6), (6, 7));
+        // Byte 7 (start of "world") → "world".
+        assert_eq!(word_range_at(text, 7), (7, 12));
+        // Byte 12 ("!") → "!".
+        assert_eq!(word_range_at(text, 12), (12, 13));
+    }
+
+    #[test]
+    fn word_range_at_treats_apostrophe_and_underscore_as_word_chars() {
+        // Contractions stay one word.
+        assert_eq!(word_range_at("don't stop", 2), (0, 5));
+        // Identifier-style.
+        assert_eq!(word_range_at("foo_bar baz", 4), (0, 7));
+    }
+
+    #[test]
+    fn word_range_at_handles_end_of_text_and_empty() {
+        let text = "hello";
+        // Byte at len → snaps back into the trailing word.
+        assert_eq!(word_range_at(text, 5), (0, 5));
+        // Empty text → (0, 0).
+        assert_eq!(word_range_at("", 0), (0, 0));
+    }
+
+    #[test]
+    fn word_range_at_clamps_off_utf8_boundary() {
+        // 'é' is two bytes; byte=1 sits inside the codepoint and snaps
+        // back to byte 0, then expands into the run of non-ASCII word chars.
+        let text = "café";
+        let (lo, hi) = word_range_at(text, 1);
+        assert_eq!((lo, hi), (0, text.len()));
+    }
+
+    #[test]
+    fn line_range_at_returns_line_around_byte() {
+        let text = "first\nsecond line\nthird";
+        // First line: bytes 0..5 ("first"), \n at byte 5.
+        assert_eq!(line_range_at(text, 0), (0, 5));
+        assert_eq!(line_range_at(text, 3), (0, 5));
+        assert_eq!(line_range_at(text, 5), (0, 5));
+        // Second line: bytes 6..17 ("second line"), \n at byte 17.
+        assert_eq!(line_range_at(text, 6), (6, 17));
+        assert_eq!(line_range_at(text, 12), (6, 17));
+        assert_eq!(line_range_at(text, 17), (6, 17));
+        // Third (final, no trailing \n) line: bytes 18..23.
+        assert_eq!(line_range_at(text, 18), (18, 23));
+        assert_eq!(line_range_at(text, 23), (18, 23));
+    }
+
+    #[test]
+    fn line_range_at_handles_empty_and_single_line() {
+        assert_eq!(line_range_at("", 0), (0, 0));
+        assert_eq!(line_range_at("just one line", 4), (0, 13));
     }
 }

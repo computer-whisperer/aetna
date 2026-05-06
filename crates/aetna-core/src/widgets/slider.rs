@@ -215,6 +215,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers: KeyModifiers::default(),
+            click_count: 0,
             kind: UiEventKind::KeyDown,
         }
     }

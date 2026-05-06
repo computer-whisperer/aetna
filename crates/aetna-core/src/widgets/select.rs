@@ -310,6 +310,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers: Default::default(),
+            click_count: 1,
         }
     }
 

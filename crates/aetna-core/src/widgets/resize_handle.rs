@@ -363,6 +363,10 @@ mod tests {
     use crate::event::{KeyModifiers, KeyPress, UiTarget};
 
     fn pointer_event(kind: UiEventKind, key: &str, x: f32) -> UiEvent {
+        let click_count = match kind {
+            UiEventKind::PointerDown | UiEventKind::PointerUp | UiEventKind::Click => 1,
+            _ => 0,
+        };
         UiEvent {
             key: Some(key.to_string()),
             target: Some(UiTarget {
@@ -375,6 +379,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers: KeyModifiers::default(),
+            click_count,
             kind,
         }
     }
@@ -396,6 +401,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers: KeyModifiers::default(),
+            click_count: 0,
             kind: UiEventKind::KeyDown,
         }
     }

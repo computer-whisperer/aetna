@@ -255,6 +255,18 @@ pub struct UiEvent {
     /// of the click / drag (used by widgets like text_input that need
     /// to detect Shift+click for "extend selection").
     pub modifiers: KeyModifiers,
+    /// Click number within a multi-click sequence. Set to 1 for single
+    /// click, 2 for double-click, 3 for triple-click, etc. The runtime
+    /// increments this when consecutive `PointerDown`s land on the same
+    /// target within ~500ms and ~4px of the previous click. `0` means
+    /// "not applicable" — set on every event other than `PointerDown` /
+    /// `PointerUp` / `Click` (and their secondary / middle siblings,
+    /// which always carry 1).
+    ///
+    /// `text_input` / `text_area` and the static-text selection
+    /// manager read this to map double-click → select word, triple-
+    /// click → select line.
+    pub click_count: u8,
     pub kind: UiEventKind,
 }
 
@@ -274,6 +286,7 @@ impl UiEvent {
             text: None,
             selection: None,
             modifiers: KeyModifiers::default(),
+            click_count: 1,
         }
     }
 

@@ -538,6 +538,28 @@ fn fold_event_local(
             };
             let local_x = px - target.rect.x - tokens::SPACE_MD;
             let pos = caret_from_x(value, local_x, opts.mask);
+            // Multi-click: 2 = select word at hit; ≥3 = select all.
+            // Modifier-shift extend still wins over multi-click — it
+            // reads as "extend whatever I had", and that's what shift-
+            // double-click does in browsers. Single-click (and
+            // missing/zero count, e.g. synthetic events) keeps the
+            // existing set-caret behavior.
+            if !event.modifiers.shift {
+                match event.click_count {
+                    2 => {
+                        let (lo, hi) = crate::selection::word_range_at(value, pos);
+                        selection.anchor = lo;
+                        selection.head = hi;
+                        return true;
+                    }
+                    n if n >= 3 => {
+                        selection.anchor = 0;
+                        selection.head = value.len();
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
             selection.head = pos;
             if !event.modifiers.shift {
                 selection.anchor = pos;
@@ -872,6 +894,7 @@ mod tests {
             text: Some(s.into()),
             selection: None,
             modifiers,
+            click_count: 0,
             kind: UiEventKind::TextInput,
         }
     }
@@ -893,11 +916,21 @@ mod tests {
             text: None,
             selection: None,
             modifiers,
+            click_count: 0,
             kind: UiEventKind::KeyDown,
         }
     }
 
     fn ev_pointer_down(target: UiTarget, pointer: (f32, f32), modifiers: KeyModifiers) -> UiEvent {
+        ev_pointer_down_with_count(target, pointer, modifiers, 1)
+    }
+
+    fn ev_pointer_down_with_count(
+        target: UiTarget,
+        pointer: (f32, f32),
+        modifiers: KeyModifiers,
+        click_count: u8,
+    ) -> UiEvent {
         UiEvent {
             key: Some(target.key.clone()),
             target: Some(target),
@@ -906,6 +939,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers,
+            click_count,
             kind: UiEventKind::PointerDown,
         }
     }
@@ -919,6 +953,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers: KeyModifiers::default(),
+            click_count: 0,
             kind: UiEventKind::Drag,
         }
     }
@@ -1314,6 +1349,77 @@ mod tests {
     }
 
     #[test]
+    fn apply_double_click_selects_word_at_caret() {
+        let mut value = String::from("hello world");
+        let mut sel = TextSelection::caret(0);
+        // Click somewhere inside "world" with click_count = 2.
+        let target = ti_target();
+        let click_x = target.rect.x + tokens::SPACE_MD
+            + crate::text::metrics::line_width(
+                "hello w",
+                tokens::FONT_BASE,
+                FontWeight::Regular,
+                false,
+            );
+        let down = ev_pointer_down_with_count(
+            target.clone(),
+            (click_x, target.rect.y + 18.0),
+            KeyModifiers::default(),
+            2,
+        );
+        assert!(apply_event(&mut value, &mut sel, &down));
+        // "world" sits at bytes 6..11.
+        assert_eq!(sel.anchor, 6);
+        assert_eq!(sel.head, 11);
+    }
+
+    #[test]
+    fn apply_triple_click_selects_all() {
+        let mut value = String::from("hello world");
+        let mut sel = TextSelection::caret(0);
+        let target = ti_target();
+        let down = ev_pointer_down_with_count(
+            target.clone(),
+            (target.rect.x + 1.0, target.rect.y + 18.0),
+            KeyModifiers::default(),
+            3,
+        );
+        assert!(apply_event(&mut value, &mut sel, &down));
+        assert_eq!(sel.anchor, 0);
+        assert_eq!(sel.head, value.len());
+    }
+
+    #[test]
+    fn apply_shift_double_click_falls_back_to_extend_not_word_select() {
+        // Shift + double-click extends the existing selection rather
+        // than replacing it with the word — matching browser behavior.
+        let mut value = String::from("hello world");
+        let mut sel = TextSelection::caret(0);
+        let target = ti_target();
+        let click_x = target.rect.x + tokens::SPACE_MD
+            + crate::text::metrics::line_width(
+                "hello w",
+                tokens::FONT_BASE,
+                FontWeight::Regular,
+                false,
+            );
+        let shift = KeyModifiers {
+            shift: true,
+            ..Default::default()
+        };
+        let down = ev_pointer_down_with_count(
+            target.clone(),
+            (click_x, target.rect.y + 18.0),
+            shift,
+            2,
+        );
+        assert!(apply_event(&mut value, &mut sel, &down));
+        // anchor unchanged at 0; head moved to the click position.
+        assert_eq!(sel.anchor, 0);
+        assert!(sel.head > 0 && sel.head < value.len());
+    }
+
+    #[test]
     fn apply_shift_pointer_down_only_moves_head() {
         let mut value = String::from("hello");
         let mut sel = TextSelection::caret(2);
@@ -1375,6 +1481,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers: KeyModifiers::default(),
+            click_count: 1,
             kind: UiEventKind::Click,
         };
         assert!(!apply_event(&mut value, &mut sel, &click));

@@ -388,6 +388,26 @@ fn fold_event_local(
             let local_x = px - target.rect.x - tokens::SPACE_MD;
             let local_y = py - target.rect.y - tokens::SPACE_SM;
             let pos = caret_from_xy(value, local_x, local_y);
+            // Multi-click: 2 = word at caret, ≥3 = line containing
+            // caret (delimited by '\n'). Shift+multi-click falls
+            // through to the extend behavior, same as text_input.
+            if !event.modifiers.shift {
+                match event.click_count {
+                    2 => {
+                        let (lo, hi) = crate::selection::word_range_at(value, pos);
+                        selection.anchor = lo;
+                        selection.head = hi;
+                        return true;
+                    }
+                    n if n >= 3 => {
+                        let (lo, hi) = crate::selection::line_range_at(value, pos);
+                        selection.anchor = lo;
+                        selection.head = hi;
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
             selection.head = pos;
             if !event.modifiers.shift {
                 selection.anchor = pos;
@@ -571,7 +591,39 @@ mod tests {
             text: None,
             selection: None,
             modifiers,
+            click_count: 0,
             kind: UiEventKind::KeyDown,
+        }
+    }
+
+    fn ta_target() -> crate::event::UiTarget {
+        crate::event::UiTarget {
+            key: "ta".to_string(),
+            node_id: "/ta".to_string(),
+            rect: crate::tree::Rect::new(0.0, 0.0, 200.0, 100.0),
+        }
+    }
+
+    fn ev_pointer_down_with_count(
+        local: (f32, f32),
+        modifiers: KeyModifiers,
+        click_count: u8,
+    ) -> UiEvent {
+        let target = ta_target();
+        let pointer = (
+            target.rect.x + tokens::SPACE_MD + local.0,
+            target.rect.y + tokens::SPACE_SM + local.1,
+        );
+        UiEvent {
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: Some(pointer),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers,
+            click_count,
+            kind: UiEventKind::PointerDown,
         }
     }
 
@@ -647,6 +699,32 @@ mod tests {
     }
 
     #[test]
+    fn double_click_selects_word_at_caret() {
+        let mut value = String::from("first second\nthird");
+        let mut sel = TextSelection::caret(0);
+        // Click at top-left → caret_from_xy returns ~0; word_range_at
+        // returns "first" → bytes 0..5.
+        let down = ev_pointer_down_with_count((1.0, 1.0), KeyModifiers::default(), 2);
+        assert!(apply_event(&mut value, &mut sel, &down));
+        assert_eq!(sel.anchor, 0);
+        assert_eq!(sel.head, 5);
+    }
+
+    #[test]
+    fn triple_click_selects_line_around_caret_not_whole_value() {
+        // text_area's triple-click selects the *line* (delimited by
+        // '\n'), not the whole value — the user might have a long
+        // multi-line note and want to grab a single paragraph.
+        let mut value = String::from("first line\nsecond line\nthird");
+        let mut sel = TextSelection::caret(0);
+        // Click at top-left → first line.
+        let down = ev_pointer_down_with_count((1.0, 1.0), KeyModifiers::default(), 3);
+        assert!(apply_event(&mut value, &mut sel, &down));
+        assert_eq!(sel.anchor, 0);
+        assert_eq!(sel.head, 10, "selects 'first line' (excludes the \\n)");
+    }
+
+    #[test]
     fn ctrl_or_cmd_text_input_is_dropped() {
         // Mirror of the text_input regression: winit can emit
         // TextInput("c") alongside KeyDown(Ctrl+C) on some platforms,
@@ -667,6 +745,7 @@ mod tests {
             text: Some("c".into()),
             selection: None,
             modifiers: ctrl,
+            click_count: 0,
             kind: UiEventKind::TextInput,
         };
         assert!(!apply_event(&mut value, &mut sel, &ev));
