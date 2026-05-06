@@ -1,5 +1,7 @@
 # Aetna
 
+![Aetna showcase — Settings section, rendered headlessly through the wgpu backend](assets/showcase_settings.png)
+
 A thin UI rendering library that can insert into an existing Vulkan or wgpu renderer rather than owning the device, queue, or swapchain. The core/backends don't replace the host's renderer; they share its pass. For simple desktop apps, the workspace also ships an optional winit + wgpu host crate that packages the common window/surface loop. The name echoes the API it sits on — Vulkan is named for Vulcan, the Roman smith-god, and Mt. Aetna is the volcano where his forge stood.
 
 Aetna is shaped around how **an LLM** authors UI, not how a human web developer does. The thesis: when the author is a model, the load-bearing constraints flip — vocabulary parity with the training distribution matters more than configurability, the *minimum* output should be the *correct* output, and the visual ceiling is set by what shaders the model can write, not by what the framework's CSS-shaped surface exposes.
@@ -51,6 +53,9 @@ The architectural decision: `El` is the author's description of the scene; every
 | Widget kit + input plumbing | symmetry invariant — stock widgets compose only public surface (`capture_keys`, `paint_overflow`, `LayoutCtx::rect_of_key`, controlled state helpers, etc.). `crates/aetna-core/src/widget_kit.md` is the author contract; every stock widget under `crates/aetna-core/src/widgets/` is a pure composition. `PointerDown`, `SecondaryClick`, drag tracking, character / IME `TextInput` events, focused-node key capture, and `metrics::hit_text` are kit-public primitives. `UiState::widget_state` exists for advanced host/diagnostic experiments, not normal app widget code. |
 | `text_input` / `text_area` | single + multi-line editing, `TextSelection { anchor, head }`, drag-to-select, shift-arrow extension, Ctrl+A/C/X/V via app-owned clipboard (`text_input::clipboard_request` detects keystrokes; app dispatches against `arboard` natively or web Clipboard API), preferred-column up/down motion, line-wise Home/End. Both widgets share `(value, TextSelection)` shape and the same `apply_event` helper. Built using only the public widget kit. `cargo run -p aetna-examples --bin text_input`; `cargo run -p aetna-examples --bin text_area` |
 | Anchored popovers | two-pass layout positioning a popover relative to a trigger key (current-frame rect, no staleness); viewport-edge auto-flip; click-outside / Escape dismiss. `dropdown` and `context_menu` are compositions of `popover` + `popover_panel` + `menu_item` — no extra runtime wiring. Kit primitive: `LayoutCtx::rect_of_key` (any custom layout can position relative to keyed elements outside its own subtree). `cargo run -p aetna-examples --bin popover` — top dropdown, bottom dropdown (auto-flip-up), context menu, non-scrim tooltip |
+| Tabs / segmented control | `tabs_list(key, &current, options)` + `tab_trigger` + `tabs::apply_event` mirror shadcn / Radix Tabs and the WAI-ARIA tablist pattern. Routed key `{key}:tab:{value}`. `cargo run -p aetna-examples --bin tabs` |
+| Form primitives | `switch`, `checkbox`, `radio_group`/`radio_item`, and `progress` in `widgets/`. Switch and checkbox are controlled bools; `radio_group` parallels `tabs_list` with `{key}:radio:{value}`; `progress` is a non-interactive value bar. Animated state changes (thumb slide, check / dot fade-in). Demonstrated in `Section::Forms` of the `Showcase` fixture. |
+| Drop shadows | `.shadow(s)` on any El renders a soft drop shadow under the rounded silhouette; `draw_ops` auto-widens the painted quad so shadowed widgets don't need to remember `paint_overflow`. Surface roles (Panel, Popover, Raised, Sunken) provide tasteful defaults via the theme. Handled identically in the SVG fallback. |
 | Bundle pipeline | `tree.txt` + `draw_ops.txt` + `shader_manifest.txt` + `lint.txt` + `.svg` + `.png` per fixture. `crates/aetna-{core,wgpu}/out/*` (gitignored under `crates/*/out/`; regenerate by re-running the example, then `tools/svg_to_png.sh` for PNGs) |
 
 Author surface today — the entire interactive contract:
@@ -84,6 +89,15 @@ impl App for Counter {
 ```
 
 No JSX, no signals, no `useState`, no retained-mode component identity. Hover, press, and focus visuals are applied automatically by the library — the author never tags a node "this one is hovered." `key` is the hit-test target *and* the event-routing identifier — same string, no separate `.on_click(...)` registration that can drift.
+
+## Gallery
+
+Every image below is a headless render of `Showcase::with_section(...)` through `aetna-wgpu::Runner`, regenerated with `cargo run -p aetna-tools --bin render_showcase_sections`.
+
+| Form primitives | Backdrop sampling | Animated palette |
+|---|---|---|
+| ![Form preferences — progress, checkboxes, radio group, switches](assets/showcase_forms.png) | ![Liquid-glass section — custom shader sampling the backdrop](assets/showcase_glass.png) | ![Animated palette — spring on tap, status fade-in](assets/showcase_palette.png) |
+| `switch` / `checkbox` / `radio_group` / `progress` over the `card` + `tabs_list` skeleton from the showcase fixture. | `liquid_glass.wgsl` consuming the `@group(1)` backdrop sampler — runs identically across wgpu, vulkano, and WebGPU. | `.animate(timing)` on `.scale` + `.translate` plus the eased press / hover envelopes the library writes for free. |
 
 ## Repository tour
 
@@ -120,6 +134,16 @@ crates/
         badge.rs                     badge("12")
         text.rs                      h1/h2/h3/paragraph/mono/text
         overlay.rs                   overlay/scrim/modal/modal_panel
+        tabs.rs                      tabs_list / tab_trigger (shadcn-shaped)
+        switch.rs                    controlled bool with animated thumb
+        checkbox.rs                  controlled bool with animated check
+        radio.rs                     radio_group / radio_item
+        progress.rs                  non-interactive value bar
+        slider.rs                    keyboard- + pointer-driven 0..1 slider
+        select.rs                    combobox + popover composition
+        popover.rs                   anchored popover / dropdown / context-menu
+        text_input.rs                single-line input + selection + clipboard
+        text_area.rs                 multi-line input with wrapping caret
 
       text/                        text shaping + atlas infrastructure
         atlas.rs                     unified RGBA glyph atlas (color emoji + outline glyphs)
@@ -168,6 +192,10 @@ cargo run -p aetna-tools --bin render_liquid_glass    # backdrop-sampling accept
 cargo run -p aetna-examples --bin text_input          # single-line input, selection, clipboard
 cargo run -p aetna-examples --bin text_area           # multi-line input, wrapping caret, line-wise motion
 cargo run -p aetna-examples --bin popover             # anchored popovers, dropdown, context menu, tooltip
+cargo run -p aetna-examples --bin tabs                # tabs_list controlled tabbed page
+cargo run -p aetna-examples --bin tooltip             # .tooltip(text) modifier with hover delay + focus restore
+cargo run -p aetna-examples --bin slider_keyboard     # ArrowKeys + PgUp/PgDn + Home/End on a focused slider
+cargo run -p aetna-tools --bin render_showcase_sections   # headless PNG of every Showcase section → tools/out/
 cargo run -p aetna-wgpu --example render_counter      # headless wgpu PNG snapshot
 cargo run -p aetna-vulkano-demo --bin counter         # same Counter, native vulkano (A/B vs wgpu demo counter)
 cargo run -p aetna-vulkano-demo --bin custom          # gradient.wgsl through Runner::register_shader

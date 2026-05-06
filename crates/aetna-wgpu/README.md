@@ -1,5 +1,7 @@
 # aetna-wgpu
 
+![Liquid-glass section — custom shader sampling the wgpu backdrop](../../assets/showcase_glass.png)
+
 `wgpu` backend for Aetna.
 
 Most applications should not start here. Implement `aetna_core::App` and

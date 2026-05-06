@@ -1,5 +1,7 @@
 # aetna-core
 
+![Aetna showcase — Settings section, headless wgpu render](../../assets/showcase_settings.png)
+
 Backend-agnostic UI primitives for Aetna apps.
 
 Start here for application code:

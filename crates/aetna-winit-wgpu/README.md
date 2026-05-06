@@ -1,5 +1,7 @@
 # aetna-winit-wgpu
 
+![Settings section — running through the native winit + wgpu host](../../assets/showcase_settings.png)
+
 Optional native desktop host for Aetna apps using `winit` and `wgpu`.
 
 Use this crate when you want the host to own the window, surface,

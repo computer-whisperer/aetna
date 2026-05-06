@@ -1,5 +1,7 @@
 # aetna-fixtures
 
+![Showcase — Forms section: progress bar, checkboxes, radio group](../../assets/showcase_forms.png)
+
 Backend-neutral Aetna fixture apps and render trees.
 
 This crate is useful as source material when learning Aetna's app API:
