@@ -24,6 +24,7 @@
 
 use std::panic::Location;
 
+use crate::cursor::Cursor;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -37,6 +38,7 @@ pub fn button(label: impl Into<String>) -> El {
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .cursor(Cursor::Pointer)
         .text(label)
         .text_align(TextAlign::Center)
         .text_role(TextRole::Label)
@@ -57,6 +59,7 @@ pub fn icon_button(source: impl IntoIconSource) -> El {
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .cursor(Cursor::Pointer)
         .icon_source(source)
         .icon_size(16.0)
         .icon_stroke_width(2.0)
@@ -76,6 +79,7 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .cursor(Cursor::Pointer)
         .axis(Axis::Row)
         .gap(tokens::SPACE_SM)
         .align(Align::Center)

@@ -35,6 +35,7 @@
 use std::panic::Location;
 
 use crate::anim::Timing;
+use crate::cursor::Cursor;
 use crate::event::UiEvent;
 use crate::layout::LayoutCtx;
 use crate::tokens;
@@ -114,6 +115,7 @@ pub fn switch(value: bool) -> El {
     .at_loc(Location::caller())
     .focusable()
     .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+    .cursor(Cursor::Pointer)
     .layout(layout)
     .width(Size::Fixed(TRACK_WIDTH))
     .height(Size::Fixed(TRACK_HEIGHT))
@@ -165,6 +167,11 @@ mod tests {
         let s = switch(false);
         assert!(s.focusable);
         assert!(s.paint_overflow.left > 0.0);
+    }
+
+    #[test]
+    fn switch_declares_pointer_cursor() {
+        assert_eq!(switch(false).cursor, Some(Cursor::Pointer));
     }
 
     #[test]

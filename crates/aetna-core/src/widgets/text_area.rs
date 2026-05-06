@@ -49,6 +49,7 @@
 
 use std::panic::Location;
 
+use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::style::StyleProfile;
 use crate::text::metrics::{self, caret_xy, hit_text, selection_rects};
@@ -149,6 +150,7 @@ pub fn text_area(value: &str, selection: TextSelection) -> El {
         .focusable()
         .capture_keys()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .cursor(Cursor::Text)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_MD)
@@ -504,6 +506,12 @@ mod tests {
             modifiers,
             kind: UiEventKind::KeyDown,
         }
+    }
+
+    #[test]
+    fn text_area_declares_text_cursor() {
+        let el = text_area("hello", TextSelection::caret(0));
+        assert_eq!(el.cursor, Some(Cursor::Text));
     }
 
     #[test]

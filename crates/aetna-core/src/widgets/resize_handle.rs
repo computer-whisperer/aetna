@@ -97,6 +97,7 @@
 
 use std::panic::Location;
 
+use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::tokens;
 use crate::tree::*;
@@ -149,6 +150,15 @@ pub fn resize_handle(axis: Axis) -> El {
             .fill(tokens::BORDER)
             .state_follows_interactive_ancestor(),
     };
+    // The cursor matches the drag axis: a Row-axis handle is a
+    // vertical bar that slides left/right (EwResize), a Column-axis
+    // handle is a horizontal bar that slides up/down (NsResize).
+    // Overlay isn't a real layout case — just fall back to EwResize.
+    let cursor = match axis {
+        Axis::Row => Cursor::EwResize,
+        Axis::Column => Cursor::NsResize,
+        Axis::Overlay => Cursor::EwResize,
+    };
     // No `capture_keys()` — Tab must keep traversing past the handle.
     // Arrow / PageUp / PageDown / Home / End still arrive as `KeyDown`
     // events on the focused handle by default, which `apply_event_*`
@@ -157,6 +167,7 @@ pub fn resize_handle(axis: Axis) -> El {
         .at_loc(Location::caller())
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .cursor(cursor)
         .width(width)
         .height(height)
 }
@@ -397,6 +408,20 @@ mod tests {
         let col_handle = resize_handle(Axis::Column);
         assert_eq!(col_handle.width, Size::Fill(1.0));
         assert_eq!(col_handle.height, Size::Fixed(HANDLE_THICKNESS));
+    }
+
+    #[test]
+    fn handle_cursor_matches_drag_axis() {
+        // Row axis → vertical bar that slides ←→ → EwResize.
+        // Column axis → horizontal bar that slides ↑↓ → NsResize.
+        assert_eq!(
+            resize_handle(Axis::Row).cursor,
+            Some(crate::cursor::Cursor::EwResize),
+        );
+        assert_eq!(
+            resize_handle(Axis::Column).cursor,
+            Some(crate::cursor::Cursor::NsResize),
+        );
     }
 
     #[test]

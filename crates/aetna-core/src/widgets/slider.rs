@@ -43,6 +43,7 @@
 
 use std::panic::Location;
 
+use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::layout::LayoutCtx;
 use crate::tokens;
@@ -108,6 +109,11 @@ pub fn slider(value: f32, fill_color: Color) -> El {
     ])
     .at_loc(Location::caller())
     .focusable()
+    // Grab affords "you can drag the thumb." Press → Grabbing would be
+    // the natural transition, but the explicit-cursor model has no
+    // state-aware hook today; press capture keeps Grab stable for the
+    // duration of the drag, which still reads correctly as "active."
+    .cursor(Cursor::Grab)
     .layout(layout)
     .height(Size::Fixed(DEFAULT_HEIGHT))
     .width(Size::Fill(1.0))
@@ -335,6 +341,15 @@ mod tests {
                 assert!(!c.state_follows_interactive_ancestor);
             }
         }
+    }
+
+    #[test]
+    fn slider_declares_grab_cursor() {
+        // Grab affords "draggable handle" — Press → Grabbing isn't
+        // wired today; the press capture keeps Grab stable through
+        // the drag, which still reads as active.
+        let s = slider(0.5, tokens::PRIMARY);
+        assert_eq!(s.cursor, Some(Cursor::Grab));
     }
 
     #[test]

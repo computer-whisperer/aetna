@@ -35,6 +35,7 @@
 use std::panic::Location;
 
 use crate::anim::Timing;
+use crate::cursor::Cursor;
 use crate::event::UiEvent;
 use crate::icons::icon;
 use crate::style::StyleProfile;
@@ -77,6 +78,7 @@ pub fn checkbox(value: bool) -> El {
         .style_profile(StyleProfile::Surface)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .cursor(Cursor::Pointer)
         .axis(Axis::Overlay)
         .align(Align::Center)
         .justify(Justify::Center)
@@ -151,6 +153,11 @@ mod tests {
         let c = checkbox(false);
         assert!(c.focusable);
         assert!(c.paint_overflow.left > 0.0);
+    }
+
+    #[test]
+    fn checkbox_declares_pointer_cursor() {
+        assert_eq!(checkbox(false).cursor, Some(Cursor::Pointer));
     }
 
     #[test]

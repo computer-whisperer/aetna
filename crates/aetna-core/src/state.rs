@@ -939,12 +939,13 @@ mod tests {
     }
 
     fn lay_out_cursor_tree() -> (El, UiState) {
-        // Panel declares Move; one button overrides with Pointer, one
-        // is undeclared (and inherits Move), one row sits between them
-        // without a cursor of its own (still inherits from the panel).
+        // Panel declares Move; one child has its own `.cursor(Pointer)`
+        // (declared); a sibling stack carries no cursor and inherits
+        // Move from the panel. Plain stacks (not buttons) so the
+        // widget kit's own cursor defaults can't drift the test.
         let mut tree = column([row([
-            button("pan").key("undeclared"),
-            button("press").key("declared").cursor(Cursor::Pointer),
+            El::new(Kind::Group).key("undeclared"),
+            El::new(Kind::Group).key("declared").cursor(Cursor::Pointer),
         ])])
         .key("panel")
         .cursor(Cursor::Move)

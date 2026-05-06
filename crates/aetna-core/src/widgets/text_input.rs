@@ -37,6 +37,7 @@
 
 use std::panic::Location;
 
+use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::style::StyleProfile;
 use crate::text::metrics::{self, hit_text};
@@ -156,6 +157,7 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
         .focusable()
         .capture_keys()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .cursor(Cursor::Text)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_MD)
@@ -603,6 +605,12 @@ mod tests {
             Kind::Custom("text_input_caret")
         ));
         assert!(el.children[1].alpha_follows_focused_ancestor);
+    }
+
+    #[test]
+    fn text_input_declares_text_cursor() {
+        let el = text_input("hello", TextSelection::caret(0));
+        assert_eq!(el.cursor, Some(Cursor::Text));
     }
 
     #[test]

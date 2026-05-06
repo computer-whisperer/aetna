@@ -47,6 +47,7 @@
 use std::panic::Location;
 
 use crate::anim::Timing;
+use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind};
 use crate::style::StyleProfile;
 use crate::tokens;
@@ -168,6 +169,7 @@ pub fn radio_item(
         .style_profile(StyleProfile::Surface)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .cursor(Cursor::Pointer)
         .key(routed_key)
         .axis(Axis::Row)
         .gap(tokens::SPACE_SM)
@@ -237,6 +239,12 @@ mod tests {
         let item = radio_item("theme", "dark", "Dark", false);
         assert_eq!(item.key.as_deref(), Some("theme:radio:dark"));
         assert!(item.focusable);
+    }
+
+    #[test]
+    fn radio_item_declares_pointer_cursor() {
+        let item = radio_item("theme", "dark", "Dark", false);
+        assert_eq!(item.cursor, Some(Cursor::Pointer));
     }
 
     #[test]
