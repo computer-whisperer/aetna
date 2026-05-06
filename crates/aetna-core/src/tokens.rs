@@ -54,6 +54,19 @@ pub const SPACE_MD: f32 = 12.0;
 pub const SPACE_LG: f32 = 18.0;
 pub const SPACE_XL: f32 = 28.0;
 
+// ---- Pinned-pane sizing ----
+//
+// Conventional starting widths for a resizable sidebar (file tree,
+// settings nav, inspector). Sourced from VS Code (~240px), Slack
+// (~270px), and Finder (~250px) — wide enough that label content
+// stays readable, narrow enough that the main work area still
+// dominates. `_MIN` is the floor below which file/label content
+// truncates badly; `_MAX` is the ceiling above which a sidebar
+// stops being a sidebar.
+pub const SIDEBAR_WIDTH: f32 = 256.0;
+pub const SIDEBAR_WIDTH_MIN: f32 = 180.0;
+pub const SIDEBAR_WIDTH_MAX: f32 = 480.0;
+
 // ---- Radius ----
 pub const RADIUS_SM: f32 = 4.0;
 pub const RADIUS_MD: f32 = 8.0;

@@ -53,6 +53,7 @@ pub use crate::widgets::popover::{
 };
 pub use crate::widgets::progress::{self, progress};
 pub use crate::widgets::radio::{self, RadioAction, radio_group, radio_item, radio_option_key};
+pub use crate::widgets::resize_handle::{self, ResizeDrag, ResizeWeightsDrag, resize_handle};
 pub use crate::widgets::select::{
     self, SelectAction, select_menu, select_option_key, select_trigger,
 };

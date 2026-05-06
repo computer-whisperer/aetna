@@ -58,6 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Section::Picker,
         Section::Settings,
         Section::Forms,
+        Section::Split,
         Section::Glass,
     ] {
         let msaa = MsaaTarget::new(&device, format, extent, sample_count);
@@ -166,6 +167,7 @@ fn section_slug(s: Section) -> &'static str {
         Section::Picker => "picker",
         Section::Settings => "settings",
         Section::Forms => "forms",
+        Section::Split => "split",
         Section::Glass => "glass",
     }
 }

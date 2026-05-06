@@ -37,6 +37,7 @@ pub enum Section {
     Picker,
     Settings,
     Forms,
+    Split,
     Glass,
 }
 
@@ -49,6 +50,7 @@ impl Section {
             Section::Picker => "Picker",
             Section::Settings => "Settings",
             Section::Forms => "Forms",
+            Section::Split => "Split",
             Section::Glass => "Glass",
         }
     }
@@ -61,17 +63,19 @@ impl Section {
             Section::Picker => "nav-picker",
             Section::Settings => "nav-settings",
             Section::Forms => "nav-forms",
+            Section::Split => "nav-split",
             Section::Glass => "nav-glass",
         }
     }
 
-    const ALL: [Section; 7] = [
+    const ALL: [Section; 8] = [
         Section::Counter,
         Section::List,
         Section::Palette,
         Section::Picker,
         Section::Settings,
         Section::Forms,
+        Section::Split,
         Section::Glass,
     ];
 }
@@ -132,6 +136,23 @@ impl Default for FormsState {
     }
 }
 
+struct SplitState {
+    /// Current sidebar width in logical pixels.
+    sidebar_w: f32,
+    /// Drag-anchor state owned by the app, fed back into
+    /// `resize_handle::apply_event_fixed` on every routed event.
+    sidebar_drag: ResizeDrag,
+}
+
+impl Default for SplitState {
+    fn default() -> Self {
+        Self {
+            sidebar_w: tokens::SIDEBAR_WIDTH,
+            sidebar_drag: ResizeDrag::default(),
+        }
+    }
+}
+
 #[derive(Default)]
 struct GlassState {
     /// Index into `GLASS_PRESETS` — cycles on the "Next preset"
@@ -158,6 +179,7 @@ pub struct Showcase {
     palette: PaletteState,
     picker: PickerState,
     forms: FormsState,
+    split: SplitState,
     glass: GlassState,
 }
 
@@ -206,6 +228,7 @@ impl App for Showcase {
             Section::Picker => picker_on_event(&mut self.picker, event),
             Section::Settings => {} // static fixture, no events
             Section::Forms => forms_on_event(&mut self.forms, event),
+            Section::Split => split_on_event(&mut self.split, event),
             Section::Glass => glass_on_event(&mut self.glass, event),
         }
     }
@@ -260,6 +283,7 @@ fn content(app: &Showcase) -> El {
         Section::Picker => picker_view(&app.picker),
         Section::Settings => settings_view(),
         Section::Forms => forms_view(&app.forms),
+        Section::Split => split_view(&app.split),
         Section::Glass => {
             return glass_view(&app.glass)
                 .width(Size::Fill(1.0))
@@ -854,6 +878,86 @@ fn forms_on_event(state: &mut FormsState, e: UiEvent) {
         || checkbox::apply_event(&mut state.weekly_summary, &e, "forms-weekly-summary")
         || switch::apply_event(&mut state.auto_lock, &e, "forms-auto-lock")
         || switch::apply_event(&mut state.share_usage, &e, "forms-share-usage");
+}
+
+// ---- Split section ----
+//
+// Resizable sidebar — the dominant use of `resize_handle`. The app
+// owns `sidebar_w` (in logical pixels) and the drag-anchor state;
+// `resize_handle::apply_event_fixed` folds PointerDown / Drag /
+// PointerUp / Arrow keys back into the value, clamped to the
+// `SIDEBAR_WIDTH_MIN..=SIDEBAR_WIDTH_MAX` range from the tokens.
+
+const SPLIT_HANDLE_KEY: &str = "split-resize";
+
+fn split_view(state: &SplitState) -> El {
+    let sidebar = column([
+        text("Files").bold(),
+        text("README.md").muted(),
+        text("Cargo.toml").muted(),
+        text("src/").muted(),
+        text("examples/").muted(),
+        text("tests/").muted(),
+    ])
+    .gap(tokens::SPACE_SM)
+    .padding(tokens::SPACE_MD)
+    .width(Size::Fixed(state.sidebar_w))
+    .height(Size::Fill(1.0))
+    .fill(tokens::BG_CARD)
+    .stroke(tokens::BORDER)
+    .radius(tokens::RADIUS_SM);
+
+    let content = column([
+        text("README.md").heading(),
+        text(format!(
+            "Drag the divider on the left to resize the sidebar. \
+             Width clamps between {min}px and {max}px. The handle is \
+             focusable — Tab to it, then use ←/→ to nudge by {step}px \
+             or PageUp/PageDown for {page}px steps.",
+            min = tokens::SIDEBAR_WIDTH_MIN as i32,
+            max = tokens::SIDEBAR_WIDTH_MAX as i32,
+            step = resize_handle::KEYBOARD_STEP_PX as i32,
+            page = resize_handle::KEYBOARD_PAGE_STEP_PX as i32,
+        ))
+        .muted()
+        .wrap_text(),
+        row([
+            text("Sidebar width:").muted(),
+            text(format!("{:.0} px", state.sidebar_w)).bold(),
+        ])
+        .gap(tokens::SPACE_SM),
+    ])
+    .gap(tokens::SPACE_MD)
+    .padding(tokens::SPACE_MD)
+    .width(Size::Fill(1.0))
+    .height(Size::Fill(1.0));
+
+    column([
+        h2("Resizable sidebar"),
+        text("Drag the divider, or focus it and use Arrow keys.").muted(),
+        row([
+            sidebar,
+            resize_handle(Axis::Row).key(SPLIT_HANDLE_KEY),
+            content,
+        ])
+        .height(Size::Fill(1.0))
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_SM),
+    ])
+    .gap(tokens::SPACE_LG)
+    .height(Size::Fill(1.0))
+}
+
+fn split_on_event(state: &mut SplitState, event: UiEvent) {
+    resize_handle::apply_event_fixed(
+        &mut state.sidebar_w,
+        &mut state.sidebar_drag,
+        &event,
+        SPLIT_HANDLE_KEY,
+        Axis::Row,
+        tokens::SIDEBAR_WIDTH_MIN,
+        tokens::SIDEBAR_WIDTH_MAX,
+    );
 }
 
 // ---- Glass section ----

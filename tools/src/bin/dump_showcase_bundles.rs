@@ -26,6 +26,7 @@ fn main() -> std::io::Result<()> {
         Section::Picker,
         Section::Settings,
         Section::Forms,
+        Section::Split,
         Section::Glass,
     ] {
         let mut app = Showcase::with_section(section);
@@ -55,6 +56,7 @@ fn section_slug(s: Section) -> &'static str {
         Section::Picker => "picker",
         Section::Settings => "settings",
         Section::Forms => "forms",
+        Section::Split => "split",
         Section::Glass => "glass",
     }
 }

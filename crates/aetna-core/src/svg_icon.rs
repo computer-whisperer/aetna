@@ -4,13 +4,17 @@
 //! `include_str!` payload) and pass the resulting [`SvgIcon`] to any
 //! API that accepts a built-in [`IconName`]:
 //!
-//! ```no_run
+//! ```
 //! use std::sync::LazyLock;
 //! use aetna_core::prelude::*;
 //! use aetna_core::SvgIcon;
 //!
+//! // Real apps usually do `include_str!("path/to/logo.svg")`. Inlined
+//! // here so the doctest compiles without a fixture file.
+//! const LOGO_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>"##;
+//!
 //! static MY_LOGO: LazyLock<SvgIcon> = LazyLock::new(|| {
-//!     SvgIcon::parse_current_color(include_str!("logo.svg")).unwrap()
+//!     SvgIcon::parse_current_color(LOGO_SVG).unwrap()
 //! });
 //!
 //! fn header() -> El {

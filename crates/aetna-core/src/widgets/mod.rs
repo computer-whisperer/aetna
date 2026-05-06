@@ -14,6 +14,7 @@ pub mod overlay;
 pub mod popover;
 pub mod progress;
 pub mod radio;
+pub mod resize_handle;
 pub mod select;
 pub mod slider;
 pub mod switch;
