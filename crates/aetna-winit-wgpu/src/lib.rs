@@ -127,6 +127,10 @@ impl<A: App> App for BasicApp<A> {
     fn theme(&self) -> aetna_core::Theme {
         self.0.theme()
     }
+
+    fn selection(&self) -> aetna_core::Selection {
+        self.0.selection()
+    }
 }
 
 impl<A: App> WinitWgpuApp for BasicApp<A> {}
@@ -663,5 +667,42 @@ fn srgb_to_linear(c: f64) -> f64 {
         c / 12.92
     } else {
         ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aetna_core::Selection;
+    use aetna_core::SelectionPoint;
+    use aetna_core::SelectionRange;
+
+    /// `BasicApp` is the wrapper the host uses around the user's app
+    /// type. It must forward every per-frame App trait method to the
+    /// inner type — a missing forward silently falls through to the
+    /// trait default and the host loses sight of app state. A
+    /// previous bug had `selection()` left out, which made the
+    /// painter never receive a non-empty selection.
+    #[test]
+    fn basic_app_forwards_selection_to_inner() {
+        struct AppWithSelection;
+        impl App for AppWithSelection {
+            fn build(&self) -> aetna_core::El {
+                aetna_core::widgets::text::text("hi")
+            }
+            fn selection(&self) -> Selection {
+                Selection {
+                    range: Some(SelectionRange {
+                        anchor: SelectionPoint::new("p", 0),
+                        head: SelectionPoint::new("p", 5),
+                    }),
+                }
+            }
+        }
+        let basic = BasicApp(AppWithSelection);
+        let sel = basic.selection();
+        let r = sel.range.as_ref().expect("range forwarded through wrapper");
+        assert_eq!(r.anchor.key, "p");
+        assert_eq!(r.head.byte, 5);
     }
 }

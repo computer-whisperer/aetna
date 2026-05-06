@@ -309,13 +309,6 @@ fn push_node(
                 },
             );
             for (rx, ry, rw, rh) in rects {
-                // The band must paint *behind* the glyph run; we emit
-                // the Quad with `inner_rect` matching `rect` so the
-                // SDF-based rounded_rect shader treats the whole band
-                // as inside (no overflow halo). `inner_rect` is also
-                // what the shader computes coverage against, so a
-                // mismatch with `rect` would partially or fully clip
-                // the fill.
                 let band = Rect::new(glyph_rect.x + rx, glyph_rect.y + ry, rw, rh);
                 let mut band_uniforms = UniformBlock::new();
                 band_uniforms.insert(
