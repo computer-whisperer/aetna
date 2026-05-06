@@ -93,9 +93,13 @@ fn push_node(
     // SDF and clip both anchor to. `painted_rect` extends it by
     // `paint_overflow` so the quad has room to draw focus rings, drop
     // shadows, and other halos *outside* the layout box without
-    // affecting sibling positions.
+    // affecting sibling positions. Drop shadow auto-widens the band
+    // (per-side max with explicit `paint_overflow`) so `.shadow(s)`
+    // works without every shadow-using widget remembering to set
+    // `paint_overflow` separately. The stock-shader branch resolves the
+    // *effective* shadow (post-theme) before computing `painted_rect`,
+    // since surface roles can rewrite the shadow uniform.
     let inner_painted_rect = scaled_around_center(translated_rect, n.scale);
-    let painted_rect = inner_painted_rect.outset(n.paint_overflow);
     let painted_font_size = n.font_size * n.scale;
 
     // Clip uses the layout rect, not the overflowed painted rect:
@@ -111,6 +115,10 @@ fn push_node(
     // Surface paint. Either a custom shader override, or the implicit
     // `stock::rounded_rect` driven by the El's fill/stroke/radius/shadow.
     if let Some(custom) = &n.shader_override {
+        // Custom shaders manage their own paint extent; we only honor
+        // explicit `paint_overflow` here. They may pack a shadow into
+        // their own uniform name, which we can't introspect.
+        let painted_rect = inner_painted_rect.outset(n.paint_overflow);
         let mut uniforms = custom.uniforms.clone();
         uniforms.insert("inner_rect", inner_rect_uniform(inner_painted_rect));
         out.push(DrawOp::Quad {
@@ -152,6 +160,15 @@ fn push_node(
             uniforms.insert("focus_width", UniformValue::F32(tokens::FOCUS_RING_WIDTH));
         }
         theme.apply_surface_uniforms(n.surface_role, &mut uniforms);
+        // Read shadow *after* theme has had its say — surface roles
+        // (Panel/Popover/Sunken/...) can override the shadow uniform,
+        // and we want the painted rect to track what actually renders.
+        let effective_shadow = match uniforms.get("shadow") {
+            Some(UniformValue::F32(s)) => *s,
+            _ => 0.0,
+        };
+        let painted_rect =
+            inner_painted_rect.outset(combined_overflow(n.paint_overflow, effective_shadow));
         out.push(DrawOp::Quad {
             id: n.computed_id.clone(),
             rect: painted_rect,
@@ -350,6 +367,26 @@ fn translated(r: Rect, offset: (f32, f32)) -> Rect {
         return r;
     }
     Rect::new(r.x + offset.0, r.y + offset.1, r.w, r.h)
+}
+
+/// Combine an element's explicit `paint_overflow` with the implicit
+/// halo a non-zero `shadow` needs around the layout rect. The shadow's
+/// SDF in `stock::rounded_rect` softens over a `blur`-wide band around
+/// an offset-down silhouette: alpha hits zero at distance `blur`
+/// outside the (offset) box, so left/right need `blur`, top needs
+/// `blur*0.5` (offset reduces upward extent), bottom needs `blur*1.5`.
+/// Per-side max with the user's `paint_overflow` so a focus-ring outset
+/// + shadow on the same node both fit.
+fn combined_overflow(paint_overflow: Sides, shadow: f32) -> Sides {
+    if shadow <= 0.0 {
+        return paint_overflow;
+    }
+    Sides {
+        left: paint_overflow.left.max(shadow),
+        right: paint_overflow.right.max(shadow),
+        top: paint_overflow.top.max(shadow * 0.5),
+        bottom: paint_overflow.bottom.max(shadow * 1.5),
+    }
 }
 
 /// Scale `r` uniformly by `s` around its centre. `s == 1.0` short-circuits
@@ -633,6 +670,143 @@ mod tests {
         assert!(
             (pre_cx - post_cx).abs() < 0.5,
             "centre should be preserved by scale-around-centre",
+        );
+    }
+
+    #[test]
+    fn shadow_auto_expands_painted_rect_around_inner_rect() {
+        // `.shadow(s)` should auto-widen the painted quad without the
+        // widget needing to set `paint_overflow` — the shader needs the
+        // halo room to draw the soft band outside the layout rect.
+        // No surface_role here so the El's shadow value reaches the
+        // shader unchanged and we can assert the exact halo geometry.
+        let mut root = column([El::new(Kind::Group)
+            .key("c")
+            .fill(tokens::BG_CARD)
+            .radius(tokens::RADIUS_LG)
+            .shadow(tokens::SHADOW_MD)
+            .width(Size::Fixed(80.0))
+            .height(Size::Fixed(40.0))]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        let ops = draw_ops(&root, &state);
+        let (painted, inner) = ops
+            .iter()
+            .find_map(|op| match op {
+                DrawOp::Quad {
+                    id, rect, uniforms, ..
+                } if id.contains("c") => {
+                    let UniformValue::Vec4(v) = uniforms.get("inner_rect")? else {
+                        return None;
+                    };
+                    Some((*rect, Rect::new(v[0], v[1], v[2], v[3])))
+                }
+                _ => None,
+            })
+            .expect("shadowed quad with inner_rect");
+
+        // SHADOW_MD (== 12) → l=12, r=12, t=6, b=18.
+        let blur = tokens::SHADOW_MD;
+        assert!(
+            (inner.x - painted.x - blur).abs() < 0.5,
+            "left halo == blur, painted.x={}, inner.x={}",
+            painted.x,
+            inner.x,
+        );
+        assert!(
+            (painted.right() - inner.right() - blur).abs() < 0.5,
+            "right halo == blur",
+        );
+        assert!(
+            (inner.y - painted.y - blur * 0.5).abs() < 0.5,
+            "top halo == blur * 0.5",
+        );
+        assert!(
+            (painted.bottom() - inner.bottom() - blur * 1.5).abs() < 0.5,
+            "bottom halo == blur * 1.5",
+        );
+    }
+
+    #[test]
+    fn shadow_overflow_takes_per_side_max_with_explicit_paint_overflow() {
+        // A focus-style outset of 8 on every side combined with
+        // SHADOW_MD (12) should resolve to: l=12, r=12, t=8, b=18 —
+        // shadow wins on left/right/bottom, paint_overflow wins on top.
+        let combined = super::combined_overflow(crate::tree::Sides::all(8.0), tokens::SHADOW_MD);
+        assert!((combined.left - 12.0).abs() < f32::EPSILON);
+        assert!((combined.right - 12.0).abs() < f32::EPSILON);
+        assert!((combined.top - 8.0).abs() < f32::EPSILON);
+        assert!((combined.bottom - 18.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn shadow_overflow_is_zero_when_shadow_is_zero() {
+        let combined = super::combined_overflow(crate::tree::Sides::zero(), 0.0);
+        assert_eq!(combined, crate::tree::Sides::zero());
+    }
+
+    #[test]
+    fn shadow_uniform_is_set_when_n_shadow_is_nonzero() {
+        let mut root = column([El::new(Kind::Group)
+            .key("c")
+            .fill(tokens::BG_CARD)
+            .radius(tokens::RADIUS_LG)
+            .shadow(tokens::SHADOW_MD)
+            .width(Size::Fixed(80.0))
+            .height(Size::Fixed(40.0))]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        let ops = draw_ops(&root, &state);
+        let uniforms = ops
+            .iter()
+            .find_map(|op| match op {
+                DrawOp::Quad { id, uniforms, .. } if id.contains("c") => Some(uniforms.clone()),
+                _ => None,
+            })
+            .expect("shadowed quad");
+        assert_eq!(
+            uniforms.get("shadow"),
+            Some(&UniformValue::F32(tokens::SHADOW_MD)),
+            ".shadow(SHADOW_MD) on a node without surface_role must reach the shader unchanged",
+        );
+    }
+
+    #[test]
+    fn theme_role_override_propagates_to_painted_rect() {
+        // The card widget binds SurfaceRole::Panel, which forces the
+        // shadow uniform to SHADOW_SM regardless of the El's own
+        // `.shadow(SHADOW_MD)` setting. The painted rect should track
+        // the *effective* shadow (SM = 4), not the larger MD the
+        // builder requested — over-expanding wastes overdraw budget.
+        let mut root = column([crate::card("Card", [crate::text("Body")]).key("c")]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        let ops = draw_ops(&root, &state);
+        let (painted, inner) = ops
+            .iter()
+            .find_map(|op| match op {
+                DrawOp::Quad {
+                    id, rect, uniforms, ..
+                } if id.contains("c") => {
+                    let UniformValue::Vec4(v) = uniforms.get("inner_rect")? else {
+                        return None;
+                    };
+                    Some((*rect, Rect::new(v[0], v[1], v[2], v[3])))
+                }
+                _ => None,
+            })
+            .expect("card quad with inner_rect");
+
+        let blur = tokens::SHADOW_SM;
+        assert!(
+            (inner.x - painted.x - blur).abs() < 0.5,
+            "left halo == effective (theme-resolved) shadow, painted.x={}, inner.x={}",
+            painted.x,
+            inner.x,
+        );
+        assert!(
+            (painted.bottom() - inner.bottom() - blur * 1.5).abs() < 0.5,
+            "bottom halo == effective shadow * 1.5",
         );
     }
 

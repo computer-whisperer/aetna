@@ -1,11 +1,12 @@
 // stock::rounded_rect — the workhorse surface shader.
 //
-// One pipeline. Per-instance uniforms drive fill, stroke, radius. The
-// quad is sized to `rect` (the painted rect, possibly outset for
-// `paint_overflow`); SDF + outline use `inner_rect` so the rect stays
-// anchored to the layout bounds even when the painted area extends
-// outward. Focus ring renders in the band between inner_rect and rect
-// when `focus_color.a * focus_alpha > 0`.
+// One pipeline. Per-instance uniforms drive fill, stroke, radius,
+// shadow, focus ring. The quad is sized to `rect` (the painted rect,
+// possibly outset for `paint_overflow`); SDF + outline use `inner_rect`
+// so the rect stays anchored to the layout bounds even when the
+// painted area extends outward. Drop shadow + focus ring both render
+// in the band between inner_rect and rect when their respective
+// uniforms are non-zero — `draw_ops` widens the painted rect for both.
 //
 // Coordinate system: vertex positions arrive as a unit quad with uv 0..1.
 // Per-instance `rect` (xy, wh) places it in pixel space; the vertex
@@ -90,6 +91,7 @@ fn sdf_rounded_box(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let stroke_width = in.params.x;
     let radius = min(in.params.y, min(in.inner_half_size.x, in.inner_half_size.y));
+    let shadow_blur = in.params.z;
     let focus_width = in.params.w;
 
     // Pixel position relative to the inner (layout) rect's centre.
@@ -106,8 +108,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let inside = 1.0 - smoothstep(-aa, 0.0, d);
 
     var color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+
+    // Drop shadow — rendered first so fill/stroke composite over it. The
+    // shadow is the layout-rect's rounded silhouette dropped down by
+    // `blur*0.5` and softened over a `blur`-wide band. Painted rect is
+    // outset in `draw_ops` to give the halo room outside `inner_rect`;
+    // we cap inside-the-box alpha at the layout boundary so opaque fills
+    // sit cleanly on top, while alpha-fill nodes (popovers with a tint)
+    // still get a darkened ground.
+    if (shadow_blur > 0.0) {
+        let shadow_dy = shadow_blur * 0.5;
+        let shadow_local = local_px - vec2<f32>(0.0, shadow_dy);
+        let shadow_d = sdf_rounded_box(shadow_local, in.inner_half_size, radius);
+        let shadow_alpha = (1.0 - smoothstep(-shadow_blur, shadow_blur, shadow_d)) * 0.30;
+        color = vec4<f32>(0.0, 0.0, 0.0, shadow_alpha);
+    }
+
+    // Fill — mix-and-max over the (possibly shadowed) background so a
+    // partly-transparent fill blends with the shadow instead of
+    // clobbering it.
     if (in.fill.a > 0.0) {
-        color = vec4<f32>(in.fill.rgb, in.fill.a * inside);
+        let fill_alpha = in.fill.a * inside;
+        color = vec4<f32>(
+            mix(color.rgb, in.fill.rgb, fill_alpha),
+            max(color.a, fill_alpha),
+        );
     }
 
     // Stroke: a band of width stroke_width centered on the boundary of

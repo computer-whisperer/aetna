@@ -161,3 +161,17 @@ Out of scope for the current cycle; flagged so they don't get rediscovered:
   about a horizontal axis would let `tabs_list` opt in. For now, Tab +
   Enter activate each trigger one-by-one, which matches the simpler
   shadcn default.
+- **Themed shadow color.** `stock::rounded_rect` hardcodes a 0.30-alpha
+  black drop shadow; a `tokens::SHADOW_RGBA` (or a per-role color in
+  `theme.rs`) would let dark themes opt into a denser shadow without
+  every widget restating the color. Wait for a theme that actually
+  needs it.
+- **Multi-layer / inset shadows.** Tailwind's `shadow-2xl`-style stacked
+  drops and `inner shadow` (sunken role) both want a second SDF pass;
+  the params slot only carries one blur today. Hold for an explicit
+  ask — most surface roles already look right with the single layer.
+- **Shader-override `paint_overflow` for shadow.** Custom shaders that
+  pack their own shadow value into a different uniform name don't get
+  auto-expansion in `draw_ops`; they must set `paint_overflow`
+  manually. Consider a per-shader "shadow extent" metadata if a custom
+  shader in the workspace ever ships shadows.
