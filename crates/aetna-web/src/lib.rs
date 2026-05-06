@@ -51,7 +51,7 @@ mod web_entry {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey};
+    use aetna_core::{App, Cursor, KeyModifiers, PointerButton, Rect, UiKey};
     use aetna_wgpu::{MsaaTarget, PrepareTimings, Runner};
 
     const SAMPLE_COUNT: u32 = 4;
@@ -63,7 +63,7 @@ mod web_entry {
     use winit::event_loop::{ActiveEventLoop, EventLoop};
     use winit::keyboard::{Key, NamedKey};
     use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
-    use winit::window::{Window, WindowId};
+    use winit::window::{CursorIcon, Window, WindowId};
 
     use super::{Showcase, VIEWPORT};
 
@@ -237,6 +237,11 @@ mod web_entry {
         last_pointer: Option<(f32, f32)>,
         modifiers: KeyModifiers,
         stats: FrameStats,
+        /// Last cursor pushed to `Window::set_cursor`. winit-web maps
+        /// the icon to `canvas.style.cursor` so this drives the
+        /// browser's CSS cursor; we cache to avoid resetting the same
+        /// string each frame.
+        last_cursor: Cursor,
     }
 
     struct Gfx {
@@ -266,6 +271,7 @@ mod web_entry {
                 last_pointer: None,
                 modifiers: KeyModifiers::default(),
                 stats: FrameStats::default(),
+                last_cursor: Cursor::Default,
             }
         }
     }
@@ -596,6 +602,16 @@ mod web_entry {
                     );
                     let t_after_prepare = Instant::now();
 
+                    // Forward the resolved cursor to the canvas. winit's
+                    // web backend turns set_cursor(CursorIcon::...) into
+                    // canvas.style.cursor = "..." — same plumbing as
+                    // native, just with a CSS string at the end.
+                    let cursor = gfx.renderer.ui_state().cursor(&tree);
+                    if cursor != self.last_cursor {
+                        gfx.window.set_cursor(winit_cursor(cursor));
+                        self.last_cursor = cursor;
+                    }
+
                     let mut encoder =
                         gfx.device
                             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -674,6 +690,33 @@ mod web_entry {
             ctrl: mods.control_key(),
             alt: mods.alt_key(),
             logo: mods.super_key(),
+        }
+    }
+
+    /// Translate an Aetna [`Cursor`] to winit's [`CursorIcon`]. winit's
+    /// web backend then maps that to a CSS `cursor:` string and writes
+    /// it to the canvas's inline style — so this is the only piece of
+    /// platform-specific cursor wiring the browser host needs.
+    /// `Cursor` is `non_exhaustive`; new variants land in `aetna-core`
+    /// and a parallel arm here, with the wildcard as a forward-compat
+    /// fallback.
+    fn winit_cursor(cursor: Cursor) -> CursorIcon {
+        match cursor {
+            Cursor::Default => CursorIcon::Default,
+            Cursor::Pointer => CursorIcon::Pointer,
+            Cursor::Text => CursorIcon::Text,
+            Cursor::NotAllowed => CursorIcon::NotAllowed,
+            Cursor::Grab => CursorIcon::Grab,
+            Cursor::Grabbing => CursorIcon::Grabbing,
+            Cursor::Move => CursorIcon::Move,
+            Cursor::EwResize => CursorIcon::EwResize,
+            Cursor::NsResize => CursorIcon::NsResize,
+            Cursor::NwseResize => CursorIcon::NwseResize,
+            Cursor::NeswResize => CursorIcon::NeswResize,
+            Cursor::ColResize => CursorIcon::ColResize,
+            Cursor::RowResize => CursorIcon::RowResize,
+            Cursor::Crosshair => CursorIcon::Crosshair,
+            _ => CursorIcon::Default,
         }
     }
 
