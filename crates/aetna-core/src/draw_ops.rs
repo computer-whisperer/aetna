@@ -198,15 +198,26 @@ fn push_node(
             uniforms.insert("focus_width", UniformValue::F32(tokens::FOCUS_RING_WIDTH));
         }
         theme.apply_surface_uniforms(n.surface_role, &mut uniforms);
-        // Read shadow *after* theme has had its say — surface roles
-        // (Panel/Popover/Sunken/...) can override the shadow uniform,
+        // Read shadow + stroke *after* theme has had its say — surface
+        // roles (Panel/Popover/Sunken/...) can override either uniform,
         // and we want the painted rect to track what actually renders.
         let effective_shadow = match uniforms.get("shadow") {
             Some(UniformValue::F32(s)) => *s,
             _ => 0.0,
         };
-        let painted_rect =
-            inner_painted_rect.outset(combined_overflow(n.paint_overflow, effective_shadow));
+        let effective_stroke_width = if uniforms.contains_key("stroke") {
+            match uniforms.get("stroke_width") {
+                Some(UniformValue::F32(w)) => *w,
+                _ => 0.0,
+            }
+        } else {
+            0.0
+        };
+        let painted_rect = inner_painted_rect.outset(combined_overflow(
+            n.paint_overflow,
+            effective_shadow,
+            effective_stroke_width,
+        ));
         out.push(DrawOp::Quad {
             id: n.computed_id.clone(),
             rect: painted_rect,
@@ -503,22 +514,43 @@ fn translated(r: Rect, offset: (f32, f32)) -> Rect {
 }
 
 /// Combine an element's explicit `paint_overflow` with the implicit
-/// halo a non-zero `shadow` needs around the layout rect. The shadow's
-/// SDF in `stock::rounded_rect` softens over a `blur`-wide band around
-/// an offset-down silhouette: alpha hits zero at distance `blur`
-/// outside the (offset) box, so left/right need `blur`, top needs
-/// `blur*0.5` (offset reduces upward extent), bottom needs `blur*1.5`.
-/// Per-side max with the user's `paint_overflow` so a focus-ring outset
-/// + shadow on the same node both fit.
-fn combined_overflow(paint_overflow: Sides, shadow: f32) -> Sides {
+/// halo a non-zero `shadow` and / or `stroke` needs around the layout
+/// rect. The shadow's SDF in `stock::rounded_rect` softens over a
+/// `blur`-wide band around an offset-down silhouette: alpha hits zero
+/// at distance `blur` outside the (offset) box, so left/right need
+/// `blur`, top needs `blur*0.5` (offset reduces upward extent), bottom
+/// needs `blur*1.5`. Stroke straddles the boundary — its outside half
+/// (`stroke_width*0.5`) plus the AA tail (≈1 px) lives just outside the
+/// layout rect, so the painted quad needs that much room on every side
+/// or the cardinal pixels of curved boundaries (the radio indicator's
+/// circle, switch thumb, …) get clipped and the shape looks flattened
+/// at top / bottom / left / right. Per-side max with the user's
+/// `paint_overflow` so a focus-ring outset + shadow + stroke on the
+/// same node all fit.
+fn combined_overflow(paint_overflow: Sides, shadow: f32, stroke_width: f32) -> Sides {
+    let stroke_halo = if stroke_width > 0.0 {
+        stroke_width * 0.5 + 1.0
+    } else {
+        0.0
+    };
+    let stroked = if stroke_halo > 0.0 {
+        Sides {
+            left: paint_overflow.left.max(stroke_halo),
+            right: paint_overflow.right.max(stroke_halo),
+            top: paint_overflow.top.max(stroke_halo),
+            bottom: paint_overflow.bottom.max(stroke_halo),
+        }
+    } else {
+        paint_overflow
+    };
     if shadow <= 0.0 {
-        return paint_overflow;
+        return stroked;
     }
     Sides {
-        left: paint_overflow.left.max(shadow),
-        right: paint_overflow.right.max(shadow),
-        top: paint_overflow.top.max(shadow * 0.5),
-        bottom: paint_overflow.bottom.max(shadow * 1.5),
+        left: stroked.left.max(shadow),
+        right: stroked.right.max(shadow),
+        top: stroked.top.max(shadow * 0.5),
+        bottom: stroked.bottom.max(shadow * 1.5),
     }
 }
 
@@ -1192,7 +1224,8 @@ mod tests {
         // A focus-style outset of 8 on every side combined with
         // SHADOW_MD (12) should resolve to: l=12, r=12, t=8, b=18 —
         // shadow wins on left/right/bottom, paint_overflow wins on top.
-        let combined = super::combined_overflow(crate::tree::Sides::all(8.0), tokens::SHADOW_MD);
+        let combined =
+            super::combined_overflow(crate::tree::Sides::all(8.0), tokens::SHADOW_MD, 0.0);
         assert!((combined.left - 12.0).abs() < f32::EPSILON);
         assert!((combined.right - 12.0).abs() < f32::EPSILON);
         assert!((combined.top - 8.0).abs() < f32::EPSILON);
@@ -1201,8 +1234,100 @@ mod tests {
 
     #[test]
     fn shadow_overflow_is_zero_when_shadow_is_zero() {
-        let combined = super::combined_overflow(crate::tree::Sides::zero(), 0.0);
+        let combined = super::combined_overflow(crate::tree::Sides::zero(), 0.0, 0.0);
         assert_eq!(combined, crate::tree::Sides::zero());
+    }
+
+    #[test]
+    fn stroke_overflow_outsets_painted_rect_by_half_width_plus_aa_tail() {
+        // Stroke straddles the boundary; without any outset, cardinal
+        // pixels of curved boundaries (radio indicator, switch thumb)
+        // get clipped because the outside half of the band falls
+        // outside the layout rect. Auto-widen by stroke_width/2 + 1px
+        // (AA tail) so the full band rasterises symmetrically.
+        let combined = super::combined_overflow(crate::tree::Sides::zero(), 0.0, 1.0);
+        let halo = 1.0 * 0.5 + 1.0;
+        assert!((combined.left - halo).abs() < f32::EPSILON);
+        assert!((combined.right - halo).abs() < f32::EPSILON);
+        assert!((combined.top - halo).abs() < f32::EPSILON);
+        assert!((combined.bottom - halo).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn stroke_and_shadow_take_per_side_max() {
+        // Shadow's bottom halo (blur*1.5 = 18) beats stroke (1.5) on
+        // the bottom; stroke beats shadow on the top (blur*0.5 = 6 vs
+        // 1.5? no — shadow wins there too). Use a small shadow so the
+        // stroke halo wins on the top.
+        let combined = super::combined_overflow(crate::tree::Sides::zero(), 1.0, 4.0);
+        // Stroke halo = 4*0.5 + 1 = 3. Shadow blur = 1 → top = 0.5,
+        // bottom = 1.5, l/r = 1. Stroke wins on every side.
+        assert!(
+            (combined.top - 3.0).abs() < f32::EPSILON,
+            "top = {}",
+            combined.top
+        );
+        assert!((combined.left - 3.0).abs() < f32::EPSILON);
+        assert!((combined.right - 3.0).abs() < f32::EPSILON);
+        // Bottom: max(stroke=3, shadow*1.5=1.5) → stroke wins.
+        assert!((combined.bottom - 3.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn stroked_indicator_painted_rect_outsets_layout_rect() {
+        // Regression for the radio indicator: a small stroked circle
+        // looked flattened at the cardinal directions because its
+        // painted quad equalled the 16×16 layout rect, clipping the
+        // outside half of the stroke band on the top/bottom/left/right.
+        // After the fix, the quad outsets by stroke_width/2 + 1 on each
+        // side so the AA tail rasterises cleanly.
+        let mut root = column([El::new(Kind::Custom("radio-indicator"))
+            .key("indicator")
+            .width(Size::Fixed(16.0))
+            .height(Size::Fixed(16.0))
+            .radius(tokens::RADIUS_PILL)
+            .fill(tokens::BG_CARD)
+            .stroke(tokens::BORDER_STRONG)]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 100.0));
+
+        let ops = draw_ops(&root, &state);
+        let (painted, inner) = ops
+            .iter()
+            .find_map(|op| match op {
+                DrawOp::Quad {
+                    id, rect, uniforms, ..
+                } if id.contains("indicator") => {
+                    let UniformValue::Vec4(v) = uniforms.get("inner_rect")? else {
+                        return None;
+                    };
+                    Some((*rect, Rect::new(v[0], v[1], v[2], v[3])))
+                }
+                _ => None,
+            })
+            .expect("stroked indicator quad with inner_rect");
+
+        // stroke_width default = 1 → halo = 0.5 + 1 = 1.5 on each side.
+        let halo = 1.5;
+        assert!(
+            (inner.x - painted.x - halo).abs() < 1e-3,
+            "left halo, painted.x={}, inner.x={}",
+            painted.x,
+            inner.x,
+        );
+        assert!(
+            (painted.right() - inner.right() - halo).abs() < 1e-3,
+            "right halo",
+        );
+        assert!((inner.y - painted.y - halo).abs() < 1e-3, "top halo",);
+        assert!(
+            (painted.bottom() - inner.bottom() - halo).abs() < 1e-3,
+            "bottom halo",
+        );
+        // Layout rect itself is unchanged — only the painted quad
+        // grows; the SDF still anchors to the original 16×16 box.
+        assert!((inner.w - 16.0).abs() < 1e-3);
+        assert!((inner.h - 16.0).abs() < 1e-3);
     }
 
     #[test]
