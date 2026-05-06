@@ -218,6 +218,7 @@ pub fn select_trigger(key: impl Into<String>, current_label: impl Into<String>) 
         .stroke(tokens::BORDER)
         .text_color(tokens::TEXT_FOREGROUND)
         .radius(tokens::RADIUS_MD)
+        .width(Size::Fill(1.0))
         .height(Size::Fixed(36.0))
         .padding(Sides::xy(tokens::SPACE_MD, 0.0))
 }

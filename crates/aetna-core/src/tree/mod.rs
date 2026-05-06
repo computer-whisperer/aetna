@@ -229,8 +229,8 @@ impl Default for El {
             padding: Sides::zero(),
             align: Align::Stretch,
             justify: Justify::Start,
-            width: Size::Fill(1.0),
-            height: Size::Fill(1.0),
+            width: Size::Hug,
+            height: Size::Hug,
             fill: None,
             stroke: None,
             stroke_width: 0.0,
@@ -630,23 +630,17 @@ impl El {
 
 /// A vertical container with a comfortable default gap.
 ///
-/// Defaults: `axis = Column`, `align = Stretch`, `width = Fill(1.0)`,
-/// `height = Hug`. The `Hug` height means the column is exactly as
-/// tall as its stacked children — the natural shape for most use
-/// (sidebar nav, card body, info pair). To make the column claim its
-/// parent's full height, set `.height(Size::Fill(1.0))`.
+/// Defaults: `axis = Column`, `align = Stretch`, `width = Hug`,
+/// `height = Hug`. The `Hug` defaults match CSS flex's `flex: 0 1
+/// auto` — the column shrinks to its content on both axes. To claim
+/// the parent's available extent (the analog of `width: 100%` /
+/// `flex: 1`), set `.width(Size::Fill(1.0))` / `.height(Size::Fill(1.0))`.
 ///
-/// **Why `height = Hug` and not `Fill`:** when a column with `Fill`
-/// height sits inside a row that uses `align(Center)`, the column
-/// claims the row's full height and its content top-aligns inside
-/// the box (column's main-axis justify defaults to `Start`). The
-/// row's centering becomes a no-op for that child — a common surprise.
-/// Hugging the height keeps `align()` working the way it reads.
-///
-/// Hug-width children are stretched to the column's width; Fill-width
-/// children always fill regardless of `align`. Override `.align(...)`
-/// to position narrower (Hug/Fixed) children: `Start` (left), `Center`,
-/// `End` (right).
+/// `align(Stretch)` (the default) stretches children to the column's
+/// width — the same effect CSS gets from `align-items: stretch`.
+/// Switch to `align(Center)` / `Start` / `End` and children shrink
+/// to their content width so the alignment can position them
+/// (matching CSS `align-items` semantics).
 #[track_caller]
 pub fn column<I, E>(children: I) -> El
 where
@@ -664,14 +658,15 @@ where
 
 /// A horizontal container with a comfortable default gap.
 ///
-/// Defaults: `axis = Row`, `align = Center`, `height = Hug`. The
-/// `Center` default vertically centers the typical row content
-/// (icon + text + button) within the row's hug height.
+/// Defaults: `axis = Row`, `align = Center`, `width = Hug`,
+/// `height = Hug`. The `Center` default vertically centers the typical
+/// row content (icon + text + button) within the row's hug height —
+/// a small divergence from CSS's `align-items: stretch` default that
+/// reflects what row-shaped UI almost always wants in practice.
 ///
-/// To make the row span the full available height, set
-/// `.height(Size::Fill(1.0))`. `Fill`-height children always claim
-/// the row's full extent regardless of `align`; `align` only positions
-/// Hug/Fixed-height children that are shorter than the row.
+/// Sizing matches CSS flex's `flex: 0 1 auto`: the row shrinks to its
+/// content width and packs children left. To claim the parent's full
+/// width or height, set `.width(Size::Fill(1.0))` / `.height(Size::Fill(1.0))`.
 #[track_caller]
 pub fn row<I, E>(children: I) -> El
 where
@@ -719,6 +714,8 @@ where
         .gap(crate::tokens::SPACE_MD)
         .align(Align::Stretch)
         .axis(Axis::Column)
+        .width(Size::Fill(1.0))
+        .height(Size::Fill(1.0))
         .clip()
         .scrollable()
 }
@@ -751,6 +748,7 @@ where
         .at_loc(Location::caller())
         .axis(Axis::Column)
         .align(Align::Start)
+        .width(Size::Fill(1.0))
         .children(children)
 }
 
@@ -783,6 +781,8 @@ where
         .at_loc(Location::caller())
         .axis(Axis::Column)
         .align(Align::Stretch)
+        .width(Size::Fill(1.0))
+        .height(Size::Fill(1.0))
         .clip()
         .scrollable();
     el.virtual_items = Some(VirtualItems::new(count, row_height, build_row));

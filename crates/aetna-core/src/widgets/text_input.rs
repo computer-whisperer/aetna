@@ -162,6 +162,7 @@ pub fn text_input(value: &str, selection: TextSelection) -> El {
         .axis(Axis::Overlay)
         .align(Align::Start) // children pin to the left edge
         .justify(Justify::Center) // children center vertically
+        .width(Size::Fill(1.0))
         .height(Size::Fixed(36.0))
         .padding(Sides::xy(tokens::SPACE_MD, 0.0))
         .children(children)

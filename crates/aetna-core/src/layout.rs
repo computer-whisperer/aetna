@@ -1,11 +1,19 @@
 //! Flex-style layout pass over the [`El`] tree.
 //!
+//! Sizing per axis:
 //! - `Fixed(px)` — exact size on its axis.
-//! - `Hug` — intrinsic size (text width, sum of children, etc.).
-//! - `Fill(weight)` — share leftover space proportionally.
+//! - `Hug` — intrinsic size (text width, sum of children, etc.). Default.
+//! - `Fill(weight)` — share leftover main-axis space proportionally.
 //!
-//! Cross-axis behavior is governed by the parent's [`Align`]; main-axis
-//! distribution by [`Justify`] (or insert a [`spacer`]).
+//! Defaults match CSS flex's `flex: 0 1 auto`: children content-size
+//! on the main axis, defer to the parent's [`Align`] on the cross
+//! axis. `Align::Stretch` (the column / scroll default) stretches both
+//! `Hug` and `Fill` children to the container's full cross extent —
+//! the analog of CSS `align-items: stretch`. `Align::Center | Start |
+//! End` shrinks them to intrinsic so the alignment can actually
+//! position them — matching CSS's behavior when align-items is
+//! non-stretch. Main-axis distribution is governed by [`Justify`] (or
+//! insert a [`spacer`]).
 //!
 //! The layout pass also assigns each node a stable path-based
 //! [`El::computed_id`]: `root.0.card[account].2.button` — a node's ID is
@@ -468,17 +476,17 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
 
         let cross_intent = if vertical { c.width } else { c.height };
         let cross_intrinsic = if vertical { iw } else { ih };
-        // CSS-flex parity: `align-items: stretch` (the default) is the
-        // only mode that stretches children to fill the cross axis.
-        // Under `align(Center | Start | End)`, a `Size::Fill(_)` child
-        // shrinks to its content size so the parent's `Align` actually
-        // positions it — same as flex children losing their stretch
-        // when align-items is non-stretch. `Size::Fixed(v)` is an
-        // explicit author override and is honored regardless.
+        // CSS-flex parity for cross-axis sizing: `Size::Fixed` is an
+        // explicit author override and always wins. Otherwise the
+        // parent's `Align` decides — `Stretch` (the column default)
+        // stretches non-fixed children to the container, `Center` /
+        // `Start` / `End` shrink to intrinsic so the alignment can
+        // actually position them. This collapses Hug and Fill on the
+        // cross axis (both are "follow align-items"), the same way
+        // CSS flex doesn't distinguish between them on the cross axis.
         let cross_size = match cross_intent {
             Size::Fixed(v) => v,
-            Size::Hug => cross_intrinsic,
-            Size::Fill(_) => match node.align {
+            Size::Hug | Size::Fill(_) => match node.align {
                 Align::Stretch => cross_extent,
                 Align::Start | Align::Center | Align::End => cross_intrinsic,
             },

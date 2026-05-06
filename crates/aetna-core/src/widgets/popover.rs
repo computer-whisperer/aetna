@@ -258,7 +258,8 @@ pub fn popover(key: impl Into<String>, anchor: Anchor, panel: impl Into<El>) -> 
         // stays visible behind the popover.
         El::new(Kind::Scrim)
             .at_loc(Location::caller())
-            .key(dismiss_key),
+            .key(dismiss_key)
+            .fill_size(),
         // Custom-laid-out container that positions the panel against
         // the anchor. Fills the viewport so its `container` rect is
         // the placement region; the `layout_override` reads the

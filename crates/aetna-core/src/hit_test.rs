@@ -331,14 +331,16 @@ mod tests {
         let mut tree = stack([
             El::new(Kind::Scrim)
                 .key("dismiss")
-                .fill(crate::tokens::OVERLAY_SCRIM),
+                .fill(crate::tokens::OVERLAY_SCRIM)
+                .fill_size(),
             El::new(Kind::Modal)
                 .block_pointer()
                 .width(Size::Fixed(100.0))
                 .height(Size::Fixed(100.0)),
         ])
         .align(Align::Center)
-        .justify(Justify::Center);
+        .justify(Justify::Center)
+        .fill_size();
         let mut state = UiState::new();
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 300.0, 300.0));
 

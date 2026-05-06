@@ -623,8 +623,7 @@ fn settings_view() -> El {
                         .small(),
                 ])
                 .gap(tokens::SPACE_XS)
-                .align(Align::Start)
-                .width(Size::Hug),
+                .align(Align::Start),
                 spacer(),
                 button("Delete").destructive().key("settings-delete"),
             ])],

@@ -113,23 +113,26 @@ impl From<f32> for Sides {
 /// - `Hug` — intrinsic size of contents.
 ///
 /// On a container's **main axis** (the axis its children flow along),
-/// `Fill` siblings split the leftover space proportional to their weights.
+/// `Fill` siblings split the leftover space proportional to their weights;
+/// `Hug` siblings take their content size and pack toward the start.
 ///
-/// On a container's **cross axis** (perpendicular), `Fill` always claims
-/// the container's full extent — `Align` does not affect Fill children
-/// because there is no slack left to position. `Align` positions
-/// Hug/Fixed children that are smaller than the container.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// On the **cross axis**, sizing is governed by the parent's [`Align`]:
+/// `Align::Stretch` (the column / scroll default) stretches both `Hug`
+/// and `Fill` children to the container's full extent, while
+/// `Align::Center | Start | End` shrinks them to their intrinsic size
+/// so the alignment can actually position them. `Fixed` is honored
+/// regardless. This mirrors CSS flex's `align-items` semantics.
+///
+/// The default is `Hug`, matching the CSS flex item default
+/// (`flex: 0 1 auto`) — content-sized on main axis, deferred to
+/// `align-items` on cross axis. Use `.width(Size::Fill(1.0))` to
+/// claim leftover space (the analog of `flex: 1` or `width: 100%`).
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Size {
     Fixed(f32),
     Fill(f32),
+    #[default]
     Hug,
-}
-
-impl Default for Size {
-    fn default() -> Self {
-        Size::Fill(1.0)
-    }
 }
 
 /// Layout direction for a container's children.
