@@ -468,15 +468,20 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
 
         let cross_intent = if vertical { c.width } else { c.height };
         let cross_intrinsic = if vertical { iw } else { ih };
-        // `Size::Fill` on the cross axis always claims the parent's
-        // full extent — there is no slack left to position, so the
-        // parent's `Align` becomes a no-op for that child. `Align`
-        // only positions Hug/Fixed children that are smaller than the
-        // container.
+        // CSS-flex parity: `align-items: stretch` (the default) is the
+        // only mode that stretches children to fill the cross axis.
+        // Under `align(Center | Start | End)`, a `Size::Fill(_)` child
+        // shrinks to its content size so the parent's `Align` actually
+        // positions it — same as flex children losing their stretch
+        // when align-items is non-stretch. `Size::Fixed(v)` is an
+        // explicit author override and is honored regardless.
         let cross_size = match cross_intent {
             Size::Fixed(v) => v,
             Size::Hug => cross_intrinsic,
-            Size::Fill(_) => cross_extent,
+            Size::Fill(_) => match node.align {
+                Align::Stretch => cross_extent,
+                Align::Start | Align::Center | Align::End => cross_intrinsic,
+            },
         };
 
         let cross_off = match node.align {
@@ -830,6 +835,59 @@ fn inline_paragraph_size(node: &El) -> f32 {
 mod tests {
     use super::*;
     use crate::state::UiState;
+
+    /// CSS-flex parity: a `Size::Fill` child of a column with
+    /// `align(Center)` should shrink to its intrinsic cross-axis size
+    /// and be horizontally centered, matching `align-items: center`
+    /// in CSS flex (which causes flex items to lose their stretch).
+    #[test]
+    fn align_center_shrinks_fill_child_to_intrinsic() {
+        // Column with align(Center). Inner row has the default
+        // El::new width = Fill(1.0); without Proposal B it would
+        // claim the full 200px and align would be a no-op.
+        let mut root = column([crate::row([crate::widgets::text::text("hi")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))])])
+        .align(Align::Center)
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(100.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let row_rect = state.rect(&root.children[0].computed_id);
+        // Row's intrinsic width = 40 (single fixed child). 200 - 40 = 160
+        // leftover; centered → row starts at x=80.
+        assert!(
+            (row_rect.x - 80.0).abs() < 0.5,
+            "expected x≈80 (centered), got {}",
+            row_rect.x
+        );
+        assert!(
+            (row_rect.w - 40.0).abs() < 0.5,
+            "expected w≈40 (shrunk to intrinsic), got {}",
+            row_rect.w
+        );
+    }
+
+    /// `align(Stretch)` (the default) preserves Fill stretching: a
+    /// Fill-width child still claims the full cross axis.
+    #[test]
+    fn align_stretch_preserves_fill_stretch() {
+        let mut root = column([crate::row([crate::widgets::text::text("hi")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))])])
+        .align(Align::Stretch)
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(100.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let row_rect = state.rect(&root.children[0].computed_id);
+        assert!(
+            (row_rect.x - 0.0).abs() < 0.5 && (row_rect.w - 200.0).abs() < 0.5,
+            "expected stretched (x=0, w=200), got x={} w={}",
+            row_rect.x,
+            row_rect.w
+        );
+    }
 
     /// When all children are Hug-sized, `Justify::Center` should split
     /// the leftover space symmetrically across the main axis.

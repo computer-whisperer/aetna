@@ -248,10 +248,6 @@ fn counter_view(state: &CounterState) -> El {
         // Hover any of the three for ~500ms to see the runtime-driven
         // tooltip layer appear. The `.tooltip(text)` modifier is the
         // entire app-side surface; the rest is library-owned.
-        // `.hug()` on the row is what lets the column's `align(Center)`
-        // actually center it — a Fill-width row would claim the full
-        // content width and silently neutralize the centering, leaving
-        // the buttons at the left edge.
         row([
             button("−")
                 .key("counter-dec")
@@ -266,8 +262,7 @@ fn counter_view(state: &CounterState) -> El {
                 .primary()
                 .tooltip("Increment"),
         ])
-        .gap(tokens::SPACE_MD)
-        .width(Size::Hug),
+        .gap(tokens::SPACE_MD),
         text(if state.value == 0 {
             "Click + or −, or hover for a tooltip.".to_string()
         } else {
@@ -410,9 +405,7 @@ fn palette_view(state: &PaletteState) -> El {
     column([
         h2("Animated palette"),
         text("Cards spring up on tap; status fades on change.").muted(),
-        // Hug the swatch row so the parent column's `align(Center)`
-        // can actually center it; same gotcha as `counter_view`.
-        row(swatches).gap(tokens::SPACE_MD).width(Size::Hug),
+        row(swatches).gap(tokens::SPACE_MD),
         text(status)
             .key("palette-status")
             .center_text()

@@ -88,10 +88,7 @@ impl App for Palette {
         column([
             h2("Animated palette"),
             text("Cards spring up on tap; status fades on change.").muted(),
-            // `.width(Size::Hug)` so the parent column's `align(Center)`
-            // can actually center the row — a Fill-width row would
-            // claim the full content width and silently neutralize it.
-            row(swatches).gap(tokens::SPACE_MD).width(Size::Hug),
+            row(swatches).gap(tokens::SPACE_MD),
             // The status line cross-fades by easing its opacity to 1
             // each rebuild — when `self.selected` changes, the build
             // produces a different text node; opacity 0 → 1 eases in.

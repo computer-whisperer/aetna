@@ -39,16 +39,12 @@ impl App for Counter {
     fn build(&self) -> El {
         column([
             h1(format!("{}", self.value)),
-            // `.hug()` on the row is what lets `align(Center)` actually
-            // center it — a Fill-width row would claim the full content
-            // width and leave the buttons at the left edge.
             row([
                 button("−").key("dec").secondary(),
                 button("Reset").key("reset").ghost(),
                 button("+").key("inc").primary(),
             ])
-            .gap(tokens::SPACE_MD)
-            .width(Size::Hug),
+            .gap(tokens::SPACE_MD),
             text(if self.value == 0 {
                 "Click + or − to change the count.".to_string()
             } else {
