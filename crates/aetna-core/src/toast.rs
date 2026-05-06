@@ -220,10 +220,7 @@ mod tests {
         assign_ids(&mut tree);
         let pending = synthesize_toasts(&mut tree, &mut state, now);
         assert!(pending, "active toasts → caller should request redraw");
-        let stack = tree
-            .children
-            .last()
-            .expect("toast_stack appended to root");
+        let stack = tree.children.last().expect("toast_stack appended to root");
         assert!(matches!(stack.kind, Kind::Custom("toast_stack")));
         assert_eq!(stack.children.len(), 2);
     }
@@ -238,10 +235,7 @@ mod tests {
             ToastSpec::info("old").with_ttl(Duration::from_millis(10)),
             t0,
         );
-        state.push_toast(
-            ToastSpec::info("new").with_ttl(Duration::from_secs(60)),
-            t0,
-        );
+        state.push_toast(ToastSpec::info("new").with_ttl(Duration::from_secs(60)), t0);
         let later = t0 + Duration::from_secs(1);
         let pending = synthesize_toasts(&mut tree, &mut state, later);
         assert!(pending);

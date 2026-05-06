@@ -65,10 +65,7 @@ fn main() -> std::io::Result<()> {
     let mut state = UiState::new();
     let now = Instant::now();
     let long_ttl = Duration::from_secs(60);
-    state.push_toast(
-        ToastSpec::success("Settings saved").with_ttl(long_ttl),
-        now,
-    );
+    state.push_toast(ToastSpec::success("Settings saved").with_ttl(long_ttl), now);
     state.push_toast(
         ToastSpec::warning("Battery low — connect charger").with_ttl(long_ttl),
         now,
@@ -85,7 +82,12 @@ fn main() -> std::io::Result<()> {
     let mut tree = fixture();
     assign_ids(&mut tree);
     let _ = synthesize_toasts(&mut tree, &mut state, now);
-    let bundle = render_bundle_with(&mut tree, &mut state, viewport, Some(env!("CARGO_PKG_NAME")));
+    let bundle = render_bundle_with(
+        &mut tree,
+        &mut state,
+        viewport,
+        Some(env!("CARGO_PKG_NAME")),
+    );
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     let written = write_bundle(&bundle, &out_dir, "toast")?;

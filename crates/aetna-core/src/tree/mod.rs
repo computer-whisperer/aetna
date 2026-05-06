@@ -909,9 +909,7 @@ pub fn spacer() -> El {
 /// ```
 #[track_caller]
 pub fn image(img: impl Into<Image>) -> El {
-    El::new(Kind::Image)
-        .at_loc(Location::caller())
-        .image(img)
+    El::new(Kind::Image).at_loc(Location::caller()).image(img)
 }
 
 /// A 1-pixel separator line.

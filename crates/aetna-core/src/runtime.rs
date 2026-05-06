@@ -217,9 +217,7 @@ impl RunnerCore {
                 drag.start_offset
             };
             let clamped = new_offset.clamp(0.0, drag.max_offset);
-            self.ui_state
-                .scroll_offsets
-                .insert(drag.scroll_id, clamped);
+            self.ui_state.scroll_offsets.insert(drag.scroll_id, clamped);
             return None;
         }
 
@@ -1207,7 +1205,12 @@ mod tests {
             .copied()
             .expect("scrollable should have a track");
         let thumb = core.ui_state.thumb_rects.get(&scroll_id).copied().unwrap();
-        let metrics = core.ui_state.scroll_metrics.get(&scroll_id).copied().unwrap();
+        let metrics = core
+            .ui_state
+            .scroll_metrics
+            .get(&scroll_id)
+            .copied()
+            .unwrap();
 
         // Press in the track below the thumb at offset 0 → page down.
         let evt = core.pointer_down(
@@ -1252,7 +1255,11 @@ mod tests {
             .copied()
             .unwrap();
 
-        core.pointer_down(track.x + track.w * 0.5, thumb.y - 4.0, PointerButton::Primary);
+        core.pointer_down(
+            track.x + track.w * 0.5,
+            thumb.y - 4.0,
+            PointerButton::Primary,
+        );
         let after_up = core.ui_state.scroll_offset(&tree.computed_id);
         assert!(
             after_up < after_down,
@@ -1278,7 +1285,12 @@ mod tests {
     fn thumb_drag_translates_pointer_delta_into_scroll_offset() {
         let (mut core, scroll_id) = lay_out_scroll_tree();
         let thumb = core.ui_state.thumb_rects.get(&scroll_id).copied().unwrap();
-        let metrics = core.ui_state.scroll_metrics.get(&scroll_id).copied().unwrap();
+        let metrics = core
+            .ui_state
+            .scroll_metrics
+            .get(&scroll_id)
+            .copied()
+            .unwrap();
         let track_remaining = (metrics.viewport_h - thumb.h).max(0.0);
 
         let press_y = thumb.y + thumb.h * 0.5;

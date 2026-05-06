@@ -973,8 +973,7 @@ impl Runner {
                     // (per-page atlas image + sampler). Highlight kind
                     // binds set 0 only — its pipeline carries no set 1.
                     match run.kind {
-                        crate::text::TextRunKind::Color
-                        | crate::text::TextRunKind::Msdf => {
+                        crate::text::TextRunKind::Color | crate::text::TextRunKind::Msdf => {
                             builder
                                 .bind_descriptor_sets(
                                     PipelineBindPoint::Graphics,
@@ -982,9 +981,7 @@ impl Runner {
                                     0,
                                     (
                                         self.frame_descriptor_set.clone(),
-                                        self.text_paint
-                                            .page_descriptor(run.kind, run.page)
-                                            .clone(),
+                                        self.text_paint.page_descriptor(run.kind, run.page).clone(),
                                     ),
                                 )
                                 .expect("bind_descriptor_sets text");

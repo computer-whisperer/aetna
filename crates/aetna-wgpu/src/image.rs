@@ -298,11 +298,7 @@ impl ImagePaint {
             self.instance_capacity = new_cap;
         }
         if !self.instances.is_empty() {
-            queue.write_buffer(
-                &self.instance_buf,
-                0,
-                bytemuck::cast_slice(&self.instances),
-            );
+            queue.write_buffer(&self.instance_buf, 0, bytemuck::cast_slice(&self.instances));
         }
     }
 

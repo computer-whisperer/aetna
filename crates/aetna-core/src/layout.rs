@@ -1246,11 +1246,7 @@ mod tests {
             .copied()
             .expect("scrollable with scrollbar() and overflow gets a thumb");
         // viewport^2 / content_h = 200^2 / 360 = 111.11..
-        assert!(
-            (thumb.h - 111.111).abs() < 0.5,
-            "thumb h = {}",
-            thumb.h
-        );
+        assert!((thumb.h - 111.111).abs() < 0.5, "thumb h = {}", thumb.h);
         assert!((thumb.w - crate::tokens::SCROLLBAR_THUMB_WIDTH).abs() < 0.01);
         // At offset 0, thumb sits at the top of the inner rect.
         assert!(thumb.y.abs() < 0.01);
@@ -1263,15 +1259,9 @@ mod tests {
         );
 
         // Slide to half — thumb should be at half the track_remaining.
-        state
-            .scroll_offsets
-            .insert(root.computed_id.clone(), 80.0);
+        state.scroll_offsets.insert(root.computed_id.clone(), 80.0);
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
-        let thumb = state
-            .thumb_rects
-            .get(&root.computed_id)
-            .copied()
-            .unwrap();
+        let thumb = state.thumb_rects.get(&root.computed_id).copied().unwrap();
         let track_remaining = 200.0 - thumb.h;
         let expected_y = track_remaining * (80.0 / 160.0);
         assert!(
@@ -1295,16 +1285,8 @@ mod tests {
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
 
-        let thumb = state
-            .thumb_rects
-            .get(&root.computed_id)
-            .copied()
-            .unwrap();
-        let track = state
-            .thumb_tracks
-            .get(&root.computed_id)
-            .copied()
-            .unwrap();
+        let thumb = state.thumb_rects.get(&root.computed_id).copied().unwrap();
+        let track = state.thumb_tracks.get(&root.computed_id).copied().unwrap();
         // Track wider than thumb on the same right edge.
         assert!(track.w > thumb.w, "track.w {} thumb.w {}", track.w, thumb.w);
         assert!(
@@ -1341,7 +1323,11 @@ mod tests {
         let mut tiny = scroll([crate::widgets::text::text("one row").height(Size::Fixed(20.0))])
             .height(Size::Fixed(200.0));
         let mut tiny_state = UiState::new();
-        layout(&mut tiny, &mut tiny_state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        layout(
+            &mut tiny,
+            &mut tiny_state,
+            Rect::new(0.0, 0.0, 300.0, 200.0),
+        );
         assert!(!tiny_state.thumb_rects.contains_key(&tiny.computed_id));
     }
 

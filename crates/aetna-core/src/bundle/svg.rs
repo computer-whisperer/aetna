@@ -372,8 +372,7 @@ fn emit_attributed_text(
     if matches!(anchor, TextAnchor::Start) {
         let mut cursor_x = rect.x;
         for (text, style) in runs {
-            let run_w =
-                text_metrics::line_width(text, size, style.weight, style.mono);
+            let run_w = text_metrics::line_width(text, size, style.weight, style.mono);
             if let Some(bg) = style.bg {
                 let _ = writeln!(
                     s,

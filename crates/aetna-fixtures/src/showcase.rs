@@ -1227,8 +1227,10 @@ fn toasts_on_event(state: &mut ToastsState, e: UiEvent) {
 
 use std::sync::LazyLock;
 
-static GRID_RG: LazyLock<Image> = LazyLock::new(|| make_gradient(64, 64, [255, 64, 64], [64, 96, 255]));
-static GRID_GB: LazyLock<Image> = LazyLock::new(|| make_gradient(64, 64, [64, 200, 100], [40, 40, 60]));
+static GRID_RG: LazyLock<Image> =
+    LazyLock::new(|| make_gradient(64, 64, [255, 64, 64], [64, 96, 255]));
+static GRID_GB: LazyLock<Image> =
+    LazyLock::new(|| make_gradient(64, 64, [64, 200, 100], [40, 40, 60]));
 static GRID_CHECKER: LazyLock<Image> = LazyLock::new(|| make_checker(64, 64, 8));
 static GRID_RING: LazyLock<Image> = LazyLock::new(|| make_ring(64, 64));
 static AVATAR_SOLID: LazyLock<Image> =

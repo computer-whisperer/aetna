@@ -371,10 +371,7 @@ fn push_node(
         };
         let mut uniforms = UniformBlock::new();
         uniforms.insert("fill", UniformValue::Color(opaque(base_fill, opacity)));
-        uniforms.insert(
-            "radius",
-            UniformValue::F32(visible.w.min(visible.h) * 0.5),
-        );
+        uniforms.insert("radius", UniformValue::F32(visible.w.min(visible.h) * 0.5));
         uniforms.insert("inner_rect", inner_rect_uniform(painted_thumb));
         out.push(DrawOp::Quad {
             id: format!("{}.scrollbar-thumb", n.computed_id),
@@ -622,8 +619,10 @@ mod tests {
         crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 320.0, 80.0));
 
         let ops = draw_ops(&root, &state);
-        let DrawOp::AttributedText { runs, .. } =
-            ops.iter().find(|op| matches!(op, DrawOp::AttributedText { .. })).expect("attr op")
+        let DrawOp::AttributedText { runs, .. } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::AttributedText { .. }))
+            .expect("attr op")
         else {
             unreachable!()
         };
@@ -760,10 +759,7 @@ mod tests {
             .find(|op| matches!(op, DrawOp::Image { .. }))
             .expect("image El emits a DrawOp::Image");
         let DrawOp::Image {
-            rect,
-            scissor,
-            fit,
-            ..
+            rect, scissor, fit, ..
         } = img_op
         else {
             unreachable!()
