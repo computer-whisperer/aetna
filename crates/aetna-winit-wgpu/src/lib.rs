@@ -41,7 +41,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey};
+use aetna_core::{App, Cursor, KeyModifiers, PointerButton, Rect, UiKey};
 use aetna_wgpu::{MsaaTarget, Runner};
 
 const DEFAULT_SAMPLE_COUNT: u32 = 4;
@@ -50,7 +50,7 @@ use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowId};
+use winit::window::{CursorIcon, Window, WindowId};
 
 /// Configuration for the optional native winit + wgpu host.
 #[derive(Clone, Copy, Debug)]
@@ -200,6 +200,7 @@ fn run_host<A: WinitWgpuApp + 'static>(
         last_pointer: None,
         modifiers: KeyModifiers::default(),
         next_periodic_redraw: None,
+        last_cursor: Cursor::Default,
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -216,6 +217,11 @@ struct Host<A: WinitWgpuApp> {
     last_pointer: Option<(f32, f32)>,
     modifiers: KeyModifiers,
     next_periodic_redraw: Option<Instant>,
+    /// Last cursor pushed to `Window::set_cursor`. Avoids redundant
+    /// per-frame calls when the resolved cursor hasn't changed —
+    /// `set_cursor` is cheap but goes through a syscall on most
+    /// platforms.
+    last_cursor: Cursor,
 }
 
 struct Gfx {
@@ -504,6 +510,17 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             scale_factor,
                         );
 
+                        // Resolve the pointer cursor against the laid-out
+                        // tree (computed_ids are now valid) and push it to
+                        // the window when it changes. Doing this after
+                        // prepare means hover / press transitions show up
+                        // on the same frame as the visual update.
+                        let cursor = gfx.renderer.ui_state().cursor(&tree);
+                        if cursor != self.last_cursor {
+                            gfx.window.set_cursor(winit_cursor(cursor));
+                            self.last_cursor = cursor;
+                        }
+
                         let mut encoder =
                             gfx.device
                                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -591,6 +608,31 @@ fn pointer_button(b: MouseButton) -> Option<PointerButton> {
         // Back / Forward / Other → not surfaced; apps that need them can
         // grow the enum.
         _ => None,
+    }
+}
+
+/// Translate an Aetna [`Cursor`] to winit's [`CursorIcon`]. The Aetna
+/// enum is a subset of winit's so this stays a 1:1 map; the wildcard
+/// arm is a forward-compat safety net (Aetna's `Cursor` is
+/// `non_exhaustive` — add a new variant in core, add the matching arm
+/// here, otherwise it falls back to the platform default).
+fn winit_cursor(cursor: Cursor) -> CursorIcon {
+    match cursor {
+        Cursor::Default => CursorIcon::Default,
+        Cursor::Pointer => CursorIcon::Pointer,
+        Cursor::Text => CursorIcon::Text,
+        Cursor::NotAllowed => CursorIcon::NotAllowed,
+        Cursor::Grab => CursorIcon::Grab,
+        Cursor::Grabbing => CursorIcon::Grabbing,
+        Cursor::Move => CursorIcon::Move,
+        Cursor::EwResize => CursorIcon::EwResize,
+        Cursor::NsResize => CursorIcon::NsResize,
+        Cursor::NwseResize => CursorIcon::NwseResize,
+        Cursor::NeswResize => CursorIcon::NeswResize,
+        Cursor::ColResize => CursorIcon::ColResize,
+        Cursor::RowResize => CursorIcon::RowResize,
+        Cursor::Crosshair => CursorIcon::Crosshair,
+        _ => CursorIcon::Default,
     }
 }
 
