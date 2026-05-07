@@ -13,7 +13,7 @@
 //! struct Form { agree: bool }
 //!
 //! impl App for Form {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         row([
 //!             checkbox(self.agree).key("agree"),
 //!             text("I agree to the terms").label(),

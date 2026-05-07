@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use aetna_core::{App, KeyModifiers, PointerButton, Rect, UiKey};
+use aetna_core::{App, BuildCx, KeyModifiers, PointerButton, Rect, UiKey};
 use aetna_vulkano::Runner;
 use vulkano::{
     VulkanLibrary,
@@ -342,8 +342,10 @@ impl<A: App> ApplicationHandler for Host<A> {
                 }
 
                 self.app.before_build();
-                let mut tree = self.app.build();
-                rcx.runner.set_theme(self.app.theme());
+                let theme = self.app.theme();
+                let cx = BuildCx::new(&theme);
+                let mut tree = self.app.build(&cx);
+                rcx.runner.set_theme(theme);
                 rcx.runner.set_hotkeys(self.app.hotkeys());
                 rcx.runner.set_selection(self.app.selection());
                 rcx.runner.push_toasts(self.app.drain_toasts());

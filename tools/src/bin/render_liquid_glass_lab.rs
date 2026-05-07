@@ -80,7 +80,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         renderer.register_shader_with(&device, shader.name, shader.wgsl, shader.samples_backdrop);
     }
     app.before_build();
-    let mut tree = app.build();
+    let theme = app.theme();
+    let cx = BuildCx::new(&theme);
+    let mut tree = app.build(&cx);
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

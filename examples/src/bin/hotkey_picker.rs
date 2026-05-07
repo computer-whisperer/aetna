@@ -34,7 +34,7 @@ struct Picker {
 }
 
 impl App for Picker {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         let header = row([
             badge(if self.search_active {
                 "/ active"

@@ -51,7 +51,7 @@ mod web_entry {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    use aetna_core::{App, Cursor, KeyModifiers, PointerButton, Rect, UiKey};
+    use aetna_core::{App, BuildCx, Cursor, KeyModifiers, PointerButton, Rect, UiKey};
     use aetna_wgpu::{MsaaTarget, PrepareTimings, Runner};
 
     const SAMPLE_COUNT: u32 = 4;
@@ -594,8 +594,10 @@ mod web_entry {
                         .create_view(&wgpu::TextureViewDescriptor::default());
 
                     self.app.before_build();
-                    let mut tree = self.app.build();
-                    gfx.renderer.set_theme(self.app.theme());
+                    let theme = self.app.theme();
+                    let cx = BuildCx::new(&theme);
+                    let mut tree = self.app.build(&cx);
+                    gfx.renderer.set_theme(theme);
                     gfx.renderer.set_hotkeys(self.app.hotkeys());
                     gfx.renderer.set_selection(self.app.selection());
                     let t_after_build = Instant::now();

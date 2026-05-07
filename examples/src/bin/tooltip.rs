@@ -25,7 +25,7 @@ struct Demo {
 }
 
 impl App for Demo {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         column([
             h2("Tooltip demo"),
             text(match self.last_clicked {

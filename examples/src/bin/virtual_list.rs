@@ -39,7 +39,7 @@ fn build_row(i: usize) -> El {
 }
 
 impl App for VirtualListApp {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         let header = match self.last_clicked {
             Some(i) => format!("clicked row {i} ({} times total)", self.clicks),
             None => format!("{ROW_COUNT} rows · scroll with the wheel · click any row"),

@@ -15,7 +15,7 @@
 //! }
 //!
 //! impl App for Form {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         text_input(&self.name, &self.selection, "name")
 //!     }
 //!

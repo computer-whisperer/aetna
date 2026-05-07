@@ -282,7 +282,7 @@ impl Demo {
 }
 
 impl App for Demo {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         let commits = Arc::clone(&self.commits);
         let selected = self.selected;
         let header_text = match (self.selected, &self.last_action) {

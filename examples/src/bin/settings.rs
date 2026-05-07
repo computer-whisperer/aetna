@@ -11,7 +11,7 @@ use aetna_core::prelude::*;
 struct Settings;
 
 impl App for Settings {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         column([
             h1("Settings"),
             card(

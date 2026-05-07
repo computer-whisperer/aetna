@@ -25,7 +25,7 @@ struct VolumeDemo {
 }
 
 impl App for VolumeDemo {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         column([
             h2("Slider keyboard demo"),
             text(format!("{:.0}%", self.value * 100.0))

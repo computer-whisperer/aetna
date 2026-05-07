@@ -56,7 +56,7 @@ impl SettingsModalApp {
 }
 
 impl App for SettingsModalApp {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         let main = column([
             h1("Settings modal"),
             text(

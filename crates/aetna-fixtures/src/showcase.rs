@@ -287,7 +287,7 @@ impl Showcase {
 }
 
 impl App for Showcase {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         // Root is an overlay stack so the runtime can append
         // tooltip / toast layers as siblings of the main view
         // without those layers competing for row-axis space —

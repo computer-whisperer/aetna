@@ -129,7 +129,7 @@ impl Form {
 }
 
 impl App for Form {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         column([
             h2("Form"),
             field_row(

@@ -8,7 +8,7 @@
 //!
 //! Usage: `cargo run -p aetna-tools --bin render_showcase_glass`
 
-use aetna_core::{AnimationMode, App, Rect};
+use aetna_core::{AnimationMode, App, BuildCx, Rect};
 use aetna_fixtures::{Showcase, showcase::Section};
 use aetna_wgpu::{MsaaTarget, Runner};
 
@@ -80,7 +80,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     app.before_build();
-    let mut tree = app.build();
+    let theme = app.theme();
+    let cx = BuildCx::new(&theme);
+    let mut tree = app.build(&cx);
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

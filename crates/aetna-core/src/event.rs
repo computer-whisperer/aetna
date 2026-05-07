@@ -17,7 +17,7 @@
 //! struct Counter { value: i32 }
 //!
 //! impl App for Counter {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         column([
 //!             h1(format!("{}", self.value)),
 //!             row([
@@ -212,7 +212,7 @@ fn key_eq(a: &UiKey, b: &UiKey) -> bool {
 /// # use aetna_core::prelude::*;
 /// # struct Counter { value: i32 }
 /// # impl App for Counter {
-/// # fn build(&self) -> El { button("+").key("inc") }
+/// # fn build(&self, _cx: &BuildCx) -> El { button("+").key("inc") }
 /// fn on_event(&mut self, event: UiEvent) {
 ///     if event.is_click_or_activate("inc") {
 ///         self.value += 1;
@@ -411,6 +411,41 @@ pub enum UiEventKind {
     SelectionChanged,
 }
 
+/// Per-frame, read-only context for [`App::build`].
+///
+/// The runner snapshots the app's [`crate::Theme`] before calling
+/// `build` and exposes it through `cx.theme()` / `cx.palette()` so app
+/// code can branch on the active palette (a custom widget that picks
+/// between two non-token colors based on dark vs. light, for instance).
+/// `BuildCx` is the explicit handle for this — token references inside
+/// widgets resolve through the palette automatically and don't need it.
+///
+/// Future fields like viewport metrics or frame phase will live here so
+/// the API stays additive: adding a new accessor on `BuildCx` doesn't
+/// break apps that ignore the context.
+#[derive(Copy, Clone, Debug)]
+pub struct BuildCx<'a> {
+    theme: &'a crate::Theme,
+}
+
+impl<'a> BuildCx<'a> {
+    /// Construct a [`BuildCx`] borrowing the supplied theme. Hosts call
+    /// this once per frame after [`App::theme`] and before [`App::build`].
+    pub fn new(theme: &'a crate::Theme) -> Self {
+        Self { theme }
+    }
+
+    /// The active runtime theme for this frame.
+    pub fn theme(&self) -> &crate::Theme {
+        self.theme
+    }
+
+    /// Shorthand for `self.theme().palette()`.
+    pub fn palette(&self) -> &crate::Palette {
+        self.theme.palette()
+    }
+}
+
 /// The application contract. Implement this on your state struct and
 /// pass it to a host runner (e.g., `aetna_winit_wgpu::run`).
 pub trait App {
@@ -429,7 +464,13 @@ pub trait App {
     /// Project current state into a scene tree. Called whenever the
     /// host requests a redraw, after [`Self::before_build`]. Prefer to
     /// keep this pure: read current state and return a fresh tree.
-    fn build(&self) -> El;
+    ///
+    /// `cx` carries per-frame, read-only context (active theme, future
+    /// viewport / phase metadata). Apps that don't need to branch on
+    /// the theme during construction can ignore the parameter — token
+    /// references in widget code resolve through the palette
+    /// automatically.
+    fn build(&self, cx: &BuildCx) -> El;
 
     /// Update state in response to a routed event. Default: no-op.
     fn on_event(&mut self, _event: UiEvent) {}

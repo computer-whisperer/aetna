@@ -22,8 +22,8 @@ pub use crate::bundle::manifest::{draw_ops_text, shader_manifest};
 pub use crate::bundle::svg::svg_from_ops;
 pub use crate::cursor::Cursor;
 pub use crate::event::{
-    App, AppShader, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind, UiKey,
-    UiTarget,
+    App, AppShader, BuildCx, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent,
+    UiEventKind, UiKey, UiTarget,
 };
 pub use crate::icons::{all_icon_names, icon};
 pub use crate::image::{Image, ImageFit};
@@ -37,6 +37,7 @@ pub use crate::text::metrics::{
     MeasuredText, TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text, line_height,
     line_width, measure_text, selection_rects, wrap_lines,
 };
+pub use crate::palette::Palette;
 pub use crate::theme::Theme;
 pub use crate::toast::{Toast, ToastLevel, ToastSpec};
 pub use crate::tokens;

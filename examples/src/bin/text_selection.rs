@@ -51,7 +51,7 @@ impl Default for Demo {
 }
 
 impl App for Demo {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         column([
             h2("Static text selection"),
             paragraph(PARA_A).key("para-a").selectable(),
@@ -84,7 +84,9 @@ impl App for Demo {
             return;
         }
         if let Some(ClipboardKind::Copy) = text_input::clipboard_request(&event) {
-            let tree = self.build();
+            let theme = self.theme();
+            let cx = BuildCx::new(&theme);
+            let tree = self.build(&cx);
             if let Some(text) = selection::selected_text(&tree, &self.selection) {
                 if let Some(cb) = self.clipboard.as_mut() {
                     let _ = cb.set_text(text.clone());

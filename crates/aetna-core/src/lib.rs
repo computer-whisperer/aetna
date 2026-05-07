@@ -27,7 +27,7 @@
 //! }
 //!
 //! impl App for Counter {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         column([
 //!             h1(format!("{}", self.value)),
 //!             row([
@@ -49,7 +49,9 @@
 //!     }
 //! }
 //!
-//! let mut ui = Counter { value: 0 }.build();
+//! let app = Counter { value: 0 };
+//! let theme = app.theme();
+//! let mut ui = app.build(&BuildCx::new(&theme));
 //! let bundle = render_bundle(&mut ui, Rect::new(0.0, 0.0, 720.0, 400.0), None);
 //! assert!(!bundle.svg.is_empty());
 //! ```
@@ -148,8 +150,8 @@ pub use bundle::svg::svg_from_ops;
 pub use cursor::Cursor;
 pub use draw_ops::{draw_ops, draw_ops_with_theme};
 pub use event::{
-    App, AppShader, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind, UiKey,
-    UiTarget,
+    App, AppShader, BuildCx, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent,
+    UiEventKind, UiKey, UiTarget,
 };
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};

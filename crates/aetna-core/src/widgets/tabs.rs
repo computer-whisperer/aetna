@@ -17,7 +17,7 @@
 //! struct Settings { tab: String }
 //!
 //! impl App for Settings {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         column([
 //!             tabs_list("settings", &self.tab, [
 //!                 ("account", "Account"),

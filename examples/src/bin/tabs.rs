@@ -23,7 +23,7 @@ struct Demo {
 }
 
 impl App for Demo {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         let body = match self.tab.as_str() {
             "account" => account_panel(),
             "appearance" => appearance_panel(),

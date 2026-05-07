@@ -12,7 +12,7 @@
 //! struct Prefs { auto_save: bool }
 //!
 //! impl App for Prefs {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         row([
 //!             text("Auto-save").label(),
 //!             spacer(),

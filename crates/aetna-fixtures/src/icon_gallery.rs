@@ -5,7 +5,7 @@ use aetna_core::prelude::*;
 pub struct IconGallery;
 
 impl App for IconGallery {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         icon_gallery()
     }
 }
@@ -13,7 +13,7 @@ impl App for IconGallery {
 pub struct ReliefIconGallery;
 
 impl App for ReliefIconGallery {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         icon_gallery()
     }
 
@@ -25,7 +25,7 @@ impl App for ReliefIconGallery {
 pub struct GlassIconGallery;
 
 impl App for GlassIconGallery {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         icon_gallery()
     }
 

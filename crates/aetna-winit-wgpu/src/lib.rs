@@ -104,8 +104,8 @@ impl<A: App> App for BasicApp<A> {
         self.0.before_build();
     }
 
-    fn build(&self) -> aetna_core::El {
-        self.0.build()
+    fn build(&self, cx: &aetna_core::BuildCx) -> aetna_core::El {
+        self.0.build(cx)
     }
 
     fn on_event(&mut self, event: aetna_core::UiEvent) {
@@ -510,8 +510,10 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             .create_view(&wgpu::TextureViewDescriptor::default());
 
                         WinitWgpuApp::before_build(&mut self.app);
-                        let mut tree = self.app.build();
-                        gfx.renderer.set_theme(self.app.theme());
+                        let theme = self.app.theme();
+                        let cx = aetna_core::BuildCx::new(&theme);
+                        let mut tree = self.app.build(&cx);
+                        gfx.renderer.set_theme(theme);
                         // Snapshot hotkeys alongside build() so the chord list
                         // reflects current state (apps can return different
                         // hotkeys per mode, e.g. `j/k` only in list view).
@@ -711,7 +713,7 @@ mod tests {
     fn basic_app_forwards_selection_to_inner() {
         struct AppWithSelection;
         impl App for AppWithSelection {
-            fn build(&self) -> aetna_core::El {
+            fn build(&self, _cx: &aetna_core::BuildCx) -> aetna_core::El {
                 aetna_core::widgets::text::text("hi")
             }
             fn selection(&self) -> Selection {

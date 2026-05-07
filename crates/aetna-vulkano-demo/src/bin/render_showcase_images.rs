@@ -10,8 +10,7 @@
 
 use std::sync::Arc;
 
-use aetna_core::App;
-use aetna_core::{AnimationMode, Rect};
+use aetna_core::{AnimationMode, App, BuildCx, Rect};
 use aetna_fixtures::Showcase;
 use aetna_fixtures::showcase::Section;
 use aetna_vulkano::Runner;
@@ -108,7 +107,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut app = Showcase::with_section(Section::Images);
     app.before_build();
-    let mut tree = app.build();
+    let theme = app.theme();
+    let cx = BuildCx::new(&theme);
+    let mut tree = app.build(&cx);
     renderer.prepare(&mut tree, viewport, scale_factor);
 
     let readback = Buffer::new_slice::<u8>(

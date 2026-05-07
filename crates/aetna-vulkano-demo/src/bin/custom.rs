@@ -27,7 +27,7 @@ fn gradient_button(label: &str, top: Color, bottom: Color, radius: f32) -> El {
 struct Custom;
 
 impl App for Custom {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         column([
             h1("Custom shader (vulkano)"),
             paragraph(

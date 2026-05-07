@@ -8,7 +8,7 @@ pub const LIQUID_BACKDROP_LAB_WGSL: &str = include_str!("../shaders/liquid_backd
 pub struct LiquidGlassLab;
 
 impl App for LiquidGlassLab {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         liquid_glass_lab()
     }
 

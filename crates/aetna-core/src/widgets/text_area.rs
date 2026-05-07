@@ -16,7 +16,7 @@
 //! }
 //!
 //! impl App for Notes {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         text_area(&self.body, &self.selection, "body")
 //!     }
 //!

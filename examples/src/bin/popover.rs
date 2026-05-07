@@ -47,7 +47,7 @@ const EDIT_ACTIONS: &[&str] = &["Cut", "Copy", "Paste", "Select All"];
 const CTX_ACTIONS: &[&str] = &["Inspect", "Copy link", "Save as…"];
 
 impl App for Demo {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         let main = column([
             h2("Popover demo"),
             text(self.summary()).muted(),

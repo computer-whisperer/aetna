@@ -21,7 +21,7 @@ struct Counter {
 }
 
 impl App for Counter {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         column([
             h1(format!("{}", self.value)),
             row([
@@ -133,7 +133,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // geometry. No GPU draw yet — we discard this pass's instance data
     // by just not running encode/submit.
     app.before_build();
-    let mut tree1 = app.build();
+    let theme1 = app.theme();
+    let build_cx1 = BuildCx::new(&theme1);
+    let mut tree1 = app.build(&build_cx1);
     renderer.prepare(&device, &queue, &mut tree1, viewport, scale_factor);
 
     // Find the "+" button's center from the laid-out tree, then move
@@ -150,7 +152,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Second prepare: fresh tree, library applies the now-set hover
     // key automatically, draw_ops emits the lightened fill.
     app.before_build();
-    let mut tree2 = app.build();
+    let theme2 = app.theme();
+    let build_cx2 = BuildCx::new(&theme2);
+    let mut tree2 = app.build(&build_cx2);
     renderer.prepare(&device, &queue, &mut tree2, viewport, scale_factor);
 
     // ---- Render to texture ----

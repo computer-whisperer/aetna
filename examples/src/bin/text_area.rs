@@ -80,7 +80,7 @@ mod primary {
 }
 
 impl App for Notes {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         column([
             h2("Notes"),
             text_area(&self.body, &self.selection, BODY_KEY).height(Size::Fixed(180.0)),

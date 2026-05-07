@@ -15,7 +15,7 @@ struct Picker {
 }
 
 impl App for Picker {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         let rows: Vec<El> = (0..30)
             .map(|i| {
                 let key = format!("row-{i}");

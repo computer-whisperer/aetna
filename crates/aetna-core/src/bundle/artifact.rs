@@ -44,7 +44,8 @@
 //!         // Local UI flags? Drive them through the real on_event path:
 //!         scene.drive_setup(&mut app);
 //!
-//!         let mut tree = app.build();
+//!         let theme = app.theme();
+//!         let mut tree = app.build(&BuildCx::new(&theme));
 //!         let bundle = render_bundle(&mut tree, viewport, Some(env!("CARGO_PKG_NAME")));
 //!         write_bundle(&bundle, &out_dir, &scene.slug())?;
 //!         if !bundle.lint.findings.is_empty() {

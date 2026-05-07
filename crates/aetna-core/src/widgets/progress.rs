@@ -11,7 +11,7 @@
 //! struct Storage { used_pct: u32 }
 //!
 //! impl App for Storage {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         column([
 //!             row([
 //!                 text("Storage").label(),

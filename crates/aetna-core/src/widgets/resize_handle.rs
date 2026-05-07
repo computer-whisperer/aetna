@@ -29,7 +29,7 @@
 //! }
 //!
 //! impl App for Editor {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         row([
 //!             file_tree().width(Size::Fixed(self.sidebar_w)),
 //!             resize_handle(Axis::Row).key("sidebar:resize"),
@@ -62,7 +62,7 @@
 //! }
 //!
 //! impl App for Diff {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         row([
 //!             left().width(Size::Fill(self.weights[0])),
 //!             resize_handle(Axis::Row).key("diff:split"),

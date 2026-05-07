@@ -7,7 +7,7 @@
 //! open. Compose at the root using `stack`:
 //!
 //! ```ignore
-//! fn build(&self) -> El {
+//! fn build(&self, _cx: &BuildCx) -> El {
 //!     let mut layers = vec![self.main_view()];
 //!     if self.menu_open {
 //!         layers.push(popover(

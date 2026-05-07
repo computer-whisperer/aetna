@@ -58,7 +58,7 @@ fn circular(ctx: LayoutCtx) -> Vec<Rect> {
 }
 
 impl App for Compass {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         let centre_label = match self.last {
             Some(name) => format!("{}\n{}", name, self.clicks),
             None => "click a\nbutton".to_string(),

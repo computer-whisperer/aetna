@@ -15,7 +15,7 @@
 //! }
 //!
 //! impl App for Picker {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         let trigger = select_trigger("color", &self.color);
 //!         let main = column([row([text("Color"), trigger])]);
 //!

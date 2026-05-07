@@ -11,7 +11,7 @@
 //! struct Prefs { auto_save: bool, volume: f32 }
 //!
 //! impl App for Prefs {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         card("Audio", [
 //!             field_row("Auto-save", switch(self.auto_save).key("auto_save")),
 //!             field_row(

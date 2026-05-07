@@ -13,7 +13,7 @@
 //! struct Prefs { theme: String }
 //!
 //! impl App for Prefs {
-//!     fn build(&self) -> El {
+//!     fn build(&self, _cx: &BuildCx) -> El {
 //!         radio_group("theme", &self.theme, [
 //!             ("system", "Match system"),
 //!             ("light", "Light"),

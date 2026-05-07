@@ -46,7 +46,7 @@ struct Palette {
 }
 
 impl App for Palette {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         let swatches: Vec<El> = SWATCHES
             .iter()
             .enumerate()

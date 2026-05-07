@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use aetna_core::App;
+use aetna_core::{App, BuildCx};
 use aetna_core::prelude::{Rect, render_bundle, write_bundle};
 use aetna_fixtures::{Showcase, showcase::Section};
 
@@ -36,7 +36,9 @@ fn main() -> std::io::Result<()> {
     ] {
         let mut app = Showcase::with_section(section);
         app.before_build();
-        let mut tree = app.build();
+        let theme = app.theme();
+        let cx = BuildCx::new(&theme);
+        let mut tree = app.build(&cx);
 
         // Showcase nodes' source paths point into `aetna-fixtures`
         // (where `Showcase::build` lives) — not this `aetna-tools`
