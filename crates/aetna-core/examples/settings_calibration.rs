@@ -182,13 +182,17 @@ fn settings_body() -> El {
         column([
             h1("Account").heading().key("metric:section.title"),
             text("Manage identity, workspace defaults, and security preferences.")
-                .caption()
+                .muted()
+                .wrap_text()
                 .key("metric:page.subtitle"),
         ])
         .gap(tokens::SPACE_XS)
         .height(Size::Hug),
-        profile_card(),
-        preferences_card(),
+        scroll([profile_card(), preferences_card()])
+            .key("settings-body-scroll")
+            .gap(tokens::SPACE_MD)
+            .width(Size::Fill(1.0))
+            .height(Size::Fill(1.0)),
     ])
     .gap(tokens::SPACE_MD)
     .width(Size::Fill(1.0))
@@ -200,7 +204,7 @@ fn profile_card() -> El {
         "Profile",
         [
             text("This information appears in audit logs and shared documents.")
-                .caption()
+                .muted()
                 .wrap_text()
                 .width(Size::Fill(1.0)),
             row([
@@ -248,24 +252,31 @@ fn preferences_card() -> El {
     card(
         "Preferences",
         [
-            text("Defaults used when creating new dashboards and exports.").caption(),
-            preference_row(
-                "Compact navigation",
-                "Use tighter rows in the sidebar and command menus.",
-                switch(true).key("compact-navigation"),
-            ),
-            divider(),
-            preference_row(
-                "Email summaries",
-                "Send a daily digest when documents change.",
-                switch(false).key("email-summaries"),
-            ),
-            divider(),
-            preference_row(
-                "Require approval",
-                "Route external sharing through an owner review.",
-                checkbox(true).key("approval-required"),
-            ),
+            text("Defaults used when creating new dashboards and exports.")
+                .muted()
+                .ellipsis()
+                .width(Size::Fill(1.0)),
+            column([
+                preference_row(
+                    "Compact navigation",
+                    "Use tighter rows in the sidebar and command menus.",
+                    switch(true).key("compact-navigation"),
+                ),
+                divider(),
+                preference_row(
+                    "Email summaries",
+                    "Send a daily digest when documents change.",
+                    switch(false).key("email-summaries"),
+                ),
+                divider(),
+                preference_row(
+                    "Require approval",
+                    "Route external sharing through an owner review.",
+                    checkbox(true).key("approval-required"),
+                ),
+            ])
+            .gap(0.0)
+            .width(Size::Fill(1.0)),
         ],
     )
     .key("metric:preferences.card")
@@ -290,8 +301,7 @@ fn preference_row(title: &'static str, description: &'static str, control: El) -
     } else {
         format!("preference-{title}")
     })
-    .gap(tokens::SPACE_MD)
-    .height(Size::Fixed(52.0))
+    .metrics_role(MetricsRole::PreferenceRow)
     .align(Align::Center)
 }
 
@@ -307,7 +317,7 @@ fn security_card() -> El {
         "Security",
         [
             text("Two-factor authentication is enabled for all privileged users.")
-                .caption()
+                .muted()
                 .wrap_text()
                 .width(Size::Fill(1.0)),
             compact_stat("Passkeys", "2 registered", badge("On").success()),
@@ -322,7 +332,7 @@ fn scale_card() -> El {
         "Interface scale",
         [
             text("Reference captures keep browser zoom fixed and vary root UI scale.")
-                .caption()
+                .muted()
                 .wrap_text()
                 .width(Size::Fill(1.0)),
             row([text("Dense").caption(), spacer(), text("Default").caption()]),

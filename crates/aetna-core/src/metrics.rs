@@ -40,6 +40,7 @@ pub enum MetricsRole {
     Panel,
     MenuItem,
     ListItem,
+    PreferenceRow,
     TableHeader,
     TableRow,
     TabTrigger,
@@ -66,6 +67,7 @@ pub struct ThemeMetrics {
     panel_density: Option<Density>,
     menu_density: Option<Density>,
     list_density: Option<Density>,
+    preference_density: Option<Density>,
     table_density: Option<Density>,
     tab_density: Option<Density>,
     choice_density: Option<Density>,
@@ -146,6 +148,11 @@ impl ThemeMetrics {
 
     pub fn with_list_density(mut self, density: Density) -> Self {
         self.list_density = Some(density);
+        self
+    }
+
+    pub fn with_preference_density(mut self, density: Density) -> Self {
+        self.preference_density = Some(density);
         self
     }
 
@@ -233,6 +240,13 @@ impl ThemeMetrics {
                     .unwrap_or(self.default_density);
                 apply_list_item(el, list_item_metrics(density));
             }
+            Some(MetricsRole::PreferenceRow) => {
+                let density = el
+                    .density
+                    .or(self.preference_density)
+                    .unwrap_or(self.default_density);
+                apply_preference_row(el, preference_row_metrics(density));
+            }
             Some(MetricsRole::TableHeader) => {
                 let density = el
                     .density
@@ -319,6 +333,7 @@ impl Default for ThemeMetrics {
             panel_density: None,
             menu_density: None,
             list_density: None,
+            preference_density: None,
             table_density: None,
             tab_density: None,
             choice_density: None,
@@ -700,6 +715,29 @@ fn list_item_metrics(density: Density) -> RowMetrics {
     }
 }
 
+fn preference_row_metrics(density: Density) -> RowMetrics {
+    match density {
+        Density::Compact => RowMetrics {
+            height: 52.0,
+            padding_x: 12.0,
+            gap: 16.0,
+            radius: 0.0,
+        },
+        Density::Comfortable => RowMetrics {
+            height: 60.0,
+            padding_x: 16.0,
+            gap: 16.0,
+            radius: 0.0,
+        },
+        Density::Spacious => RowMetrics {
+            height: 68.0,
+            padding_x: 20.0,
+            gap: 16.0,
+            radius: 0.0,
+        },
+    }
+}
+
 fn table_header_metrics(density: Density) -> RowMetrics {
     match density {
         Density::Compact => RowMetrics {
@@ -747,6 +785,10 @@ fn table_row_metrics(density: Density) -> RowMetrics {
 }
 
 fn apply_list_item(el: &mut El, metrics: RowMetrics) {
+    apply_row_metrics(el, metrics);
+}
+
+fn apply_preference_row(el: &mut El, metrics: RowMetrics) {
     apply_row_metrics(el, metrics);
 }
 
@@ -902,6 +944,20 @@ mod tests {
         assert_eq!(el.height, Size::Fixed(32.0));
         assert_eq!(el.padding, Sides::xy(8.0, 0.0));
         assert_eq!(el.gap, 6.0);
+    }
+
+    #[test]
+    fn preference_density_applies_to_two_line_settings_rows() {
+        let mut el =
+            El::new(crate::Kind::Custom("preference-row")).metrics_role(MetricsRole::PreferenceRow);
+
+        ThemeMetrics::default()
+            .with_preference_density(Density::Spacious)
+            .apply_to_tree(&mut el);
+
+        assert_eq!(el.height, Size::Fixed(68.0));
+        assert_eq!(el.padding, Sides::xy(20.0, 0.0));
+        assert_eq!(el.gap, 16.0);
     }
 
     #[test]

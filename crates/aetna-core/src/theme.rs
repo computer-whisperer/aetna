@@ -153,6 +153,11 @@ impl Theme {
         self
     }
 
+    pub fn with_preference_density(mut self, density: Density) -> Self {
+        self.metrics = self.metrics.with_preference_density(density);
+        self
+    }
+
     pub fn with_table_density(mut self, density: Density) -> Self {
         self.metrics = self.metrics.with_table_density(density);
         self

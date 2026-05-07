@@ -258,7 +258,7 @@ fn metric_card(
                 icon(icon_name)
                     .color(tokens::TEXT_MUTED_FOREGROUND)
                     .icon_size(14.0),
-                text(title).caption().ellipsis().width(Size::Fill(1.0)),
+                text(title).muted().ellipsis().width(Size::Fill(1.0)),
             ])
             .gap(tokens::SPACE_XS)
             .width(Size::Fill(1.0))
@@ -290,7 +290,7 @@ fn chart_card() -> El {
     card(
         "Visitors for the last 6 months",
         [
-            text("Total visitors by channel.").caption(),
+            text("Total visitors by channel.").muted(),
             row(chart_bars())
                 .gap(2.0)
                 .height(Size::Fixed(150.0))
@@ -329,7 +329,7 @@ fn sales_card() -> El {
     card(
         "Recent Sales",
         [
-            text("You made 265 sales this month.").caption(),
+            text("You made 265 sales this month.").muted(),
             sale_row("OM", "Olivia Martin", "olivia@example.com", "+$1,999.00"),
             sale_row("JL", "Jackson Lee", "jackson@example.com", "+$39.00"),
             sale_row("IN", "Isabella Nguyen", "isabella@example.com", "+$299.00"),
@@ -423,14 +423,11 @@ fn document_row(
             .small()
             .ellipsis()
             .width(Size::Fill(1.7)),
-        text(section).caption().ellipsis().width(Size::Fill(1.0)),
+        text(section).muted().ellipsis().width(Size::Fill(1.0)),
         status_badge.width(Size::Fixed(112.0)),
         text(target).label().small().width(Size::Fixed(70.0)),
         text(limit).label().small().width(Size::Fixed(70.0)),
-        text(reviewer)
-            .caption()
-            .ellipsis()
-            .width(Size::Fixed(140.0)),
+        text(reviewer).muted().ellipsis().width(Size::Fixed(140.0)),
     ])
     .key(if header == "Cover page" {
         "metric:table.row"

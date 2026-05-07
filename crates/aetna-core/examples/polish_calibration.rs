@@ -129,7 +129,7 @@ fn toolbar() -> El {
         column([
             h1("Polish calibration").key("metric:page.title"),
             text("A representative app surface for default tuning.")
-                .caption()
+                .muted()
                 .key("metric:page.subtitle"),
         ])
         .gap(tokens::SPACE_XS)
@@ -174,7 +174,7 @@ fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, posit
             } else {
                 "Needs visual attention"
             })
-            .caption(),
+            .muted(),
         ],
     )
     .key(if label == "Latency" {
@@ -190,47 +190,51 @@ fn table_card() -> El {
         "Reference rows",
         [
             row([
-                text("Status").caption().width(Size::Fixed(86.0)),
-                text("Surface").caption().width(Size::Fill(1.0)),
-                text("Owner").caption().width(Size::Fixed(110.0)),
-                text("State").caption().width(Size::Fixed(86.0)),
+                text("Status").muted().width(Size::Fixed(86.0)),
+                text("Surface").muted().width(Size::Fill(1.0)),
+                text("Owner").muted().width(Size::Fixed(110.0)),
+                text("State").muted().width(Size::Fixed(86.0)),
             ])
             .key("metric:table.header")
             .metrics_role(MetricsRole::TableHeader),
             divider(),
-            data_row("OK", "Settings card", "core", "selected", true, "success"),
-            data_row(
-                "WARN",
-                "Command palette density",
-                "widgets",
-                "needs work",
-                false,
-                "warning",
-            ),
-            data_row(
-                "ERR",
-                "Disabled and invalid states",
-                "style",
-                "missing",
-                false,
-                "destructive",
-            ),
-            data_row(
-                "INFO",
-                "Token resolution",
-                "theme",
-                "planned",
-                false,
-                "info",
-            ),
-            data_row(
-                "OK",
-                "Popover elevation",
-                "shader",
-                "queued",
-                false,
-                "success",
-            ),
+            column([
+                data_row("OK", "Settings card", "core", "selected", true, "success"),
+                data_row(
+                    "WARN",
+                    "Command palette density",
+                    "widgets",
+                    "needs work",
+                    false,
+                    "warning",
+                ),
+                data_row(
+                    "ERR",
+                    "Disabled and invalid states",
+                    "style",
+                    "missing",
+                    false,
+                    "destructive",
+                ),
+                data_row(
+                    "INFO",
+                    "Token resolution",
+                    "theme",
+                    "planned",
+                    false,
+                    "info",
+                ),
+                data_row(
+                    "OK",
+                    "Popover elevation",
+                    "shader",
+                    "queued",
+                    false,
+                    "success",
+                ),
+            ])
+            .gap(tokens::SPACE_XS)
+            .width(Size::Fill(1.0)),
         ],
     )
     .key("metric:table.card")
@@ -272,7 +276,7 @@ fn data_row(
         ])
         .gap(2.0)
         .width(Size::Fill(1.0)),
-        text(owner).caption().ellipsis().width(Size::Fixed(110.0)),
+        text(owner).muted().ellipsis().width(Size::Fixed(110.0)),
         text(state)
             .label()
             .small()
@@ -378,7 +382,7 @@ fn form_probe() -> El {
             spacer(),
         ]),
         text("These are currently hand-styled probes; they should become semantic modifiers.")
-            .caption()
+            .muted()
             .wrap_text()
             .max_lines(1)
             .width(Size::Fill(1.0)),

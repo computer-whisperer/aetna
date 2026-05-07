@@ -102,7 +102,8 @@ Custom widgets opt into the same defaults by setting `.metrics_role(...)`
 to one of the stock `MetricsRole`s; no special `Kind` is required.
 Use `Button` / `IconButton` / `Input` / `TextArea` / `Badge` for
 control-like surfaces, `Card` / `Panel` / `MenuItem` / `ListItem` for
-grouped content, `TableHeader` / `TableRow` for table-like rows,
+grouped content, `PreferenceRow` for two-line settings rows,
+`TableHeader` / `TableRow` for table-like rows,
 `TabTrigger` / `TabList` for segmented controls, `ChoiceControl` /
 `ChoiceItem` for checkbox/radio-style widgets, and `Slider` /
 `Progress` for range indicators.
@@ -115,6 +116,7 @@ Theme::aetna_dark()
     .with_input_size(ComponentSize::Md)
     .with_tab_size(ComponentSize::Sm)
     .with_list_density(Density::Compact)
+    .with_preference_density(Density::Compact)
     .with_table_density(Density::Compact)
     .with_panel_density(Density::Comfortable)
 ```
@@ -149,7 +151,7 @@ For bounded wrapped copy, use `.wrap_text().max_lines(n)`. The draw-op pass clam
 
 `TextRole` (`Body`, `Caption`, `Label`, `Title`, `Heading`, `Display`, `Code`) is the semantic typography role for text-bearing nodes. Set it with `.text_role(...)`, or use the role modifiers `.body()`, `.caption()`, `.label()`, `.title()`, `.heading()`, `.display()`, and `.code()`.
 
-Roles apply default size/weight/color so product code can say what a text run is before overriding a specific detail. For example, table headers and helper copy should usually be `.caption()`, button/menu labels should be `.label()`, card titles should be `.title()`, page titles should be `.heading()` or `.display()`, and inline code should use `.code()`. Tree dumps show non-body roles as `text_role=...`, which gives the agent loop a semantic handle when tuning density and hierarchy.
+Roles apply default size/weight/color so product code can say what a text run is before overriding a specific detail. For example, table headers and tiny metadata should usually be `.caption()`, button/menu labels should be `.label()`, card titles should be `.title()`, page titles should be `.heading()` or `.display()`, and inline code should use `.code()`. For shadcn-style secondary copy such as page subtitles, card descriptions, and explanatory helper text, prefer `.muted()` on body text; that preserves the normal 14px body rhythm while switching to `TEXT_MUTED_FOREGROUND`. Tree dumps show non-body roles as `text_role=...`, which gives the agent loop a semantic handle when tuning density and hierarchy.
 
 ### 3.3 Icons
 
