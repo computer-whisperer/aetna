@@ -218,17 +218,26 @@ where
     V: std::fmt::Display,
     L: Into<String>,
 {
+    // Capture once so the location applies to children too.
+    // `#[track_caller]` doesn't propagate through closures, so naive
+    // `tab_trigger(...)` calls inside `.map(...)` would record the
+    // closure's source instead of the user's `tabs_list(...)` call —
+    // making lint findings on the triggers (e.g. text overflow from
+    // labels that don't fit) point inside aetna-core. Forwarding via
+    // `.at_loc(caller)` keeps the user's call site as the blame
+    // target for both lint findings and tree dumps.
+    let caller = Location::caller();
     let key = key.into();
     let current_str = current.to_string();
     let triggers: Vec<El> = options
         .into_iter()
         .map(|(value, label)| {
             let selected = value.to_string() == current_str;
-            tab_trigger(&key, value, label, selected)
+            tab_trigger(&key, value, label, selected).at_loc(caller)
         })
         .collect();
     El::new(Kind::Custom("tabs_list"))
-        .at_loc(Location::caller())
+        .at_loc(caller)
         .key(key)
         .axis(Axis::Row)
         .gap(tokens::SPACE_XS)

@@ -200,17 +200,20 @@ where
     V: std::fmt::Display,
     L: Into<String>,
 {
+    // Capture once so the location flows through to each item; see
+    // `tabs_list` for the closure / `#[track_caller]` rationale.
+    let caller = Location::caller();
     let key = key.into();
     let current_str = current.to_string();
     let items: Vec<El> = options
         .into_iter()
         .map(|(value, label)| {
             let selected = value.to_string() == current_str;
-            radio_item(&key, value, label, selected)
+            radio_item(&key, value, label, selected).at_loc(caller)
         })
         .collect();
     El::new(Kind::Custom("radio_group"))
-        .at_loc(Location::caller())
+        .at_loc(caller)
         .key(key)
         .axis(Axis::Column)
         .gap(tokens::SPACE_XS)

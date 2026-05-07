@@ -244,10 +244,20 @@ where
     V: std::fmt::Display,
     L: Into<String>,
 {
+    // Capture once so the user's call site flows through to each
+    // `menu_item`. `#[track_caller]` doesn't propagate through
+    // `.map(...)` closures, so the items would otherwise record the
+    // closure's source — see `tabs_list` for the same pattern and
+    // motivation.
+    let caller = Location::caller();
     let key = key.into();
     let items: Vec<El> = options
         .into_iter()
-        .map(|(value, label)| menu_item(label).key(select_option_key(&key, &value)))
+        .map(|(value, label)| {
+            menu_item(label)
+                .at_loc(caller)
+                .key(select_option_key(&key, &value))
+        })
         .collect();
     popover(key.clone(), Anchor::below_key(key), popover_panel(items))
 }
