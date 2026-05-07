@@ -342,12 +342,15 @@ struct ControlMetrics {
 }
 
 fn control_metrics(size: ComponentSize, kind: ControlKind) -> ControlMetrics {
-    let (height, padding_x, radius, gap): (f32, f32, f32, f32) = match size {
+    let (mut height, padding_x, radius, gap): (f32, f32, f32, f32) = match size {
         ComponentSize::Xs => (28.0, 8.0, 5.0, 4.0),
         ComponentSize::Sm => (32.0, 10.0, 6.0, 6.0),
         ComponentSize::Md => (36.0, 12.0, 7.0, 8.0),
         ComponentSize::Lg => (40.0, 14.0, 8.0, 8.0),
     };
+    if matches!(kind, ControlKind::Input) && matches!(size, ComponentSize::Lg) {
+        height = 44.0;
+    }
     match kind {
         ControlKind::IconButton => ControlMetrics {
             height,
@@ -683,7 +686,7 @@ fn list_item_metrics(density: Density) -> RowMetrics {
             radius: 6.0,
         },
         Density::Comfortable => RowMetrics {
-            height: 36.0,
+            height: 40.0,
             padding_x: 10.0,
             gap: 8.0,
             radius: 7.0,
@@ -729,13 +732,13 @@ fn table_row_metrics(density: Density) -> RowMetrics {
             radius: 6.0,
         },
         Density::Comfortable => RowMetrics {
-            height: 44.0,
+            height: 52.0,
             padding_x: 10.0,
             gap: 10.0,
             radius: 7.0,
         },
         Density::Spacious => RowMetrics {
-            height: 52.0,
+            height: 56.0,
             padding_x: 12.0,
             gap: 12.0,
             radius: 8.0,
@@ -773,7 +776,7 @@ fn apply_row_metrics(el: &mut El, metrics: RowMetrics) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{button, card, tabs_list};
+    use crate::{button, card, tabs_list, text_input};
 
     #[test]
     fn theme_default_component_size_applies_to_stock_control() {
@@ -795,6 +798,15 @@ mod tests {
             .apply_to_tree(&mut el);
 
         assert_eq!(el.height, Size::Fixed(40.0));
+    }
+
+    #[test]
+    fn input_uses_spacious_field_height_at_large_size() {
+        let mut el = text_input("Search", &crate::Selection::default(), "search").large();
+
+        ThemeMetrics::default().apply_to_tree(&mut el);
+
+        assert_eq!(el.height, Size::Fixed(44.0));
     }
 
     #[test]
@@ -903,7 +915,7 @@ mod tests {
         metrics.apply_to_tree(&mut row);
 
         assert_eq!(header.height, Size::Fixed(40.0));
-        assert_eq!(row.height, Size::Fixed(52.0));
+        assert_eq!(row.height, Size::Fixed(56.0));
     }
 
     #[test]

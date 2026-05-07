@@ -156,11 +156,8 @@ fn settings_nav_item(label: &'static str, selected: bool) -> El {
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_SM)
-    .height(Size::Fixed(36.0))
-    .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .metrics_role(MetricsRole::ListItem)
     .align(Align::Center)
-    .radius(tokens::RADIUS_SM)
     .focusable();
 
     if selected {
@@ -205,8 +202,6 @@ fn profile_card() -> El {
             .gap(tokens::SPACE_MD),
         ],
     )
-    .padding(tokens::SPACE_MD)
-    .gap(tokens::SPACE_SM)
 }
 
 fn setting_field(label: &'static str, value: &'static str, key: &'static str) -> El {
@@ -253,8 +248,6 @@ fn preferences_card() -> El {
             ),
         ],
     )
-    .padding(tokens::SPACE_MD)
-    .gap(tokens::SPACE_SM)
 }
 
 fn preference_row(title: &'static str, description: &'static str, control: El) -> El {
@@ -295,8 +288,6 @@ fn security_card() -> El {
             compact_stat("Sessions", "3 active", button("Review").secondary()),
         ],
     )
-    .padding(tokens::SPACE_MD)
-    .gap(tokens::SPACE_SM)
     .width(Size::Fill(1.0))
 }
 
@@ -314,8 +305,6 @@ fn scale_card() -> El {
                 .width(Size::Fill(1.0)),
         ],
     )
-    .padding(tokens::SPACE_MD)
-    .gap(tokens::SPACE_SM)
     .width(Size::Fill(1.0))
 }
 
@@ -353,11 +342,8 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_SM)
-    .height(Size::Fixed(32.0))
-    .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .metrics_role(MetricsRole::ListItem)
     .align(Align::Center)
-    .radius(tokens::RADIUS_SM)
     .focusable();
 
     if selected {

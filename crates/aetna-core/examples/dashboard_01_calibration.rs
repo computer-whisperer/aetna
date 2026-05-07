@@ -131,11 +131,8 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_SM)
-    .height(Size::Fixed(32.0))
-    .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .metrics_role(MetricsRole::ListItem)
     .align(Align::Center)
-    .radius(tokens::RADIUS_SM)
     .focusable();
 
     if selected {
@@ -254,9 +251,7 @@ fn metric_card(
     .surface_role(SurfaceRole::Panel)
     .fill(tokens::BG_CARD)
     .stroke(tokens::BORDER)
-    .radius(tokens::RADIUS_MD)
     .shadow(tokens::SHADOW_MD)
-    .padding(tokens::SPACE_MD)
     .gap(tokens::SPACE_SM)
     .width(Size::Fill(1.0))
     .height(Size::Fixed(126.0))
@@ -273,7 +268,7 @@ fn chart_card() -> El {
                 .align(Align::End),
         ],
     )
-    .padding(tokens::SPACE_MD)
+    .gap(tokens::SPACE_SM)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }
@@ -311,7 +306,7 @@ fn sales_card() -> El {
             sale_row("WK", "William Kim", "will@example.com", "+$99.00"),
         ],
     )
-    .padding(tokens::SPACE_MD)
+    .gap(tokens::SPACE_SM)
     .width(Size::Fixed(330.0))
     .height(Size::Fill(1.0))
 }
@@ -350,7 +345,7 @@ fn documents_card() -> El {
                 text("Limit").caption().width(Size::Fixed(70.0)),
                 text("Reviewer").caption().width(Size::Fixed(140.0)),
             ])
-            .height(Size::Fixed(32.0)),
+            .metrics_role(MetricsRole::TableHeader),
             divider(),
             document_row(
                 "Cover page",
@@ -372,9 +367,8 @@ fn documents_card() -> El {
             ),
         ],
     )
-    .padding(tokens::SPACE_MD)
     .gap(tokens::SPACE_SM)
-    .height(Size::Fixed(174.0))
+    .height(Size::Fixed(250.0))
 }
 
 fn document_row(
@@ -405,8 +399,7 @@ fn document_row(
             .ellipsis()
             .width(Size::Fixed(140.0)),
     ])
-    .gap(tokens::SPACE_SM)
-    .height(Size::Fixed(36.0))
+    .metrics_role(MetricsRole::TableRow)
     .align(Align::Center)
 }
 

@@ -82,11 +82,8 @@ fn nav_item(icon: &'static str, label: &'static str, selected: bool) -> El {
             .width(Size::Fill(1.0)),
     ])
     .key(format!("nav-{label}"))
-    .gap(tokens::SPACE_SM)
-    .height(Size::Fixed(38.0))
-    .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .metrics_role(MetricsRole::ListItem)
     .align(Align::Center)
-    .radius(tokens::RADIUS_MD)
     .focusable();
 
     if selected {
@@ -168,8 +165,7 @@ fn table_card() -> El {
                 text("Owner").caption().width(Size::Fixed(110.0)),
                 text("State").caption().width(Size::Fixed(86.0)),
             ])
-            .height(Size::Fixed(28.0))
-            .padding(Sides::xy(tokens::SPACE_SM, 0.0)),
+            .metrics_role(MetricsRole::TableHeader),
             divider(),
             data_row("OK", "Settings card", "core", "selected", true, "success"),
             data_row(
@@ -247,11 +243,8 @@ fn data_row(
             .width(Size::Fixed(86.0)),
     ])
     .key(format!("row-{title}"))
-    .height(Size::Fixed(52.0))
-    .padding(Sides::xy(tokens::SPACE_SM, 0.0))
-    .gap(tokens::SPACE_SM)
+    .metrics_role(MetricsRole::TableRow)
     .align(Align::Center)
-    .radius(tokens::RADIUS_SM)
     .focusable();
 
     if selected {
@@ -291,10 +284,8 @@ fn menu_row(icon_name: &'static str, label: &'static str, shortcut: &'static str
         text(label).ellipsis().width(Size::Fill(1.0)),
         mono(shortcut).caption(),
     ])
-    .height(Size::Fixed(32.0))
-    .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .metrics_role(MetricsRole::MenuItem)
     .align(Align::Center)
-    .radius(tokens::RADIUS_SM)
     .fill(tokens::BG_CARD)
     .focusable()
 }
