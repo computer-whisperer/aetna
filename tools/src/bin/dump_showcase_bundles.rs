@@ -9,8 +9,8 @@
 
 use std::path::PathBuf;
 
-use aetna_core::{App, BuildCx};
 use aetna_core::prelude::{Rect, render_bundle, write_bundle};
+use aetna_core::{App, BuildCx};
 use aetna_fixtures::{Showcase, showcase::Section};
 
 fn main() -> std::io::Result<()> {

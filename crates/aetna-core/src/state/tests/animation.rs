@@ -244,12 +244,12 @@ fn token_tagged_fill_eases_through_draw_ops_without_snapping() {
     let quad_fill = ops
         .iter()
         .find_map(|op| match op {
-            DrawOp::Quad { id, uniforms, .. } if id.contains("x") => uniforms
-                .get("fill")
-                .and_then(|v| match v {
+            DrawOp::Quad { id, uniforms, .. } if id.contains("x") => {
+                uniforms.get("fill").and_then(|v| match v {
                     UniformValue::Color(c) => Some(*c),
                     _ => None,
-                }),
+                })
+            }
             _ => None,
         })
         .expect("button quad fill");

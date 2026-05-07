@@ -851,10 +851,22 @@ mod tests {
             .radius(tokens::RADIUS_SM);
         assert!(ghost.fill.is_none(), "ghost has no resting fill");
 
-        let (rest_fill, ..) = apply_state(&ghost, InteractionState::Default, 0.0, 0.0, &Palette::aetna_dark());
+        let (rest_fill, ..) = apply_state(
+            &ghost,
+            InteractionState::Default,
+            0.0,
+            0.0,
+            &Palette::aetna_dark(),
+        );
         assert_eq!(rest_fill, None, "no envelope, no synthesized fill");
 
-        let (hover_fill, ..) = apply_state(&ghost, InteractionState::Hover, 1.0, 0.0, &Palette::aetna_dark());
+        let (hover_fill, ..) = apply_state(
+            &ghost,
+            InteractionState::Hover,
+            1.0,
+            0.0,
+            &Palette::aetna_dark(),
+        );
         let hover_alpha = (tokens::STATE_FILL_HOVER_ALPHA * 255.0).round() as u8;
         assert_eq!(
             hover_fill,
@@ -862,7 +874,13 @@ mod tests {
             "hover at peak fades a faint BG_RAISED in",
         );
 
-        let (press_fill, ..) = apply_state(&ghost, InteractionState::Press, 1.0, 1.0, &Palette::aetna_dark());
+        let (press_fill, ..) = apply_state(
+            &ghost,
+            InteractionState::Press,
+            1.0,
+            1.0,
+            &Palette::aetna_dark(),
+        );
         let press_alpha = ((tokens::STATE_FILL_HOVER_ALPHA + tokens::STATE_FILL_PRESS_ALPHA)
             * 255.0)
             .round() as u8;
@@ -1098,9 +1116,27 @@ mod tests {
         assert_eq!(layout_only.radius, 0.0);
         assert!(layout_only.stroke.is_none());
 
-        let (rest_fill, ..) = apply_state(&layout_only, InteractionState::Default, 0.0, 0.0, &Palette::aetna_dark());
-        let (hover_fill, ..) = apply_state(&layout_only, InteractionState::Hover, 1.0, 0.0, &Palette::aetna_dark());
-        let (press_fill, ..) = apply_state(&layout_only, InteractionState::Press, 1.0, 1.0, &Palette::aetna_dark());
+        let (rest_fill, ..) = apply_state(
+            &layout_only,
+            InteractionState::Default,
+            0.0,
+            0.0,
+            &Palette::aetna_dark(),
+        );
+        let (hover_fill, ..) = apply_state(
+            &layout_only,
+            InteractionState::Hover,
+            1.0,
+            0.0,
+            &Palette::aetna_dark(),
+        );
+        let (press_fill, ..) = apply_state(
+            &layout_only,
+            InteractionState::Press,
+            1.0,
+            1.0,
+            &Palette::aetna_dark(),
+        );
         assert_eq!(rest_fill, None);
         assert_eq!(hover_fill, None);
         assert_eq!(press_fill, None);
@@ -1112,10 +1148,22 @@ mod tests {
         // lighten/darken envelope mix — the synthesized state fill only
         // kicks in when the resting fill is None.
         let solid = El::new(Kind::Custom("button")).fill(tokens::BG_MUTED);
-        let (rest_fill, ..) = apply_state(&solid, InteractionState::Default, 0.0, 0.0, &Palette::aetna_dark());
+        let (rest_fill, ..) = apply_state(
+            &solid,
+            InteractionState::Default,
+            0.0,
+            0.0,
+            &Palette::aetna_dark(),
+        );
         assert_eq!(rest_fill, Some(tokens::BG_MUTED));
 
-        let (hover_fill, ..) = apply_state(&solid, InteractionState::Hover, 1.0, 0.0, &Palette::aetna_dark());
+        let (hover_fill, ..) = apply_state(
+            &solid,
+            InteractionState::Hover,
+            1.0,
+            0.0,
+            &Palette::aetna_dark(),
+        );
         assert_eq!(
             hover_fill,
             Some(tokens::BG_MUTED.mix(tokens::BG_MUTED.lighten(tokens::HOVER_LIGHTEN), 1.0)),

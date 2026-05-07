@@ -101,13 +101,7 @@ impl Palette {
             primary_hover: Color::token("primary-hover", 110, 184, 255, 255),
 
             scrollbar_thumb_fill: Color::token("scrollbar-thumb", 148, 160, 176, 130),
-            scrollbar_thumb_fill_active: Color::token(
-                "scrollbar-thumb-active",
-                200,
-                210,
-                224,
-                220,
-            ),
+            scrollbar_thumb_fill_active: Color::token("scrollbar-thumb-active", 200, 210, 224, 220),
 
             focus_ring: Color::token("focus-ring", 92, 170, 255, 200),
             selection_bg: Color::token("selection-bg", 92, 170, 255, 96),
@@ -142,13 +136,7 @@ impl Palette {
             primary_hover: Color::token("primary-hover", 29, 78, 216, 255),
 
             scrollbar_thumb_fill: Color::token("scrollbar-thumb", 100, 116, 139, 90),
-            scrollbar_thumb_fill_active: Color::token(
-                "scrollbar-thumb-active",
-                71,
-                85,
-                105,
-                220,
-            ),
+            scrollbar_thumb_fill_active: Color::token("scrollbar-thumb-active", 71, 85, 105, 220),
 
             focus_ring: Color::token("focus-ring", 37, 99, 235, 200),
             selection_bg: Color::token("selection-bg", 37, 99, 235, 64),
@@ -256,7 +244,10 @@ mod tests {
         let translucent = p.bg_card.with_alpha(120);
         let resolved = p.resolve(translucent);
         // rgb tracks the palette's bg-card, alpha tracks the override.
-        assert_eq!((resolved.r, resolved.g, resolved.b), (p.bg_card.r, p.bg_card.g, p.bg_card.b));
+        assert_eq!(
+            (resolved.r, resolved.g, resolved.b),
+            (p.bg_card.r, p.bg_card.g, p.bg_card.b)
+        );
         assert_eq!(resolved.a, 120);
         assert_eq!(resolved.token, Some("bg-card"));
     }
@@ -272,8 +263,16 @@ mod tests {
         );
         // Text foreground also inverts.
         assert_ne!(
-            (dark.text_foreground.r, dark.text_foreground.g, dark.text_foreground.b),
-            (light.text_foreground.r, light.text_foreground.g, light.text_foreground.b),
+            (
+                dark.text_foreground.r,
+                dark.text_foreground.g,
+                dark.text_foreground.b
+            ),
+            (
+                light.text_foreground.r,
+                light.text_foreground.g,
+                light.text_foreground.b
+            ),
         );
         // Token names match — same vocabulary, different rgb.
         assert_eq!(dark.bg_app.token, light.bg_app.token);

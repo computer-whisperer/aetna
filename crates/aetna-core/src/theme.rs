@@ -210,7 +210,11 @@ fn apply_role_material(role: SurfaceRole, uniforms: &mut UniformBlock, palette: 
             default_f32(uniforms, "shadow", tokens::SHADOW_SM * 0.5);
         }
         SurfaceRole::Sunken | SurfaceRole::Input => {
-            set_color(uniforms, "fill", palette.resolve(tokens::BG_MUTED).darken(0.08));
+            set_color(
+                uniforms,
+                "fill",
+                palette.resolve(tokens::BG_MUTED).darken(0.08),
+            );
             set_color(uniforms, "stroke", tokens::BORDER_STRONG.with_alpha(190));
             set_f32(uniforms, "stroke_width", 1.0);
             set_f32(uniforms, "shadow", 0.0);
