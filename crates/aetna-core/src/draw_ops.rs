@@ -134,7 +134,7 @@ fn push_node(
     };
 
     let (fill, stroke, text_color, weight, suffix) =
-        apply_state(n, state, effective_hover, effective_press);
+        apply_state(n, state, effective_hover, effective_press, theme.palette());
 
     // `translate` is subtree-inheriting: descendants paint at their
     // computed rect plus all ancestor `translate` accumulated through
@@ -244,8 +244,14 @@ fn push_node(
             // band's parent text_input / text_area), so the band reads
             // as muted while the input is unfocused and saturates as
             // the focus animation completes.
+            //
+            // Resolve `dim` through the palette before mixing — `c` is
+            // already palette-resolved by `apply_state` above, but
+            // `dim_fill` comes straight from the El. Without this, the
+            // unfocused band reads against the compile-time dark rgb
+            // of the dim token and doesn't track a runtime palette swap.
             let resolved = match n.dim_fill {
-                Some(dim) => dim.mix(c, inherited_focus_envelope),
+                Some(dim) => theme.resolve(dim).mix(c, inherited_focus_envelope),
                 None => c,
             };
             uniforms.insert("fill", UniformValue::Color(opaque(resolved, opacity)));
@@ -753,6 +759,7 @@ fn apply_state(
     state: InteractionState,
     hover: f32,
     press: f32,
+    palette: &Palette,
 ) -> (
     Option<Color>,
     Option<Color>,
@@ -760,9 +767,14 @@ fn apply_state(
     FontWeight,
     Option<&'static str>,
 ) {
-    let mut fill = n.fill;
-    let mut stroke = n.stroke;
-    let mut text_color = n.text_color;
+    // Resolve token rgb against the active palette *before* applying
+    // any rgb-modifying op. lighten/darken/mix bake the result and
+    // strip the token, so we have to compose the op against the
+    // palette's rgb here — otherwise hover/press visuals are computed
+    // off the compile-time dark fallback regardless of theme.
+    let mut fill = n.fill.map(|c| palette.resolve(c));
+    let mut stroke = n.stroke.map(|c| palette.resolve(c));
+    let mut text_color = n.text_color.map(|c| palette.resolve(c));
     let weight = n.font_weight;
     let mut suffix = None;
 
@@ -780,6 +792,8 @@ fn apply_state(
         let alpha = (hover * tokens::STATE_FILL_HOVER_ALPHA
             + press * tokens::STATE_FILL_PRESS_ALPHA)
             .clamp(0.0, 1.0);
+        // BG_RAISED.with_alpha keeps the token name, so the final
+        // resolve_palette walk swaps the rgb to the active palette.
         fill = Some(tokens::BG_RAISED.with_alpha((alpha * 255.0).round() as u8));
     }
 
@@ -837,10 +851,10 @@ mod tests {
             .radius(tokens::RADIUS_SM);
         assert!(ghost.fill.is_none(), "ghost has no resting fill");
 
-        let (rest_fill, ..) = apply_state(&ghost, InteractionState::Default, 0.0, 0.0);
+        let (rest_fill, ..) = apply_state(&ghost, InteractionState::Default, 0.0, 0.0, &Palette::aetna_dark());
         assert_eq!(rest_fill, None, "no envelope, no synthesized fill");
 
-        let (hover_fill, ..) = apply_state(&ghost, InteractionState::Hover, 1.0, 0.0);
+        let (hover_fill, ..) = apply_state(&ghost, InteractionState::Hover, 1.0, 0.0, &Palette::aetna_dark());
         let hover_alpha = (tokens::STATE_FILL_HOVER_ALPHA * 255.0).round() as u8;
         assert_eq!(
             hover_fill,
@@ -848,7 +862,7 @@ mod tests {
             "hover at peak fades a faint BG_RAISED in",
         );
 
-        let (press_fill, ..) = apply_state(&ghost, InteractionState::Press, 1.0, 1.0);
+        let (press_fill, ..) = apply_state(&ghost, InteractionState::Press, 1.0, 1.0, &Palette::aetna_dark());
         let press_alpha = ((tokens::STATE_FILL_HOVER_ALPHA + tokens::STATE_FILL_PRESS_ALPHA)
             * 255.0)
             .round() as u8;
@@ -1084,9 +1098,9 @@ mod tests {
         assert_eq!(layout_only.radius, 0.0);
         assert!(layout_only.stroke.is_none());
 
-        let (rest_fill, ..) = apply_state(&layout_only, InteractionState::Default, 0.0, 0.0);
-        let (hover_fill, ..) = apply_state(&layout_only, InteractionState::Hover, 1.0, 0.0);
-        let (press_fill, ..) = apply_state(&layout_only, InteractionState::Press, 1.0, 1.0);
+        let (rest_fill, ..) = apply_state(&layout_only, InteractionState::Default, 0.0, 0.0, &Palette::aetna_dark());
+        let (hover_fill, ..) = apply_state(&layout_only, InteractionState::Hover, 1.0, 0.0, &Palette::aetna_dark());
+        let (press_fill, ..) = apply_state(&layout_only, InteractionState::Press, 1.0, 1.0, &Palette::aetna_dark());
         assert_eq!(rest_fill, None);
         assert_eq!(hover_fill, None);
         assert_eq!(press_fill, None);
@@ -1098,14 +1112,32 @@ mod tests {
         // lighten/darken envelope mix — the synthesized state fill only
         // kicks in when the resting fill is None.
         let solid = El::new(Kind::Custom("button")).fill(tokens::BG_MUTED);
-        let (rest_fill, ..) = apply_state(&solid, InteractionState::Default, 0.0, 0.0);
+        let (rest_fill, ..) = apply_state(&solid, InteractionState::Default, 0.0, 0.0, &Palette::aetna_dark());
         assert_eq!(rest_fill, Some(tokens::BG_MUTED));
 
-        let (hover_fill, ..) = apply_state(&solid, InteractionState::Hover, 1.0, 0.0);
+        let (hover_fill, ..) = apply_state(&solid, InteractionState::Hover, 1.0, 0.0, &Palette::aetna_dark());
         assert_eq!(
             hover_fill,
             Some(tokens::BG_MUTED.mix(tokens::BG_MUTED.lighten(tokens::HOVER_LIGHTEN), 1.0)),
             "solid surfaces lighten existing fill, not synthesize a new one",
+        );
+    }
+
+    #[test]
+    fn state_envelope_composes_against_active_palette() {
+        // Hover/press lighten/darken must compose against the active
+        // palette's rgb, not the token's compile-time dark fallback —
+        // otherwise hover visuals are dark-derived even in light mode.
+        let solid = El::new(Kind::Custom("button")).fill(tokens::BG_MUTED);
+        let light = Palette::aetna_light();
+        let (hover_fill, ..) = apply_state(&solid, InteractionState::Hover, 1.0, 0.0, &light);
+        let expected = light
+            .bg_muted
+            .mix(light.bg_muted.lighten(tokens::HOVER_LIGHTEN), 1.0);
+        assert_eq!(
+            hover_fill,
+            Some(expected),
+            "hover lighten composes against the active palette",
         );
     }
 

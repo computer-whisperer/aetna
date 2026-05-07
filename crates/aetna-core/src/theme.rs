@@ -55,6 +55,15 @@ impl Theme {
         &self.palette
     }
 
+    /// Shorthand for `self.palette().resolve(c)`. Library code that
+    /// derives a color from a token (e.g. via `darken`/`lighten`/`mix`)
+    /// should resolve through the palette **before** applying the op
+    /// so the derivation is computed against the active palette's rgb,
+    /// not the token's compile-time fallback.
+    pub fn resolve(&self, c: Color) -> Color {
+        self.palette.resolve(c)
+    }
+
     /// Route all implicit surfaces through a custom shader.
     ///
     /// The draw-op pass still emits the familiar rounded-rect uniforms
@@ -116,7 +125,7 @@ impl Theme {
         uniforms
             .entry("surface_role")
             .or_insert(UniformValue::F32(role.uniform_id()));
-        apply_role_material(role, uniforms);
+        apply_role_material(role, uniforms, &self.palette);
         if surface.rounded_rect_slots {
             add_rounded_rect_slots(uniforms);
         }
@@ -182,7 +191,12 @@ fn add_rounded_rect_slots(uniforms: &mut UniformBlock) {
     }
 }
 
-fn apply_role_material(role: SurfaceRole, uniforms: &mut UniformBlock) {
+fn apply_role_material(role: SurfaceRole, uniforms: &mut UniformBlock, palette: &Palette) {
+    // Sunken/Input fill is derived from `bg-muted` by darken, so the
+    // base must be palette-resolved *before* the op — otherwise the
+    // op runs on the compile-time dark fallback and the surface stays
+    // dark even with a light palette active. Same shape for any future
+    // role that derives an rgb-modified color from a token.
     match role {
         SurfaceRole::None => {}
         SurfaceRole::Panel => {
@@ -196,7 +210,7 @@ fn apply_role_material(role: SurfaceRole, uniforms: &mut UniformBlock) {
             default_f32(uniforms, "shadow", tokens::SHADOW_SM * 0.5);
         }
         SurfaceRole::Sunken | SurfaceRole::Input => {
-            set_color(uniforms, "fill", tokens::BG_MUTED.darken(0.08));
+            set_color(uniforms, "fill", palette.resolve(tokens::BG_MUTED).darken(0.08));
             set_color(uniforms, "stroke", tokens::BORDER_STRONG.with_alpha(190));
             set_f32(uniforms, "stroke_width", 1.0);
             set_f32(uniforms, "shadow", 0.0);
