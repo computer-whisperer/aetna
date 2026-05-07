@@ -13,12 +13,41 @@ let port = Number(process.env.SHADCN_REFERENCE_PORT ?? 0)
 let baseUrl
 let stoppingVite = false
 
-const viewport = {
+const stressViewport = {
   width: Number(process.env.SHADCN_REFERENCE_WIDTH ?? 1180),
   height: Number(process.env.SHADCN_REFERENCE_HEIGHT ?? 780),
 }
+const desktopViewport = {
+  width: Number(process.env.SHADCN_REFERENCE_DESKTOP_WIDTH ?? 1440),
+  height: Number(process.env.SHADCN_REFERENCE_DESKTOP_HEIGHT ?? 900),
+}
 const deviceScaleFactor = Number(process.env.SHADCN_REFERENCE_DSF ?? 1)
 const uiScale = Number(process.env.SHADCN_REFERENCE_UI_SCALE ?? 1)
+const compactUiScale = Number(process.env.SHADCN_REFERENCE_COMPACT_UI_SCALE ?? 0.875)
+
+const variants = [
+  {
+    slug: "",
+    label: "stress",
+    description: "Stress viewport at default shadcn UI scale",
+    viewport: stressViewport,
+    uiScale,
+  },
+  {
+    slug: "compact",
+    label: "compact",
+    description: "Stress viewport at compact shadcn UI scale",
+    viewport: stressViewport,
+    uiScale: compactUiScale,
+  },
+  {
+    slug: "desktop",
+    label: "desktop",
+    description: "Canonical desktop viewport at default shadcn UI scale",
+    viewport: desktopViewport,
+    uiScale,
+  },
+]
 
 const captures = [
   {
@@ -118,67 +147,86 @@ async function captureAll() {
     ],
   })
   try {
-    const context = await browser.newContext({
-      viewport,
-      deviceScaleFactor,
-      colorScheme: "dark",
-      reducedMotion: "reduce",
-    })
-
-    for (const item of captures) {
-      const page = await context.newPage()
-      const url = new URL(item.path, baseUrl)
-      url.searchParams.set("uiScale", String(uiScale))
-      await page.goto(url.toString(), { waitUntil: "networkidle" })
-      await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" })
-      const overflowFindings = await referenceOverflowFindings(page)
-      if (overflowFindings.length > 0) {
-        throw new Error(
-          [
-            `${item.slug} has reference overflow findings:`,
-            ...overflowFindings.map((finding) =>
-              `  ${finding.boundary} -> ${finding.child} overflow L=${finding.left} R=${finding.right} T=${finding.top} B=${finding.bottom}`,
-            ),
-          ].join("\n"),
-        )
+    for (const variant of variants) {
+      const context = await browser.newContext({
+        viewport: variant.viewport,
+        deviceScaleFactor,
+        colorScheme: "dark",
+        reducedMotion: "reduce",
+      })
+      try {
+        for (const item of captures) {
+          await captureOne(context, item, variant)
+        }
+      } finally {
+        await context.close()
       }
-
-      const pngPath = path.join(outDir, `${item.slug}.png`)
-      const metadataPath = path.join(outDir, `${item.slug}.json`)
-      await page.screenshot({ path: pngPath, fullPage: false })
-      const metadata = await page.evaluate(() => ({
-        devicePixelRatio: window.devicePixelRatio,
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight,
-        outerWidth: window.outerWidth,
-        outerHeight: window.outerHeight,
-        visualViewportScale: window.visualViewport?.scale ?? null,
-        rootFontSize: getComputedStyle(document.documentElement).fontSize,
-        bodyFontSize: getComputedStyle(document.body).fontSize,
-      }))
-      await writeFile(
-        metadataPath,
-        JSON.stringify(
-          {
-            slug: item.slug,
-            description: item.description,
-            url: url.toString(),
-            viewport,
-            requestedDeviceScaleFactor: deviceScaleFactor,
-            requestedUiScale: uiScale,
-            capturedAt: new Date().toISOString(),
-            ...metadata,
-          },
-          null,
-          2,
-        ) + "\n",
-      )
-      console.log(`wrote ${pngPath}`)
-      console.log(`wrote ${metadataPath}`)
-      await page.close()
     }
   } finally {
     await browser.close()
+  }
+}
+
+async function captureOne(context, item, variant) {
+  const page = await context.newPage()
+  try {
+    const url = new URL(item.path, baseUrl)
+    url.searchParams.set("uiScale", String(variant.uiScale))
+    await page.goto(url.toString(), { waitUntil: "networkidle" })
+    await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" })
+    const overflowFindings = await referenceOverflowFindings(page)
+    if (overflowFindings.length > 0) {
+      throw new Error(
+        [
+          `${item.slug}${variant.slug ? `.${variant.slug}` : ""} has reference overflow findings:`,
+          ...overflowFindings.map((finding) =>
+            `  ${finding.boundary} -> ${finding.child} overflow L=${finding.left} R=${finding.right} T=${finding.top} B=${finding.bottom}`,
+          ),
+        ].join("\n"),
+      )
+    }
+
+    const captureSlug = variant.slug ? `${item.slug}.${variant.slug}` : item.slug
+    const pngPath = path.join(outDir, `${captureSlug}.png`)
+    const metadataPath = path.join(outDir, `${captureSlug}.json`)
+    await page.screenshot({ path: pngPath, fullPage: false })
+    const metadata = await page.evaluate(() => ({
+      devicePixelRatio: window.devicePixelRatio,
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      outerWidth: window.outerWidth,
+      outerHeight: window.outerHeight,
+      visualViewportScale: window.visualViewport?.scale ?? null,
+      rootFontSize: getComputedStyle(document.documentElement).fontSize,
+      bodyFontSize: getComputedStyle(document.body).fontSize,
+    }))
+    await writeFile(
+      metadataPath,
+      JSON.stringify(
+        {
+          slug: captureSlug,
+          baseSlug: item.slug,
+          description: item.description,
+          variant: {
+            slug: variant.slug || "default",
+            label: variant.label,
+            description: variant.description,
+          },
+          url: url.toString(),
+          viewport: variant.viewport,
+          requestedDeviceScaleFactor: deviceScaleFactor,
+          requestedUiScale: variant.uiScale,
+          capturedAt: new Date().toISOString(),
+          ...metadata,
+        },
+        null,
+        2,
+      ) + "\n",
+    )
+    console.log(`wrote ${pngPath}`)
+    console.log(`wrote ${metadataPath}`)
+  } finally {
+    await page.close()
   }
 }
 

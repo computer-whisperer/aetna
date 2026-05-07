@@ -17,22 +17,27 @@ npm run capture
 ```
 
 The capture script starts Vite on a free local port, opens Chromium through
-Playwright, and pins the browser to a deterministic scale contract:
+Playwright, and pins the browser to deterministic scale contracts:
 
-- viewport: `1180x780` CSS px by default,
+- stress viewport: `1180x780` CSS px by default,
+- desktop viewport: `1440x900` CSS px by default,
 - Playwright `deviceScaleFactor`: `1` by default,
 - Chromium forced device scale factor: `1`,
 - browser zoom: expected to remain at `1`,
-- shadcn UI scale: controlled by root `font-size`, not desktop zoom.
+- shadcn UI scale: controlled by root `font-size`, not desktop zoom,
+- compact shadcn UI scale: `0.875` by default.
 
 Override these with environment variables:
 
 ```bash
 SHADCN_REFERENCE_WIDTH=1440 \
 SHADCN_REFERENCE_HEIGHT=900 \
+SHADCN_REFERENCE_DESKTOP_WIDTH=1600 \
+SHADCN_REFERENCE_DESKTOP_HEIGHT=1000 \
 SHADCN_REFERENCE_PORT=5173 \
 SHADCN_REFERENCE_DSF=1 \
 SHADCN_REFERENCE_UI_SCALE=1 \
+SHADCN_REFERENCE_COMPACT_UI_SCALE=0.875 \
 npm run capture
 ```
 
@@ -45,6 +50,8 @@ Outputs:
 - `out/shadcn-calibration.png` — local steelman for Aetna's first fixture.
 - `out/shadcn-dashboard-01.png` — local dashboard-01-style density target.
 - `out/shadcn-settings-01.png` — settings/form density and control target.
+- `out/*.compact.png` — stress viewport at compact shadcn UI scale.
+- `out/*.desktop.png` — canonical desktop viewport at default shadcn UI scale.
 - matching `out/*.json` files — capture metadata with actual DPR, viewport,
   visual viewport scale, and root font size.
 

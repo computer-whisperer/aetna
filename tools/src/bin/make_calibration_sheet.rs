@@ -6,7 +6,8 @@
 //! Reads `crates/aetna-core/out/*_calibration.png` and writes
 //! `crates/aetna-core/out/calibration_sheet.png`. If shadcn reference
 //! captures exist under `references/shadcn-calibration/out`, also writes
-//! `crates/aetna-core/out/reference_calibration_sheet.png`.
+//! `crates/aetna-core/out/reference_calibration_sheet.png` and the shadcn
+//! viewport/UI-scale matrix `reference_scale_matrix_sheet.png`.
 
 use std::path::{Path, PathBuf};
 
@@ -50,6 +51,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             reference_sheet.width,
             reference_sheet.height,
             &reference_sheet.rgba,
+        )?;
+        println!("wrote {}", out.display());
+    }
+    if let Some(matrix_sheet) = reference_scale_matrix_sheet(&root, &out_dir)? {
+        let out = out_dir.join("reference_scale_matrix_sheet.png");
+        write_png(
+            &out,
+            matrix_sheet.width,
+            matrix_sheet.height,
+            &matrix_sheet.rgba,
         )?;
         println!("wrote {}", out.display());
     }
@@ -130,6 +141,40 @@ fn reference_comparison_sheet(
     }
 
     Ok(Some(contact_sheet(&images, 2)))
+}
+
+fn reference_scale_matrix_sheet(
+    root: &Path,
+    aetna_out_dir: &Path,
+) -> Result<Option<Image>, Box<dyn std::error::Error>> {
+    let reference_out_dir = root.join("references/shadcn-calibration/out");
+    let rows = [
+        ("shadcn-calibration", "polish_calibration.png"),
+        ("shadcn-dashboard-01", "dashboard_01_calibration.png"),
+        ("shadcn-settings-01", "settings_calibration.png"),
+    ];
+
+    let mut images = Vec::new();
+    for (reference_slug, aetna_name) in rows {
+        let shadcn_default = reference_out_dir.join(format!("{reference_slug}.png"));
+        let shadcn_compact = reference_out_dir.join(format!("{reference_slug}.compact.png"));
+        let shadcn_desktop = reference_out_dir.join(format!("{reference_slug}.desktop.png"));
+        let aetna = aetna_out_dir.join(aetna_name);
+        if !shadcn_default.exists()
+            || !shadcn_compact.exists()
+            || !shadcn_desktop.exists()
+            || !aetna.exists()
+        {
+            return Ok(None);
+        }
+
+        images.push(read_png(&shadcn_default)?);
+        images.push(read_png(&shadcn_compact)?);
+        images.push(read_png(&shadcn_desktop)?);
+        images.push(normalize_for_sheet(read_png(&aetna)?));
+    }
+
+    Ok(Some(contact_sheet(&images, 4)))
 }
 
 fn contact_sheet(images: &[Image], columns: usize) -> Image {
