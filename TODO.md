@@ -8,7 +8,18 @@ The 0.2.0 release closed every numbered slice (controlled `select`,
 keyboard reach into popovers, slider keyboard, tooltips,
 async-into-redraw documentation, optimistic-override + `overlays`
 helpers, tabs / segmented control, form primitives + progress bar) and
-the pre-release housekeeping that went with them. New work lands as
+the pre-release housekeeping that went with them.
+
+Post-0.2.0 polish has landed without being tracked as numbered slices:
+runtime-managed toasts (`App::drain_toasts` + the showcase `Toasts`
+section), `image()` widget across wgpu + vulkano, scrollbar thumb with
+hover-expand + click-to-page, `resize_handle` for movable dividers,
+`field_row` + `slider::apply_input` form helpers, the global static-text
+selection model (`.selectable()` + cross-leaf drag + double/triple-click
++ Linux primary-selection + integration with `text_input` / `text_area`),
+caret blink, the pointer-cursor model + native/web cursor forwarding,
+text decorations (`.underline()` / `.strikethrough()` / `.link(url)`),
+and shadcn-aligned interaction-feedback polish. New work lands as
 numbered slices below.
 
 ## Floating-layer architecture (ratified)
@@ -41,8 +52,7 @@ Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 Out of scope; flagged so they don't get rediscovered:
 
 - Slider tick marks (e.g. nominal-100% mark). Audio-app-specific.
-- Variable-height list virtualization, drag-resizable splits. Not surfaced
-  by any port yet.
+- Variable-height list virtualization. Not surfaced by any port yet.
 - Roving-tabindex arrow-key nav inside `tabs_list` (Left/Right cycling
   the active tab as in WAI-ARIA's full tablist pattern). The runtime's
   `arrow_nav_siblings` only wires Up/Down/Home/End today; teaching it
