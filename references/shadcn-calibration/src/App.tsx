@@ -5,14 +5,22 @@ import {
   Check,
   ChevronRight,
   CircleDollarSign,
+  CreditCard,
   FileText,
   GitBranch,
+  KeyRound,
   LayoutDashboard,
+  Laptop,
+  Mail,
   MoreHorizontal,
+  Palette,
   PanelLeft,
   RefreshCw,
   Search,
+  Settings,
+  Shield,
   ShoppingCart,
+  SlidersHorizontal,
   TrendingUp,
   Users,
 } from "lucide-react"
@@ -136,6 +144,9 @@ export function App() {
   const view = new URLSearchParams(window.location.search).get("view")
   if (view === "dashboard-01") {
     return <DashboardReference />
+  }
+  if (view === "settings-01") {
+    return <SettingsReference />
   }
   return <CalibrationReference />
 }
@@ -533,6 +544,259 @@ function StatusBadge({ status }: { status: string }) {
     return <Badge tone="destructive">Blocked</Badge>
   }
   return <Badge tone="info">In Process</Badge>
+}
+
+function SettingsReference() {
+  return (
+    <main className="flex h-screen overflow-hidden bg-background text-foreground">
+      <aside className="flex w-[244px] flex-col border-r bg-card">
+        <div className="flex h-14 items-center gap-2 border-b px-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Settings className="h-4 w-4" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold">Workspace</div>
+            <div className="text-xs text-muted-foreground">Settings</div>
+          </div>
+        </div>
+        <nav className="space-y-6 p-3 text-sm">
+          <SidebarSection
+            title="Personal"
+            items={[
+              ["Profile", <Users className="h-4 w-4" />, false],
+              ["Account", <Settings className="h-4 w-4" />, true],
+              ["Security", <Shield className="h-4 w-4" />, false],
+              ["Notifications", <Bell className="h-4 w-4" />, false],
+            ]}
+          />
+          <SidebarSection
+            title="Workspace"
+            items={[
+              ["Billing", <CreditCard className="h-4 w-4" />, false],
+              ["Appearance", <Palette className="h-4 w-4" />, false],
+              ["Integrations", <SlidersHorizontal className="h-4 w-4" />, false],
+            ]}
+          />
+        </nav>
+        <div className="mt-auto border-t p-3">
+          <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            Changes sync after save.
+          </div>
+        </div>
+      </aside>
+
+      <section className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-14 items-center gap-3 border-b px-4">
+          <Button variant="ghost" className="h-8 w-8 px-0">
+            <PanelLeft className="h-4 w-4" />
+          </Button>
+          <div className="h-5 border-l" />
+          <h1 className="text-base font-semibold">Settings</h1>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" className="h-8 px-3">
+              Reset
+            </Button>
+            <Button className="h-8 px-3">Save changes</Button>
+          </div>
+        </header>
+
+        <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)_300px] gap-4 overflow-hidden p-4">
+          <section data-calibration-boundary className="rounded-xl border bg-card p-2 shadow-sm">
+            <div className="space-y-1">
+              {["Account", "Security", "Notifications", "Appearance", "Billing"].map((item, i) => (
+                <button
+                  key={item}
+                  className={cn(
+                    "flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-medium",
+                    i === 0 ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/70",
+                  )}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {item}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="min-h-0 space-y-4 overflow-hidden">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight">Account</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Manage identity, workspace defaults, and security preferences.
+              </p>
+            </div>
+
+            <div data-calibration-boundary className="rounded-xl border bg-card shadow-sm">
+              <div className="border-b p-4">
+                <h3 className="text-base font-semibold">Profile</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This information appears in audit logs and shared documents.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 p-4">
+                <SettingField label="Display name" value="Alicia Koch" />
+                <SettingField label="Email" value="alicia@example.com" icon={<Mail />} />
+                <SettingSelect label="Role" value="Workspace admin" />
+                <SettingSelect label="Region" value="US East" />
+              </div>
+            </div>
+
+            <div data-calibration-boundary className="rounded-xl border bg-card shadow-sm">
+              <div className="border-b p-4">
+                <h3 className="text-base font-semibold">Preferences</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Defaults used when creating new dashboards and exports.
+                </p>
+              </div>
+              <div className="divide-y">
+                <PreferenceRow
+                  title="Compact navigation"
+                  description="Use tighter rows in the sidebar and command menus."
+                  control={<Switch checked />}
+                />
+                <PreferenceRow
+                  title="Email summaries"
+                  description="Send a daily digest when documents change."
+                  control={<Switch checked={false} />}
+                />
+                <PreferenceRow
+                  title="Require approval"
+                  description="Route external sharing through an owner review."
+                  control={<Checkbox checked />}
+                />
+              </div>
+            </div>
+          </section>
+
+          <aside className="space-y-4">
+            <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-2">
+                <IconBox>
+                  <KeyRound className="h-4 w-4" />
+                </IconBox>
+                <h3 className="text-base font-semibold">Security</h3>
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Two-factor authentication is enabled for all privileged users.
+              </p>
+              <div className="mt-4 space-y-3">
+                <PreferenceRow title="Passkeys" description="2 registered" control={<Badge tone="success">On</Badge>} compact />
+                <PreferenceRow title="Sessions" description="3 active" control={<Button variant="outline" className="h-8 px-3">Review</Button>} compact />
+              </div>
+            </section>
+
+            <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-2">
+                <IconBox>
+                  <Laptop className="h-4 w-4" />
+                </IconBox>
+                <h3 className="text-base font-semibold">Interface scale</h3>
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Reference captures keep browser zoom fixed and vary root UI scale.
+              </p>
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Dense</span>
+                  <span>Default</span>
+                </div>
+                <div className="mt-2 h-2 rounded-full bg-muted">
+                  <div className="h-2 w-2/3 rounded-full bg-primary" />
+                </div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function SettingField({
+  label,
+  value,
+  icon,
+}: {
+  label: string
+  value: string
+  icon?: React.ReactNode
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className="text-sm font-medium">{label}</span>
+      <div className="relative mt-2">
+        {icon && <span className="absolute left-3 top-2.5 text-muted-foreground [&>svg]:h-4 [&>svg]:w-4">{icon}</span>}
+        <div className={cn("flex h-9 items-center rounded-md border bg-background px-3 text-sm shadow-sm", icon && "pl-9")}>
+          <span className="truncate">{value}</span>
+        </div>
+      </div>
+    </label>
+  )
+}
+
+function SettingSelect({ label, value }: { label: string; value: string }) {
+  return (
+    <label className="block min-w-0">
+      <span className="text-sm font-medium">{label}</span>
+      <div className="mt-2 flex h-9 items-center rounded-md border bg-background px-3 text-sm shadow-sm">
+        <span className="truncate">{value}</span>
+        <ChevronRight className="ml-auto h-4 w-4 rotate-90 text-muted-foreground" />
+      </div>
+    </label>
+  )
+}
+
+function PreferenceRow({
+  title,
+  description,
+  control,
+  compact = false,
+}: {
+  title: string
+  description: string
+  control: React.ReactNode
+  compact?: boolean
+}) {
+  return (
+    <div className={cn("flex items-center gap-4", compact ? "py-2" : "px-4 py-3")}>
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium">{title}</div>
+        <div className="truncate text-xs text-muted-foreground">{description}</div>
+      </div>
+      <div className="ml-auto shrink-0">{control}</div>
+    </div>
+  )
+}
+
+function Switch({ checked }: { checked: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex h-5 w-9 items-center rounded-full border p-0.5 transition-colors",
+        checked ? "border-primary bg-primary" : "border-border bg-muted",
+      )}
+    >
+      <div
+        className={cn(
+          "h-3.5 w-3.5 rounded-full bg-foreground transition-transform",
+          checked && "translate-x-4",
+        )}
+      />
+    </div>
+  )
+}
+
+function Checkbox({ checked }: { checked: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex h-4 w-4 items-center justify-center rounded-sm border",
+        checked ? "border-primary bg-primary text-primary-foreground" : "border-input",
+      )}
+    >
+      {checked && <Check className="h-3 w-3" />}
+    </div>
+  )
 }
 
 function Kpi({

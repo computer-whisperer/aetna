@@ -44,6 +44,7 @@ Outputs:
 
 - `out/shadcn-calibration.png` — local steelman for Aetna's first fixture.
 - `out/shadcn-dashboard-01.png` — local dashboard-01-style density target.
+- `out/shadcn-settings-01.png` — settings/form density and control target.
 - matching `out/*.json` files — capture metadata with actual DPR, viewport,
   visual viewport scale, and root font size.
 
@@ -55,3 +56,7 @@ lint loop: broken reference screenshots should not become calibration targets.
 The dashboard page is available at `/?view=dashboard-01`. It is modeled
 after shadcn's dashboard block shape: sidebar, section cards, chart
 region, recent activity, and dense data table.
+
+The settings page is available at `/?view=settings-01`. It covers the
+preference-pane shape: persistent sidebar, local section nav, profile fields,
+selects, switches, checkbox rows, and secondary cards.

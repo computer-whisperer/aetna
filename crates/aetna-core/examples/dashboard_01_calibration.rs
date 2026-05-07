@@ -133,6 +133,7 @@ fn dashboard_main() -> El {
         column([
             row([
                 metric_card(
+                    "bar-chart",
                     "Total Revenue",
                     "$1,250.00",
                     "+12.5%",
@@ -140,6 +141,7 @@ fn dashboard_main() -> El {
                     true,
                 ),
                 metric_card(
+                    "users",
                     "New Customers",
                     "1,234",
                     "-20%",
@@ -147,6 +149,7 @@ fn dashboard_main() -> El {
                     false,
                 ),
                 metric_card(
+                    "folder",
                     "Active Accounts",
                     "45,678",
                     "+12.5%",
@@ -154,6 +157,7 @@ fn dashboard_main() -> El {
                     true,
                 ),
                 metric_card(
+                    "activity",
                     "Growth Rate",
                     "4.5%",
                     "+4.5%",
@@ -195,6 +199,7 @@ fn dashboard_header() -> El {
 }
 
 fn metric_card(
+    icon_name: &'static str,
     title: &'static str,
     value: &'static str,
     delta: &'static str,
@@ -206,13 +211,31 @@ fn metric_card(
     } else {
         badge(delta).warning()
     };
-    card(
-        title,
-        [
-            row([h2(value).display().font_size(24.0), spacer(), badge]).align(Align::Center),
-            text(note).caption(),
-        ],
-    )
+    column([
+        row([
+            row([
+                icon(icon_name)
+                    .color(tokens::TEXT_MUTED_FOREGROUND)
+                    .icon_size(14.0),
+                text(title).caption().ellipsis().width(Size::Fill(1.0)),
+            ])
+            .gap(tokens::SPACE_XS)
+            .width(Size::Fill(1.0))
+            .align(Align::Center),
+            badge,
+        ])
+        .gap(tokens::SPACE_SM)
+        .align(Align::Center),
+        h2(value).display().font_size(24.0).ellipsis(),
+        text(note).caption().ellipsis().width(Size::Fill(1.0)),
+    ])
+    .style_profile(StyleProfile::Surface)
+    .metrics_role(MetricsRole::Card)
+    .surface_role(SurfaceRole::Panel)
+    .fill(tokens::BG_CARD)
+    .stroke(tokens::BORDER)
+    .radius(tokens::RADIUS_MD)
+    .shadow(tokens::SHADOW_MD)
     .padding(tokens::SPACE_MD)
     .gap(tokens::SPACE_SM)
     .width(Size::Fill(1.0))

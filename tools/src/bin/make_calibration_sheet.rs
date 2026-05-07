@@ -110,6 +110,10 @@ fn reference_comparison_sheet(
             reference_out_dir.join("shadcn-dashboard-01.png"),
             aetna_out_dir.join("dashboard_01_calibration.png"),
         ),
+        (
+            reference_out_dir.join("shadcn-settings-01.png"),
+            aetna_out_dir.join("settings_calibration.png"),
+        ),
     ];
 
     if !pairs

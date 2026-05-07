@@ -154,6 +154,12 @@ browser zoom or desktop scale for normal polish calibration. The capture writes
 captures are present, `reference_calibration_sheet.png` with shadcn references
 paired against Aetna counterparts.
 
+Current shadcn/Aetna pairs:
+
+- `shadcn-calibration.png` / `polish_calibration.png`,
+- `shadcn-dashboard-01.png` / `dashboard_01_calibration.png`,
+- `shadcn-settings-01.png` / `settings_calibration.png`.
+
 The shadcn reference app marks major surfaces with
 `data-calibration-boundary`; the capture script fails if visible descendants
 overflow those marked boxes. Reference screenshots are inputs to calibration,

@@ -31,6 +31,11 @@ const captures = [
     path: "/?view=dashboard-01",
     description: "Dashboard-01-style reference",
   },
+  {
+    slug: "shadcn-settings-01",
+    path: "/?view=settings-01",
+    description: "Settings/form reference",
+  },
 ]
 
 async function main() {
