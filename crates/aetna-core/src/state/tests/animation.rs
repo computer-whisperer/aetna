@@ -204,6 +204,73 @@ fn app_fill_eases_in_live_mode() {
 }
 
 #[test]
+fn token_tagged_fill_eases_through_draw_ops_without_snapping() {
+    // Regression: when a checkbox / switch / button toggles its
+    // fill from one token to another, the animator interpolates rgba
+    // between them. Before the fix, `Animation::from_channels`
+    // preserved the source token on the in-flight value, and
+    // `apply_state.palette.resolve(c)` snapped the rgb back to that
+    // token's palette value — so the transition rendered as an
+    // instant flip. Verify the eased fill survives draw_ops.
+    use crate::anim::Timing;
+    use crate::draw_ops::draw_ops_with_theme;
+    use crate::ir::DrawOp;
+    use crate::shader::UniformValue;
+    use crate::theme::Theme;
+    use crate::tokens;
+
+    let mut tree_a = column([row([button("X")
+        .key("x")
+        .fill(tokens::PRIMARY)
+        .animate(Timing::SPRING_STANDARD)])])
+    .padding(20.0);
+    let mut state = UiState::new();
+    layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+    let t0 = Instant::now();
+    state.tick_visual_animations(&mut tree_a, t0);
+
+    let mut tree_b = column([row([button("X")
+        .key("x")
+        .fill(tokens::BG_CARD)
+        .animate(Timing::SPRING_STANDARD)])])
+    .padding(20.0);
+    layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+    state.tick_visual_animations(&mut tree_b, t0 + std::time::Duration::from_millis(8));
+
+    // Drive the rendered output through draw_ops; the apply_state
+    // path is what previously snapped the in-flight rgb.
+    let theme = Theme::default();
+    let ops = draw_ops_with_theme(&tree_b, &state, &theme);
+    let quad_fill = ops
+        .iter()
+        .find_map(|op| match op {
+            DrawOp::Quad { id, uniforms, .. } if id.contains("x") => uniforms
+                .get("fill")
+                .and_then(|v| match v {
+                    UniformValue::Color(c) => Some(*c),
+                    _ => None,
+                }),
+            _ => None,
+        })
+        .expect("button quad fill");
+
+    // Mid-flight: rgb should be strictly between the source PRIMARY
+    // and target BG_CARD, not snapped to either.
+    let p = tokens::PRIMARY;
+    let c = tokens::BG_CARD;
+    assert_ne!(
+        (quad_fill.r, quad_fill.g, quad_fill.b),
+        (p.r, p.g, p.b),
+        "rendered fill must not snap back to the source token's rgb",
+    );
+    assert_ne!(
+        (quad_fill.r, quad_fill.g, quad_fill.b),
+        (c.r, c.g, c.b),
+        "rendered fill must not snap forward to the target token's rgb",
+    );
+}
+
+#[test]
 fn app_translate_eases_on_rebuild() {
     use crate::anim::Timing;
     let mut tree_a = column([row([button("slide")

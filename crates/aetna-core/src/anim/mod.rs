@@ -58,17 +58,21 @@ impl AnimValue {
     }
 
     /// Reconstruct an `AnimValue` of the same variant from sampled
-    /// channels. Color tokens (the metadata field) are preserved from
-    /// `self` so an eased token stays semantically named.
+    /// channels. The token name is dropped — an in-flight interpolated
+    /// rgba doesn't equal any palette token's rgb, so carrying a name
+    /// on it would mislead palette resolution. When the animation
+    /// settles, [`step_spring`] / [`step_tween`] assign
+    /// `self.current = self.target` directly, restoring the target's
+    /// token on the final value.
     pub fn from_channels(self, ch: AnimChannels) -> AnimValue {
         match self {
             AnimValue::Float(_) => AnimValue::Float(ch.v[0]),
-            AnimValue::Color(c) => AnimValue::Color(Color {
+            AnimValue::Color(_) => AnimValue::Color(Color {
                 r: ch.v[0].round().clamp(0.0, 255.0) as u8,
                 g: ch.v[1].round().clamp(0.0, 255.0) as u8,
                 b: ch.v[2].round().clamp(0.0, 255.0) as u8,
                 a: ch.v[3].round().clamp(0.0, 255.0) as u8,
-                token: c.token,
+                token: None,
             }),
         }
     }
@@ -578,5 +582,28 @@ mod tests {
         assert_eq!(ch.v, [42.0, 17.0, 200.0, 255.0]);
         let back = v.from_channels(ch);
         assert_eq!(back, AnimValue::Color(c));
+    }
+
+    #[test]
+    fn from_channels_drops_token_on_in_flight_eased_value() {
+        // An in-flight eased rgba is not the same color as the source
+        // token — keeping the token name on it would let palette
+        // resolution snap the rgb back to the source token's palette
+        // value, killing the transition. Spring/tween settled paths
+        // bypass `from_channels` and assign `self.current = self.target`
+        // directly, so settled values still carry the target's token.
+        let v = AnimValue::Color(Color::token("primary", 92, 170, 255, 255));
+        let mid = AnimChannels {
+            n: 4,
+            v: [128.0, 100.0, 80.0, 255.0],
+        };
+        let eased = v.from_channels(mid);
+        match eased {
+            AnimValue::Color(c) => {
+                assert_eq!(c.token, None, "in-flight eased color must drop the token");
+                assert_eq!((c.r, c.g, c.b), (128, 100, 80));
+            }
+            _ => panic!("expected color"),
+        }
     }
 }
