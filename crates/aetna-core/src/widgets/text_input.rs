@@ -196,16 +196,21 @@ pub fn text_input_with(
     key: &str,
     opts: TextInputOpts<'_>,
 ) -> El {
-    let view = selection.within(key).unwrap_or_default();
-    build_text_input(value, view, opts).key(key)
+    build_text_input(value, selection.within(key), opts).key(key)
 }
 
 /// Render the input El given an already-extracted local view. Pure
 /// rendering: doesn't touch [`Selection`], doesn't set the El's key.
 /// Public callers should go through [`text_input`] /
 /// [`text_input_with`] instead.
+///
+/// `view` is `None` when the active selection lives in a different
+/// widget; in that case no caret bar is emitted, so blurring this
+/// input doesn't briefly paint a stray caret at byte 0 while the
+/// focus envelope fades out.
 #[track_caller]
-fn build_text_input(value: &str, selection: TextSelection, opts: TextInputOpts<'_>) -> El {
+fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpts<'_>) -> El {
+    let selection = view.unwrap_or_default();
     let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     let lo = anchor.min(head);
@@ -270,15 +275,23 @@ fn build_text_input(value: &str, selection: TextSelection, opts: TextInputOpts<'
             .height(Size::Fixed(line_h)),
     );
 
-    // Caret bar — always present in the tree; the focus-fade flag
-    // hides it when the input isn't focused. This keeps the widget
-    // builder stateless w.r.t. focus.
-    children.push(
-        caret_bar()
-            .translate(head_px, 0.0)
-            .alpha_follows_focused_ancestor()
-            .blink_when_focused(),
-    );
+    // Caret bar — emitted only when the selection actually lives in
+    // this input. Without that gate, blurring an input by clicking
+    // into another would render this input's caret at byte 0 (its
+    // `view` defaults when selection moves away) for the duration of
+    // the focus-envelope fade-out — a visible "blink at byte 0" the
+    // user reads as the caret jumping home before vanishing. The
+    // focus envelope's alpha fade still applies on focus *gain*: the
+    // caret is in the tree from frame one of focus arrival and fades
+    // in as the envelope eases up.
+    if view.is_some() {
+        children.push(
+            caret_bar()
+                .translate(head_px, 0.0)
+                .alpha_follows_focused_ancestor()
+                .blink_when_focused(),
+        );
+    }
 
     El::new(Kind::Custom("text_input"))
         .at_loc(Location::caller())
@@ -2173,10 +2186,13 @@ mod tests {
     }
 
     #[test]
-    fn text_input_falls_back_to_caret_zero_when_selection_lives_elsewhere() {
-        // Selection is in another paragraph — this input renders no
-        // band, and the caret falls back to byte 0 (still hidden by
-        // the focus envelope when the input isn't focused).
+    fn text_input_omits_caret_when_selection_lives_elsewhere() {
+        // When the active selection lives in another widget, this
+        // input emits neither a band nor a caret. Without the caret
+        // gate, blurring an input by clicking into another would
+        // visibly snap this caret to byte 0 for the duration of the
+        // focus-envelope fade-out — read by the user as the caret
+        // jumping home before vanishing.
         let sel = Selection {
             range: Some(SelectionRange {
                 anchor: SelectionPoint::new("other", 0),
@@ -2192,12 +2208,10 @@ mod tests {
         let caret = el
             .children
             .iter()
-            .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
-            .expect("caret child");
+            .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")));
         assert!(
-            caret.translate.0.abs() < 0.01,
-            "caret pinned at x=0; got {}",
-            caret.translate.0
+            caret.is_none(),
+            "no caret when selection lives elsewhere — focus-fade has nothing to bring back to byte 0"
         );
     }
 }

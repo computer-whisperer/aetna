@@ -81,12 +81,12 @@ use crate::widgets::text_input::{TextSelection, replace_selection};
 /// shape (typical for forms).
 #[track_caller]
 pub fn text_area(value: &str, selection: &Selection, key: &str) -> El {
-    let view = selection.within(key).unwrap_or_default();
-    build_text_area(value, view).key(key)
+    build_text_area(value, selection.within(key)).key(key)
 }
 
 #[track_caller]
-fn build_text_area(value: &str, selection: TextSelection) -> El {
+fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
+    let selection = view.unwrap_or_default();
     let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     let lo = anchor.min(head);
@@ -137,21 +137,25 @@ fn build_text_area(value: &str, selection: TextSelection) -> El {
             .height(Size::Hug),
     );
 
-    // Caret bar — always present in the tree; fades with focus.
-    let (caret_x, caret_y) = caret_xy(
-        value,
-        head,
-        tokens::FONT_BASE,
-        FontWeight::Regular,
-        TextWrap::NoWrap,
-        None,
-    );
-    children.push(
-        caret_bar()
-            .translate(caret_x, caret_y)
-            .alpha_follows_focused_ancestor()
-            .blink_when_focused(),
-    );
+    // Caret bar — emitted only when the active selection actually
+    // lives in this area. See the matching gate in
+    // `text_input::build_text_input` for the rationale.
+    if view.is_some() {
+        let (caret_x, caret_y) = caret_xy(
+            value,
+            head,
+            tokens::FONT_BASE,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            None,
+        );
+        children.push(
+            caret_bar()
+                .translate(caret_x, caret_y)
+                .alpha_follows_focused_ancestor()
+                .blink_when_focused(),
+        );
+    }
 
     El::new(Kind::Custom("text_area"))
         .at_loc(Location::caller())
