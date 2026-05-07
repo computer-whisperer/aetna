@@ -362,12 +362,14 @@ fn documents_card() -> El {
         card_header([card_title("Documents")]),
         card_content([table([
             table_header([table_row([
-                table_head("Header").width(Size::Fill(1.7)),
+                table_head("").width(Size::Fixed(35.0)),
+                table_head("Header").width(Size::Fill(1.8)),
                 table_head("Section Type").width(Size::Fill(1.0)),
-                table_head("Status").width(Size::Fixed(112.0)),
-                table_head("Target").width(Size::Fixed(70.0)),
-                table_head("Limit").width(Size::Fixed(70.0)),
-                table_head("Reviewer").width(Size::Fixed(140.0)),
+                table_head("Status").width(Size::Fixed(104.0)),
+                table_head("Target").width(Size::Fixed(64.0)),
+                table_head("Limit").width(Size::Fixed(64.0)),
+                table_head("Reviewer").width(Size::Fixed(128.0)),
+                table_head("").width(Size::Fixed(32.0)),
             ])
             .key("metric:table.header")]),
             divider(),
@@ -413,18 +415,34 @@ fn document_row(
         _ => badge(status).info(),
     };
     table_row([
-        table_cell(text(header).label().small()).width(Size::Fill(1.7)),
+        table_utility_cell("::"),
+        table_cell(text(header).label().small()).width(Size::Fill(1.8)),
         table_cell(text(section).muted()).width(Size::Fill(1.0)),
-        table_cell(status_badge).width(Size::Fixed(112.0)),
-        table_cell(text(target).label().small()).width(Size::Fixed(70.0)),
-        table_cell(text(limit).label().small()).width(Size::Fixed(70.0)),
-        table_cell(text(reviewer).muted()).width(Size::Fixed(140.0)),
+        table_cell(status_badge).width(Size::Fixed(104.0)),
+        table_cell(text(target).label().small()).width(Size::Fixed(64.0)),
+        table_cell(text(limit).label().small()).width(Size::Fixed(64.0)),
+        table_cell(text(reviewer).muted()).width(Size::Fixed(128.0)),
+        table_action_cell(),
     ])
     .key(if header == "Cover page" {
         "metric:table.row"
     } else {
         header
     })
+}
+
+fn table_utility_cell(label: &'static str) -> El {
+    table_cell(text(label).muted().center_text()).width(Size::Fixed(35.0))
+}
+
+fn table_action_cell() -> El {
+    stack([icon("more-horizontal")
+        .icon_size(16.0)
+        .color(tokens::TEXT_MUTED_FOREGROUND)])
+    .align(Align::Center)
+    .justify(Justify::Center)
+    .width(Size::Fixed(32.0))
+    .height(Size::Hug)
 }
 
 fn icon_cell(label: &'static str) -> El {
