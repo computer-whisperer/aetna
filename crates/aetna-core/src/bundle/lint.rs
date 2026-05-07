@@ -100,7 +100,15 @@ impl LintReport {
 pub fn lint(root: &El, ui_state: &UiState, app_path_marker: Option<&str>) -> LintReport {
     let mut r = LintReport::default();
     let mut seen_ids: std::collections::BTreeMap<String, usize> = Default::default();
-    walk(root, None, None, ui_state, &mut r, &mut seen_ids, app_path_marker);
+    walk(
+        root,
+        None,
+        None,
+        ui_state,
+        &mut r,
+        &mut seen_ids,
+        app_path_marker,
+    );
     for (id, n) in seen_ids {
         if n > 1 {
             r.findings.push(Finding {
@@ -205,7 +213,10 @@ fn walk(
     // check fires when the text exceeds the padded content area, not
     // just the bare rect). Attribute to the nearest user-source
     // ancestor so closure-built widget leaves still blame user code.
-    if n.text.is_some() && !inside_inlines && let Some(blame) = self_blame {
+    if n.text.is_some()
+        && !inside_inlines
+        && let Some(blame) = self_blame
+    {
         let available_width = match n.text_wrap {
             TextWrap::NoWrap => None,
             TextWrap::Wrap => Some(computed.w),
@@ -477,7 +488,11 @@ mod tests {
         wrapper.source = widget_source;
 
         let mut ui_state = UiState::new();
-        layout::layout(&mut wrapper, &mut ui_state, Rect::new(0.0, 0.0, 160.0, 48.0));
+        layout::layout(
+            &mut wrapper,
+            &mut ui_state,
+            Rect::new(0.0, 0.0, 160.0, 48.0),
+        );
         let report = lint(&wrapper, &ui_state, Some("crates/test_app/src"));
 
         assert!(
