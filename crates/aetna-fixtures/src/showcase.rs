@@ -253,11 +253,27 @@ struct GlassState {
     drift: usize,
 }
 
+/// User-selected runtime theme — drives [`App::theme`] so the showcase
+/// renders against the chosen palette without rebuilding state.
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
+enum ThemeChoice {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl ThemeChoice {
+    fn is_light(self) -> bool {
+        matches!(self, ThemeChoice::Light)
+    }
+}
+
 /// The showcase app. State for every section lives here so switching
 /// sections is non-destructive.
 #[derive(Default)]
 pub struct Showcase {
     section: Section,
+    theme_choice: ThemeChoice,
     counter: CounterState,
     list: ListState,
     palette: PaletteState,
@@ -309,7 +325,7 @@ impl App for Showcase {
             )
         });
         overlays(
-            row([sidebar(self.section), content(self)]),
+            row([sidebar(self.section, self.theme_choice), content(self)]),
             [region_layer, actions_layer],
         )
     }
@@ -321,6 +337,14 @@ impl App for Showcase {
         }
     }
 
+    fn theme(&self) -> Theme {
+        if self.theme_choice.is_light() {
+            Theme::aetna_light()
+        } else {
+            Theme::aetna_dark()
+        }
+    }
+
     fn on_event(&mut self, event: UiEvent) {
         // Sidebar navigation: any click on a `nav-*` key switches sections.
         if matches!(event.kind, UiEventKind::Click | UiEventKind::Activate)
@@ -328,6 +352,17 @@ impl App for Showcase {
             && let Some(target) = nav_section(k)
         {
             self.section = target;
+            return;
+        }
+
+        // Theme picker: the sidebar switch toggles dark/light.
+        let mut light = self.theme_choice.is_light();
+        if switch::apply_event(&mut light, &event, "theme-toggle") {
+            self.theme_choice = if light {
+                ThemeChoice::Light
+            } else {
+                ThemeChoice::Dark
+            };
             return;
         }
 
@@ -370,7 +405,7 @@ fn nav_section(key: &str) -> Option<Section> {
 
 // ---- Shell: sidebar + content ----
 
-fn sidebar(active: Section) -> El {
+fn sidebar(active: Section, theme_choice: ThemeChoice) -> El {
     let mut entries: Vec<El> = vec![
         text("Aetna").bold().font_size(18.0),
         text("showcase").muted().small(),
@@ -380,6 +415,20 @@ fn sidebar(active: Section) -> El {
         b = if s == active { b.primary() } else { b.ghost() };
         entries.push(b);
     }
+    // Theme picker pinned to the bottom of the sidebar via a flexible
+    // spacer above it. Demonstrates the runtime palette swap end-to-end:
+    // toggling the switch flips `Showcase::theme()` and every tokened
+    // surface in the tree resolves through the new palette on the next
+    // frame.
+    entries.push(spacer().height(Size::Fill(1.0)));
+    entries.push(
+        row([
+            text("Light theme").label().width(Size::Fill(1.0)),
+            switch(theme_choice.is_light()).key("theme-toggle"),
+        ])
+        .gap(tokens::SPACE_SM)
+        .align(Align::Center),
+    );
     column(entries)
         .gap(tokens::SPACE_SM)
         .padding(tokens::SPACE_LG)
