@@ -1572,6 +1572,99 @@ mod tests {
     }
 
     #[test]
+    fn arrow_key_through_apply_event_mutates_selection_and_bumps_on_set() {
+        // End-to-end check that the path used by the text_input
+        // example does in fact differ-then-bump on each arrow-key
+        // press. If this regresses, the caret won't reset its blink
+        // when the user moves the cursor — exactly what the polish
+        // pass is meant to fix.
+        use crate::widgets::text_input;
+        let mut sel = crate::selection::Selection::caret("ti", 2);
+        let mut value = String::from("hello");
+
+        let mut core = RunnerCore::new();
+        // Seed the runtime mirror so the first set_selection below
+        // doesn't bump from "default → caret(2)".
+        core.set_selection(sel.clone());
+        let baseline = core.ui_state.caret_activity_at;
+
+        // Build a synthetic ArrowRight KeyDown for the input's key.
+        let arrow_right = UiEvent {
+            key: Some("ti".into()),
+            target: None,
+            pointer: None,
+            key_press: Some(crate::event::KeyPress {
+                key: UiKey::ArrowRight,
+                modifiers: KeyModifiers::default(),
+                repeat: false,
+            }),
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 0,
+            kind: UiEventKind::KeyDown,
+        };
+
+        // 1. App's on_event would call into this path:
+        let mutated = text_input::apply_event(&mut value, &mut sel, "ti", &arrow_right);
+        assert!(mutated, "ArrowRight should mutate selection");
+        assert_eq!(
+            sel.within("ti").unwrap().head,
+            3,
+            "head moved one char right (h-e-l-l-o, byte 2 → 3)"
+        );
+
+        // 2. Next frame's set_selection sees the new value → bump.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        core.set_selection(sel);
+        let after = core.ui_state.caret_activity_at.unwrap();
+        match baseline {
+            Some(b) => assert!(after > b, "arrow-key flow should bump activity"),
+            None => {} // Either way, activity is now Some.
+        }
+    }
+
+    #[test]
+    fn set_selection_bumps_caret_activity_only_when_value_changes() {
+        let mut core = lay_out_paragraph_tree();
+        // First call with the default selection — no bump (mirror is
+        // already default-empty).
+        core.set_selection(crate::selection::Selection::default());
+        assert!(
+            core.ui_state.caret_activity_at.is_none(),
+            "no-op set_selection should not bump activity"
+        );
+
+        // Move the selection to a real range — bump.
+        let sel_a = crate::selection::Selection::caret("p1", 3);
+        core.set_selection(sel_a.clone());
+        let bumped_at = core
+            .ui_state
+            .caret_activity_at
+            .expect("first real selection bumps");
+
+        // Same selection again — must NOT bump (else every frame
+        // re-bumps and the caret never blinks).
+        core.set_selection(sel_a.clone());
+        assert_eq!(
+            core.ui_state.caret_activity_at,
+            Some(bumped_at),
+            "set_selection with same value is a no-op"
+        );
+
+        // Caret at a different byte (simulating arrow-key motion) →
+        // bump again.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let sel_b = crate::selection::Selection::caret("p1", 7);
+        core.set_selection(sel_b);
+        let new_bump = core.ui_state.caret_activity_at.expect("second bump");
+        assert!(
+            new_bump > bumped_at,
+            "moving the caret bumps activity again",
+        );
+    }
+
+    #[test]
     fn escape_clears_active_selection_and_emits_selection_changed() {
         let mut core = lay_out_paragraph_tree();
         let p1 = core.rect_of_key("p1").expect("p1 rect");
