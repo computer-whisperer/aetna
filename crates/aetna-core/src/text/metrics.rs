@@ -13,7 +13,7 @@ use cosmic_text::{
 };
 use std::cell::RefCell;
 
-const LINE_HEIGHT_MULTIPLIER: f32 = 1.4;
+const LINE_HEIGHT_MULTIPLIER: f32 = 1.3;
 const MONO_CHAR_WIDTH_FACTOR: f32 = 0.62;
 
 const BASELINE_MULTIPLIER: f32 = 0.93;

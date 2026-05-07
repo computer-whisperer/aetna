@@ -172,7 +172,7 @@ fn settings_nav_item(label: &'static str, selected: bool) -> El {
 fn settings_body() -> El {
     column([
         column([
-            h1("Account").display().font_size(24.0),
+            h1("Account").heading(),
             text("Manage identity, workspace defaults, and security preferences.").caption(),
         ])
         .gap(tokens::SPACE_XS)
@@ -189,7 +189,10 @@ fn profile_card() -> El {
     card(
         "Profile",
         [
-            text("This information appears in audit logs and shared documents.").caption(),
+            text("This information appears in audit logs and shared documents.")
+                .caption()
+                .wrap_text()
+                .width(Size::Fill(1.0)),
             row([
                 setting_field("Display name", "Alicia Koch", "display-name"),
                 setting_field("Email", "alicia@example.com", "email"),
@@ -335,14 +338,15 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     let mut item = row([
         icon(icon_name)
             .color(tokens::TEXT_MUTED_FOREGROUND)
-            .icon_size(15.0)
-            .width(Size::Fixed(18.0)),
+            .icon_size(tokens::FONT_LG)
+            .width(Size::Fixed(tokens::FONT_LG)),
         text(label)
             .font_weight(FontWeight::Medium)
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
     .metrics_role(MetricsRole::ListItem)
+    .compact()
     .align(Align::Center)
     .focusable();
 

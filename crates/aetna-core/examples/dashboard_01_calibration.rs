@@ -124,14 +124,15 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     let mut item = row([
         icon(icon_name)
             .color(tokens::TEXT_MUTED_FOREGROUND)
-            .icon_size(15.0)
-            .width(Size::Fixed(18.0)),
+            .icon_size(tokens::FONT_LG)
+            .width(Size::Fixed(tokens::FONT_LG)),
         text(label)
             .font_weight(FontWeight::Medium)
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
     .metrics_role(MetricsRole::ListItem)
+    .compact()
     .align(Align::Center)
     .focusable();
 

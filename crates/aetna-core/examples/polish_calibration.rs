@@ -55,9 +55,13 @@ fn polish_calibration() -> El {
 
 fn sidebar() -> El {
     column([
-        column([h2("Aetna"), text("calibration").caption()])
-            .gap(tokens::SPACE_XS)
-            .height(Size::Hug),
+        column([
+            h2("Aetna"),
+            text("calibration").caption().font_size(tokens::FONT_BASE),
+        ])
+        .gap(tokens::SPACE_XS)
+        .height(Size::Hug),
+        spacer().height(Size::Fixed(tokens::SPACE_LG)),
         nav_item("01", "Overview", true),
         nav_item("02", "Commands", false),
         nav_item("03", "Tables", false),
@@ -116,7 +120,7 @@ fn main_panel() -> El {
 fn toolbar() -> El {
     row([
         column([
-            h1("Polish calibration").display().font_size(24.0),
+            h1("Polish calibration"),
             text("A representative app surface for default tuning.").caption(),
         ])
         .gap(tokens::SPACE_XS)
@@ -130,7 +134,7 @@ fn toolbar() -> El {
             .key("publish"),
     ])
     .gap(tokens::SPACE_SM)
-    .height(Size::Fixed(54.0))
+    .height(Size::Fixed(64.0))
     .align(Align::Center)
 }
 
@@ -143,7 +147,7 @@ fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, posit
     card(
         label,
         [
-            row([h2(value), spacer(), delta_badge]).align(Align::Center),
+            row([h2(value).display(), spacer(), delta_badge]).align(Align::Center),
             text(if positive {
                 "Moving in the expected direction"
             } else {

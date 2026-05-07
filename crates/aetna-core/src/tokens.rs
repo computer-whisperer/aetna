@@ -128,12 +128,12 @@ pub const SHADOW_MD: f32 = 12.0;
 pub const SHADOW_LG: f32 = 24.0;
 
 // ---- Font sizes ----
-pub const FONT_XS: f32 = 11.0;
+pub const FONT_XS: f32 = 12.0;
 pub const FONT_SM: f32 = 12.0;
 pub const FONT_BASE: f32 = 14.0;
 pub const FONT_LG: f32 = 16.0;
-pub const FONT_XL: f32 = 20.0;
-pub const FONT_XXL: f32 = 26.0;
+pub const FONT_XL: f32 = 24.0;
+pub const FONT_XXL: f32 = 30.0;
 
 // ---- State styling ----
 //
