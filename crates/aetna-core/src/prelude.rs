@@ -50,6 +50,7 @@ pub use crate::widgets::badge::badge;
 pub use crate::widgets::button::{button, button_with_icon, icon_button};
 pub use crate::widgets::card::card;
 pub use crate::widgets::checkbox::{self, checkbox};
+pub use crate::widgets::form::field_row;
 pub use crate::widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use crate::widgets::popover::{
     Anchor, Side, anchor_rect, context_menu, dropdown, menu_item, popover, popover_panel,

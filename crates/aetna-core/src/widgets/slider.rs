@@ -13,8 +13,18 @@
 //!
 //! Pointer routing is delivered to `App::on_event` as `Click`,
 //! `PointerDown`, and `Drag` events whose `key` matches the slider's
-//! key. Use [`normalized_from_event`] to convert the pointer-x within
-//! the slider's `target.rect` to a normalized value:
+//! key. For form-style code with several sliders, [`apply_input`]
+//! folds both pointer and key events into the value in one call:
+//!
+//! ```ignore
+//! fn on_event(&mut self, event: UiEvent) {
+//!     slider::apply_input(&mut self.volume, &event, "volume", 0.05, 0.25);
+//! }
+//! ```
+//!
+//! When the app drives a typed value (e.g. `volume_pct: u32`) and
+//! wants the pointer-derived `f32` directly, use
+//! [`normalized_from_event`] inside its own pointer arm:
 //!
 //! ```ignore
 //! if matches!(event.kind, UiEventKind::PointerDown | UiEventKind::Drag)
@@ -180,6 +190,10 @@ pub fn classify_event(
 /// result to `0.0..=1.0`. Returns `true` when the value changed —
 /// apps use that to decide whether to write back into their typed
 /// state and request a redraw.
+///
+/// Pointer-only handling lives in [`normalized_from_event`]; reach
+/// for [`apply_input`] for the unified pointer-or-key helper that
+/// most form code wants.
 pub fn apply_event(value: &mut f32, event: &UiEvent, key: &str, step: f32, page_step: f32) -> bool {
     let Some(action) = classify_event(event, key, step, page_step) else {
         return false;
@@ -191,6 +205,43 @@ pub fn apply_event(value: &mut f32, event: &UiEvent, key: &str, step: f32, page_
     };
     *value = next.clamp(0.0, 1.0);
     *value != prev
+}
+
+/// Fold either a pointer event (`Click` / `PointerDown` / `Drag`)
+/// or a key event into a normalized slider value, clamping the
+/// result to `0.0..=1.0`. Returns `true` when the event was for
+/// `key` and the value changed.
+///
+/// This is the one-call shape for forms with multiple sliders —
+/// instead of two `match` blocks dispatching pointer and key events
+/// separately, the app just calls `apply_input` per slider:
+///
+/// ```ignore
+/// fn on_event(&mut self, event: UiEvent) {
+///     slider::apply_input(&mut self.volume,  &event, "volume",  0.05, 0.25);
+///     slider::apply_input(&mut self.bitrate, &event, "bitrate", 0.05, 0.25);
+///     slider::apply_input(&mut self.gain,    &event, "gain",    0.05, 0.25);
+/// }
+/// ```
+///
+/// Pointer events without a `target_rect` / `pointer_x` payload
+/// fall through to [`apply_event`] (key handling), so synthetic
+/// events that happen to carry a pointer kind without geometry
+/// still drive the keyboard path rather than no-op.
+pub fn apply_input(value: &mut f32, event: &UiEvent, key: &str, step: f32, page_step: f32) -> bool {
+    let pointer_kind = matches!(
+        event.kind,
+        UiEventKind::Click | UiEventKind::PointerDown | UiEventKind::Drag,
+    );
+    if pointer_kind
+        && event.route() == Some(key)
+        && let (Some(rect), Some(x)) = (event.target_rect(), event.pointer_x())
+    {
+        let prev = *value;
+        *value = normalized_from_event(rect, x);
+        return *value != prev;
+    }
+    apply_event(value, event, key, step, page_step)
 }
 
 #[cfg(test)]
@@ -367,5 +418,91 @@ mod tests {
         // Drifts off the ends clamp.
         assert_eq!(normalized_from_event(rect, rect.x - 30.0), 0.0);
         assert_eq!(normalized_from_event(rect, rect.x + rect.w + 30.0), 1.0);
+    }
+
+    fn pointer_event(key: &str, kind: UiEventKind, rect: Rect, x: f32) -> UiEvent {
+        UiEvent {
+            key: Some(key.to_string()),
+            target: Some(UiTarget {
+                key: key.to_string(),
+                node_id: format!("/{key}"),
+                rect,
+            }),
+            pointer: Some((x, rect.y + rect.h * 0.5)),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 0,
+            kind,
+        }
+    }
+
+    #[test]
+    fn apply_input_handles_pointer_drag() {
+        let rect = Rect::new(10.0, 20.0, 220.0, DEFAULT_HEIGHT);
+        let usable = rect.w - THUMB_SIZE;
+        let mid_x = rect.x + THUMB_SIZE * 0.5 + usable * 0.5;
+
+        let mut value = 0.0;
+        assert!(apply_input(
+            &mut value,
+            &pointer_event("vol", UiEventKind::Drag, rect, mid_x),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert!((value - 0.5).abs() < 1e-6);
+
+        // Click at the right edge jumps to 1.0.
+        let right = rect.x + THUMB_SIZE * 0.5 + usable;
+        assert!(apply_input(
+            &mut value,
+            &pointer_event("vol", UiEventKind::Click, rect, right),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert_eq!(value, 1.0);
+
+        // Repeat at 1.0 is a no-op (returns false).
+        assert!(!apply_input(
+            &mut value,
+            &pointer_event("vol", UiEventKind::Click, rect, right),
+            "vol",
+            0.1,
+            0.25
+        ));
+    }
+
+    #[test]
+    fn apply_input_falls_through_to_keyboard() {
+        // Key events route through `apply_event` internally, so the
+        // unified helper is a drop-in replacement for keyboard-only
+        // call sites.
+        let mut value = 0.5;
+        assert!(apply_input(
+            &mut value,
+            &key_event("vol", UiKey::ArrowUp),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert!((value - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn apply_input_ignores_pointer_events_for_other_keys() {
+        // A drag on a different slider must not move this one.
+        let rect = Rect::new(0.0, 0.0, 200.0, DEFAULT_HEIGHT);
+        let mut value = 0.5;
+        assert!(!apply_input(
+            &mut value,
+            &pointer_event("other", UiEventKind::Drag, rect, 100.0),
+            "vol",
+            0.1,
+            0.25
+        ));
+        assert_eq!(value, 0.5);
     }
 }

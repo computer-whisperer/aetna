@@ -1,11 +1,13 @@
-//! Slider keyboard — the controlled `slider::apply_event` helper.
+//! Slider keyboard — the controlled `slider::apply_input` helper.
 //!
-//! A focused [`slider`] receives `KeyDown` events; passing them to
-//! [`slider::apply_event`] folds them back into a normalized value
-//! using the standard ARIA range pattern: `ArrowUp` / `ArrowRight`
-//! step up by `step`, `ArrowDown` / `ArrowLeft` step down, `PageUp`
-//! / `PageDown` adjust by `page_step`, `Home` / `End` jump to the
-//! ends.
+//! A focused [`slider`] receives both `KeyDown` and pointer events;
+//! [`slider::apply_input`] folds either into a normalized value in
+//! one call. Keyboard follows the standard ARIA range pattern:
+//! `ArrowUp` / `ArrowRight` step up by `step`, `ArrowDown` /
+//! `ArrowLeft` step down, `PageUp` / `PageDown` adjust by
+//! `page_step`, `Home` / `End` jump to the ends. Pointer events
+//! (`Click` / `PointerDown` / `Drag`) set the value to the pointer
+//! position within the slider's track.
 //!
 //! Run: `cargo run -p aetna-examples --bin slider_keyboard`
 //!
@@ -17,7 +19,6 @@
 //!   the coarse step.
 
 use aetna_core::prelude::*;
-use aetna_core::widgets::slider;
 
 struct VolumeDemo {
     value: f32,
@@ -45,18 +46,8 @@ impl App for VolumeDemo {
     }
 
     fn on_event(&mut self, event: UiEvent) {
-        // Pointer drag: the existing `normalized_from_event` helper.
-        if matches!(
-            event.kind,
-            UiEventKind::PointerDown | UiEventKind::Drag | UiEventKind::Click
-        ) && event.route() == Some("vol")
-            && let (Some(rect), Some(x)) = (event.target_rect(), event.pointer_x())
-        {
-            self.value = slider::normalized_from_event(rect, x);
-            return;
-        }
-        // Keyboard: the new `apply_event` helper.
-        slider::apply_event(&mut self.value, &event, "vol", 0.05, 0.25);
+        // One call handles both pointer drag and keyboard arrows.
+        slider::apply_input(&mut self.value, &event, "vol", 0.05, 0.25);
     }
 }
 

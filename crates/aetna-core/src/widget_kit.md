@@ -98,6 +98,28 @@ Use `icon("search")` for built-in vector icons, `icon_button("menu")` for the st
 
 Icons are normal `El`s: set `.color(...)`, `.icon_size(...)`, `.icon_stroke_width(...)`, width/height, padding, or put them inside rows the same way as text. Tree dumps show `icon=<name>`, draw-op artifacts include `Icon` records, and the SVG fallback renders the vector path directly. The wgpu renderer, browser WebGPU path, and Vulkano renderer all render SVG-backed vector geometry through the shared vector mesh.
 
+### 3.4 Form rows
+
+`field_row("Volume (52%)", slider(...).key("volume"))` is the [label … control] row that fills 80% of a settings panel. The label is `.label()`-styled, a spacer pushes the control to the right edge, and the row vertical-centers and fills its parent's width so a column of `field_row`s lays out as a clean form. For multi-control rows (e.g. a value readout next to a slider), wrap them in `row([...])` and pass that as the control. Forks fine — the helper is a 4-line composition over `row`, `spacer`, and `text(...).label()`.
+
+Pair `field_row` with `slider::apply_input(&mut value, &event, key, step, page_step)` for forms with several sliders: one call dispatches both the pointer drag and the keyboard arrows, so the event handler stays one branch per slider rather than two `match` blocks dispatching by event source. `bin/settings_modal.rs` is the worked example — a tabbed modal at a custom 720×620 panel size, with a scrollable body between sticky tabs and a sticky footer.
+
+### 3.5 Sizing a modal
+
+The `modal(key, title, body)` helper bakes a 420 px panel; for settings dialogs and other form-heavy modals, compose with `overlay` + `modal_panel` directly so the panel's size lives at the call site:
+
+```rust
+overlay([
+    scrim("settings:dismiss"),
+    modal_panel("Settings", [tabs_list(...), scroll([body]), footer])
+        .width(Size::Fixed(720.0))
+        .height(Size::Fixed(620.0))
+        .block_pointer(),
+])
+```
+
+`modal_panel` is `axis = Column, align = Stretch`, so a `scroll([body])` child claims the remaining height between any `Hug`-sized siblings (title, tabs, footer) — the footer stays visible while a long form scrolls inside the panel. The `.block_pointer()` chain is what stops clicks on the panel from passing through to the scrim and dismissing the modal.
+
 ### 4. Focus + interaction
 
 - `.focusable()` — opt into Tab focus order and the focus ring. The library writes `focus_color` + `focus_width` uniforms onto your node's quad whenever the focus envelope is non-zero (animated by the runtime). The `RoundedRect` stock shader draws the ring in the `paint_overflow` band; if you bind a custom shader, you receive the same uniforms and decide what to paint with them.
