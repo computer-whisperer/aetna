@@ -667,12 +667,7 @@ impl Runner {
         self.core.pointer_up(x, y, button)
     }
 
-    pub fn key_down(
-        &mut self,
-        key: UiKey,
-        modifiers: KeyModifiers,
-        repeat: bool,
-    ) -> Vec<UiEvent> {
+    pub fn key_down(&mut self, key: UiKey, modifiers: KeyModifiers, repeat: bool) -> Vec<UiEvent> {
         self.core.key_down(key, modifiers, repeat)
     }
 

@@ -27,14 +27,11 @@ use aetna_core::prelude::*;
 use aetna_core::selection;
 use aetna_core::widgets::text_input::{self, ClipboardKind};
 
-const PARA_A: &str =
-    "Aetna selection model: pointer-down on a selectable text leaf starts a drag, \
+const PARA_A: &str = "Aetna selection model: pointer-down on a selectable text leaf starts a drag, \
      pointer-move extends it, pointer-up ends it. The selection itself persists.";
-const PARA_B: &str =
-    "Single-selection invariant: at most one selection across the whole app at a time. \
+const PARA_B: &str = "Single-selection invariant: at most one selection across the whole app at a time. \
      A new pointer-down on a different leaf transfers ownership.";
-const PARA_C: &str =
-    "Library-side state lives in UiState (drag in progress); the canonical Selection \
+const PARA_C: &str = "Library-side state lives in UiState (drag in progress); the canonical Selection \
      value is owned by the application and threaded back into App::selection() per frame.";
 
 struct Demo {

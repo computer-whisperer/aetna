@@ -855,9 +855,15 @@ mod tests {
         use crate::selection::{Selection, SelectionPoint, SelectionRange};
 
         let mut tree = column([
-            crate::widgets::text::paragraph("First").key("a").selectable(),
-            crate::widgets::text::paragraph("Second").key("b").selectable(),
-            crate::widgets::text::paragraph("Third").key("c").selectable(),
+            crate::widgets::text::paragraph("First")
+                .key("a")
+                .selectable(),
+            crate::widgets::text::paragraph("Second")
+                .key("b")
+                .selectable(),
+            crate::widgets::text::paragraph("Third")
+                .key("c")
+                .selectable(),
         ])
         .padding(20.0);
         let mut state = UiState::new();

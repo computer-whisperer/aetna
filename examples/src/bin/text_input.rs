@@ -82,10 +82,7 @@ mod primary {
     pub fn get(clipboard: Option<&mut arboard::Clipboard>) -> Option<String> {
         use arboard::{GetExtLinux, LinuxClipboardKind};
         let cb = clipboard?;
-        cb.get()
-            .clipboard(LinuxClipboardKind::Primary)
-            .text()
-            .ok()
+        cb.get().clipboard(LinuxClipboardKind::Primary).text().ok()
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -141,7 +138,12 @@ impl App for Form {
             ),
             field_row(
                 "Email",
-                text_input_with(&self.email, &self.selection, "email", self.opts_for("email")),
+                text_input_with(
+                    &self.email,
+                    &self.selection,
+                    "email",
+                    self.opts_for("email"),
+                ),
             ),
             field_row(
                 "PIN",

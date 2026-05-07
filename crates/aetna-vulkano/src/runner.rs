@@ -623,12 +623,7 @@ impl Runner {
         self.core.ui_state.set_modifiers(modifiers);
     }
 
-    pub fn key_down(
-        &mut self,
-        key: UiKey,
-        modifiers: KeyModifiers,
-        repeat: bool,
-    ) -> Vec<UiEvent> {
+    pub fn key_down(&mut self, key: UiKey, modifiers: KeyModifiers, repeat: bool) -> Vec<UiEvent> {
         self.core.key_down(key, modifiers, repeat)
     }
 

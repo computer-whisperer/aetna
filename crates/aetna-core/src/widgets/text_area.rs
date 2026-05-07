@@ -228,11 +228,7 @@ pub fn apply_event(
 /// Apply the event to the area's local view. Internal worker behind
 /// [`apply_event`]; pure in the sense that it doesn't touch
 /// [`Selection`].
-fn fold_event_local(
-    value: &mut String,
-    selection: &mut TextSelection,
-    event: &UiEvent,
-) -> bool {
+fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &UiEvent) -> bool {
     selection.anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     selection.head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     match event.kind {

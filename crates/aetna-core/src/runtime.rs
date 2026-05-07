@@ -239,8 +239,8 @@ impl RunnerCore {
         if let Some(drag) = self.ui_state.selection_drag.clone()
             && let Some(tree) = self.last_tree.as_ref()
         {
-            let head_point = head_for_drag(tree, &self.ui_state, (x, y))
-                .unwrap_or_else(|| drag.anchor.clone());
+            let head_point =
+                head_for_drag(tree, &self.ui_state, (x, y)).unwrap_or_else(|| drag.anchor.clone());
             let new_sel = crate::selection::Selection {
                 range: Some(crate::selection::SelectionRange {
                     anchor: drag.anchor.clone(),
@@ -606,12 +606,7 @@ impl RunnerCore {
         out
     }
 
-    pub fn key_down(
-        &mut self,
-        key: UiKey,
-        modifiers: KeyModifiers,
-        repeat: bool,
-    ) -> Vec<UiEvent> {
+    pub fn key_down(&mut self, key: UiKey, modifiers: KeyModifiers, repeat: bool) -> Vec<UiEvent> {
         // Capture path: when the focused node opted into raw key
         // capture, the library's Tab/Enter/Escape interpretation is
         // bypassed and the event is delivered as a raw `KeyDown` to
@@ -628,7 +623,11 @@ impl RunnerCore {
             // `App::selection()`. Without this, hammering arrow keys
             // produces no visible blink reset.
             self.ui_state.bump_caret_activity(Instant::now());
-            return self.ui_state.key_down_raw(key, modifiers, repeat).into_iter().collect();
+            return self
+                .ui_state
+                .key_down_raw(key, modifiers, repeat)
+                .into_iter()
+                .collect();
         }
 
         // Arrow-nav: if the focused node sits inside an arrow-navigable
@@ -1173,7 +1172,9 @@ fn head_for_drag(
             })
         })?;
     let target_rect = target.rect;
-    let cy = point.1.clamp(target_rect.y, target_rect.y + target_rect.h - 1.0);
+    let cy = point
+        .1
+        .clamp(target_rect.y, target_rect.y + target_rect.h - 1.0);
     if let Some(p) = hit_test::selection_point_at(root, ui_state, (point.0, cy)) {
         return Some(p);
     }
@@ -1628,13 +1629,10 @@ mod tests {
         let cy = ti.y + ti.h * 0.5;
 
         let events = core.pointer_down(cx, cy, PointerButton::Primary);
-        let cleared = events
-            .iter()
-            .find(|e| e.kind == UiEventKind::SelectionChanged && e
-                .selection
-                .as_ref()
-                .map(|s| s.is_empty())
-                .unwrap_or(false));
+        let cleared = events.iter().find(|e| {
+            e.kind == UiEventKind::SelectionChanged
+                && e.selection.as_ref().map(|s| s.is_empty()).unwrap_or(false)
+        });
         assert!(
             cleared.is_none(),
             "click on the selection-owning input must not emit a clearing SelectionChanged"
@@ -1822,9 +1820,11 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(2));
         core.set_selection(sel);
         let after = core.ui_state.caret_activity_at.unwrap();
-        match baseline {
-            Some(b) => assert!(after > b, "arrow-key flow should bump activity"),
-            None => {} // Either way, activity is now Some.
+        // If a baseline existed, the new bump must be later. Either
+        // way the activity is now Some, which the .unwrap() above
+        // already enforced.
+        if let Some(b) = baseline {
+            assert!(after > b, "arrow-key flow should bump activity");
         }
     }
 
@@ -1971,11 +1971,7 @@ mod tests {
         );
 
         // Press on ti (different target) → count resets to 1.
-        let down2 = core.pointer_down(
-            ti.x + ti.w * 0.5,
-            ti.y + ti.h * 0.5,
-            PointerButton::Primary,
-        );
+        let down2 = core.pointer_down(ti.x + ti.w * 0.5, ti.y + ti.h * 0.5, PointerButton::Primary);
         let pd2 = down2
             .iter()
             .find(|e| e.kind == UiEventKind::PointerDown)
@@ -2674,7 +2670,11 @@ mod tests {
             .cloned();
         core.ui_state.set_focus(target);
         let events = core.key_down(UiKey::ArrowDown, KeyModifiers::default(), false);
-        assert_eq!(events.len(), 1, "ArrowDown without navigable parent → event");
+        assert_eq!(
+            events.len(),
+            1,
+            "ArrowDown without navigable parent → event"
+        );
         assert_eq!(events[0].kind, UiEventKind::KeyDown);
     }
 

@@ -146,5 +146,4 @@ pub const SELECTION_BG: Color = Color::token("selection-bg", 92, 170, 255, 96);
 /// lerps from this toward `SELECTION_BG` as the input regains focus
 /// (see [`crate::tree::El::dim_fill`]). Matches the macOS convention
 /// where unfocused selection reads as gray rather than blue.
-pub const SELECTION_BG_UNFOCUSED: Color =
-    Color::token("selection-bg-unfocused", 160, 160, 160, 64);
+pub const SELECTION_BG_UNFOCUSED: Color = Color::token("selection-bg-unfocused", 160, 160, 160, 64);

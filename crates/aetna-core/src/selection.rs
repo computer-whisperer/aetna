@@ -227,7 +227,12 @@ pub fn selected_text(tree: &El, selection: &Selection) -> Option<String> {
         (head_idx, r.head.byte, anchor_idx, r.anchor.byte)
     };
     let mut out = String::new();
-    for (i, (_, value)) in leaves.iter().enumerate().skip(lo_idx).take(hi_idx - lo_idx + 1) {
+    for (i, (_, value)) in leaves
+        .iter()
+        .enumerate()
+        .skip(lo_idx)
+        .take(hi_idx - lo_idx + 1)
+    {
         let start = if i == lo_idx {
             lo_byte.min(value.len())
         } else {

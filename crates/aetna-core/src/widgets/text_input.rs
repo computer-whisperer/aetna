@@ -708,9 +708,7 @@ pub fn clipboard_request_for(event: &UiEvent, opts: &TextInputOpts<'_>) -> Optio
         "v" => ClipboardKind::Paste,
         _ => return None,
     };
-    if opts.is_masked()
-        && matches!(kind, ClipboardKind::Copy | ClipboardKind::Cut)
-    {
+    if opts.is_masked() && matches!(kind, ClipboardKind::Copy | ClipboardKind::Cut) {
         return None;
     }
     Some(kind)
@@ -1092,9 +1090,8 @@ mod tests {
         use crate::state::AnimationMode;
         use web_time::Instant;
 
-        let mut tree =
-            crate::column([text_input("hello", TextSelection::range(0, 5)).key("ti")])
-                .padding(20.0);
+        let mut tree = crate::column([text_input("hello", TextSelection::range(0, 5)).key("ti")])
+            .padding(20.0);
         let mut state = UiState::new();
         state.set_animation_mode(AnimationMode::Settled);
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
@@ -1529,7 +1526,8 @@ mod tests {
         let mut sel = TextSelection::caret(0);
         // Click somewhere inside "world" with click_count = 2.
         let target = ti_target();
-        let click_x = target.rect.x + tokens::SPACE_MD
+        let click_x = target.rect.x
+            + tokens::SPACE_MD
             + crate::text::metrics::line_width(
                 "hello w",
                 tokens::FONT_BASE,
@@ -1571,7 +1569,8 @@ mod tests {
         let mut value = String::from("hello world");
         let mut sel = TextSelection::caret(0);
         let target = ti_target();
-        let click_x = target.rect.x + tokens::SPACE_MD
+        let click_x = target.rect.x
+            + tokens::SPACE_MD
             + crate::text::metrics::line_width(
                 "hello w",
                 tokens::FONT_BASE,
@@ -1582,12 +1581,8 @@ mod tests {
             shift: true,
             ..Default::default()
         };
-        let down = ev_pointer_down_with_count(
-            target.clone(),
-            (click_x, target.rect.y + 18.0),
-            shift,
-            2,
-        );
+        let down =
+            ev_pointer_down_with_count(target.clone(), (click_x, target.rect.y + 18.0), shift, 2);
         assert!(apply_event(&mut value, &mut sel, &down));
         // anchor unchanged at 0; head moved to the click position.
         assert_eq!(sel.anchor, 0);
@@ -1893,7 +1888,12 @@ mod tests {
             (target.rect.x + target.rect.w - 4.0, target.rect.y + 18.0),
             KeyModifiers::default(),
         );
-        assert!(apply_event_with(&mut value, &mut sel, &down, &password_opts()));
+        assert!(apply_event_with(
+            &mut value,
+            &mut sel,
+            &down,
+            &password_opts()
+        ));
         assert_eq!(sel.head, value.len());
     }
 
@@ -1913,7 +1913,12 @@ mod tests {
             (click_x, ti_target().rect.y + 18.0),
             KeyModifiers::default(),
         );
-        assert!(apply_event_with(&mut value, &mut sel, &down, &password_opts()));
+        assert!(apply_event_with(
+            &mut value,
+            &mut sel,
+            &down,
+            &password_opts()
+        ));
         // After 1 scalar in "éé" the byte offset is 2 (or 4 if the hit
         // landed past the second bullet). Either way, must be a char
         // boundary in `value`.
@@ -1953,15 +1958,17 @@ mod tests {
     fn placeholder_renders_only_when_value_is_empty() {
         let opts = TextInputOpts::default().placeholder("Email");
         let empty = text_input_with("", TextSelection::default(), opts);
-        let muted_leaf = empty.children.iter().find(|c| {
-            matches!(c.kind, Kind::Text) && c.text.as_deref() == Some("Email")
-        });
+        let muted_leaf = empty
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Text) && c.text.as_deref() == Some("Email"));
         assert!(muted_leaf.is_some(), "placeholder leaf should be present");
 
         let nonempty = text_input_with("hi", TextSelection::caret(2), opts);
-        let muted_leaf = nonempty.children.iter().find(|c| {
-            matches!(c.kind, Kind::Text) && c.text.as_deref() == Some("Email")
-        });
+        let muted_leaf = nonempty
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Text) && c.text.as_deref() == Some("Email"));
         assert!(
             muted_leaf.is_none(),
             "placeholder should not render once the field has a value"

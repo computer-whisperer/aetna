@@ -163,6 +163,7 @@ pub use svg_icon::{IconSource, IntoIconSource, SvgIcon};
 // `aetna-wgpu` / `aetna-vulkano` paint paths). App authors don't
 // touch them, so hide from docs.rs while keeping them resolvable
 // at the crate root for backend imports.
+pub use selection::{Selection, SelectionPoint, SelectionRange, selected_text};
 #[doc(hidden)]
 pub use text::atlas::{
     AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, RunStyle, ShapedGlyph, ShapedRun,
@@ -171,7 +172,6 @@ pub use text::metrics::{
     MeasuredText, TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text, line_height,
     line_width, measure_text, selection_rects, wrap_lines,
 };
-pub use selection::{Selection, SelectionPoint, SelectionRange, selected_text};
 pub use theme::Theme;
 pub use tree::{
     Align, Axis, Color, El, FontWeight, IconName, InteractionState, Justify, Kind, Rect, Sides,

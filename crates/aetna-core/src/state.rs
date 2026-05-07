@@ -138,8 +138,7 @@ pub(crate) struct ClickSequence {
 
 /// Multi-click time window. A press within this duration of the
 /// previous matching press extends the sequence (count += 1).
-pub(crate) const MULTI_CLICK_TIME: std::time::Duration =
-    std::time::Duration::from_millis(500);
+pub(crate) const MULTI_CLICK_TIME: std::time::Duration = std::time::Duration::from_millis(500);
 /// Multi-click distance window in logical pixels. Wider than typical
 /// pointer jitter, narrower than a deliberate move to a new target.
 pub(crate) const MULTI_CLICK_DIST: f32 = 4.0;
@@ -147,13 +146,11 @@ pub(crate) const MULTI_CLICK_DIST: f32 = 4.0;
 /// Caret stays solid for this long after activity (typing, caret
 /// motion, focus arriving) before the blink cycle starts. Prevents
 /// the caret from disappearing mid-keystroke.
-pub(crate) const CARET_BLINK_GRACE: std::time::Duration =
-    std::time::Duration::from_millis(500);
+pub(crate) const CARET_BLINK_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
 /// One on / off period of the caret blink. macOS-ish (~530ms each
 /// half) but tunable; the painter only ever sees the resolved alpha,
 /// not the period itself.
-pub(crate) const CARET_BLINK_PERIOD: std::time::Duration =
-    std::time::Duration::from_millis(1060);
+pub(crate) const CARET_BLINK_PERIOD: std::time::Duration = std::time::Duration::from_millis(1060);
 
 /// Resolve the caret blink alpha for the given activity age. Returns
 /// `1.0` while inside the post-activity grace window, then alternates
@@ -728,7 +725,9 @@ impl UiState {
         if let Some(activity_at) = self.caret_activity_at {
             let alpha = match mode {
                 AnimationMode::Settled => 1.0,
-                AnimationMode::Live => caret_blink_alpha_for(now.saturating_duration_since(activity_at)),
+                AnimationMode::Live => {
+                    caret_blink_alpha_for(now.saturating_duration_since(activity_at))
+                }
             };
             self.caret_blink_alpha = alpha;
         }

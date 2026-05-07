@@ -542,9 +542,7 @@ mod web_entry {
                     ..
                 } => {
                     if let Some(key) = map_key(&key_event.logical_key) {
-                        for event in
-                            gfx.renderer.key_down(key, self.modifiers, key_event.repeat)
-                        {
+                        for event in gfx.renderer.key_down(key, self.modifiers, key_event.repeat) {
                             self.app.on_event(event);
                         }
                     }
