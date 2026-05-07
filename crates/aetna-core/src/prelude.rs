@@ -54,7 +54,10 @@ pub use crate::widgets::card::{
     card, card_content, card_description, card_footer, card_header, card_title, titled_card,
 };
 pub use crate::widgets::checkbox::{self, checkbox};
-pub use crate::widgets::form::field_row;
+pub use crate::widgets::form::{
+    field_row, form, form_control, form_description, form_item, form_label, form_message,
+    form_section,
+};
 pub use crate::widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use crate::widgets::popover::{
     Anchor, Side, anchor_rect, context_menu, dropdown, menu_item, popover, popover_panel,

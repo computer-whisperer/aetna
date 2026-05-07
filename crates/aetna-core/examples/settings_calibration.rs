@@ -205,7 +205,7 @@ fn profile_card() -> El {
             card_title("Profile"),
             card_description("This information appears in audit logs and shared documents."),
         ]),
-        card_content([
+        card_content([form([
             row([
                 setting_field("Display name", "Alicia Koch", "display-name"),
                 setting_field("Email", "alicia@example.com", "email"),
@@ -216,35 +216,29 @@ fn profile_card() -> El {
                 setting_select("Region", "US East", "region"),
             ])
             .gap(tokens::SPACE_MD),
-        ]),
+        ])]),
     ])
     .key("metric:profile.card")
 }
 
 fn setting_field(label: &'static str, value: &'static str, key: &'static str) -> El {
-    column([
-        text(label).label(),
-        text_input(value, &Selection::caret(key, value.len()), key)
-            .key(if key == "display-name" {
-                "metric:form.input"
-            } else {
-                key
-            })
-            .width(Size::Fill(1.0)),
+    form_item([
+        form_label(label),
+        form_control(
+            text_input(value, &Selection::caret(key, value.len()), key).key(
+                if key == "display-name" {
+                    "metric:form.input"
+                } else {
+                    key
+                },
+            ),
+        ),
     ])
-    .gap(tokens::SPACE_XS)
     .width(Size::Fill(1.0))
-    .height(Size::Hug)
 }
 
 fn setting_select(label: &'static str, value: &'static str, key: &'static str) -> El {
-    column([
-        text(label).label(),
-        select_trigger(key, value).width(Size::Fill(1.0)),
-    ])
-    .gap(tokens::SPACE_XS)
-    .width(Size::Fill(1.0))
-    .height(Size::Hug)
+    form_item([form_label(label), form_control(select_trigger(key, value))]).width(Size::Fill(1.0))
 }
 
 fn preferences_card() -> El {

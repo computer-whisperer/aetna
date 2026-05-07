@@ -73,12 +73,16 @@ button("Publish").large()
 text_input(&query, &selection, "search").size(ComponentSize::Sm)
 card([
     card_header([card_title("Documents")]),
-    card_content([table([
-        table_header([table_row([
-            table_head("Name"),
-            table_head("Status").width(Size::Fixed(96.0)),
-        ])]),
-        table_body(rows),
+    card_content([form([
+        form_item([
+            form_label("Display name"),
+            form_control(text_input(&name, &selection, "display-name")),
+            form_description("Shown in shared workspace activity."),
+        ]),
+        form_item([
+            form_label("Status"),
+            form_control(select_trigger("status", "Active")),
+        ]),
     ])]),
 ])
 .compact()
@@ -112,7 +116,7 @@ Custom widgets opt into the same defaults by setting `.metrics_role(...)`
 to one of the stock `MetricsRole`s; no special `Kind` is required.
 Use `Button` / `IconButton` / `Input` / `TextArea` / `Badge` for
 control-like surfaces, `Card` / `CardHeader` / `CardContent` /
-`CardFooter` / `Panel` / `MenuItem` / `ListItem` for grouped content,
+`CardFooter` / `Form` / `FormItem` / `Panel` / `MenuItem` / `ListItem` for grouped content,
 `PreferenceRow` for two-line settings rows, `TableHeader` / `TableRow` for table-like rows,
 `TabTrigger` / `TabList` for segmented controls, `ChoiceControl` /
 `ChoiceItem` for checkbox/radio-style widgets, and `Slider` /
@@ -125,6 +129,7 @@ Theme::aetna_dark()
     .compact()
     .with_input_size(ComponentSize::Md)
     .with_tab_size(ComponentSize::Sm)
+    .with_form_density(Density::Comfortable)
     .with_list_density(Density::Compact)
     .with_preference_density(Density::Compact)
     .with_table_density(Density::Compact)
@@ -332,6 +337,7 @@ The library has a small, named vocabulary precisely so a widget — or an app `b
 
 - **`.font_size(...).font_weight(...).text_color(...)` on a single text node.** That's what role modifiers exist for. `.heading()`, `.title()`, `.label()`, `.caption()`, `.code()` set size + weight + theme-aware color in one call. Reaching for the underlying primitives is how typography drifts (one `Semibold + FONT_LG` looks subtly different from another).
 - **`column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` for grouped content.** That's `card([card_header([card_title("Title")]), card_content([...])])`. Cards route through `SurfaceRole::Panel` so the theme can swap the material later (shader, shadow, inset) without touching the call site.
+- **`column([text(label).label(), text_input(...)]).gap(...)` for vertical fields.** That's `form_item([form_label(label), form_control(text_input(...)), form_description(...)])` inside `form([...])`. The theme owns the field stack rhythm through form density.
 - **`row([...]).metrics_role(TableRow).align(Center)` for table rows.** That's `table_row([...])` inside `table([table_header([...]), table_body([...])])`. `table_header` promotes direct `table_row` children to header metrics, and table rows center their cells by default.
 - **Status as a unicode bullet or emoji** (`text("● Online")`, `text("⚠ Failed")`). That's `badge("Online").success()` / `badge("Failed").destructive()`. Badges read as proper status pills and pick the theme color through the StyleProfile.
 - **`.gap(0.0)`.** The default *is* `0.0`. Setting it explicitly is noise that signals the author misremembered the default — and usually means actual gap is missing somewhere else where it should be added.

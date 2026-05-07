@@ -1,9 +1,9 @@
-//! Form-row primitives for label + control layouts.
+//! Form — shadcn-shaped vertical form anatomy plus compact field rows.
 //!
-//! Settings dialogs, preference panes, and audio-config modals are
-//! mostly the same row repeated: a label on the left, a control on
-//! the right, vertical-center aligned, full panel width. [`field_row`]
-//! is that pattern as one call.
+//! The boring path mirrors the common web component shape:
+//! `form([form_item([form_label(...), form_control(...), form_description(...)])])`.
+//! `field_row` remains the compact horizontal variant for settings
+//! rows, preference panes, and audio-config modals.
 //!
 //! ```ignore
 //! use aetna_core::prelude::*;
@@ -12,12 +12,16 @@
 //!
 //! impl App for Prefs {
 //!     fn build(&self, _cx: &BuildCx) -> El {
-//!         titled_card("Audio", [
-//!             field_row("Auto-save", switch(self.auto_save).key("auto_save")),
-//!             field_row(
-//!                 format!("Volume ({:.0}%)", self.volume * 100.0),
-//!                 slider(self.volume, tokens::PRIMARY).key("volume"),
-//!             ),
+//!         card([
+//!             card_header([card_title("Audio")]),
+//!             card_content([form([
+//!                 form_item([
+//!                     form_label("Preset"),
+//!                     form_control(text_input("Studio", &Selection::default(), "preset")),
+//!                     form_description("Used for new sessions."),
+//!                 ]),
+//!                 field_row("Auto-save", switch(self.auto_save).key("auto_save")),
+//!             ])]),
 //!         ])
 //!     }
 //! }
@@ -33,8 +37,87 @@
 use std::panic::Location;
 
 use super::text::text;
+use crate::metrics::MetricsRole;
 use crate::tokens;
 use crate::tree::*;
+
+#[track_caller]
+pub fn form<I, E>(children: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    column(children)
+        .at_loc(Location::caller())
+        .metrics_role(MetricsRole::Form)
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+}
+
+#[track_caller]
+pub fn form_section<I, E>(children: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    column(children)
+        .at_loc(Location::caller())
+        .metrics_role(MetricsRole::Form)
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+}
+
+#[track_caller]
+pub fn form_item<I, E>(children: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    column(children)
+        .at_loc(Location::caller())
+        .metrics_role(MetricsRole::FormItem)
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+}
+
+#[track_caller]
+pub fn form_label(label: impl Into<String>) -> El {
+    text(label)
+        .at_loc(Location::caller())
+        .label()
+        .ellipsis()
+        .width(Size::Fill(1.0))
+}
+
+#[track_caller]
+pub fn form_control(control: impl Into<El>) -> El {
+    El::new(Kind::Custom("form_control"))
+        .at_loc(Location::caller())
+        .child(control)
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+}
+
+#[track_caller]
+pub fn form_description(description: impl Into<String>) -> El {
+    text(description)
+        .at_loc(Location::caller())
+        .caption()
+        .muted()
+        .wrap_text()
+        .width(Size::Fill(1.0))
+}
+
+#[track_caller]
+pub fn form_message(message: impl Into<String>) -> El {
+    text(message)
+        .at_loc(Location::caller())
+        .caption()
+        .font_weight(FontWeight::Medium)
+        .destructive()
+        .wrap_text()
+        .width(Size::Fill(1.0))
+}
 
 /// A labelled form row: label on the left, control on the right,
 /// vertical-center aligned, full panel width.
@@ -60,6 +143,32 @@ pub fn field_row(label: impl Into<String>, control: impl Into<El>) -> El {
 mod tests {
     use super::*;
     use crate::widgets::switch::switch;
+
+    #[test]
+    fn form_item_lays_out_label_control_and_description() {
+        let item = form_item([
+            form_label("Email"),
+            form_control("alicia@example.com"),
+            form_description("Used for notifications."),
+        ]);
+
+        assert_eq!(item.metrics_role, Some(MetricsRole::FormItem));
+        assert_eq!(item.axis, Axis::Column);
+        assert_eq!(item.children.len(), 3);
+        assert_eq!(item.children[0].text.as_deref(), Some("Email"));
+        assert_eq!(item.children[0].text_role, TextRole::Label);
+        assert_eq!(item.children[1].kind, Kind::Custom("form_control"));
+        assert_eq!(item.children[2].text_role, TextRole::Caption);
+    }
+
+    #[test]
+    fn form_message_uses_error_treatment() {
+        let message = form_message("Email is required.");
+
+        assert_eq!(message.text_role, TextRole::Caption);
+        assert_eq!(message.font_weight, FontWeight::Medium);
+        assert_eq!(message.text_color, Some(tokens::DESTRUCTIVE));
+    }
 
     #[test]
     fn field_row_lays_out_label_spacer_control() {

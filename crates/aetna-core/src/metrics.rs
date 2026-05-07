@@ -40,6 +40,8 @@ pub enum MetricsRole {
     CardHeader,
     CardContent,
     CardFooter,
+    Form,
+    FormItem,
     Panel,
     MenuItem,
     ListItem,
@@ -67,6 +69,7 @@ pub struct ThemeMetrics {
     slider_size: Option<ComponentSize>,
     progress_size: Option<ComponentSize>,
     card_density: Option<Density>,
+    form_density: Option<Density>,
     panel_density: Option<Density>,
     menu_density: Option<Density>,
     list_density: Option<Density>,
@@ -136,6 +139,11 @@ impl ThemeMetrics {
 
     pub fn with_card_density(mut self, density: Density) -> Self {
         self.card_density = Some(density);
+        self
+    }
+
+    pub fn with_form_density(mut self, density: Density) -> Self {
+        self.form_density = Some(density);
         self
     }
 
@@ -243,6 +251,21 @@ impl ThemeMetrics {
                     .or(self.card_density)
                     .unwrap_or(self.default_density);
                 apply_card_section(el, card_footer_metrics(density));
+            }
+            Some(MetricsRole::Form) => {
+                let density = el
+                    .density
+                    .or(self.form_density)
+                    .unwrap_or(self.default_density);
+                apply_form(el, form_metrics(density));
+                apply_form_density_to_children(el);
+            }
+            Some(MetricsRole::FormItem) => {
+                let density = el
+                    .density
+                    .or(self.form_density)
+                    .unwrap_or(self.default_density);
+                apply_form_item(el, form_item_metrics(density));
             }
             Some(MetricsRole::Panel) => {
                 let density = el
@@ -355,6 +378,7 @@ impl Default for ThemeMetrics {
             slider_size: None,
             progress_size: None,
             card_density: None,
+            form_density: None,
             panel_density: None,
             menu_density: None,
             list_density: None,
@@ -625,6 +649,55 @@ fn apply_card_density_to_children(el: &mut El) {
         {
             child.density = Some(density);
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FormMetrics {
+    gap: f32,
+}
+
+fn form_metrics(density: Density) -> FormMetrics {
+    match density {
+        Density::Compact => FormMetrics { gap: 10.0 },
+        Density::Comfortable => FormMetrics { gap: 12.0 },
+        Density::Spacious => FormMetrics { gap: 16.0 },
+    }
+}
+
+fn form_item_metrics(density: Density) -> FormMetrics {
+    match density {
+        Density::Compact => FormMetrics { gap: 4.0 },
+        Density::Comfortable => FormMetrics { gap: 6.0 },
+        Density::Spacious => FormMetrics { gap: 8.0 },
+    }
+}
+
+fn apply_form(el: &mut El, metrics: FormMetrics) {
+    if !el.explicit_gap {
+        el.gap = metrics.gap;
+    }
+}
+
+fn apply_form_item(el: &mut El, metrics: FormMetrics) {
+    if !el.explicit_gap {
+        el.gap = metrics.gap;
+    }
+}
+
+fn apply_form_density_to_children(el: &mut El) {
+    let Some(density) = el.density else {
+        return;
+    };
+    apply_form_density_to_descendants(&mut el.children, density);
+}
+
+fn apply_form_density_to_descendants(children: &mut [El], density: Density) {
+    for child in children {
+        if child.metrics_role == Some(MetricsRole::FormItem) && child.density.is_none() {
+            child.density = Some(density);
+        }
+        apply_form_density_to_descendants(&mut child.children, density);
     }
 }
 
@@ -1133,6 +1206,25 @@ mod tests {
 
         assert_eq!(header.height, Size::Fixed(40.0));
         assert_eq!(row.height, Size::Fixed(56.0));
+    }
+
+    #[test]
+    fn form_density_applies_to_forms_and_form_items() {
+        let mut form = El::new(crate::Kind::Custom("form"))
+            .metrics_role(MetricsRole::Form)
+            .density(Density::Spacious)
+            .child(El::new(crate::Kind::Custom("row")).child(
+                El::new(crate::Kind::Custom("form-item")).metrics_role(MetricsRole::FormItem),
+            ));
+
+        ThemeMetrics::default().apply_to_tree(&mut form);
+
+        assert_eq!(form.gap, 16.0);
+        assert_eq!(
+            form.children[0].children[0].density,
+            Some(Density::Spacious)
+        );
+        assert_eq!(form.children[0].children[0].gap, 8.0);
     }
 
     #[test]

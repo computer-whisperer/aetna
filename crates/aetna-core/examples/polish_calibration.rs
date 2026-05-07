@@ -354,34 +354,37 @@ fn icon_slot(icon_name: &'static str) -> El {
 }
 
 fn form_probe() -> El {
-    column([
-        text("Form state probes").semibold(),
-        text_input(
-            "Valid input",
-            &Selection::caret("valid-input", 11),
-            "valid-input",
-        )
-        .key("metric:form.input")
-        .width(Size::Fill(1.0)),
-        text_input(
-            "Invalid input",
-            &Selection::caret("invalid-input", 13),
-            "invalid-input",
-        )
-        .width(Size::Fill(1.0))
-        .invalid(),
+    form([
+        form_item([
+            form_label("Valid input"),
+            form_control(
+                text_input(
+                    "Valid input",
+                    &Selection::caret("valid-input", 11),
+                    "valid-input",
+                )
+                .key("metric:form.input"),
+            ),
+            form_description("Default field spacing and helper text."),
+        ]),
+        form_item([
+            form_label("Invalid input"),
+            form_control(
+                text_input(
+                    "Invalid input",
+                    &Selection::caret("invalid-input", 13),
+                    "invalid-input",
+                )
+                .invalid(),
+            ),
+            form_message("This field needs attention."),
+        ]),
         row([
             button("Disabled").secondary().disabled(),
             button("Loading").primary().loading(),
             spacer(),
         ]),
-        text("These are currently hand-styled probes; they should become semantic modifiers.")
-            .muted()
-            .wrap_text()
-            .max_lines(1)
-            .width(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_SM)
     .padding(tokens::SPACE_MD)
     .fill(tokens::BG_MUTED)
     .stroke(tokens::BORDER)
