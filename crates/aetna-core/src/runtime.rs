@@ -259,6 +259,12 @@ impl RunnerCore {
         // selection inside an editable widget); we keep emitting until
         // pointer_up clears `pressed`.
         if let Some(p) = self.ui_state.pressed.clone() {
+            // Caret-blink reset: drag-selecting inside a text input
+            // is ongoing editing activity, so keep the caret solid
+            // for the duration of the drag.
+            if self.focused_captures_keys() {
+                self.ui_state.bump_caret_activity(Instant::now());
+            }
             out.push(UiEvent {
                 key: Some(p.key.clone()),
                 target: Some(p),
@@ -377,6 +383,15 @@ impl RunnerCore {
 
         let mut out = Vec::new();
         if let Some(p) = hit.clone() {
+            // Caret-blink reset: a press inside the focused widget
+            // (e.g., to reposition the caret in an already-focused
+            // input) is editing activity. The earlier `set_focus`
+            // call bumps when focus *changes*; this catches the
+            // same-target case so click-to-move-caret resets the
+            // blink too.
+            if self.focused_captures_keys() {
+                self.ui_state.bump_caret_activity(now);
+            }
             out.push(UiEvent {
                 key: Some(p.key.clone()),
                 target: Some(p),
@@ -571,6 +586,13 @@ impl RunnerCore {
             if let Some(event) = self.ui_state.try_hotkey(&key, modifiers, repeat) {
                 return vec![event];
             }
+            // Caret-blink reset: any key arriving at a capture_keys
+            // widget is text-editing activity (caret motion, edit,
+            // shortcut), so the caret should snap back to solid even
+            // when the app doesn't propagate its `Selection` back via
+            // `App::selection()`. Without this, hammering arrow keys
+            // produces no visible blink reset.
+            self.ui_state.bump_caret_activity(Instant::now());
             return self.ui_state.key_down_raw(key, modifiers, repeat).into_iter().collect();
         }
 
@@ -680,6 +702,9 @@ impl RunnerCore {
         }
         let target = self.ui_state.focused.clone()?;
         let modifiers = self.ui_state.modifiers;
+        // Caret-blink reset: typing into the focused widget is
+        // text-editing activity. See the matching bump in `key_down`.
+        self.ui_state.bump_caret_activity(Instant::now());
         Some(UiEvent {
             key: Some(target.key.clone()),
             target: Some(target),
@@ -1569,6 +1594,85 @@ mod tests {
         let new_sel = cleared.selection.as_ref().unwrap();
         assert!(new_sel.is_empty(), "new selection should be empty");
         assert!(core.ui_state.current_selection.is_empty());
+    }
+
+    #[test]
+    fn key_down_bumps_caret_activity_when_focused_widget_captures_keys() {
+        // Showcase-style scenario: the app doesn't propagate its
+        // Selection back via App::selection(), so set_selection always
+        // sees the default-empty value and never bumps. The runtime
+        // bump path catches arrow-key navigation directly.
+        let mut core = lay_out_input_tree(true);
+        let target = core
+            .ui_state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "ti")
+            .cloned();
+        core.ui_state.set_focus(target); // focus moves → first bump
+        let after_focus = core.ui_state.caret_activity_at.expect("focus bump");
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let _ = core.key_down(UiKey::ArrowRight, KeyModifiers::default(), false);
+        let after_arrow = core
+            .ui_state
+            .caret_activity_at
+            .expect("arrow key bumps even without app-side selection");
+        assert!(
+            after_arrow > after_focus,
+            "ArrowRight to a capture_keys focused widget bumps caret activity"
+        );
+    }
+
+    #[test]
+    fn text_input_bumps_caret_activity_when_focused() {
+        let mut core = lay_out_input_tree(true);
+        let target = core
+            .ui_state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "ti")
+            .cloned();
+        core.ui_state.set_focus(target);
+        let after_focus = core.ui_state.caret_activity_at.unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let _ = core.text_input("a".into());
+        let after_text = core.ui_state.caret_activity_at.unwrap();
+        assert!(
+            after_text > after_focus,
+            "TextInput to focused widget bumps caret activity"
+        );
+    }
+
+    #[test]
+    fn pointer_down_inside_focused_input_bumps_caret_activity() {
+        // Clicking again inside an already-focused capture_keys widget
+        // doesn't change the focus target, so set_focus is a no-op
+        // for activity. The runtime catches this so click-to-move-
+        // caret resets the blink.
+        let mut core = lay_out_input_tree(true);
+        let ti = core.rect_of_key("ti").expect("ti rect");
+        let cx = ti.x + ti.w * 0.5;
+        let cy = ti.y + ti.h * 0.5;
+
+        // First click → focus moves → bump.
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+        let after_first = core.ui_state.caret_activity_at.unwrap();
+
+        // Second click on the same input → focus doesn't move, but
+        // it's still caret-relevant activity.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        core.pointer_down(cx + 1.0, cy, PointerButton::Primary);
+        let after_second = core
+            .ui_state
+            .caret_activity_at
+            .expect("second click bumps too");
+        assert!(
+            after_second > after_first,
+            "click within already-focused capture_keys widget still bumps"
+        );
     }
 
     #[test]
