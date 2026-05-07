@@ -345,6 +345,7 @@ impl<A: App> ApplicationHandler for Host<A> {
                 let theme = self.app.theme();
                 let cx = BuildCx::new(&theme);
                 let mut tree = self.app.build(&cx);
+                let palette = theme.palette().clone();
                 rcx.runner.set_theme(theme);
                 rcx.runner.set_hotkeys(self.app.hotkeys());
                 rcx.runner.set_selection(self.app.selection());
@@ -386,8 +387,12 @@ impl<A: App> ApplicationHandler for Host<A> {
                 // path.
                 let framebuffer = rcx.framebuffers[image_index as usize].clone();
                 let target_image = framebuffer.attachments()[0].image().clone();
-                rcx.runner
-                    .render(&mut builder, framebuffer, target_image, clear_color());
+                rcx.runner.render(
+                    &mut builder,
+                    framebuffer,
+                    target_image,
+                    clear_color(&palette),
+                );
                 let command_buffer = builder.build().expect("build cmd");
 
                 let future = rcx
@@ -537,8 +542,8 @@ fn key_modifiers(mods: winit::keyboard::ModifiersState) -> KeyModifiers {
     }
 }
 
-fn clear_color() -> [f32; 4] {
-    let c = aetna_core::tokens::BG_APP;
+fn clear_color(palette: &aetna_core::Palette) -> [f32; 4] {
+    let c = palette.bg_app;
     [
         srgb_to_linear(c.r as f32 / 255.0),
         srgb_to_linear(c.g as f32 / 255.0),

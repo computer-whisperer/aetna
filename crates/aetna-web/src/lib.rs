@@ -51,7 +51,7 @@ mod web_entry {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    use aetna_core::{App, BuildCx, Cursor, KeyModifiers, PointerButton, Rect, UiKey};
+    use aetna_core::{App, BuildCx, Cursor, KeyModifiers, Palette, PointerButton, Rect, UiKey};
     use aetna_wgpu::{MsaaTarget, PrepareTimings, Runner};
 
     const SAMPLE_COUNT: u32 = 4;
@@ -597,6 +597,7 @@ mod web_entry {
                     let theme = self.app.theme();
                     let cx = BuildCx::new(&theme);
                     let mut tree = self.app.build(&cx);
+                    let palette = theme.palette().clone();
                     gfx.renderer.set_theme(theme);
                     gfx.renderer.set_hotkeys(self.app.hotkeys());
                     gfx.renderer.set_selection(self.app.selection());
@@ -645,7 +646,7 @@ mod web_entry {
                         &frame.texture,
                         &view,
                         Some(&gfx.msaa.view),
-                        wgpu::LoadOp::Clear(bg_color()),
+                        wgpu::LoadOp::Clear(bg_color(&palette)),
                     );
                     gfx.queue.submit(Some(encoder.finish()));
                     frame.present();
@@ -736,8 +737,8 @@ mod web_entry {
         }
     }
 
-    fn bg_color() -> wgpu::Color {
-        let c = aetna_core::tokens::BG_APP;
+    fn bg_color(palette: &Palette) -> wgpu::Color {
+        let c = palette.bg_app;
         wgpu::Color {
             r: srgb_to_linear(c.r as f64 / 255.0),
             g: srgb_to_linear(c.g as f64 / 255.0),

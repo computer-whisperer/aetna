@@ -513,6 +513,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         let theme = self.app.theme();
                         let cx = aetna_core::BuildCx::new(&theme);
                         let mut tree = self.app.build(&cx);
+                        let palette = theme.palette().clone();
                         gfx.renderer.set_theme(theme);
                         // Snapshot hotkeys alongside build() so the chord list
                         // reflects current state (apps can return different
@@ -568,7 +569,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             &frame.texture,
                             &view,
                             gfx.msaa.as_ref().map(|msaa| &msaa.view),
-                            wgpu::LoadOp::Clear(bg_color()),
+                            wgpu::LoadOp::Clear(bg_color(&palette)),
                         );
                         gfx.queue.submit(Some(encoder.finish()));
                         frame.present();
@@ -676,8 +677,8 @@ fn key_modifiers(mods: winit::keyboard::ModifiersState) -> KeyModifiers {
     }
 }
 
-fn bg_color() -> wgpu::Color {
-    let c = aetna_core::tokens::BG_APP;
+fn bg_color(palette: &aetna_core::Palette) -> wgpu::Color {
+    let c = palette.bg_app;
     wgpu::Color {
         r: srgb_to_linear(c.r as f64 / 255.0),
         g: srgb_to_linear(c.g as f64 / 255.0),
