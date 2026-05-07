@@ -10,14 +10,14 @@ fn modal_fixture() -> El {
     stack([
         column([
             h1("Account"),
-            card(
+            titled_card(
                 "Profile",
                 [
                     row([text("Email"), spacer(), text("user@example.com").muted()]),
                     row([text("Plan"), spacer(), badge("Pro").info()]),
                 ],
             ),
-            card(
+            titled_card(
                 "Danger zone",
                 [row([
                     column([

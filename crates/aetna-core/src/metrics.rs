@@ -37,6 +37,9 @@ pub enum MetricsRole {
     TextArea,
     Badge,
     Card,
+    CardHeader,
+    CardContent,
+    CardFooter,
     Panel,
     MenuItem,
     ListItem,
@@ -217,7 +220,29 @@ impl ThemeMetrics {
                     .density
                     .or(self.card_density)
                     .unwrap_or(self.default_density);
-                apply_card(el, card_metrics(density));
+                apply_card_shell(el, card_shell_metrics(density));
+                apply_card_density_to_children(el);
+            }
+            Some(MetricsRole::CardHeader) => {
+                let density = el
+                    .density
+                    .or(self.card_density)
+                    .unwrap_or(self.default_density);
+                apply_card_section(el, card_header_metrics(density));
+            }
+            Some(MetricsRole::CardContent) => {
+                let density = el
+                    .density
+                    .or(self.card_density)
+                    .unwrap_or(self.default_density);
+                apply_card_section(el, card_content_metrics(density));
+            }
+            Some(MetricsRole::CardFooter) => {
+                let density = el
+                    .density
+                    .or(self.card_density)
+                    .unwrap_or(self.default_density);
+                apply_card_section(el, card_footer_metrics(density));
             }
             Some(MetricsRole::Panel) => {
                 let density = el
@@ -466,6 +491,140 @@ fn card_metrics(density: Density) -> CardMetrics {
             gap: 16.0,
             radius: 12.0,
         },
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CardShellMetrics {
+    radius: f32,
+}
+
+fn card_shell_metrics(density: Density) -> CardShellMetrics {
+    let radius = match density {
+        Density::Compact => 7.0,
+        Density::Comfortable => 8.0,
+        Density::Spacious => 12.0,
+    };
+    CardShellMetrics { radius }
+}
+
+#[derive(Clone, Copy)]
+struct CardSectionMetrics {
+    padding: Sides,
+    gap: f32,
+}
+
+fn card_header_metrics(density: Density) -> CardSectionMetrics {
+    match density {
+        Density::Compact => CardSectionMetrics {
+            padding: Sides {
+                left: 12.0,
+                right: 12.0,
+                top: 12.0,
+                bottom: 6.0,
+            },
+            gap: 4.0,
+        },
+        Density::Comfortable => CardSectionMetrics {
+            padding: Sides {
+                left: 16.0,
+                right: 16.0,
+                top: 16.0,
+                bottom: 8.0,
+            },
+            gap: 4.0,
+        },
+        Density::Spacious => CardSectionMetrics {
+            padding: Sides {
+                left: 20.0,
+                right: 20.0,
+                top: 20.0,
+                bottom: 10.0,
+            },
+            gap: 6.0,
+        },
+    }
+}
+
+fn card_content_metrics(density: Density) -> CardSectionMetrics {
+    match density {
+        Density::Compact => CardSectionMetrics {
+            padding: Sides {
+                left: 12.0,
+                right: 12.0,
+                top: 6.0,
+                bottom: 12.0,
+            },
+            gap: 8.0,
+        },
+        Density::Comfortable => CardSectionMetrics {
+            padding: Sides {
+                left: 16.0,
+                right: 16.0,
+                top: 8.0,
+                bottom: 16.0,
+            },
+            gap: 12.0,
+        },
+        Density::Spacious => CardSectionMetrics {
+            padding: Sides {
+                left: 20.0,
+                right: 20.0,
+                top: 10.0,
+                bottom: 20.0,
+            },
+            gap: 16.0,
+        },
+    }
+}
+
+fn card_footer_metrics(density: Density) -> CardSectionMetrics {
+    match density {
+        Density::Compact => CardSectionMetrics {
+            padding: Sides::all(12.0),
+            gap: 8.0,
+        },
+        Density::Comfortable => CardSectionMetrics {
+            padding: Sides::all(16.0),
+            gap: 12.0,
+        },
+        Density::Spacious => CardSectionMetrics {
+            padding: Sides::all(20.0),
+            gap: 16.0,
+        },
+    }
+}
+
+fn apply_card_shell(el: &mut El, metrics: CardShellMetrics) {
+    if !el.explicit_radius {
+        el.radius = metrics.radius;
+    }
+    if !el.explicit_gap {
+        el.gap = 0.0;
+    }
+}
+
+fn apply_card_section(el: &mut El, metrics: CardSectionMetrics) {
+    if !el.explicit_padding {
+        el.padding = metrics.padding;
+    }
+    if !el.explicit_gap {
+        el.gap = metrics.gap;
+    }
+}
+
+fn apply_card_density_to_children(el: &mut El) {
+    let Some(density) = el.density else {
+        return;
+    };
+    for child in &mut el.children {
+        if matches!(
+            child.metrics_role,
+            Some(MetricsRole::CardHeader | MetricsRole::CardContent | MetricsRole::CardFooter)
+        ) && child.density.is_none()
+        {
+            child.density = Some(density);
+        }
     }
 }
 
@@ -818,7 +977,7 @@ fn apply_row_metrics(el: &mut El, metrics: RowMetrics) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{button, card, tabs_list, text_input};
+    use crate::{button, tabs_list, text_input, titled_card};
 
     #[test]
     fn theme_default_component_size_applies_to_stock_control() {
@@ -864,14 +1023,16 @@ mod tests {
 
     #[test]
     fn theme_density_applies_to_card_defaults() {
-        let mut el = card("Settings", [crate::text("Body")]);
+        let mut el = titled_card("Settings", [crate::text("Body")]);
 
         ThemeMetrics::default()
             .with_default_density(Density::Compact)
             .apply_to_tree(&mut el);
 
-        assert_eq!(el.padding, Sides::all(12.0));
-        assert_eq!(el.gap, 8.0);
+        assert_eq!(el.padding, Sides::zero());
+        assert_eq!(el.gap, 0.0);
+        assert_eq!(el.children[0].padding.top, 12.0);
+        assert_eq!(el.children[1].padding.bottom, 12.0);
     }
 
     #[test]

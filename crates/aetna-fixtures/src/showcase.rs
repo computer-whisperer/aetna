@@ -610,7 +610,7 @@ fn palette_view(state: &PaletteState) -> El {
             };
             let scale = if is_selected { 1.15 } else { 1.0 };
             let lift = if is_selected { -8.0 } else { 0.0 };
-            card(
+            titled_card(
                 s.name,
                 [text(if is_selected { "picked" } else { "tap" })
                     .center_text()
@@ -811,7 +811,7 @@ fn picker_on_event(state: &mut PickerState, e: UiEvent) {
 fn settings_view() -> El {
     column([
         h1("Settings"),
-        card(
+        titled_card(
             "Account",
             [
                 row([text("Email"), text("user@example.com").muted()])
@@ -831,7 +831,7 @@ fn settings_view() -> El {
                 .justify(Justify::SpaceBetween),
             ],
         ),
-        card(
+        titled_card(
             "Appearance",
             [
                 row([
@@ -848,7 +848,7 @@ fn settings_view() -> El {
                     .justify(Justify::SpaceBetween),
             ],
         ),
-        card(
+        titled_card(
             "Danger zone",
             [row([
                 column([
@@ -936,7 +936,7 @@ fn forms_view(state: &FormsState) -> El {
     ])
     .gap(tokens::SPACE_XS);
 
-    let notifications = card(
+    let notifications = titled_card(
         "Notifications",
         [
             checkbox_row(
@@ -960,7 +960,7 @@ fn forms_view(state: &FormsState) -> El {
         ],
     );
 
-    let theme = card(
+    let theme = titled_card(
         "Theme",
         [radio_group(
             "forms-theme",
@@ -969,7 +969,7 @@ fn forms_view(state: &FormsState) -> El {
         )],
     );
 
-    let privacy = card(
+    let privacy = titled_card(
         "Privacy",
         [
             switch_row(
@@ -1078,7 +1078,7 @@ fn region_label(value: &str) -> &'static str {
 }
 
 fn inputs_view(state: &InputsState) -> El {
-    let volume = card(
+    let volume = titled_card(
         "Output volume",
         [
             row([
@@ -1094,7 +1094,7 @@ fn inputs_view(state: &InputsState) -> El {
         ],
     );
 
-    let profile = card(
+    let profile = titled_card(
         "Profile",
         [
             input_row(
@@ -1108,12 +1108,12 @@ fn inputs_view(state: &InputsState) -> El {
         ],
     );
 
-    let bio = card(
+    let bio = titled_card(
         "Bio",
         [text_area(&state.bio, &state.selection, "inputs-bio").height(Size::Fixed(110.0))],
     );
 
-    let region = card(
+    let region = titled_card(
         "Hosting region",
         [input_row(
             "Region",
@@ -1235,7 +1235,7 @@ fn tabs_account_panel(state: &TabsState) -> El {
         Some(a) => format!("last action: {a}"),
         None => "Click \"Actions ▾\" to open a dropdown menu.".to_string(),
     };
-    card(
+    titled_card(
         "Account",
         [
             row([text("Email"), text("user@example.com").muted()])
@@ -1259,7 +1259,7 @@ fn tabs_account_panel(state: &TabsState) -> El {
 }
 
 fn tabs_appearance_panel() -> El {
-    card(
+    titled_card(
         "Appearance",
         [
             row([text("Theme"), badge("Dark").info()])
@@ -1276,7 +1276,7 @@ fn tabs_appearance_panel() -> El {
 }
 
 fn tabs_advanced_panel() -> El {
-    card(
+    titled_card(
         "Advanced",
         [
             row([text("Telemetry"), badge("Off").muted()])

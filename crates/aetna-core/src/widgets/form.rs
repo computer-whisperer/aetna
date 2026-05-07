@@ -12,7 +12,7 @@
 //!
 //! impl App for Prefs {
 //!     fn build(&self, _cx: &BuildCx) -> El {
-//!         card("Audio", [
+//!         titled_card("Audio", [
 //!             field_row("Auto-save", switch(self.auto_save).key("auto_save")),
 //!             field_row(
 //!                 format!("Volume ({:.0}%)", self.volume * 100.0),

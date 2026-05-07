@@ -16,7 +16,7 @@ use aetna_core::prelude::*;
 fn settings() -> El {
     column([
         h1("Settings"),
-        card(
+        titled_card(
             "Account",
             [
                 row([text("Email"), spacer(), text("user@example.com").muted()]),
@@ -32,7 +32,7 @@ fn settings() -> El {
                 ]),
             ],
         ),
-        card(
+        titled_card(
             "Appearance",
             [
                 row([text("Theme"), spacer(), button("Dark").secondary()]),
@@ -40,7 +40,7 @@ fn settings() -> El {
                 row([text("Font size"), spacer(), text("14")]),
             ],
         ),
-        card(
+        titled_card(
             "Danger zone",
             [row([
                 column([

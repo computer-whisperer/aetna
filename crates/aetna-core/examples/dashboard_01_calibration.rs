@@ -252,7 +252,7 @@ fn metric_card(
     } else {
         h2(value).display().font_size(24.0).ellipsis()
     };
-    column([
+    card([card_content([
         row([
             row([
                 icon(icon_name)
@@ -269,36 +269,27 @@ fn metric_card(
         .align(Align::Center),
         value,
         text(note).caption().ellipsis().width(Size::Fill(1.0)),
-    ])
+    ])])
     .key(if title == "Total Revenue" {
         "metric:kpi.card"
     } else {
         title
     })
-    .style_profile(StyleProfile::Surface)
-    .metrics_role(MetricsRole::Card)
-    .surface_role(SurfaceRole::Panel)
-    .fill(tokens::BG_CARD)
-    .stroke(tokens::BORDER)
-    .shadow(tokens::SHADOW_MD)
-    .gap(tokens::SPACE_SM)
     .width(Size::Fill(1.0))
-    .height(Size::Fixed(126.0))
 }
 
 fn chart_card() -> El {
-    card(
-        "Visitors for the last 6 months",
-        [
-            text("Total visitors by channel.").muted(),
-            row(chart_bars())
-                .gap(2.0)
-                .height(Size::Fixed(150.0))
-                .align(Align::End),
-        ],
-    )
+    card([
+        card_header([
+            card_title("Visitors for the last 6 months"),
+            card_description("Total visitors by channel."),
+        ]),
+        card_content([row(chart_bars())
+            .gap(2.0)
+            .height(Size::Fixed(150.0))
+            .align(Align::End)]),
+    ])
     .key("metric:chart.card")
-    .gap(tokens::SPACE_SM)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }
@@ -326,18 +317,20 @@ fn bar(height: f32, color: Color) -> El {
 }
 
 fn sales_card() -> El {
-    card(
-        "Recent Sales",
-        [
-            text("You made 265 sales this month.").muted(),
+    card([
+        card_header([
+            card_title("Recent Sales"),
+            card_description("You made 265 sales this month."),
+        ]),
+        card_content([
             sale_row("OM", "Olivia Martin", "olivia@example.com", "+$1,999.00"),
             sale_row("JL", "Jackson Lee", "jackson@example.com", "+$39.00"),
             sale_row("IN", "Isabella Nguyen", "isabella@example.com", "+$299.00"),
             sale_row("WK", "William Kim", "will@example.com", "+$99.00"),
-        ],
-    )
+        ])
+        .gap(tokens::SPACE_SM),
+    ])
     .key("metric:sales.card")
-    .gap(tokens::SPACE_SM)
     .width(Size::Fixed(330.0))
     .height(Size::Fill(1.0))
 }
@@ -365,9 +358,9 @@ fn sale_row(
 }
 
 fn documents_card() -> El {
-    card(
-        "Documents",
-        [
+    card([
+        card_header([card_title("Documents")]),
+        card_content([
             row([
                 text("Header").caption().width(Size::Fill(1.7)),
                 text("Section Type").caption().width(Size::Fill(1.0)),
@@ -397,11 +390,12 @@ fn documents_card() -> El {
                 "Eddie Lake",
                 "success",
             ),
-        ],
-    )
+        ])
+        .gap(0.0)
+        .padding(0.0),
+    ])
     .key("metric:table.card")
-    .gap(tokens::SPACE_SM)
-    .height(Size::Fixed(250.0))
+    .height(Size::Fixed(238.0))
 }
 
 fn document_row(

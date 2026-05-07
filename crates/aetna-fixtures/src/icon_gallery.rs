@@ -66,7 +66,7 @@ pub fn icon_gallery() -> El {
         ])
         .align(Align::Center)
         .width(Size::Fill(1.0)),
-        card("Built-ins", rows),
+        titled_card("Built-ins", rows),
         row([
             button_with_icon("search", "Search").primary(),
             button_with_icon("download", "Export").secondary(),

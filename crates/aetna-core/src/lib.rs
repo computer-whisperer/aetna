@@ -199,7 +199,9 @@ pub use vector::{
 
 pub use widgets::badge::badge;
 pub use widgets::button::{button, button_with_icon, icon_button};
-pub use widgets::card::card;
+pub use widgets::card::{
+    card, card_content, card_description, card_footer, card_header, card_title, titled_card,
+};
 pub use widgets::checkbox::checkbox;
 pub use widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use widgets::popover::{

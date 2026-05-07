@@ -200,13 +200,12 @@ fn settings_body() -> El {
 }
 
 fn profile_card() -> El {
-    card(
-        "Profile",
-        [
-            text("This information appears in audit logs and shared documents.")
-                .muted()
-                .wrap_text()
-                .width(Size::Fill(1.0)),
+    card([
+        card_header([
+            card_title("Profile"),
+            card_description("This information appears in audit logs and shared documents."),
+        ]),
+        card_content([
             row([
                 setting_field("Display name", "Alicia Koch", "display-name"),
                 setting_field("Email", "alicia@example.com", "email"),
@@ -217,8 +216,8 @@ fn profile_card() -> El {
                 setting_select("Region", "US East", "region"),
             ])
             .gap(tokens::SPACE_MD),
-        ],
-    )
+        ]),
+    ])
     .key("metric:profile.card")
 }
 
@@ -249,36 +248,33 @@ fn setting_select(label: &'static str, value: &'static str, key: &'static str) -
 }
 
 fn preferences_card() -> El {
-    card(
-        "Preferences",
-        [
-            text("Defaults used when creating new dashboards and exports.")
-                .muted()
-                .ellipsis()
-                .width(Size::Fill(1.0)),
-            column([
-                preference_row(
-                    "Compact navigation",
-                    "Use tighter rows in the sidebar and command menus.",
-                    switch(true).key("compact-navigation"),
-                ),
-                divider(),
-                preference_row(
-                    "Email summaries",
-                    "Send a daily digest when documents change.",
-                    switch(false).key("email-summaries"),
-                ),
-                divider(),
-                preference_row(
-                    "Require approval",
-                    "Route external sharing through an owner review.",
-                    checkbox(true).key("approval-required"),
-                ),
-            ])
-            .gap(0.0)
-            .width(Size::Fill(1.0)),
-        ],
-    )
+    card([
+        card_header([
+            card_title("Preferences"),
+            card_description("Defaults used when creating new dashboards and exports."),
+        ]),
+        card_content([column([
+            preference_row(
+                "Compact navigation",
+                "Use tighter rows in the sidebar and command menus.",
+                switch(true).key("compact-navigation"),
+            ),
+            divider(),
+            preference_row(
+                "Email summaries",
+                "Send a daily digest when documents change.",
+                switch(false).key("email-summaries"),
+            ),
+            divider(),
+            preference_row(
+                "Require approval",
+                "Route external sharing through an owner review.",
+                checkbox(true).key("approval-required"),
+            ),
+        ])
+        .gap(0.0)
+        .width(Size::Fill(1.0))]),
+    ])
     .key("metric:preferences.card")
 }
 
@@ -313,34 +309,32 @@ fn settings_aside() -> El {
 }
 
 fn security_card() -> El {
-    card(
-        "Security",
-        [
-            text("Two-factor authentication is enabled for all privileged users.")
-                .muted()
-                .wrap_text()
-                .width(Size::Fill(1.0)),
+    card([
+        card_header([
+            card_title("Security"),
+            card_description("Two-factor authentication is enabled for all privileged users."),
+        ]),
+        card_content([
             compact_stat("Passkeys", "2 registered", badge("On").success()),
             compact_stat("Sessions", "3 active", button("Review").secondary()),
-        ],
-    )
+        ]),
+    ])
     .width(Size::Fill(1.0))
 }
 
 fn scale_card() -> El {
-    card(
-        "Interface scale",
-        [
-            text("Reference captures keep browser zoom fixed and vary root UI scale.")
-                .muted()
-                .wrap_text()
-                .width(Size::Fill(1.0)),
+    card([
+        card_header([
+            card_title("Interface scale"),
+            card_description("Reference captures keep browser zoom fixed and vary root UI scale."),
+        ]),
+        card_content([
             row([text("Dense").caption(), spacer(), text("Default").caption()]),
             slider(0.66, tokens::PRIMARY)
                 .key("interface-scale")
                 .width(Size::Fill(1.0)),
-        ],
-    )
+        ]),
+    ])
     .width(Size::Fill(1.0))
 }
 

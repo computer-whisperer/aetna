@@ -37,7 +37,7 @@ fn fixture() -> El {
              for contrast.",
         )
         .muted(),
-        card(
+        titled_card(
             "gradient.wgsl — vertical linear gradient",
             [row([
                 gradient_button(

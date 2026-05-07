@@ -1135,7 +1135,7 @@ mod tests {
 
     #[test]
     fn overlay_can_center_hug_child() {
-        let mut root = stack([crate::card("Dialog", [crate::text("Body")])
+        let mut root = stack([crate::titled_card("Dialog", [crate::text("Body")])
             .width(Size::Fixed(200.0))
             .height(Size::Hug)])
         .align(Align::Center)

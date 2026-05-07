@@ -393,7 +393,7 @@ mod tests {
         // above the parent row's layout rect. A click on the lifted
         // top edge must still find the child — the parent row's bounds
         // should not be a hit-test boundary, since only `clip()` is.
-        let mut tree = row([crate::card("c", [crate::text("body")])
+        let mut tree = row([crate::titled_card("c", [crate::text("body")])
             .key("swatch")
             .width(Size::Fixed(120.0))
             .height(Size::Fixed(120.0))

@@ -1,27 +1,24 @@
-//! Card — content container with title + body.
+//! Card — shadcn-shaped content container anatomy.
 //!
-//! `card(title, body)` lays out as a column with comfortable padding and
-//! gap. The first child is an `h3`-styled title; subsequent children are
-//! the body. Cards default to filling the parent's width and hugging
-//! their height.
+//! The boring path mirrors the common web component shape:
+//! `card([card_header([...]), card_content([...]), card_footer([...])])`.
+//! `titled_card(title, body)` is a convenience wrapper for older/simple
+//! examples, built from the same anatomy rather than a separate layout.
 
 use std::panic::Location;
 
-use super::text::h3;
+use super::text::{h3, text};
 use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
 
 #[track_caller]
-pub fn card<I, E>(title: impl Into<String>, body: I) -> El
+pub fn card<I, E>(children: I) -> El
 where
     I: IntoIterator<Item = E>,
     E: Into<El>,
 {
-    let mut children: Vec<El> = vec![h3(title)];
-    children.extend(body.into_iter().map(Into::into));
-
     El::new(Kind::Card)
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
@@ -32,10 +29,75 @@ where
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_MD)
         .shadow(tokens::SHADOW_MD)
-        .default_padding(tokens::SPACE_MD)
-        .default_gap(tokens::SPACE_SM)
         .width(Size::Fill(1.0))
         .default_height(Size::Hug)
         .axis(Axis::Column)
         .align(Align::Stretch)
+}
+
+#[track_caller]
+pub fn titled_card<I, E>(title: impl Into<String>, body: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    card([
+        card_header([card_title(title)]),
+        card_content(body.into_iter().map(Into::into).collect::<Vec<_>>()),
+    ])
+    .at_loc(Location::caller())
+}
+
+#[track_caller]
+pub fn card_header<I, E>(children: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    column(children)
+        .at_loc(Location::caller())
+        .metrics_role(MetricsRole::CardHeader)
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+}
+
+#[track_caller]
+pub fn card_title(title: impl Into<String>) -> El {
+    h3(title).at_loc(Location::caller())
+}
+
+#[track_caller]
+pub fn card_description(description: impl Into<String>) -> El {
+    text(description)
+        .at_loc(Location::caller())
+        .muted()
+        .wrap_text()
+        .width(Size::Fill(1.0))
+}
+
+#[track_caller]
+pub fn card_content<I, E>(children: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    column(children)
+        .at_loc(Location::caller())
+        .metrics_role(MetricsRole::CardContent)
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+}
+
+#[track_caller]
+pub fn card_footer<I, E>(children: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    row(children)
+        .at_loc(Location::caller())
+        .metrics_role(MetricsRole::CardFooter)
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+        .align(Align::Center)
 }

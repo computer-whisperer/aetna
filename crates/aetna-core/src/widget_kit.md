@@ -71,7 +71,11 @@ content. Local modifiers use the familiar names:
 button("Preview").small()
 button("Publish").large()
 text_input(&query, &selection, "search").size(ComponentSize::Sm)
-card("Documents", rows).compact()
+card([
+    card_header([card_title("Documents")]),
+    card_content(rows),
+])
+.compact()
 menu_item("Open").dense()
 tabs_list("settings", &tab, tabs).compact()
 progress(value, tokens::PRIMARY).small()
@@ -101,9 +105,9 @@ or `.padding(20.0)`, theme metrics leave that author choice alone.
 Custom widgets opt into the same defaults by setting `.metrics_role(...)`
 to one of the stock `MetricsRole`s; no special `Kind` is required.
 Use `Button` / `IconButton` / `Input` / `TextArea` / `Badge` for
-control-like surfaces, `Card` / `Panel` / `MenuItem` / `ListItem` for
-grouped content, `PreferenceRow` for two-line settings rows,
-`TableHeader` / `TableRow` for table-like rows,
+control-like surfaces, `Card` / `CardHeader` / `CardContent` /
+`CardFooter` / `Panel` / `MenuItem` / `ListItem` for grouped content,
+`PreferenceRow` for two-line settings rows, `TableHeader` / `TableRow` for table-like rows,
 `TabTrigger` / `TabList` for segmented controls, `ChoiceControl` /
 `ChoiceItem` for checkbox/radio-style widgets, and `Slider` /
 `Progress` for range indicators.
@@ -321,7 +325,7 @@ These all interact with library-owned bookkeeping (focus tracker, animations, co
 The library has a small, named vocabulary precisely so a widget — or an app `build()` — doesn't need to invent one. The patterns below mean an existing affordance is being missed:
 
 - **`.font_size(...).font_weight(...).text_color(...)` on a single text node.** That's what role modifiers exist for. `.heading()`, `.title()`, `.label()`, `.caption()`, `.code()` set size + weight + theme-aware color in one call. Reaching for the underlying primitives is how typography drifts (one `Semibold + FONT_LG` looks subtly different from another).
-- **`column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` for grouped content.** That's `card("Title", [...])`. Cards route through `SurfaceRole::Panel` so the theme can swap the material later (shader, shadow, inset) without touching the call site.
+- **`column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` for grouped content.** That's `card([card_header([card_title("Title")]), card_content([...])])`. Cards route through `SurfaceRole::Panel` so the theme can swap the material later (shader, shadow, inset) without touching the call site.
 - **Status as a unicode bullet or emoji** (`text("● Online")`, `text("⚠ Failed")`). That's `badge("Online").success()` / `badge("Failed").destructive()`. Badges read as proper status pills and pick the theme color through the StyleProfile.
 - **`.gap(0.0)`.** The default *is* `0.0`. Setting it explicitly is noise that signals the author misremembered the default — and usually means actual gap is missing somewhere else where it should be added.
 - **Wrapping a single child in `row([single])` to apply padding.** `.padding(Sides::all(...))` is on every `El`. The wrapper is dead weight.

@@ -211,7 +211,7 @@ pub fn divider() -> El {
 
 // ---------- &str → El convenience ----------
 //
-// Lets `card("Title", ["a body line"])` work without `text(...)`.
+// Lets `titled_card("Title", ["a body line"])` work without `text(...)`.
 
 impl From<&str> for El {
     fn from(s: &str) -> Self {

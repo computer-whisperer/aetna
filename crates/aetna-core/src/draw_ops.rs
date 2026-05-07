@@ -1466,7 +1466,7 @@ mod tests {
 
     #[test]
     fn theme_can_route_surface_role_to_custom_shader() {
-        let mut root = crate::card("Panel", [crate::text("Body")])
+        let mut root = crate::titled_card("Panel", [crate::text("Body")])
             .surface_role(SurfaceRole::Popover)
             .key("panel");
         let mut state = UiState::new();
@@ -1738,7 +1738,7 @@ mod tests {
         // `.shadow(SHADOW_MD)` setting. The painted rect should track
         // the *effective* shadow (SM = 4), not the larger MD the
         // builder requested — over-expanding wastes overdraw budget.
-        let mut root = column([crate::card("Card", [crate::text("Body")]).key("c")]);
+        let mut root = column([crate::titled_card("Card", [crate::text("Body")]).key("c")]);
         let mut state = UiState::new();
         crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
         let ops = draw_ops(&root, &state);

@@ -58,7 +58,7 @@ fn density_calibration() -> El {
 
 fn density_column(title: &'static str, density: Density, size: ComponentSize) -> El {
     column([
-        card(
+        titled_card(
             title,
             [
                 row([
@@ -88,7 +88,7 @@ fn density_column(title: &'static str, density: Density, size: ComponentSize) ->
             ],
         )
         .density(density),
-        card(
+        titled_card(
             "List",
             [
                 list_item("git-branch", "Branch created", "2 min ago", density),
@@ -97,7 +97,7 @@ fn density_column(title: &'static str, density: Density, size: ComponentSize) ->
             ],
         )
         .density(density),
-        card(
+        titled_card(
             "Table",
             [
                 table_header(density),

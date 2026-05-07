@@ -165,9 +165,9 @@ fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, posit
     } else {
         value_text
     };
-    card(
-        label,
-        [
+    card([
+        card_header([card_title(label)]),
+        card_content([
             row([value_text, spacer(), delta_badge]).align(Align::Center),
             text(if positive {
                 "Moving in the expected direction"
@@ -175,8 +175,8 @@ fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, posit
                 "Needs visual attention"
             })
             .muted(),
-        ],
-    )
+        ]),
+    ])
     .key(if label == "Latency" {
         "metric:kpi.card"
     } else {
@@ -186,9 +186,9 @@ fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, posit
 }
 
 fn table_card() -> El {
-    card(
-        "Reference rows",
-        [
+    card([
+        card_header([card_title("Reference rows")]),
+        card_content([
             row([
                 text("Status").muted().width(Size::Fixed(86.0)),
                 text("Surface").muted().width(Size::Fill(1.0)),
@@ -235,8 +235,8 @@ fn table_card() -> El {
             ])
             .gap(tokens::SPACE_XS)
             .width(Size::Fill(1.0)),
-        ],
-    )
+        ]),
+    ])
     .key("metric:table.card")
     .width(Size::Fill(1.2))
     .height(Size::Fill(1.0))
@@ -300,9 +300,9 @@ fn data_row(
 }
 
 fn command_card() -> El {
-    card(
-        "Command surface",
-        [
+    card([
+        card_header([card_title("Command surface")]),
+        card_content([
             text_input(
                 "Search commands...",
                 &Selection::default(),
@@ -318,8 +318,9 @@ fn command_card() -> El {
             ])
             .width(Size::Fill(1.0)),
             scroll([form_probe()]).key("form-probe-scroll"),
-        ],
-    )
+        ])
+        .height(Size::Fill(1.0)),
+    ])
     .key("metric:command.card")
     .width(Size::Fill(0.8))
     .height(Size::Fill(1.0))
