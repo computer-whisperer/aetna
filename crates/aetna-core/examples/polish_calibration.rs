@@ -188,17 +188,16 @@ fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, posit
 fn table_card() -> El {
     card([
         card_header([card_title("Reference rows")]),
-        card_content([
-            row([
-                text("Status").muted().width(Size::Fixed(86.0)),
-                text("Surface").muted().width(Size::Fill(1.0)),
-                text("Owner").muted().width(Size::Fixed(110.0)),
-                text("State").muted().width(Size::Fixed(86.0)),
+        card_content([table([
+            table_header([table_row([
+                table_head("Status").width(Size::Fixed(86.0)),
+                table_head("Surface").width(Size::Fill(1.0)),
+                table_head("Owner").width(Size::Fixed(110.0)),
+                table_head("State").width(Size::Fixed(86.0)),
             ])
-            .key("metric:table.header")
-            .metrics_role(MetricsRole::TableHeader),
+            .key("metric:table.header")]),
             divider(),
-            column([
+            table_body([
                 data_row("OK", "Settings card", "core", "selected", true, "success"),
                 data_row(
                     "WARN",
@@ -235,7 +234,7 @@ fn table_card() -> El {
             ])
             .gap(tokens::SPACE_XS)
             .width(Size::Fill(1.0)),
-        ]),
+        ])]),
     ])
     .key("metric:table.card")
     .width(Size::Fill(1.2))
@@ -262,8 +261,8 @@ fn data_row(
         status_badge
     };
 
-    let mut row = row([
-        status_badge.width(Size::Fixed(70.0)),
+    let mut row = table_row([
+        table_cell(status_badge).width(Size::Fixed(70.0)),
         column([
             text(title)
                 .font_weight(FontWeight::Medium)
@@ -276,20 +275,14 @@ fn data_row(
         ])
         .gap(2.0)
         .width(Size::Fill(1.0)),
-        text(owner).muted().ellipsis().width(Size::Fixed(110.0)),
-        text(state)
-            .label()
-            .small()
-            .ellipsis()
-            .width(Size::Fixed(86.0)),
+        table_cell(text(owner).muted()).width(Size::Fixed(110.0)),
+        table_cell(text(state).label().small()).width(Size::Fixed(86.0)),
     ])
     .key(if selected {
         "metric:table.row".to_string()
     } else {
         format!("row-{title}")
     })
-    .metrics_role(MetricsRole::TableRow)
-    .align(Align::Center)
     .focusable();
 
     if selected {

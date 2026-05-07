@@ -73,7 +73,13 @@ button("Publish").large()
 text_input(&query, &selection, "search").size(ComponentSize::Sm)
 card([
     card_header([card_title("Documents")]),
-    card_content(rows),
+    card_content([table([
+        table_header([table_row([
+            table_head("Name"),
+            table_head("Status").width(Size::Fixed(96.0)),
+        ])]),
+        table_body(rows),
+    ])]),
 ])
 .compact()
 menu_item("Open").dense()
@@ -326,6 +332,7 @@ The library has a small, named vocabulary precisely so a widget — or an app `b
 
 - **`.font_size(...).font_weight(...).text_color(...)` on a single text node.** That's what role modifiers exist for. `.heading()`, `.title()`, `.label()`, `.caption()`, `.code()` set size + weight + theme-aware color in one call. Reaching for the underlying primitives is how typography drifts (one `Semibold + FONT_LG` looks subtly different from another).
 - **`column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` for grouped content.** That's `card([card_header([card_title("Title")]), card_content([...])])`. Cards route through `SurfaceRole::Panel` so the theme can swap the material later (shader, shadow, inset) without touching the call site.
+- **`row([...]).metrics_role(TableRow).align(Center)` for table rows.** That's `table_row([...])` inside `table([table_header([...]), table_body([...])])`. `table_header` promotes direct `table_row` children to header metrics, and table rows center their cells by default.
 - **Status as a unicode bullet or emoji** (`text("● Online")`, `text("⚠ Failed")`). That's `badge("Online").success()` / `badge("Failed").destructive()`. Badges read as proper status pills and pick the theme color through the StyleProfile.
 - **`.gap(0.0)`.** The default *is* `0.0`. Setting it explicitly is noise that signals the author misremembered the default — and usually means actual gap is missing somewhere else where it should be added.
 - **Wrapping a single child in `row([single])` to apply padding.** `.padding(Sides::all(...))` is on every `El`. The wrapper is dead weight.

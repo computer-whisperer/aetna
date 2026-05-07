@@ -67,6 +67,9 @@ pub use crate::widgets::select::{
 };
 pub use crate::widgets::slider::{self, SliderAction, slider};
 pub use crate::widgets::switch::{self, switch};
+pub use crate::widgets::table::{
+    self, table, table_body, table_cell, table_head, table_header, table_row,
+};
 pub use crate::widgets::tabs::{self, TabsAction, tab_option_key, tab_trigger, tabs_list};
 pub use crate::widgets::text::{h1, h2, h3, mono, paragraph, text};
 pub use crate::widgets::text_area::{self, text_area};

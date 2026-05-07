@@ -19,6 +19,7 @@ pub mod resize_handle;
 pub mod select;
 pub mod slider;
 pub mod switch;
+pub mod table;
 pub mod tabs;
 pub mod text;
 pub mod text_area;

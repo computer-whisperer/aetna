@@ -360,37 +360,38 @@ fn sale_row(
 fn documents_card() -> El {
     card([
         card_header([card_title("Documents")]),
-        card_content([
-            row([
-                text("Header").caption().width(Size::Fill(1.7)),
-                text("Section Type").caption().width(Size::Fill(1.0)),
-                text("Status").caption().width(Size::Fixed(112.0)),
-                text("Target").caption().width(Size::Fixed(70.0)),
-                text("Limit").caption().width(Size::Fixed(70.0)),
-                text("Reviewer").caption().width(Size::Fixed(140.0)),
+        card_content([table([
+            table_header([table_row([
+                table_head("Header").width(Size::Fill(1.7)),
+                table_head("Section Type").width(Size::Fill(1.0)),
+                table_head("Status").width(Size::Fixed(112.0)),
+                table_head("Target").width(Size::Fixed(70.0)),
+                table_head("Limit").width(Size::Fixed(70.0)),
+                table_head("Reviewer").width(Size::Fixed(140.0)),
             ])
-            .key("metric:table.header")
-            .metrics_role(MetricsRole::TableHeader),
+            .key("metric:table.header")]),
             divider(),
-            document_row(
-                "Cover page",
-                "Cover page",
-                "In Process",
-                "18",
-                "5",
-                "Eddie Lake",
-                "info",
-            ),
-            document_row(
-                "Table of contents",
-                "Table of contents",
-                "Done",
-                "29",
-                "24",
-                "Eddie Lake",
-                "success",
-            ),
-        ])
+            table_body([
+                document_row(
+                    "Cover page",
+                    "Cover page",
+                    "In Process",
+                    "18",
+                    "5",
+                    "Eddie Lake",
+                    "info",
+                ),
+                document_row(
+                    "Table of contents",
+                    "Table of contents",
+                    "Done",
+                    "29",
+                    "24",
+                    "Eddie Lake",
+                    "success",
+                ),
+            ]),
+        ])])
         .gap(0.0)
         .padding(0.0),
     ])
@@ -411,25 +412,19 @@ fn document_row(
         "success" => badge(status).success(),
         _ => badge(status).info(),
     };
-    row([
-        text(header)
-            .label()
-            .small()
-            .ellipsis()
-            .width(Size::Fill(1.7)),
-        text(section).muted().ellipsis().width(Size::Fill(1.0)),
-        status_badge.width(Size::Fixed(112.0)),
-        text(target).label().small().width(Size::Fixed(70.0)),
-        text(limit).label().small().width(Size::Fixed(70.0)),
-        text(reviewer).muted().ellipsis().width(Size::Fixed(140.0)),
+    table_row([
+        table_cell(text(header).label().small()).width(Size::Fill(1.7)),
+        table_cell(text(section).muted()).width(Size::Fill(1.0)),
+        table_cell(status_badge).width(Size::Fixed(112.0)),
+        table_cell(text(target).label().small()).width(Size::Fixed(70.0)),
+        table_cell(text(limit).label().small()).width(Size::Fixed(70.0)),
+        table_cell(text(reviewer).muted()).width(Size::Fixed(140.0)),
     ])
     .key(if header == "Cover page" {
         "metric:table.row"
     } else {
         header
     })
-    .metrics_role(MetricsRole::TableRow)
-    .align(Align::Center)
 }
 
 fn icon_cell(label: &'static str) -> El {

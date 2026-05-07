@@ -7,7 +7,7 @@ use aetna_core::prelude::*;
 
 fn main() -> std::io::Result<()> {
     let mut root = density_calibration();
-    let viewport = Rect::new(0.0, 0.0, 1180.0, 840.0);
+    let viewport = Rect::new(0.0, 0.0, 1180.0, 900.0);
     let bundle = render_bundle(&mut root, viewport, Some(env!("CARGO_PKG_NAME")));
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
@@ -99,12 +99,19 @@ fn density_column(title: &'static str, density: Density, size: ComponentSize) ->
         .density(density),
         titled_card(
             "Table",
-            [
-                table_header(density),
+            [table([
+                table_header([table_row([
+                    table_head("Surface").width(Size::Fill(1.0)),
+                    table_head("Owner").width(Size::Fixed(64.0)),
+                    table_head("State").width(Size::Fixed(70.0)),
+                ])
+                .density(density)]),
                 divider(),
-                table_row("Settings", "core", badge("Ready").success(), density),
-                table_row("Commands", "widgets", badge("Warn").warning(), density),
-            ],
+                table_body([
+                    density_table_row("Settings", "core", badge("Ready").success(), density),
+                    density_table_row("Commands", "widgets", badge("Warn").warning(), density),
+                ]),
+            ])],
         )
         .density(density),
     ])
@@ -134,26 +141,18 @@ fn list_item(
     .focusable()
 }
 
-fn table_header(density: Density) -> El {
-    row([
-        text("Surface").caption().width(Size::Fill(1.0)),
-        text("Owner").caption().width(Size::Fixed(64.0)),
-        text("State").caption().width(Size::Fixed(70.0)),
+fn density_table_row(
+    surface: &'static str,
+    owner: &'static str,
+    status: El,
+    density: Density,
+) -> El {
+    table_row([
+        table_cell(text(surface).label()).width(Size::Fill(1.0)),
+        table_cell(text(owner).caption()).width(Size::Fixed(64.0)),
+        table_cell(status).width(Size::Fixed(70.0)),
     ])
-    .metrics_role(MetricsRole::TableHeader)
     .density(density)
-    .align(Align::Center)
-}
-
-fn table_row(surface: &'static str, owner: &'static str, status: El, density: Density) -> El {
-    row([
-        text(surface).label().ellipsis().width(Size::Fill(1.0)),
-        text(owner).caption().ellipsis().width(Size::Fixed(64.0)),
-        status.width(Size::Fixed(70.0)),
-    ])
-    .metrics_role(MetricsRole::TableRow)
-    .density(density)
-    .align(Align::Center)
     .fill(tokens::BG_CARD)
     .focusable()
 }
