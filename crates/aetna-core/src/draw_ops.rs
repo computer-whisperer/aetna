@@ -13,6 +13,7 @@
 //! `Disabled` (alpha multiply) and `Loading` (text suffix) deltas.
 
 use crate::ir::*;
+use crate::palette::Palette;
 use crate::shader::*;
 use crate::state::{EnvelopeKind, UiState};
 use crate::text::atlas::RunStyle;
@@ -41,7 +42,59 @@ pub fn draw_ops_with_theme(root: &El, ui_state: &UiState, theme: &Theme) -> Vec<
         0.0,
         0.0,
     );
+    resolve_palette(&mut out, theme.palette());
     out
+}
+
+/// Replace every `Color` in `ops` with its palette-resolved version.
+///
+/// This is the single chokepoint where token names become rgba: the
+/// per-node passes write `Color` values straight from `tokens::*`
+/// (preserving the `token: Some(name)` metadata), then this pass walks
+/// every emitted [`DrawOp`] and rewrites each color through
+/// [`Palette::resolve`]. Token names survive resolution, so shader
+/// manifest / tree-dump / lint output still see `fill=bg-card` rather
+/// than rgba bytes.
+pub fn resolve_palette(ops: &mut [DrawOp], palette: &Palette) {
+    for op in ops {
+        match op {
+            DrawOp::Quad { uniforms, .. } => {
+                resolve_uniform_block(uniforms, palette);
+            }
+            DrawOp::GlyphRun { color, .. } => {
+                *color = palette.resolve(*color);
+            }
+            DrawOp::AttributedText { runs, .. } => {
+                for (_, style) in runs {
+                    style.color = palette.resolve(style.color);
+                    if let Some(bg) = &mut style.bg {
+                        *bg = palette.resolve(*bg);
+                    }
+                }
+            }
+            DrawOp::Icon { color, .. } => {
+                *color = palette.resolve(*color);
+            }
+            DrawOp::Image { tint, .. } => {
+                if let Some(t) = tint {
+                    *t = palette.resolve(*t);
+                }
+            }
+            DrawOp::BackdropSnapshot => {}
+        }
+    }
+}
+
+fn resolve_uniform_block(uniforms: &mut UniformBlock, palette: &Palette) {
+    let keys: Vec<&'static str> = uniforms
+        .iter()
+        .filter_map(|(k, v)| matches!(v, UniformValue::Color(_)).then_some(*k))
+        .collect();
+    for k in keys {
+        if let Some(UniformValue::Color(c)) = uniforms.get(k).copied() {
+            uniforms.insert(k, UniformValue::Color(palette.resolve(c)));
+        }
+    }
 }
 
 // Recursion threads six "inherited from parent" paint values

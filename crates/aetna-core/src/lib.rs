@@ -117,6 +117,7 @@ pub mod ir;
 pub mod layout;
 #[doc(hidden)]
 pub mod paint;
+pub mod palette;
 pub mod prelude;
 #[doc(hidden)]
 pub mod runtime;
@@ -172,6 +173,7 @@ pub use text::metrics::{
     MeasuredText, TextGeometry, TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text,
     line_height, line_width, measure_text, selection_rects, wrap_lines,
 };
+pub use palette::Palette;
 pub use theme::Theme;
 pub use tree::{
     Align, Axis, Color, El, FontWeight, IconName, InteractionState, Justify, Kind, Rect, Sides,

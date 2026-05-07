@@ -13,6 +13,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::palette::Palette;
 use crate::shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
 use crate::tokens;
 use crate::tree::{Color, SurfaceRole};
@@ -21,15 +22,30 @@ use crate::vector::IconMaterial;
 /// Runtime paint theme for implicit widget visuals.
 #[derive(Clone, Debug)]
 pub struct Theme {
+    palette: Palette,
     surface: SurfaceTheme,
     roles: BTreeMap<SurfaceRole, SurfaceTheme>,
     icon_material: IconMaterial,
 }
 
 impl Theme {
-    /// Current default: stock rounded-rect surfaces.
+    /// Current default: stock rounded-rect surfaces with the Aetna Dark
+    /// palette.
     pub fn aetna_dark() -> Self {
         Self::default()
+    }
+
+    /// Replace the runtime color palette. Token references resolve
+    /// through the active palette at paint time, so this swaps surface
+    /// rgba without rebuilding the widget tree.
+    pub fn with_palette(mut self, palette: Palette) -> Self {
+        self.palette = palette;
+        self
+    }
+
+    /// The active runtime palette.
+    pub fn palette(&self) -> &Palette {
+        &self.palette
     }
 
     /// Route all implicit surfaces through a custom shader.
@@ -116,6 +132,7 @@ impl Theme {
 impl Default for Theme {
     fn default() -> Self {
         Self {
+            palette: Palette::default(),
             surface: SurfaceTheme {
                 handle: ShaderHandle::Stock(StockShader::RoundedRect),
                 uniforms: UniformBlock::new(),
