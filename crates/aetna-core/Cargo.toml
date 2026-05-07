@@ -44,15 +44,6 @@ default_fonts = ["roboto", "emoji", "symbols"]
 roboto = ["aetna-fonts/roboto"]
 emoji = ["aetna-fonts/emoji"]
 symbols = ["aetna-fonts/symbols"]
-# Build-time light palette. With the feature off (default) the color
-# tokens in `tokens.rs` resolve to Aetna Dark; with it on, they resolve
-# to an Aetna Light palette tuned to mirror shadcn's light baseline.
-# Names, alphas, and the role assignments downstream of these constants
-# stay identical — only the literal RGB values shift. Note that cargo
-# features unify across the dependency graph, so enabling this in one
-# crate flips the palette for every other crate that resolves
-# `aetna-core` in the same build.
-light_theme = []
 
 [[example]]
 name = "settings"

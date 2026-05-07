@@ -74,8 +74,9 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// The Aetna Dark palette — historical default, matches the
-    /// `#[cfg(not(feature = "light_theme"))]` branch of `tokens.rs`.
+    /// The Aetna Dark palette — historical default. These rgba values
+    /// also serve as the compile-time fallback baked into the constants
+    /// in [`crate::tokens`].
     pub const fn aetna_dark() -> Self {
         Self {
             bg_app: Color::token("bg-app", 14, 16, 22, 255),
@@ -111,6 +112,47 @@ impl Palette {
             focus_ring: Color::token("focus-ring", 92, 170, 255, 200),
             selection_bg: Color::token("selection-bg", 92, 170, 255, 96),
             selection_bg_unfocused: Color::token("selection-bg-unfocused", 160, 160, 160, 64),
+        }
+    }
+
+    /// The Aetna Light palette — tuned to mirror shadcn's light baseline.
+    /// Token names, alphas, and downstream role assignments match
+    /// [`Self::aetna_dark`]; only the literal rgb values shift.
+    pub const fn aetna_light() -> Self {
+        Self {
+            bg_app: Color::token("bg-app", 247, 248, 251, 255),
+            bg_card: Color::token("bg-card", 255, 255, 255, 255),
+            bg_muted: Color::token("bg-muted", 240, 242, 247, 255),
+            bg_raised: Color::token("bg-raised", 255, 255, 255, 255),
+            overlay_scrim: Color::token("overlay-scrim", 12, 18, 32, 110),
+
+            text_foreground: Color::token("text-foreground", 19, 24, 33, 255),
+            text_muted_foreground: Color::token("text-muted-foreground", 96, 110, 130, 255),
+            link_foreground: Color::token("link-foreground", 37, 99, 235, 255),
+
+            border: Color::token("border", 220, 224, 232, 255),
+            border_strong: Color::token("border-strong", 180, 188, 200, 255),
+
+            success: Color::token("success", 22, 163, 74, 255),
+            warning: Color::token("warning", 217, 119, 6, 255),
+            destructive: Color::token("destructive", 220, 38, 38, 255),
+            info: Color::token("info", 37, 99, 235, 255),
+
+            primary: Color::token("primary", 37, 99, 235, 255),
+            primary_hover: Color::token("primary-hover", 29, 78, 216, 255),
+
+            scrollbar_thumb_fill: Color::token("scrollbar-thumb", 100, 116, 139, 90),
+            scrollbar_thumb_fill_active: Color::token(
+                "scrollbar-thumb-active",
+                71,
+                85,
+                105,
+                220,
+            ),
+
+            focus_ring: Color::token("focus-ring", 37, 99, 235, 200),
+            selection_bg: Color::token("selection-bg", 37, 99, 235, 64),
+            selection_bg_unfocused: Color::token("selection-bg-unfocused", 100, 116, 139, 56),
         }
     }
 
@@ -217,6 +259,37 @@ mod tests {
         assert_eq!((resolved.r, resolved.g, resolved.b), (p.bg_card.r, p.bg_card.g, p.bg_card.b));
         assert_eq!(resolved.a, 120);
         assert_eq!(resolved.token, Some("bg-card"));
+    }
+
+    #[test]
+    fn aetna_light_differs_from_aetna_dark() {
+        let dark = Palette::aetna_dark();
+        let light = Palette::aetna_light();
+        // bg-app is one of the tokens that visibly inverts.
+        assert_ne!(
+            (dark.bg_app.r, dark.bg_app.g, dark.bg_app.b),
+            (light.bg_app.r, light.bg_app.g, light.bg_app.b),
+        );
+        // Text foreground also inverts.
+        assert_ne!(
+            (dark.text_foreground.r, dark.text_foreground.g, dark.text_foreground.b),
+            (light.text_foreground.r, light.text_foreground.g, light.text_foreground.b),
+        );
+        // Token names match — same vocabulary, different rgb.
+        assert_eq!(dark.bg_app.token, light.bg_app.token);
+    }
+
+    #[test]
+    fn resolve_against_light_swaps_rgb() {
+        let light = Palette::aetna_light();
+        // A token-tagged color authored against dark values resolves to
+        // the light palette's rgb.
+        let dark_bg_card = Color::token("bg-card", 23, 26, 33, 255);
+        let resolved = light.resolve(dark_bg_card);
+        assert_eq!(
+            (resolved.r, resolved.g, resolved.b),
+            (light.bg_card.r, light.bg_card.g, light.bg_card.b),
+        );
     }
 
     #[test]

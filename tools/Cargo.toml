@@ -8,12 +8,6 @@ publish = false
 
 # Binaries auto-discovered from `src/bin/*.rs`.
 
-[features]
-# Pass-through to aetna-core's build-time light-mode palette. Enable
-# with `--features light_theme` on any of the render binaries to dump
-# Aetna Light artifacts.
-light_theme = ["aetna-core/light_theme"]
-
 [dependencies]
 aetna-core = { version = "0.2.0", path = "../crates/aetna-core" }
 aetna-fixtures = { version = "0.2.0", path = "../crates/aetna-fixtures" }

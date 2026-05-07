@@ -35,6 +35,13 @@ impl Theme {
         Self::default()
     }
 
+    /// Stock rounded-rect surfaces with the Aetna Light palette. Drop-in
+    /// alternative to [`Self::aetna_dark`] — token references swap rgba
+    /// at paint time without rebuilding the widget tree.
+    pub fn aetna_light() -> Self {
+        Self::default().with_palette(Palette::aetna_light())
+    }
+
     /// Replace the runtime color palette. Token references resolve
     /// through the active palette at paint time, so this swaps surface
     /// rgba without rebuilding the widget tree.
