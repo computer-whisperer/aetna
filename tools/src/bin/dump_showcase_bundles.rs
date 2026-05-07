@@ -30,6 +30,7 @@ fn main() -> std::io::Result<()> {
         Section::Tabs,
         Section::Split,
         Section::Glass,
+        Section::Surfaces,
         Section::Toasts,
         Section::Images,
     ] {
@@ -69,6 +70,7 @@ fn section_slug(s: Section) -> &'static str {
         Section::Tabs => "tabs",
         Section::Split => "split",
         Section::Glass => "glass",
+        Section::Surfaces => "surfaces",
         Section::Toasts => "toasts",
         Section::Images => "images",
     }

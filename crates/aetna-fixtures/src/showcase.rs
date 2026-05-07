@@ -41,6 +41,7 @@ pub enum Section {
     Tabs,
     Split,
     Glass,
+    Surfaces,
     Toasts,
     Images,
 }
@@ -58,6 +59,7 @@ impl Section {
             Section::Tabs => "Tabs",
             Section::Split => "Split",
             Section::Glass => "Glass",
+            Section::Surfaces => "Surfaces",
             Section::Toasts => "Toasts",
             Section::Images => "Images",
         }
@@ -75,12 +77,13 @@ impl Section {
             Section::Tabs => "nav-tabs",
             Section::Split => "nav-split",
             Section::Glass => "nav-glass",
+            Section::Surfaces => "nav-surfaces",
             Section::Toasts => "nav-toasts",
             Section::Images => "nav-images",
         }
     }
 
-    const ALL: [Section; 12] = [
+    const ALL: [Section; 13] = [
         Section::Counter,
         Section::List,
         Section::Palette,
@@ -91,6 +94,7 @@ impl Section {
         Section::Tabs,
         Section::Split,
         Section::Glass,
+        Section::Surfaces,
         Section::Toasts,
         Section::Images,
     ];
@@ -338,6 +342,7 @@ impl App for Showcase {
             Section::Tabs => tabs_on_event(&mut self.tabs, event),
             Section::Split => split_on_event(&mut self.split, event),
             Section::Glass => glass_on_event(&mut self.glass, event),
+            Section::Surfaces => {} // static fixture, no events
             Section::Toasts => toasts_on_event(&mut self.toasts, event),
             Section::Images => {} // static fixture, no events
         }
@@ -405,6 +410,7 @@ fn content(app: &Showcase) -> El {
                 .width(Size::Fill(1.0))
                 .height(Size::Fill(1.0));
         }
+        Section::Surfaces => surfaces_view(),
         Section::Toasts => toasts_view(&app.toasts),
         Section::Images => images_view(),
     };
@@ -1503,6 +1509,69 @@ fn glass_on_event(state: &mut GlassState, e: UiEvent) {
         Some("glass-drift") => state.drift = (state.drift + 1) % DRIFT_OFFSETS.len(),
         _ => {}
     }
+}
+
+// ---- Surfaces section ----
+//
+// Three tiles cast SHADOW_SM / SHADOW_MD / SHADOW_LG against a
+// BG_RAISED backdrop. The dark theme pairs `BG_APP` (14, 16, 22)
+// with a 0.30-alpha black drop shadow; on near-black ground the
+// shadow only darkens by ~4 channel codes, which is mathematically
+// painted but perceptually washed out. Putting the tiles on the
+// lighter BG_RAISED panel gives the shadow somewhere it can read.
+//
+// Note that stock widgets (`card`, `popover_panel`, `modal_panel`)
+// route through `SurfaceRole`, which the theme resolves to a
+// per-role shadow uniform regardless of the El's own `.shadow(...)`
+// value (see `theme::apply_role_material`). The tiles here use
+// plain `column([...])` with no surface_role so the value passes
+// through unchanged.
+
+fn surfaces_view() -> El {
+    column([
+        h1("Surfaces"),
+        paragraph(
+            "Drop shadows on the dark theme are subtle by design — \
+             30% black on a near-black background only darkens it by \
+             a few channel codes. The tiles below cast \
+             SHADOW_SM / SHADOW_MD / SHADOW_LG against a lighter \
+             BG_RAISED panel so the falloff stands out.",
+        )
+        .muted(),
+        row([
+            elevation_tile("shadow_sm", "4 px", tokens::SHADOW_SM),
+            elevation_tile("shadow_md", "12 px", tokens::SHADOW_MD),
+            elevation_tile("shadow_lg", "24 px", tokens::SHADOW_LG),
+        ])
+        .gap(tokens::SPACE_LG)
+        .align(Align::Stretch)
+        .padding(tokens::SPACE_XL)
+        .fill(tokens::BG_RAISED)
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_LG),
+        paragraph(
+            "Stock cards and popovers pin their shadow through \
+             SurfaceRole — Panel → SHADOW_SM, Popover → SHADOW_LG — \
+             so .shadow(...) on a card is overridden at theme time. \
+             Set surface_role(SurfaceRole::None) (or skip card/popover \
+             and compose by hand) to paint a custom shadow value verbatim.",
+        )
+        .muted()
+        .small(),
+    ])
+    .gap(tokens::SPACE_LG)
+}
+
+fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {
+    column([text(label).title(), text(sub).muted().small()])
+        .fill(tokens::BG_CARD)
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_LG)
+        .shadow(shadow)
+        .padding(tokens::SPACE_LG)
+        .gap(tokens::SPACE_XS)
+        .width(Size::Fill(1.0))
+        .height(Size::Fixed(140.0))
 }
 
 // ---- Toasts section ----
