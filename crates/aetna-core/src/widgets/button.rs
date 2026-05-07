@@ -64,7 +64,7 @@ pub fn icon_button(source: impl IntoIconSource) -> El {
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
         .cursor(Cursor::Pointer)
         .icon_source(source)
-        .icon_size(16.0)
+        .icon_size(tokens::ICON_SM)
         .icon_stroke_width(2.0)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
@@ -90,7 +90,7 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .justify(Justify::Center)
         .child(
             icon(source)
-                .icon_size(tokens::FONT_BASE)
+                .icon_size(tokens::ICON_SM)
                 .color(tokens::TEXT_FOREGROUND),
         )
         .child(text(label).label())

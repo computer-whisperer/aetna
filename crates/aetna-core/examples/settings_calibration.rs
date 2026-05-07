@@ -363,8 +363,8 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     let mut item = row([
         icon(icon_name)
             .color(tokens::TEXT_MUTED_FOREGROUND)
-            .icon_size(tokens::FONT_LG)
-            .width(Size::Fixed(tokens::FONT_LG)),
+            .icon_size(tokens::ICON_SM)
+            .width(Size::Fixed(tokens::ICON_SM)),
         text(label)
             .font_weight(FontWeight::Medium)
             .ellipsis()
@@ -394,7 +394,7 @@ fn icon_slot(icon_name: &'static str) -> El {
         .child(
             icon(icon_name)
                 .color(tokens::TEXT_FOREGROUND)
-                .icon_size(tokens::FONT_BASE),
+                .icon_size(tokens::ICON_XS),
         )
         .align(Align::Center)
         .justify(Justify::Center)

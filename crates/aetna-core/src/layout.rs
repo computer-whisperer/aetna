@@ -1730,7 +1730,7 @@ mod tests {
         let child_rect = state.rect(&root.children[0].computed_id);
         assert_eq!(child_rect.w, 180.0);
         assert!(
-            child_rect.h > crate::tokens::FONT_BASE * 1.4,
+            child_rect.h > crate::tokens::TEXT_SM.size * 1.4,
             "expected multiline paragraph height, got {}",
             child_rect.h
         );
@@ -1780,7 +1780,7 @@ mod tests {
         // Paragraph wrapped to ≥ 2 lines (exact line count depends on
         // glyph metrics; just guard against the single-line bug).
         assert!(
-            para_rect.h > crate::tokens::FONT_BASE * 1.4,
+            para_rect.h > crate::tokens::TEXT_SM.size * 1.4,
             "paragraph should wrap to multiple lines inside the Fixed-width panel; \
              got h={}",
             para_rect.h

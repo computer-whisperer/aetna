@@ -102,7 +102,6 @@ pub fn form_control(control: impl Into<El>) -> El {
 pub fn form_description(description: impl Into<String>) -> El {
     text(description)
         .at_loc(Location::caller())
-        .caption()
         .muted()
         .wrap_text()
         .width(Size::Fill(1.0))
@@ -112,7 +111,6 @@ pub fn form_description(description: impl Into<String>) -> El {
 pub fn form_message(message: impl Into<String>) -> El {
     text(message)
         .at_loc(Location::caller())
-        .caption()
         .font_weight(FontWeight::Medium)
         .destructive()
         .wrap_text()
@@ -158,14 +156,22 @@ mod tests {
         assert_eq!(item.children[0].text.as_deref(), Some("Email"));
         assert_eq!(item.children[0].text_role, TextRole::Label);
         assert_eq!(item.children[1].kind, Kind::Custom("form_control"));
-        assert_eq!(item.children[2].text_role, TextRole::Caption);
+        assert_eq!(item.children[2].text_role, TextRole::Body);
+        assert_eq!(item.children[2].font_size, tokens::TEXT_SM.size);
+        assert_eq!(item.children[2].line_height, tokens::TEXT_SM.line_height);
+        assert_eq!(
+            item.children[2].text_color,
+            Some(tokens::TEXT_MUTED_FOREGROUND)
+        );
     }
 
     #[test]
     fn form_message_uses_error_treatment() {
         let message = form_message("Email is required.");
 
-        assert_eq!(message.text_role, TextRole::Caption);
+        assert_eq!(message.text_role, TextRole::Body);
+        assert_eq!(message.font_size, tokens::TEXT_SM.size);
+        assert_eq!(message.line_height, tokens::TEXT_SM.line_height);
         assert_eq!(message.font_weight, FontWeight::Medium);
         assert_eq!(message.text_color, Some(tokens::DESTRUCTIVE));
     }

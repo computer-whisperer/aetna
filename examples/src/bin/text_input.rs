@@ -132,32 +132,48 @@ impl App for Form {
     fn build(&self, _cx: &BuildCx) -> El {
         column([
             h2("Form"),
-            field_row(
-                "Name",
-                text_input_with(&self.name, &self.selection, "name", self.opts_for("name")),
-            ),
-            field_row(
-                "Email",
-                text_input_with(
-                    &self.email,
-                    &self.selection,
-                    "email",
-                    self.opts_for("email"),
-                ),
-            ),
-            field_row(
-                "PIN",
-                text_input_with(&self.pin, &self.selection, "pin", self.opts_for("pin")),
-            ),
-            field_row(
-                "Password",
-                text_input_with(
-                    &self.password,
-                    &self.selection,
-                    "password",
-                    self.opts_for("password"),
-                ),
-            ),
+            form([
+                form_item([
+                    form_label("Name"),
+                    form_control(text_input_with(
+                        &self.name,
+                        &self.selection,
+                        "name",
+                        self.opts_for("name"),
+                    )),
+                    form_description("Shown on shared reports."),
+                ]),
+                form_item([
+                    form_label("Email"),
+                    form_control(text_input_with(
+                        &self.email,
+                        &self.selection,
+                        "email",
+                        self.opts_for("email"),
+                    )),
+                    form_description("Used for account notifications."),
+                ]),
+                form_item([
+                    form_label("PIN"),
+                    form_control(text_input_with(
+                        &self.pin,
+                        &self.selection,
+                        "pin",
+                        self.opts_for("pin"),
+                    )),
+                    form_description("Four digits for quick approval."),
+                ]),
+                form_item([
+                    form_label("Password"),
+                    form_control(text_input_with(
+                        &self.password,
+                        &self.selection,
+                        "password",
+                        self.opts_for("password"),
+                    )),
+                    form_description("Required before exporting private data."),
+                ]),
+            ]),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
             preview_block(self),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
@@ -336,22 +352,14 @@ fn apply_with_clipboard(
     }
 }
 
-fn field_row(label: &str, input: El) -> El {
-    row([
-        text(label).width(Size::Fixed(72.0)).muted(),
-        input.width(Size::Fill(1.0)),
-    ])
-    .gap(tokens::SPACE_SM)
-}
-
 fn preview_block(form: &Form) -> El {
-    card(
+    titled_card(
         "Live state",
         [
             preview_line(form, "name"),
             preview_line(form, "email"),
             preview_line(form, "pin"),
-            mono(format!("global: {:?}", form.selection)).font_size(tokens::FONT_SM),
+            mono(format!("global: {:?}", form.selection)),
         ],
     )
 }
@@ -374,7 +382,7 @@ fn preview_line(form: &Form, key: &str) -> El {
         }
         None => format!("{key:>8} = {:?}  (not selected)", value),
     };
-    mono(summary).font_size(tokens::FONT_SM)
+    mono(summary)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -165,13 +165,8 @@ impl El {
     /// a tinted background per the theme is a future addition. Authors
     /// who want raw mono without code chrome should use [`Self::mono`]
     /// instead.
-    pub fn code(mut self) -> Self {
-        self.text_role = TextRole::Code;
-        self.font_size = crate::tokens::FONT_SM;
-        self.font_weight = FontWeight::Regular;
-        self.font_mono = true;
-        self.text_color = Some(crate::tokens::TEXT_FOREGROUND);
-        self
+    pub fn code(self) -> Self {
+        self.text_role(TextRole::Code)
     }
 
     /// Mark this run as a link to `url`. Inside an

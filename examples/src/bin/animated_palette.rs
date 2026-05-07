@@ -63,7 +63,7 @@ impl App for Palette {
                 let scale = if is_selected { 1.15 } else { 1.0 };
                 let lift = if is_selected { -8.0 } else { 0.0 };
 
-                card(
+                titled_card(
                     s.name,
                     [text(if is_selected { "picked" } else { "tap" })
                         .center_text()

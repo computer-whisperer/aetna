@@ -18,7 +18,13 @@ The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`,
 
 ### 1.1 Layout — sizing, alignment, container axes
 
-Containers are El factories with axis + sensible defaults. `column([...])` is `axis = Column, align = Stretch, height = Hug`; `row([...])` is `axis = Row, align = Center, height = Hug`; `stack([...])` is `axis = Overlay`. Each container has a **main axis** (the axis its children flow along) and a **cross axis** (perpendicular). Both `column` and `row` default to `Hug` on their main axis (height for column, height for row's cross) and `Fill(1.0)` width. To make a column claim its parent's full height, set `.height(Size::Fill(1.0))` explicitly.
+Containers are El factories with axis + CSS-like defaults. `column([...])` is
+`axis = Column, align = Stretch, height = Hug`; `row([...])` is
+`axis = Row, align = Stretch, height = Hug`; `stack([...])` is
+`axis = Overlay`. Each container has a **main axis** (the axis its children flow
+along) and a **cross axis** (perpendicular). Both `column` and `row` default to
+`Hug` on their main axis. To make a column or row claim its parent's extent, set
+`.width(Size::Fill(1.0))` / `.height(Size::Fill(1.0))` explicitly.
 
 Each child has a `Size` intent on each axis:
 
@@ -37,12 +43,12 @@ row([sidebar(), content()])
     .gap(tokens::SPACE_LG)
     .height(Size::Fill(1.0))
 
-// Card row of icon + text + button. Default `Center` align
-// vertically centers the smaller children within the row's
-// hug height (≈ button height).
+// Card row of icon + text + button. `align(Center)` is the
+// Tailwind `items-center` equivalent for everyday content rows.
 row([icon("settings"), label, button("Edit")])
     .gap(tokens::SPACE_SM)
     .padding(tokens::SPACE_MD)
+    .align(Align::Center)
 
 // Two-pane fill: left pane gets 1/3, right gets 2/3.
 column([
@@ -53,6 +59,10 @@ column([
 
 Common pitfalls to avoid:
 
+- **A normal icon/text/action row usually wants `.align(Align::Center)`.**
+  `row()` follows CSS flexbox and defaults to cross-axis stretch. Stock widgets
+  set center alignment where they need it, but app-authored rows should spell
+  out the familiar `items-center` intent.
 - **A `Fill`-cross-axis child neutralizes the parent's `align`.** `align(Center)` only positions children that have slack to be positioned — Fill claims the full extent, so it's a no-op for that child. Where the visible content sits inside a Fill child is then determined by the *child's own* main-axis `justify` (which defaults to `Start`). Symptom: in a row of `align(Center)` siblings, a `Fill`-height column appears to "stick to the top" because its content top-aligns inside the box. Fix: `.height(Size::Hug)` on the inner column, so it sizes to content and the parent center alignment has slack to work with. (`column()` and `row()` now both default to `Hug` on their non-fill axis, which makes this the easy path. The footgun only resurfaces if you explicitly set `Fill` on the cross axis.)
 - **Two `Fill` siblings in a column will split the column's height proportionally to weight** — give one of them `.height(Size::Hug)` if it should size to content (panel header above scrollable body, etc).
 - **A row of full-height columns needs `.height(Size::Fill(1.0))` on the row itself.** Row defaults to `Hug` height, so it shrinks to its tallest child's hug height; nested `Fill`-height children then have nothing to fill.
@@ -178,7 +188,7 @@ Roles apply default size/line-height/weight/color so product code can say what a
 
 Use `icon("search")` for built-in vector icons, `icon_button("menu")` for the standard theme-sized icon-only button surface, and `button_with_icon("upload", "Publish")` for label+icon actions. The names intentionally mirror common lucide/shadcn names: `menu`, `search`, `bell`, `layout-dashboard`, `file-text`, `folder`, `users`, `bar-chart`, `git-branch`, `git-commit`, `refresh-cw`, `alert-circle`, `check`, `x`, `plus`, `chevron-right`, and related basics.
 
-Icons are normal `El`s: set `.color(...)`, `.icon_size(...)`, `.icon_stroke_width(...)`, width/height, padding, or put them inside rows the same way as text. Tree dumps show `icon=<name>`, draw-op artifacts include `Icon` records, and the SVG fallback renders the vector path directly. The wgpu renderer, browser WebGPU path, and Vulkano renderer all render SVG-backed vector geometry through the shared vector mesh.
+Icons are normal `El`s: set `.color(...)`, `.icon_size(...)`, `.icon_stroke_width(...)`, width/height, padding, or put them inside rows the same way as text. Prefer the icon-size tokens (`tokens::ICON_XS` = 14, `tokens::ICON_SM` = 16, `tokens::ICON_MD` = 20) over borrowing typography tokens for icon geometry. Tree dumps show `icon=<name>`, draw-op artifacts include `Icon` records, and the SVG fallback renders the vector path directly. The wgpu renderer, browser WebGPU path, and Vulkano renderer all render SVG-backed vector geometry through the shared vector mesh.
 
 ### 3.4 Form rows
 
@@ -227,18 +237,22 @@ use aetna_core::prelude::*;
 
 struct Form {
     name: String,
-    name_sel: TextSelection,
+    selection: Selection,
 }
 
 impl App for Form {
-    fn build(&self) -> El {
-        text_input(&self.name, self.name_sel).key("name")
+    fn build(&self, _cx: &BuildCx) -> El {
+        text_input(&self.name, &self.selection, "name")
     }
 
     fn on_event(&mut self, event: UiEvent) {
         if event.target_key() == Some("name") {
-            text_input::apply_event(&mut self.name, &mut self.name_sel, &event);
+            text_input::apply_event(&mut self.name, &mut self.selection, "name", &event);
         }
+    }
+
+    fn selection(&self) -> Selection {
+        self.selection.clone()
     }
 }
 ```
@@ -341,7 +355,7 @@ These all interact with library-owned bookkeeping (focus tracker, animations, co
 
 The library has a small, named vocabulary precisely so a widget — or an app `build()` — doesn't need to invent one. The patterns below mean an existing affordance is being missed:
 
-- **`.font_size(...).font_weight(...).text_color(...)` on a single text node.** That's what role modifiers exist for. `.heading()`, `.title()`, `.label()`, `.caption()`, `.code()` set size + weight + theme-aware color in one call. Reaching for the underlying primitives is how typography drifts (one `Semibold + FONT_LG` looks subtly different from another).
+- **`.font_size(...).font_weight(...).text_color(...)` on a single text node.** That's what role modifiers exist for. `.heading()`, `.title()`, `.label()`, `.caption()`, `.code()` set size + weight + theme-aware color in one call. Reaching for the underlying primitives is how typography drifts (one hand-written 16px semibold title looks subtly different from another).
 - **`column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` for grouped content.** That's `card([card_header([card_title("Title")]), card_content([...])])`. Cards route through `SurfaceRole::Panel` so the theme can swap the material later (shader, shadow, inset) without touching the call site.
 - **`column([text(label).label(), text_input(...)]).gap(...)` for vertical fields.** That's `form_item([form_label(label), form_control(text_input(...)), form_description(...)])` inside `form([...])`. The theme owns the field stack rhythm through form density.
 - **`row([...]).metrics_role(TableRow).align(Center)` for table rows.** That's `table_row([...])` inside `table([table_header([...]), table_body([...])])`. `table_header` promotes direct `table_row` children to header metrics, and table rows center their cells by default.

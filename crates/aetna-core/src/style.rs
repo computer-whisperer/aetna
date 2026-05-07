@@ -441,6 +441,10 @@ mod tests {
 
         let code = text("Code").code();
         assert_eq!(code.text_role, TextRole::Code);
+        assert_eq!(code.font_size, tokens::TEXT_XS.size);
+        assert_eq!(code.line_height, tokens::TEXT_XS.line_height);
+        assert_eq!(code.font_weight, FontWeight::Regular);
+        assert_eq!(code.text_color, Some(tokens::TEXT_FOREGROUND));
         assert!(code.font_mono);
     }
 }

@@ -61,7 +61,7 @@ The architectural decision: `El` is the author's description of the scene; every
 | App-supplied SVG icons | `icon(SvgIcon::parse_current_color(include_str!("path.svg")))` paints any `currentColor` SVG through the same icon pipeline used for built-in `IconName`s; `icon_button(source)` wraps it with the standard interactive surface. Unknown string-typed icon names render an empty box rather than panicking. |
 | Backdrop sampling | multi-pass render API + snapshot copy + `@group(1)` backdrop sampler made available to custom shaders; `liquid_glass.wgsl` is the architectural acceptance test. `cargo run -p aetna-tools --bin render_liquid_glass`; runs identically through wgpu native, vulkano native, and WebGPU |
 | Widget kit + input plumbing | symmetry invariant — stock widgets compose only public surface (`capture_keys`, `paint_overflow`, `LayoutCtx::rect_of_key`, controlled state helpers, etc.). `crates/aetna-core/src/widget_kit.md` is the author contract; every stock widget under `crates/aetna-core/src/widgets/` is a pure composition. `PointerDown`, `SecondaryClick`, drag tracking, character / IME `TextInput` events, focused-node key capture, and `metrics::hit_text` are kit-public primitives. `UiState::widget_state` exists for advanced host/diagnostic experiments, not normal app widget code. |
-| `text_input` / `text_area` | single + multi-line editing, `TextSelection { anchor, head }`, drag-to-select, shift-arrow extension, Ctrl+A/C/X/V via app-owned clipboard (`text_input::clipboard_request` detects keystrokes; app dispatches against `arboard` natively or web Clipboard API), preferred-column up/down motion, line-wise Home/End. Both widgets share `(value, TextSelection)` shape and the same `apply_event` helper. Built using only the public widget kit. `cargo run -p aetna-examples --bin text_input`; `cargo run -p aetna-examples --bin text_area` |
+| `text_input` / `text_area` | single + multi-line editing through app-owned `(value, Selection)` state, drag-to-select, shift-arrow extension, Ctrl+A/C/X/V via app-owned clipboard (`text_input::clipboard_request` detects keystrokes; app dispatches against `arboard` natively or web Clipboard API), preferred-column up/down motion, line-wise Home/End. Both widgets share the same controlled selection shape and public `apply_event` helpers. Built using only the public widget kit. `cargo run -p aetna-examples --bin text_input`; `cargo run -p aetna-examples --bin text_area` |
 | Anchored popovers | two-pass layout positioning a popover relative to a trigger key (current-frame rect, no staleness); viewport-edge auto-flip; click-outside / Escape dismiss. `dropdown` and `context_menu` are compositions of `popover` + `popover_panel` + `menu_item` — no extra runtime wiring. Kit primitive: `LayoutCtx::rect_of_key` (any custom layout can position relative to keyed elements outside its own subtree). `cargo run -p aetna-examples --bin popover` — top dropdown, bottom dropdown (auto-flip-up), context menu, non-scrim tooltip |
 | Tabs / segmented control | `tabs_list(key, &current, options)` + `tab_trigger` + `tabs::apply_event` mirror shadcn / Radix Tabs and the WAI-ARIA tablist pattern. Routed key `{key}:tab:{value}`. `cargo run -p aetna-examples --bin tabs` |
 | Form primitives | `switch`, `checkbox`, `radio_group`/`radio_item`, and `progress` in `widgets/`. Switch and checkbox are controlled bools; `radio_group` parallels `tabs_list` with `{key}:radio:{value}`; `progress` is a non-interactive value bar. Animated state changes (thumb slide, check / dot fade-in). Demonstrated in `Section::Forms` of the `Showcase` fixture. |
@@ -74,8 +74,8 @@ Author surface today — the entire interactive contract:
 struct Account { online: bool }
 
 impl App for Account {
-    fn build(&self) -> El {
-        card("Account", [
+    fn build(&self, _cx: &BuildCx) -> El {
+        titled_card("Account", [
             row([text("Email").label(), text("user@example.com").muted()])
                 .align(Align::Center).justify(Justify::SpaceBetween),
             row([
@@ -92,7 +92,6 @@ impl App for Account {
             ])
             .align(Align::Center),
         ])
-        .padding(tokens::SPACE_XL)
     }
 
     fn on_event(&mut self, e: UiEvent) {
@@ -107,7 +106,7 @@ impl App for Account {
 
 No JSX, no signals, no `useState`, no retained-mode component identity. Hover, press, and focus visuals are applied automatically by the library — the author never tags a node "this one is hovered." `key` is the hit-test target *and* the event-routing identifier — same string, no separate `.on_click(...)` registration that can drift.
 
-Notice the affordances doing work in seven lines of `build()`: `card("Title", [...])` for grouped content (theme-routed surface, padding, radius), `.label()` / `.muted()` / `.success()` for typography and status colors that stay coherent across themes, `badge(...)` for status pills, `button().destructive()` for the danger action, `row().justify(SpaceBetween)` for the label/value split. **Reach for these before raw `font_size` / `font_weight` / `text_color`** — see the [reach-for-these-first](#reach-for-these-first) lookup below.
+Notice the affordances doing work in seven lines of `build()`: `titled_card("Title", [...])` for grouped content (theme-routed surface, padding, radius), `.label()` / `.muted()` / `.success()` for typography and status colors that stay coherent across themes, `badge(...)` for status pills, `button().destructive()` for the danger action, `row().justify(SpaceBetween)` for the label/value split. **Reach for these before raw `font_size` / `font_weight` / `text_color`** — see the [reach-for-these-first](#reach-for-these-first) lookup below.
 
 ### Reach for these first
 
@@ -115,11 +114,11 @@ When scaffolding a UI, prefer the named affordance over the underlying primitive
 
 | Intent | Idiomatic call | Avoid |
 |---|---|---|
-| Grouped content (settings card, panel of fields) | `card("Title", [...])` | `column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` |
+| Grouped content (settings card, panel of fields) | `card([card_header([card_title("Title")]), card_content([...])])` or `titled_card("Title", [...])` | `column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` |
 | Status indicator (Online, Pending, Failed) | `badge("Online").success()` (also `.warning()` / `.destructive()` / `.info()` / `.muted()`) | `text("● Online").text_color(SUCCESS)` |
-| Section heading / page title | `.heading()` / `h2(...)` (or `.title()` / `h3(...)`) | `.font_size(FONT_LG).font_weight(Bold).text_color(...)` |
+| Section heading / page title | `.heading()` / `h2(...)` (or `.title()` / `h3(...)`) | `.font_size(16.0).font_weight(Bold).text_color(...)` |
 | Field label | `.label()` | `.font_weight(Semibold).text_color(...)` |
-| Helper / hint text | `.caption()` or `.muted()` | `.font_size(FONT_SM).text_color(TEXT_MUTED_FOREGROUND)` |
+| Helper / hint text | `.caption()` or `.muted()` | `.font_size(12.0).text_color(TEXT_MUTED_FOREGROUND)` |
 | Inline code / mono | `.code()` or `mono(...)` | `.font_family("monospace")` (no such API) |
 | Pinned sidebar | `.width(Size::Fixed(tokens::SIDEBAR_WIDTH))` plus `.surface_role(SurfaceRole::Panel)` | a magic-number width |
 | Sectioned tab content | `tabs_list(key, &current, opts)` + `match self.tab { ... }` | a `Vec<El>` with manual show/hide |
@@ -171,11 +170,11 @@ crates/
       anim/                        AnimValue, Animation, SpringConfig, TweenConfig, per-node tick
 
       style.rs                     StyleProfile dispatch
-      tokens.rs                    const tokens (colors, spacing, radii, font sizes)
+      tokens.rs                    const tokens (colors, spacing, radii, type/icon sizes)
 
       widgets/                     stock vocabulary — pure compositions of the public widget-kit surface
         button.rs                    button("Save").primary() etc.
-        card.rs                      card("Title", [body])
+        card.rs                      card/card_header/card_content/titled_card
         badge.rs                     badge("12")
         text.rs                      h1/h2/h3/paragraph/mono/text
         overlay.rs                   overlay/scrim/modal/modal_panel
@@ -295,7 +294,7 @@ Same `Showcase` `App` impl from `aetna-fixtures` runs through `aetna-winit-wgpu`
 
 ## Reviewing this
 
-Aetna's rendering thesis is well-defended (liquid glass running on three backends; the `RunnerCore` extraction means behavior literally cannot drift between backends). The widget-kit and text/popover surfaces have held the symmetry invariant — every stock widget under `crates/aetna-core/src/widgets/` composes only public surface, no `pub(crate)` reach-through, no `#[doc(hidden)]` items, no library-side `match` on the decorative `Kind` variants. `RunnerCore` is sealed from widget code. The `text_input` and `text_area` widgets are controlled widgets: apps own `(value, TextSelection)` state and call the public `apply_event` helpers from `on_event`. The contract is documented in `crates/aetna-core/src/widget_kit.md`.
+Aetna's rendering thesis is well-defended (liquid glass running on three backends; the `RunnerCore` extraction means behavior literally cannot drift between backends). The widget-kit and text/popover surfaces have held the symmetry invariant — every stock widget under `crates/aetna-core/src/widgets/` composes only public surface, no `pub(crate)` reach-through, no `#[doc(hidden)]` items, no library-side `match` on the decorative `Kind` variants. `RunnerCore` is sealed from widget code. The `text_input` and `text_area` widgets are controlled widgets: apps own `(value, Selection)` state and call the public `apply_event` helpers from `on_event`. The contract is documented in `crates/aetna-core/src/widget_kit.md`.
 
 The popover positioning model is genuinely two-pass. `LayoutCtx::rect_of_key` reads the *current-frame* rect (not the previous frame's), so a popover anchored to a trigger that was just laid out sees the up-to-date position. `anchor_rect`'s viewport-edge auto-flip and secondary-axis clamping have unit-test coverage for both-sides-overflow, exact-edge, and missing-key cases. `dropdown` and `context_menu` are pure compositions of `popover` + `popover_panel` + `menu_item` — no extra runtime wiring.
 

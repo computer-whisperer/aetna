@@ -60,7 +60,7 @@ use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::metrics::MetricsRole;
 use crate::selection::{Selection, SelectionPoint, SelectionRange};
 use crate::style::StyleProfile;
-use crate::text::metrics::{self, TextGeometry};
+use crate::text::metrics::TextGeometry;
 use crate::tokens;
 use crate::tree::*;
 use crate::widgets::text::text;
@@ -131,7 +131,6 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
     // the available width.
     children.push(
         text(value)
-            .font_size(tokens::FONT_BASE)
             .wrap_text()
             .width(Size::Fill(1.0))
             .height(Size::Hug),
@@ -181,13 +180,13 @@ fn caret_bar() -> El {
 }
 
 fn line_height_px() -> f32 {
-    metrics::line_height(tokens::FONT_BASE)
+    tokens::TEXT_SM.line_height
 }
 
 fn text_area_geometry(value: &str) -> TextGeometry<'_> {
     TextGeometry::new(
         value,
-        tokens::FONT_BASE,
+        tokens::TEXT_SM.size,
         FontWeight::Regular,
         false,
         TextWrap::NoWrap,

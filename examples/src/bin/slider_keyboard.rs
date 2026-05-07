@@ -37,7 +37,7 @@ impl App for VolumeDemo {
             text("Tab to focus · Arrows step 5% · PgUp/Dn 25% · Home/End jump")
                 .muted()
                 .center_text()
-                .font_size(tokens::FONT_SM),
+                .caption(),
         ])
         .gap(tokens::SPACE_MD)
         .padding(tokens::SPACE_XL)

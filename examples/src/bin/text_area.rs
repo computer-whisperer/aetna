@@ -83,7 +83,13 @@ impl App for Notes {
     fn build(&self, _cx: &BuildCx) -> El {
         column([
             h2("Notes"),
-            text_area(&self.body, &self.selection, BODY_KEY).height(Size::Fixed(180.0)),
+            form([form_item([
+                form_label("Body"),
+                form_control(
+                    text_area(&self.body, &self.selection, BODY_KEY).height(Size::Fixed(180.0)),
+                ),
+                form_description("Saved with the incident timeline."),
+            ])]),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
             preview_block(self),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
@@ -251,7 +257,7 @@ fn preview_block(notes: &Notes) -> El {
             notes.body.lines().count().max(1)
         ),
     };
-    card("Live state", [mono(summary).font_size(tokens::FONT_SM)])
+    titled_card("Live state", [mono(summary)])
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

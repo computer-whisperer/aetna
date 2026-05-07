@@ -54,7 +54,7 @@ impl App for Demo {
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
             row([
                 column([
-                    text("Top dropdown").muted().font_size(tokens::FONT_SM),
+                    text("Top dropdown").caption(),
                     button(self.color.unwrap_or("Color"))
                         .key("color-trigger")
                         .secondary(),
@@ -63,7 +63,7 @@ impl App for Demo {
                 .height(Size::Hug),
                 spacer(),
                 column([
-                    text("Tooltip on press").muted().font_size(tokens::FONT_SM),
+                    text("Tooltip on press").caption(),
                     button("?").key("help").ghost(),
                 ])
                 .gap(tokens::SPACE_XS)
@@ -235,8 +235,8 @@ fn context_region() -> El {
 fn tooltip_layer() -> El {
     // The tooltip uses popover_panel directly (no scrim). Wrap it in
     // a layer that fills the viewport and anchors to the help button.
-    let panel = popover_panel([text("Show tooltip while pressed").font_size(tokens::FONT_SM)])
-        .padding(tokens::SPACE_SM);
+    let panel =
+        popover_panel([text("Show tooltip while pressed").caption()]).padding(tokens::SPACE_SM);
     El::new(Kind::Custom("tooltip_layer"))
         .child(panel)
         .fill_size()

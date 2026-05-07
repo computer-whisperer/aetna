@@ -199,14 +199,14 @@ pub fn line_height_for_size(size: f32) -> f32 {
         .unwrap_or((size * 1.3).ceil())
 }
 
-// Transitional font-size aliases. Prefer the `TEXT_*` tokens above in
-// new code so line-height travels with the type choice.
-pub const FONT_XS: f32 = TEXT_XS.size;
-pub const FONT_SM: f32 = TEXT_XS.size;
-pub const FONT_BASE: f32 = TEXT_SM.size;
-pub const FONT_LG: f32 = TEXT_BASE.size;
-pub const FONT_XL: f32 = TEXT_2XL.size;
-pub const FONT_XXL: f32 = TEXT_3XL.size;
+// ---- Icons ----
+//
+// Common lucide/shadcn icon boxes. `ICON_SM` is Tailwind `size-4`;
+// `ICON_XS` maps to the common `size-3.5` treatment used in dense
+// cells and compact status rows.
+pub const ICON_XS: f32 = 14.0;
+pub const ICON_SM: f32 = 16.0;
+pub const ICON_MD: f32 = 20.0;
 
 // ---- State styling ----
 //

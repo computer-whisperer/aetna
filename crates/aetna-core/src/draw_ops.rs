@@ -1332,7 +1332,7 @@ mod tests {
         // has room — without the override, padding(20) on a 16-wide
         // element would produce a negative inset.
         let mut root = column([crate::icon(IconName::Folder)
-            .icon_size(16.0)
+            .icon_size(crate::tokens::ICON_SM)
             .width(Size::Fixed(80.0))
             .height(Size::Fixed(40.0))
             .padding(Sides::xy(20.0, 0.0))]);

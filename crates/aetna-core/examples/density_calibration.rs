@@ -159,7 +159,7 @@ fn density_table_row(
 
 fn icon_slot(icon_name: &'static str) -> El {
     stack([icon(icon_name)
-        .icon_size(14.0)
+        .icon_size(tokens::ICON_XS)
         .color(tokens::TEXT_FOREGROUND)])
     .align(Align::Center)
     .justify(Justify::Center)

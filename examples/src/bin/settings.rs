@@ -14,7 +14,7 @@ impl App for Settings {
     fn build(&self, _cx: &BuildCx) -> El {
         column([
             h1("Settings"),
-            card(
+            titled_card(
                 "Account",
                 [
                     row([text("Email"), text("user@example.com").muted()])
@@ -31,7 +31,7 @@ impl App for Settings {
                         .justify(Justify::SpaceBetween),
                 ],
             ),
-            card(
+            titled_card(
                 "Appearance",
                 [
                     row([text("Theme"), button("Dark").secondary()])
@@ -45,7 +45,7 @@ impl App for Settings {
                         .justify(Justify::SpaceBetween),
                 ],
             ),
-            card(
+            titled_card(
                 "Danger zone",
                 [row([
                     column([

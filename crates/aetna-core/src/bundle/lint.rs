@@ -529,7 +529,7 @@ mod tests {
     #[test]
     fn stretch_row_with_top_pinned_icon_and_text_suggests_center_alignment() {
         let root = crate::row([
-            crate::icon("settings").icon_size(16.0),
+            crate::icon("settings").icon_size(crate::tokens::ICON_SM),
             crate::text("Settings").width(Size::Fill(1.0)),
         ])
         .height(Size::Fixed(36.0));
@@ -550,7 +550,7 @@ mod tests {
     #[test]
     fn centered_row_with_icon_and_text_satisfies_alignment_policy() {
         let root = crate::row([
-            crate::icon("settings").icon_size(16.0),
+            crate::icon("settings").icon_size(crate::tokens::ICON_SM),
             crate::text("Settings").width(Size::Fill(1.0)),
         ])
         .height(Size::Fixed(36.0))
@@ -570,7 +570,7 @@ mod tests {
 
     #[test]
     fn overlay_with_top_left_pinned_icon_suggests_center_alignment() {
-        let icon_slot = crate::stack([crate::icon("settings").icon_size(14.0)])
+        let icon_slot = crate::stack([crate::icon("settings").icon_size(crate::tokens::ICON_XS)])
             .fill(crate::tokens::BG_MUTED)
             .width(Size::Fixed(26.0))
             .height(Size::Fixed(26.0));
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn centered_overlay_icon_satisfies_alignment_policy() {
-        let icon_slot = crate::stack([crate::icon("settings").icon_size(14.0)])
+        let icon_slot = crate::stack([crate::icon("settings").icon_size(crate::tokens::ICON_XS)])
             .align(Align::Center)
             .justify(Justify::Center)
             .fill(crate::tokens::BG_MUTED)

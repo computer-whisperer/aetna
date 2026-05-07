@@ -58,13 +58,11 @@ impl App for Demo {
             paragraph(PARA_B).key("para-b").selectable(),
             paragraph(PARA_C).key("para-c").selectable(),
             spacer().height(Size::Fixed(tokens::SPACE_LG)),
-            card(
+            titled_card(
                 "Selection state",
                 [
                     state_line(&self.selection),
-                    text(format!("Last copy: {:?}", self.last_copy))
-                        .font_size(tokens::FONT_SM)
-                        .muted(),
+                    mono(format!("Last copy: {:?}", self.last_copy)).muted(),
                 ],
             ),
         ])
@@ -111,7 +109,7 @@ fn state_line(sel: &Selection) -> El {
             r.anchor.key, r.anchor.byte, r.head.key, r.head.byte
         ),
     };
-    mono(summary).font_size(tokens::FONT_SM)
+    mono(summary)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -49,7 +49,7 @@ use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::metrics::MetricsRole;
 use crate::selection::{Selection, SelectionPoint, SelectionRange};
 use crate::style::StyleProfile;
-use crate::text::metrics::{self, TextGeometry};
+use crate::text::metrics::TextGeometry;
 use crate::tokens;
 use crate::tree::*;
 use crate::widgets::text::text;
@@ -266,7 +266,6 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
     {
         children.push(
             text(ph)
-                .font_size(tokens::FONT_BASE)
                 .muted()
                 .width(Size::Hug)
                 .height(Size::Fixed(line_h)),
@@ -277,7 +276,6 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
     // leaf's intrinsic measure is the actual glyph extent.
     children.push(
         text(display.into_owned())
-            .font_size(tokens::FONT_BASE)
             .width(Size::Hug)
             .height(Size::Fixed(line_h)),
     );
@@ -331,13 +329,13 @@ fn caret_bar() -> El {
 }
 
 fn line_height_px() -> f32 {
-    metrics::line_height(tokens::FONT_BASE)
+    tokens::TEXT_SM.line_height
 }
 
 fn single_line_geometry(value: &str) -> TextGeometry<'_> {
     TextGeometry::new(
         value,
-        tokens::FONT_BASE,
+        tokens::TEXT_SM.size,
         FontWeight::Regular,
         false,
         TextWrap::NoWrap,
@@ -743,7 +741,7 @@ fn caret_from_x(value: &str, local_x: f32, mask: MaskMode) -> usize {
         return 0;
     }
     let probe = display_str(value, mask);
-    let local_y = metrics::line_height(tokens::FONT_BASE) * 0.5;
+    let local_y = line_height_px() * 0.5;
     let geometry = single_line_geometry(&probe);
     let display_byte = match geometry.hit_byte(local_x, local_y) {
         Some(byte) => byte.min(probe.len()),
@@ -853,6 +851,7 @@ mod tests {
     use crate::layout::layout;
     use crate::runtime::RunnerCore;
     use crate::state::UiState;
+    use crate::text::metrics;
 
     /// Test key for the local-view shim helpers below. Matches the
     /// `.key("ti")` chain used by every fixture in this module so the
@@ -1050,7 +1049,7 @@ mod tests {
             .expect("caret child");
         let expected = line_width(
             &value[..head],
-            tokens::FONT_BASE,
+            tokens::TEXT_SM.size,
             FontWeight::Regular,
             false,
         );
@@ -1533,7 +1532,7 @@ mod tests {
             + tokens::SPACE_MD
             + crate::text::metrics::line_width(
                 "hello w",
-                tokens::FONT_BASE,
+                tokens::TEXT_SM.size,
                 FontWeight::Regular,
                 false,
             );
@@ -1576,7 +1575,7 @@ mod tests {
             + tokens::SPACE_MD
             + crate::text::metrics::line_width(
                 "hello w",
-                tokens::FONT_BASE,
+                tokens::TEXT_SM.size,
                 FontWeight::Regular,
                 false,
             );
@@ -1870,7 +1869,7 @@ mod tests {
             .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
             .expect("caret child");
         // Two bullets of prefix.
-        let expected = line_width("••", tokens::FONT_BASE, FontWeight::Regular, false);
+        let expected = line_width("••", tokens::TEXT_SM.size, FontWeight::Regular, false);
         assert!(
             (caret.translate.0 - expected).abs() < 0.01,
             "caret translate.x = {}, expected {}",
@@ -1909,7 +1908,7 @@ mod tests {
         let mut sel = TextSelection::default();
         let target = ti_target();
         // Click at a position that should land between the two bullets.
-        let bullet_w = metrics::line_width("•", tokens::FONT_BASE, FontWeight::Regular, false);
+        let bullet_w = metrics::line_width("•", tokens::TEXT_SM.size, FontWeight::Regular, false);
         let click_x = target.rect.x + tokens::SPACE_MD + bullet_w * 1.4;
         let down = ev_pointer_down(
             target,
@@ -2187,7 +2186,7 @@ mod tests {
             .iter()
             .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
             .expect("caret child");
-        let expected = metrics::line_width("he", tokens::FONT_BASE, FontWeight::Regular, false);
+        let expected = metrics::line_width("he", tokens::TEXT_SM.size, FontWeight::Regular, false);
         assert!(
             (caret.translate.0 - expected).abs() < 0.01,
             "caret.x={} expected {}",

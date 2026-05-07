@@ -56,7 +56,7 @@ impl App for Demo {
 }
 
 fn account_panel() -> El {
-    card(
+    titled_card(
         "Account",
         [
             row([text("Email"), text("user@example.com").muted()])
@@ -76,7 +76,7 @@ fn account_panel() -> El {
 }
 
 fn appearance_panel() -> El {
-    card(
+    titled_card(
         "Appearance",
         [
             row([text("Theme"), button("Dark").secondary()])
@@ -93,7 +93,7 @@ fn appearance_panel() -> El {
 }
 
 fn advanced_panel() -> El {
-    card(
+    titled_card(
         "Advanced",
         [
             row([text("Telemetry"), badge("Off").muted()])

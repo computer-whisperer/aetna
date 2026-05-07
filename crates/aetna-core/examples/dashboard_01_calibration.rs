@@ -126,8 +126,8 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     let mut item = row([
         icon(icon_name)
             .color(tokens::TEXT_MUTED_FOREGROUND)
-            .icon_size(tokens::FONT_LG)
-            .width(Size::Fixed(tokens::FONT_LG)),
+            .icon_size(tokens::ICON_SM)
+            .width(Size::Fixed(tokens::ICON_SM)),
         text(label)
             .font_weight(FontWeight::Medium)
             .ellipsis()
@@ -252,7 +252,7 @@ fn metric_card(
             row([
                 icon(icon_name)
                     .color(tokens::TEXT_MUTED_FOREGROUND)
-                    .icon_size(14.0),
+                    .icon_size(tokens::ICON_XS),
                 text(title).muted().ellipsis().width(Size::Fill(1.0)),
             ])
             .gap(tokens::SPACE_XS)
@@ -434,7 +434,7 @@ fn table_utility_cell(label: &'static str) -> El {
 
 fn table_action_cell() -> El {
     stack([icon("more-horizontal")
-        .icon_size(16.0)
+        .icon_size(tokens::ICON_SM)
         .color(tokens::TEXT_MUTED_FOREGROUND)])
     .align(Align::Center)
     .justify(Justify::Center)

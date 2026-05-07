@@ -344,7 +344,7 @@ fn icon_slot(icon_name: &'static str) -> El {
         .child(
             icon(icon_name)
                 .color(tokens::TEXT_FOREGROUND)
-                .icon_size(tokens::FONT_BASE),
+                .icon_size(tokens::ICON_XS),
         )
         .align(Align::Center)
         .justify(Justify::Center)
