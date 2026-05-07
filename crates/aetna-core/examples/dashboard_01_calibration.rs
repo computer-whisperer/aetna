@@ -47,6 +47,7 @@ fn main() -> std::io::Result<()> {
 
 fn dashboard_01_calibration() -> El {
     row([dashboard_sidebar(), dashboard_main()])
+        .key("metric:root")
         .gap(0.0)
         .fill_size()
         .align(Align::Stretch)
@@ -107,6 +108,7 @@ fn dashboard_sidebar() -> El {
     ])
     .gap(tokens::SPACE_SM)
     .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+    .key("metric:sidebar")
     .width(Size::Fixed(244.0))
     .height(Size::Fill(1.0))
     .fill(tokens::BG_CARD)
@@ -131,6 +133,11 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
+    .key(if selected {
+        "metric:sidebar.nav.row".to_string()
+    } else {
+        format!("side-item-{label}")
+    })
     .metrics_role(MetricsRole::ListItem)
     .compact()
     .align(Align::Center)
@@ -202,13 +209,15 @@ fn dashboard_header() -> El {
     row([
         icon_button("menu").ghost(),
         divider().width(Size::Fixed(1.0)).height(Size::Fixed(22.0)),
-        h3("Documents"),
+        h3("Documents").key("metric:page.title"),
         spacer(),
         text_input("Search...", &Selection::default(), "dashboard-search")
+            .key("metric:command.input")
             .width(Size::Fixed(260.0)),
         icon_button("plus").ghost(),
         icon_button("bell").ghost(),
     ])
+    .key("metric:header")
     .gap(tokens::SPACE_SM)
     .height(Size::Fixed(56.0))
     .padding(Sides::xy(tokens::SPACE_MD, 0.0))
@@ -229,6 +238,20 @@ fn metric_card(
     } else {
         badge(delta).warning()
     };
+    let badge = if title == "Total Revenue" {
+        badge.key("metric:kpi.badge")
+    } else {
+        badge
+    };
+    let value = if title == "Total Revenue" {
+        h2(value)
+            .display()
+            .font_size(24.0)
+            .ellipsis()
+            .key("metric:kpi.value")
+    } else {
+        h2(value).display().font_size(24.0).ellipsis()
+    };
     column([
         row([
             row([
@@ -244,9 +267,14 @@ fn metric_card(
         ])
         .gap(tokens::SPACE_SM)
         .align(Align::Center),
-        h2(value).display().font_size(24.0).ellipsis(),
+        value,
         text(note).caption().ellipsis().width(Size::Fill(1.0)),
     ])
+    .key(if title == "Total Revenue" {
+        "metric:kpi.card"
+    } else {
+        title
+    })
     .style_profile(StyleProfile::Surface)
     .metrics_role(MetricsRole::Card)
     .surface_role(SurfaceRole::Panel)
@@ -269,6 +297,7 @@ fn chart_card() -> El {
                 .align(Align::End),
         ],
     )
+    .key("metric:chart.card")
     .gap(tokens::SPACE_SM)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
@@ -307,6 +336,7 @@ fn sales_card() -> El {
             sale_row("WK", "William Kim", "will@example.com", "+$99.00"),
         ],
     )
+    .key("metric:sales.card")
     .gap(tokens::SPACE_SM)
     .width(Size::Fixed(330.0))
     .height(Size::Fill(1.0))
@@ -346,6 +376,7 @@ fn documents_card() -> El {
                 text("Limit").caption().width(Size::Fixed(70.0)),
                 text("Reviewer").caption().width(Size::Fixed(140.0)),
             ])
+            .key("metric:table.header")
             .metrics_role(MetricsRole::TableHeader),
             divider(),
             document_row(
@@ -368,6 +399,7 @@ fn documents_card() -> El {
             ),
         ],
     )
+    .key("metric:table.card")
     .gap(tokens::SPACE_SM)
     .height(Size::Fixed(250.0))
 }
@@ -400,6 +432,11 @@ fn document_row(
             .ellipsis()
             .width(Size::Fixed(140.0)),
     ])
+    .key(if header == "Cover page" {
+        "metric:table.row"
+    } else {
+        header
+    })
     .metrics_role(MetricsRole::TableRow)
     .align(Align::Center)
 }

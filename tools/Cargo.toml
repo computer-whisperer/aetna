@@ -16,5 +16,6 @@ aetna-wgpu = { version = "0.2.0", path = "../crates/aetna-wgpu" }
 cosmic-text = "0.19"
 png = "0.18"
 pollster = "0.4"
+serde_json = "1"
 ttf-parser = "0.25.1"
 wgpu = "29"

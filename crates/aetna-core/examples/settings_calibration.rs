@@ -47,6 +47,7 @@ fn main() -> std::io::Result<()> {
 
 fn settings_calibration() -> El {
     row([settings_sidebar(), settings_main()])
+        .key("metric:root")
         .gap(0.0)
         .fill_size()
         .align(Align::Stretch)
@@ -89,6 +90,7 @@ fn settings_sidebar() -> El {
     ])
     .gap(tokens::SPACE_SM)
     .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+    .key("metric:sidebar")
     .width(Size::Fixed(244.0))
     .height(Size::Fill(1.0))
     .fill(tokens::BG_CARD)
@@ -112,11 +114,12 @@ fn settings_header() -> El {
     row([
         icon_button("menu").ghost(),
         divider().width(Size::Fixed(1.0)).height(Size::Fixed(22.0)),
-        h3("Settings"),
+        h3("Settings").key("metric:page.title"),
         spacer(),
         button("Reset").secondary(),
         button("Save changes").primary(),
     ])
+    .key("metric:header")
     .gap(tokens::SPACE_SM)
     .height(Size::Fixed(56.0))
     .padding(Sides::xy(tokens::SPACE_MD, 0.0))
@@ -156,6 +159,11 @@ fn settings_nav_item(label: &'static str, selected: bool) -> El {
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
+    .key(if selected {
+        "metric:settings.nav.row".to_string()
+    } else {
+        format!("settings-nav-{label}")
+    })
     .metrics_role(MetricsRole::ListItem)
     .align(Align::Center)
     .focusable();
@@ -172,8 +180,10 @@ fn settings_nav_item(label: &'static str, selected: bool) -> El {
 fn settings_body() -> El {
     column([
         column([
-            h1("Account").heading(),
-            text("Manage identity, workspace defaults, and security preferences.").caption(),
+            h1("Account").heading().key("metric:section.title"),
+            text("Manage identity, workspace defaults, and security preferences.")
+                .caption()
+                .key("metric:page.subtitle"),
         ])
         .gap(tokens::SPACE_XS)
         .height(Size::Hug),
@@ -205,12 +215,19 @@ fn profile_card() -> El {
             .gap(tokens::SPACE_MD),
         ],
     )
+    .key("metric:profile.card")
 }
 
 fn setting_field(label: &'static str, value: &'static str, key: &'static str) -> El {
     column([
         text(label).label(),
-        text_input(value, &Selection::caret(key, value.len()), key).width(Size::Fill(1.0)),
+        text_input(value, &Selection::caret(key, value.len()), key)
+            .key(if key == "display-name" {
+                "metric:form.input"
+            } else {
+                key
+            })
+            .width(Size::Fill(1.0)),
     ])
     .gap(tokens::SPACE_XS)
     .width(Size::Fill(1.0))
@@ -251,6 +268,7 @@ fn preferences_card() -> El {
             ),
         ],
     )
+    .key("metric:preferences.card")
 }
 
 fn preference_row(title: &'static str, description: &'static str, control: El) -> El {
@@ -267,6 +285,11 @@ fn preference_row(title: &'static str, description: &'static str, control: El) -
         .height(Size::Hug),
         control,
     ])
+    .key(if title == "Compact navigation" {
+        "metric:preference.row".to_string()
+    } else {
+        format!("preference-{title}")
+    })
     .gap(tokens::SPACE_MD)
     .height(Size::Fixed(52.0))
     .align(Align::Center)
@@ -345,6 +368,11 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
+    .key(if selected {
+        "metric:sidebar.nav.row".to_string()
+    } else {
+        format!("side-item-{label}")
+    })
     .metrics_role(MetricsRole::ListItem)
     .compact()
     .align(Align::Center)

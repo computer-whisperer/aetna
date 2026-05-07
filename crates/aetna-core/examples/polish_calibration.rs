@@ -47,6 +47,7 @@ fn main() -> std::io::Result<()> {
 
 fn polish_calibration() -> El {
     row([sidebar(), main_panel()])
+        .key("metric:root")
         .gap(0.0)
         .fill_size()
         .align(Align::Stretch)
@@ -59,6 +60,7 @@ fn sidebar() -> El {
             h2("Aetna"),
             text("calibration").caption().font_size(tokens::FONT_BASE),
         ])
+        .key("metric:sidebar.brand")
         .gap(tokens::SPACE_XS)
         .height(Size::Hug),
         spacer().height(Size::Fixed(tokens::SPACE_LG)),
@@ -71,6 +73,7 @@ fn sidebar() -> El {
     ])
     .gap(tokens::SPACE_SM)
     .padding(tokens::SPACE_LG)
+    .key("metric:sidebar")
     .width(Size::Fixed(220.0))
     .height(Size::Fill(1.0))
     .fill(tokens::BG_CARD)
@@ -85,7 +88,11 @@ fn nav_item(icon: &'static str, label: &'static str, selected: bool) -> El {
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
-    .key(format!("nav-{label}"))
+    .key(if selected {
+        "metric:sidebar.nav.row".to_string()
+    } else {
+        format!("nav-{label}")
+    })
     .metrics_role(MetricsRole::ListItem)
     .align(Align::Center)
     .focusable();
@@ -120,19 +127,22 @@ fn main_panel() -> El {
 fn toolbar() -> El {
     row([
         column([
-            h1("Polish calibration"),
-            text("A representative app surface for default tuning.").caption(),
+            h1("Polish calibration").key("metric:page.title"),
+            text("A representative app surface for default tuning.")
+                .caption()
+                .key("metric:page.subtitle"),
         ])
         .gap(tokens::SPACE_XS)
         .height(Size::Hug),
         spacer(),
         button_with_icon("search", "Preview")
             .secondary()
-            .key("preview"),
+            .key("metric:action.secondary"),
         button_with_icon("upload", "Publish")
             .primary()
-            .key("publish"),
+            .key("metric:action.primary"),
     ])
+    .key("metric:header")
     .gap(tokens::SPACE_SM)
     .height(Size::Fixed(64.0))
     .align(Align::Center)
@@ -144,10 +154,21 @@ fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, posit
     } else {
         badge(delta).destructive()
     };
+    let delta_badge = if label == "Latency" {
+        delta_badge.key("metric:kpi.badge")
+    } else {
+        delta_badge
+    };
+    let value_text = h2(value).display();
+    let value_text = if label == "Latency" {
+        value_text.key("metric:kpi.value")
+    } else {
+        value_text
+    };
     card(
         label,
         [
-            row([h2(value).display(), spacer(), delta_badge]).align(Align::Center),
+            row([value_text, spacer(), delta_badge]).align(Align::Center),
             text(if positive {
                 "Moving in the expected direction"
             } else {
@@ -156,6 +177,11 @@ fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, posit
             .caption(),
         ],
     )
+    .key(if label == "Latency" {
+        "metric:kpi.card"
+    } else {
+        label
+    })
     .width(Size::Fill(1.0))
 }
 
@@ -169,6 +195,7 @@ fn table_card() -> El {
                 text("Owner").caption().width(Size::Fixed(110.0)),
                 text("State").caption().width(Size::Fixed(86.0)),
             ])
+            .key("metric:table.header")
             .metrics_role(MetricsRole::TableHeader),
             divider(),
             data_row("OK", "Settings card", "core", "selected", true, "success"),
@@ -206,6 +233,7 @@ fn table_card() -> El {
             ),
         ],
     )
+    .key("metric:table.card")
     .width(Size::Fill(1.2))
     .height(Size::Fill(1.0))
 }
@@ -223,6 +251,11 @@ fn data_row(
         "warning" => badge(status).warning(),
         "destructive" => badge(status).destructive(),
         _ => badge(status).info(),
+    };
+    let status_badge = if selected {
+        status_badge.key("metric:table.badge")
+    } else {
+        status_badge
     };
 
     let mut row = row([
@@ -246,7 +279,11 @@ fn data_row(
             .ellipsis()
             .width(Size::Fixed(86.0)),
     ])
-    .key(format!("row-{title}"))
+    .key(if selected {
+        "metric:table.row".to_string()
+    } else {
+        format!("row-{title}")
+    })
     .metrics_role(MetricsRole::TableRow)
     .align(Align::Center)
     .focusable();
@@ -267,6 +304,7 @@ fn command_card() -> El {
                 &Selection::default(),
                 "command-search",
             )
+            .key("metric:command.input")
             .width(Size::Fill(1.0)),
             popover_panel([
                 menu_row("git-branch", "New branch", "Ctrl+B"),
@@ -278,6 +316,7 @@ fn command_card() -> El {
             scroll([form_probe()]).key("form-probe-scroll"),
         ],
     )
+    .key("metric:command.card")
     .width(Size::Fill(0.8))
     .height(Size::Fill(1.0))
 }
@@ -288,6 +327,11 @@ fn menu_row(icon_name: &'static str, label: &'static str, shortcut: &'static str
         text(label).ellipsis().width(Size::Fill(1.0)),
         mono(shortcut).caption(),
     ])
+    .key(if label == "New branch" {
+        "metric:command.row".to_string()
+    } else {
+        format!("command-row-{label}")
+    })
     .metrics_role(MetricsRole::MenuItem)
     .align(Align::Center)
     .fill(tokens::BG_CARD)
@@ -319,6 +363,7 @@ fn form_probe() -> El {
             &Selection::caret("valid-input", 11),
             "valid-input",
         )
+        .key("metric:form.input")
         .width(Size::Fill(1.0)),
         text_input(
             "Invalid input",

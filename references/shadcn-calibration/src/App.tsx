@@ -104,13 +104,17 @@ const density = {
   preferenceRow: "px-4 py-3",
 }
 
+const measure = (id: string) => ({ "data-calibration-id": id })
+
 function Button({
   className,
   variant = "default",
+  measureId,
   children,
 }: {
   className?: string
   variant?: "default" | "secondary" | "outline" | "ghost" | "destructive"
+  measureId?: string
   children: React.ReactNode
 }) {
   const variants = {
@@ -123,6 +127,7 @@ function Button({
   }
   return (
     <button
+      {...(measureId ? measure(measureId) : {})}
       className={cn(
         "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
         density.button,
@@ -138,9 +143,11 @@ function Button({
 function Badge({
   children,
   tone = "default",
+  measureId,
 }: {
   children: React.ReactNode
   tone?: "default" | "success" | "warning" | "destructive" | "info"
+  measureId?: string
 }) {
   const tones = {
     default: "border-transparent bg-secondary text-secondary-foreground",
@@ -151,6 +158,7 @@ function Badge({
   }
   return (
     <div
+      {...(measureId ? measure(measureId) : {})}
       className={cn(
         "inline-flex w-fit items-center justify-center rounded-full border text-xs font-semibold",
         density.badge,
@@ -166,14 +174,17 @@ function Card({
   title,
   children,
   className,
+  measureId,
 }: {
   title: string
   children: React.ReactNode
   className?: string
+  measureId?: string
 }) {
   return (
     <section
       data-calibration-boundary
+      {...(measureId ? measure(measureId) : {})}
       className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", className)}
     >
       <div className={cn("space-y-1.5", density.cardTitle)}>
@@ -184,9 +195,10 @@ function Card({
   )
 }
 
-function Input({ value, invalid }: { value: string; invalid?: boolean }) {
+function Input({ value, invalid, measureId }: { value: string; invalid?: boolean; measureId?: string }) {
   return (
     <div
+      {...(measureId ? measure(measureId) : {})}
       className={cn(
         "flex w-full items-center rounded-md border border-input bg-background text-sm shadow-sm",
         density.input,
@@ -227,9 +239,9 @@ export function App() {
 
 function CalibrationReference() {
   return (
-    <main className="flex min-h-screen bg-background text-foreground">
-      <aside className={cn("flex w-[220px] flex-col border-r bg-card", density.cardTitle)}>
-        <div>
+    <main {...measure("root")} className="flex min-h-screen bg-background text-foreground">
+      <aside {...measure("sidebar")} className={cn("flex w-[220px] flex-col border-r bg-card", density.cardTitle)}>
+        <div {...measure("sidebar.brand")}>
           <h2 className="text-2xl font-bold">Aetna</h2>
           <p className="mt-2 text-sm text-muted-foreground">calibration</p>
         </div>
@@ -237,6 +249,7 @@ function CalibrationReference() {
           {["Overview", "Commands", "Tables", "Forms"].map((item, i) => (
             <div
               key={item}
+              {...(i === 0 ? measure("sidebar.nav.row") : {})}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-2 text-sm font-medium",
                 density.navRow,
@@ -254,28 +267,28 @@ function CalibrationReference() {
       </aside>
 
       <section className={cn("flex flex-1 flex-col", density.space, density.pagePad)}>
-        <header className="flex h-14 items-start gap-4">
+        <header {...measure("header")} className="flex h-14 items-start gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Polish calibration</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <h1 {...measure("page.title")} className="text-3xl font-bold tracking-tight">Polish calibration</h1>
+            <p {...measure("page.subtitle")} className="mt-2 text-sm text-muted-foreground">
               A representative app surface for default tuning.
             </p>
           </div>
           <div className="ml-auto flex gap-2">
-            <Button variant="outline">Preview</Button>
-            <Button>Publish</Button>
+            <Button variant="outline" measureId="action.secondary">Preview</Button>
+            <Button measureId="action.primary">Publish</Button>
           </div>
         </header>
 
         <div className={cn("grid grid-cols-3", density.gap)}>
-          <Kpi title="Latency" value="42 ms" delta="-18%" tone="success" />
+          <Kpi title="Latency" value="42 ms" delta="-18%" tone="success" measureId="kpi" />
           <Kpi title="Runs" value="1,284" delta="+12%" tone="success" />
           <Kpi title="Errors" value="7" delta="+2" tone="destructive" />
         </div>
 
         <div className={cn("grid min-h-0 flex-1 grid-cols-[minmax(560px,1fr)_320px]", density.gap)}>
-          <Card title="Reference rows" className="min-h-0">
-            <div className={cn("grid grid-cols-[7rem_1fr_4.5rem_5.5rem] items-center gap-3 px-2 text-sm text-muted-foreground", density.tableHeader)}>
+          <Card title="Reference rows" className="min-h-0" measureId="table.card">
+            <div {...measure("table.header")} className={cn("grid grid-cols-[7rem_1fr_4.5rem_5.5rem] items-center gap-3 px-2 text-sm text-muted-foreground", density.tableHeader)}>
               <span>Status</span>
               <span>Surface</span>
               <span>Owner</span>
@@ -286,13 +299,14 @@ function CalibrationReference() {
               {rows.map(([status, title, owner, state, tone], i) => (
                 <div
                   key={title}
+                  {...(i === 0 ? measure("table.row") : {})}
                   className={cn(
                     "grid grid-cols-[7rem_1fr_4.5rem_5.5rem] items-center gap-3 rounded-md px-2 text-sm",
                     density.tableRow,
                     i === 0 && "border border-sky-500/50 bg-sky-500/10",
                   )}
                 >
-                  <Badge tone={tone}>{status}</Badge>
+                  <Badge tone={tone} measureId={i === 0 ? "table.badge" : undefined}>{status}</Badge>
                   <div>
                     <div className="truncate font-medium">{title}</div>
                     <div className="truncate text-xs text-muted-foreground">Default styling probe.</div>
@@ -304,15 +318,15 @@ function CalibrationReference() {
             </div>
           </Card>
 
-          <Card title="Command surface">
+          <Card title="Command surface" measureId="command.card">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <div className={cn("flex items-center rounded-md border bg-background pl-9 text-sm text-muted-foreground shadow-sm", density.input)}>
+              <div {...measure("command.input")} className={cn("flex items-center rounded-md border bg-background pl-9 text-sm text-muted-foreground shadow-sm", density.input)}>
                 Search commands...
               </div>
             </div>
             <div className="mt-4 rounded-lg border bg-card p-2 shadow-md">
-              <CommandRow icon={<GitBranch />} label="New branch" shortcut="Ctrl+B" />
+              <CommandRow icon={<GitBranch />} label="New branch" shortcut="Ctrl+B" measureId="command.row" />
               <CommandRow icon={<Check />} label="Commit staged files" shortcut="Ctrl+Enter" />
               <CommandRow icon={<RefreshCw />} label="Refresh repository" shortcut="Ctrl+R" />
               <CommandRow icon={<AlertTriangle />} label="Force push" shortcut="Danger" />
@@ -320,7 +334,7 @@ function CalibrationReference() {
             <div className={cn("mt-4 rounded-lg border bg-muted/50", density.sectionPad)}>
               <h3 className="font-semibold">Form state probes</h3>
               <div className="mt-4 space-y-3">
-                <Input value="Valid input" />
+                <Input value="Valid input" measureId="form.input" />
                 <Input value="Invalid input" invalid />
                 <div className="flex gap-2">
                   <Button variant="secondary" className="opacity-50">
@@ -351,8 +365,8 @@ const dashboardRows = [
 
 function DashboardReference() {
   return (
-    <main className="flex h-screen overflow-hidden bg-background text-foreground">
-      <aside className="flex w-[244px] flex-col border-r bg-card">
+    <main {...measure("root")} className="flex h-screen overflow-hidden bg-background text-foreground">
+      <aside {...measure("sidebar")} className="flex w-[244px] flex-col border-r bg-card">
         <div className="flex h-14 items-center gap-2 border-b px-4">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <LayoutDashboard className="h-4 w-4" />
@@ -395,16 +409,16 @@ function DashboardReference() {
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center gap-3 border-b px-4">
+        <header {...measure("header")} className="flex h-14 items-center gap-3 border-b px-4">
           <Button variant="ghost" className="h-8 w-8 px-0">
             <PanelLeft className="h-4 w-4" />
           </Button>
           <div className="h-5 border-l" />
-          <h1 className="text-base font-semibold">Documents</h1>
+          <h1 {...measure("page.title")} className="text-base font-semibold">Documents</h1>
           <div className="ml-auto flex items-center gap-2">
             <div className="relative w-[260px]">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <div className="flex h-9 items-center rounded-md border bg-background pl-8 text-sm text-muted-foreground">
+              <div {...measure("command.input")} className="flex h-9 items-center rounded-md border bg-background pl-8 text-sm text-muted-foreground">
                 Search...
               </div>
             </div>
@@ -416,13 +430,14 @@ function DashboardReference() {
 
         <div className={cn("min-h-0 flex-1 overflow-hidden", density.space, density.sectionPad)}>
           <div className={cn("grid grid-cols-4", density.gap)}>
-            <MetricCard
-              icon={<CircleDollarSign className="h-4 w-4" />}
-              title="Total Revenue"
-              value="$1,250.00"
-              delta="+12.5%"
-              note="Trending up this month"
-            />
+              <MetricCard
+                icon={<CircleDollarSign className="h-4 w-4" />}
+                title="Total Revenue"
+                value="$1,250.00"
+                delta="+12.5%"
+                note="Trending up this month"
+                measureId="kpi"
+              />
             <MetricCard
               icon={<Users className="h-4 w-4" />}
               title="New Customers"
@@ -447,7 +462,7 @@ function DashboardReference() {
           </div>
 
           <div className={cn("grid grid-cols-[minmax(0,1fr)_330px]", density.gap)}>
-            <section data-calibration-boundary className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
+            <section data-calibration-boundary {...measure("chart.card")} className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
               <div className="flex items-center gap-2">
                 <div>
                   <h2 className="text-base font-semibold">Visitors for the last 6 months</h2>
@@ -475,7 +490,7 @@ function DashboardReference() {
               </div>
             </section>
 
-            <section data-calibration-boundary className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
+            <section data-calibration-boundary {...measure("sales.card")} className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
               <h2 className="text-base font-semibold">Recent Sales</h2>
               <p className="text-sm text-muted-foreground">You made 265 sales this month.</p>
               <div className="mt-5 space-y-4">
@@ -489,6 +504,7 @@ function DashboardReference() {
 
           <section
             data-calibration-boundary
+            {...measure("table.card")}
             className="overflow-hidden rounded-xl border bg-card shadow-sm"
           >
             <div className={cn("flex items-center gap-3 border-b px-4", density.navRow)}>
@@ -497,7 +513,7 @@ function DashboardReference() {
                 Columns
               </Button>
             </div>
-            <div className={cn("grid grid-cols-[2.2rem_1.8fr_1fr_6.5rem_4rem_4rem_8rem_2rem] items-center gap-3 border-b px-4 text-xs font-medium text-muted-foreground", density.tableHeader)}>
+            <div {...measure("table.header")} className={cn("grid grid-cols-[2.2rem_1.8fr_1fr_6.5rem_4rem_4rem_8rem_2rem] items-center gap-3 border-b px-4 text-xs font-medium text-muted-foreground", density.tableHeader)}>
               <span />
               <span>Header</span>
               <span>Section Type</span>
@@ -511,6 +527,7 @@ function DashboardReference() {
               {dashboardRows.slice(0, 2).map(([header, section, status, target, limit, reviewer], i) => (
                 <div
                   key={header}
+                  {...(i === 0 ? measure("table.row") : {})}
                   className={cn("grid grid-cols-[2.2rem_1.8fr_1fr_6.5rem_4rem_4rem_8rem_2rem] items-center gap-3 border-b px-4 text-sm last:border-b-0", density.tableRow)}
                 >
                   <span className="text-muted-foreground">::</span>
@@ -547,6 +564,7 @@ function SidebarSection({
         {items.map(([label, icon, active]) => (
           <div
             key={label}
+            {...(active ? measure("sidebar.nav.row") : {})}
             className={cn(
               "flex h-8 items-center gap-2 rounded-md px-2 text-sm font-medium",
               active ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/70",
@@ -572,23 +590,25 @@ function MetricCard({
   value,
   delta,
   note,
+  measureId,
 }: {
   icon: React.ReactNode
   title: string
   value: string
   delta: string
   note: string
+  measureId?: string
 }) {
   return (
-    <section data-calibration-boundary className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
+    <section data-calibration-boundary {...(measureId ? measure(`${measureId}.card`) : {})} className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
           {icon}
           <span className="truncate">{title}</span>
         </div>
-        <Badge tone={delta.startsWith("+") ? "success" : "warning"}>{delta}</Badge>
+        <Badge tone={delta.startsWith("+") ? "success" : "warning"} measureId={measureId ? `${measureId}.badge` : undefined}>{delta}</Badge>
       </div>
-      <div className="mt-3 truncate text-2xl font-semibold tracking-tight">{value}</div>
+      <div {...(measureId ? measure(`${measureId}.value`) : {})} className="mt-3 truncate text-2xl font-semibold tracking-tight">{value}</div>
       <p className="mt-3 truncate text-xs text-muted-foreground">{note}</p>
     </section>
   )
@@ -624,8 +644,8 @@ function StatusBadge({ status }: { status: string }) {
 
 function SettingsReference() {
   return (
-    <main className="flex h-screen overflow-hidden bg-background text-foreground">
-      <aside className="flex w-[244px] flex-col border-r bg-card">
+    <main {...measure("root")} className="flex h-screen overflow-hidden bg-background text-foreground">
+      <aside {...measure("sidebar")} className="flex w-[244px] flex-col border-r bg-card">
         <div className="flex h-14 items-center gap-2 border-b px-4">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Settings className="h-4 w-4" />
@@ -662,12 +682,12 @@ function SettingsReference() {
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center gap-3 border-b px-4">
+        <header {...measure("header")} className="flex h-14 items-center gap-3 border-b px-4">
           <Button variant="ghost" className="h-8 w-8 px-0">
             <PanelLeft className="h-4 w-4" />
           </Button>
           <div className="h-5 border-l" />
-          <h1 className="text-base font-semibold">Settings</h1>
+          <h1 {...measure("page.title")} className="text-base font-semibold">Settings</h1>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" className="h-8 px-3">
               Reset
@@ -682,6 +702,7 @@ function SettingsReference() {
               {["Account", "Security", "Notifications", "Appearance", "Billing"].map((item, i) => (
                 <button
                   key={item}
+                  {...(i === 0 ? measure("settings.nav.row") : {})}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-md px-3 text-left text-sm font-medium",
                     density.navRow,
@@ -697,13 +718,13 @@ function SettingsReference() {
 
           <section className={cn("min-h-0 overflow-hidden", density.space)}>
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight">Account</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h2 {...measure("section.title")} className="text-2xl font-semibold tracking-tight">Account</h2>
+              <p {...measure("page.subtitle")} className="mt-1 text-sm text-muted-foreground">
                 Manage identity, workspace defaults, and security preferences.
               </p>
             </div>
 
-            <div data-calibration-boundary className="rounded-xl border bg-card shadow-sm">
+            <div data-calibration-boundary {...measure("profile.card")} className="rounded-xl border bg-card shadow-sm">
               <div className={cn("border-b", density.cardP)}>
                 <h3 className="text-base font-semibold">Profile</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -711,14 +732,14 @@ function SettingsReference() {
                 </p>
               </div>
               <div className={cn("grid grid-cols-2", density.gap, density.cardP)}>
-                <SettingField label="Display name" value="Alicia Koch" />
+                <SettingField label="Display name" value="Alicia Koch" measureId="form.input" />
                 <SettingField label="Email" value="alicia@example.com" icon={<Mail />} />
                 <SettingSelect label="Role" value="Workspace admin" />
                 <SettingSelect label="Region" value="US East" />
               </div>
             </div>
 
-            <div data-calibration-boundary className="rounded-xl border bg-card shadow-sm">
+            <div data-calibration-boundary {...measure("preferences.card")} className="rounded-xl border bg-card shadow-sm">
               <div className={cn("border-b", density.cardP)}>
                 <h3 className="text-base font-semibold">Preferences</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -730,6 +751,7 @@ function SettingsReference() {
                   title="Compact navigation"
                   description="Use tighter rows in the sidebar and command menus."
                   control={<Switch checked />}
+                  measureId="preference.row"
                 />
                 <PreferenceRow
                   title="Email summaries"
@@ -793,17 +815,19 @@ function SettingField({
   label,
   value,
   icon,
+  measureId,
 }: {
   label: string
   value: string
   icon?: React.ReactNode
+  measureId?: string
 }) {
   return (
     <label className="block min-w-0">
       <span className="text-sm font-medium">{label}</span>
       <div className="relative mt-2">
         {icon && <span className="absolute left-3 top-2.5 text-muted-foreground [&>svg]:h-4 [&>svg]:w-4">{icon}</span>}
-        <div className={cn("flex items-center rounded-md border bg-background text-sm shadow-sm", density.input, icon && "pl-9")}>
+        <div {...(measureId ? measure(measureId) : {})} className={cn("flex items-center rounded-md border bg-background text-sm shadow-sm", density.input, icon && "pl-9")}>
           <span className="truncate">{value}</span>
         </div>
       </div>
@@ -828,14 +852,16 @@ function PreferenceRow({
   description,
   control,
   compact = false,
+  measureId,
 }: {
   title: string
   description: string
   control: React.ReactNode
   compact?: boolean
+  measureId?: string
 }) {
   return (
-    <div className={cn("flex items-center gap-4", compact ? "py-2" : density.preferenceRow)}>
+    <div {...(measureId ? measure(measureId) : {})} className={cn("flex items-center gap-4", compact ? "py-2" : density.preferenceRow)}>
       <div className="min-w-0">
         <div className="truncate text-sm font-medium">{title}</div>
         <div className="truncate text-xs text-muted-foreground">{description}</div>
@@ -881,18 +907,20 @@ function Kpi({
   value,
   delta,
   tone,
+  measureId,
 }: {
   title: string
   value: string
   delta: string
   tone: "success" | "destructive"
+  measureId?: string
 }) {
   return (
-    <Card title={title}>
+    <Card title={title} measureId={measureId ? `${measureId}.card` : undefined}>
       <div className="flex items-center">
-        <div className="text-3xl font-bold">{value}</div>
+        <div {...(measureId ? measure(`${measureId}.value`) : {})} className="text-3xl font-bold">{value}</div>
         <div className="ml-auto">
-          <Badge tone={tone}>{delta}</Badge>
+          <Badge tone={tone} measureId={measureId ? `${measureId}.badge` : undefined}>{delta}</Badge>
         </div>
       </div>
       <p className="mt-6 text-sm text-muted-foreground">
@@ -906,13 +934,15 @@ function CommandRow({
   icon,
   label,
   shortcut,
+  measureId,
 }: {
   icon: React.ReactNode
   label: string
   shortcut: string
+  measureId?: string
 }) {
   return (
-    <div className="flex h-8 items-center gap-3 rounded-md px-2 text-sm hover:bg-accent">
+    <div {...(measureId ? measure(measureId) : {})} className="flex h-8 items-center gap-3 rounded-md px-2 text-sm hover:bg-accent">
       <span className="shrink-0 text-muted-foreground [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
       <span className="truncate">{label}</span>
       <span className="ml-auto font-mono text-xs text-muted-foreground">{shortcut}</span>

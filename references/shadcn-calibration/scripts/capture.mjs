@@ -220,6 +220,7 @@ async function captureOne(context, item, variant) {
       rootFontSize: getComputedStyle(document.documentElement).fontSize,
       bodyFontSize: getComputedStyle(document.body).fontSize,
     }))
+    const measurements = await calibrationMeasurements(page)
     await writeFile(
       metadataPath,
       JSON.stringify(
@@ -238,6 +239,7 @@ async function captureOne(context, item, variant) {
           requestedDeviceScaleFactor: deviceScaleFactor,
           requestedUiScale: variant.uiScale,
           capturedAt: new Date().toISOString(),
+          measurements,
           ...metadata,
         },
         null,
@@ -249,6 +251,49 @@ async function captureOne(context, item, variant) {
   } finally {
     await page.close()
   }
+}
+
+async function calibrationMeasurements(page) {
+  return page.evaluate(() => {
+    const parsePx = (value) => {
+      const n = Number.parseFloat(value)
+      return Number.isFinite(n) ? n : null
+    }
+    const round = (value) => Math.round(value * 100) / 100
+    const rectOf = (el) => {
+      const rect = el.getBoundingClientRect()
+      return {
+        x: round(rect.x),
+        y: round(rect.y),
+        width: round(rect.width),
+        height: round(rect.height),
+      }
+    }
+    const out = {}
+    for (const el of document.querySelectorAll("[data-calibration-id]")) {
+      const id = el.getAttribute("data-calibration-id")
+      if (!id) {
+        continue
+      }
+      const style = getComputedStyle(el)
+      out[id] = {
+        rect: rectOf(el),
+        fontSize: parsePx(style.fontSize),
+        lineHeight: parsePx(style.lineHeight),
+        fontWeight: style.fontWeight,
+        display: style.display,
+        gap: parsePx(style.gap),
+        rowGap: parsePx(style.rowGap),
+        columnGap: parsePx(style.columnGap),
+        paddingTop: parsePx(style.paddingTop),
+        paddingRight: parsePx(style.paddingRight),
+        paddingBottom: parsePx(style.paddingBottom),
+        paddingLeft: parsePx(style.paddingLeft),
+        text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 120),
+      }
+    }
+    return out
+  })
 }
 
 async function referenceOverflowFindings(page) {

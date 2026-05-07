@@ -172,6 +172,18 @@ comfortable, shadcn density spacious, Aetna spacious. This is the primary
 sheet for tuning component and layout density because it keeps Chromium,
 desktop scale, browser zoom, device scale factor, and root font scale fixed.
 
+For numeric follow-up, generate the paired measurement report:
+
+```bash
+cargo run -p aetna-tools --bin make_calibration_metric_report
+```
+
+The report reads shadcn `out/*.json` DOM measurements and Aetna
+`*.tree.txt` / `*.draw_ops.txt` artifacts, then writes
+`crates/aetna-core/out/reference_density_metric_diff.md`. Deltas are
+`Aetna - shadcn`, which makes fixture drift explicit before changing tokens or
+theme defaults.
+
 Current shadcn/Aetna pairs:
 
 - `shadcn-calibration.png` / `polish_calibration.png`,

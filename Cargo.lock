@@ -92,6 +92,7 @@ dependencies = [
  "cosmic-text",
  "png",
  "pollster",
+ "serde_json",
  "ttf-parser",
  "wgpu",
 ]

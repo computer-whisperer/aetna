@@ -71,10 +71,18 @@ Outputs:
 - `out/*.density-spacious.png` — spacious authored density at default UI
   scale.
 - matching `out/*.json` files — capture metadata with actual DPR, viewport,
-  visual viewport scale, and root font size.
+  visual viewport scale, root font size, and `data-calibration-id`
+  measurements.
 
 The unqualified `out/shadcn-*.png` screenshots are the comfortable authored
 density baseline.
+
+Elements tagged with `data-calibration-id` are measured during capture. The
+Aetna metric report pairs those DOM boxes with Aetna tree/draw-op metrics:
+
+```bash
+cargo run -p aetna-tools --bin make_calibration_metric_report
+```
 
 The reference app marks major surfaces with `data-calibration-boundary`.
 `npm run capture` fails before writing a screenshot if a visible descendant
