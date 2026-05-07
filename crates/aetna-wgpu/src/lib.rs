@@ -93,7 +93,7 @@ use aetna_core::tree::{Color, El, FontWeight, Rect, TextWrap};
 use aetna_core::vector::IconMaterial;
 
 pub use aetna_core::paint::PaintItem;
-pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
+pub use aetna_core::runtime::{PointerMove, PrepareResult, PrepareTimings};
 
 use crate::icon::IconPaint;
 use crate::image::ImagePaint;
@@ -625,11 +625,12 @@ impl Runner {
     /// Update pointer position and recompute the hovered key.
     /// Returns the new hovered key, if any (host can use it for cursor
     /// styling or to decide whether to call `request_redraw`).
-    /// Pointer moved to `(x, y)` (logical px). Returns a `Drag` event
-    /// when the primary button is held; the host should dispatch it
-    /// via `App::on_event`. The hovered node is updated on
-    /// `ui_state().hovered` regardless.
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Vec<UiEvent> {
+    /// Pointer moved to `(x, y)` (logical px). Returns the events to
+    /// dispatch via `App::on_event` plus a `needs_redraw` flag — see
+    /// [`PointerMove`] for why hosts must gate `request_redraw` on
+    /// the flag. The hovered node is updated on `ui_state().hovered`
+    /// regardless.
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> PointerMove {
         self.core.pointer_moved(x, y)
     }
 

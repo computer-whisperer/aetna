@@ -2083,6 +2083,7 @@ mod tests {
 
         let drag = core
             .pointer_moved(drag_x, cy)
+            .events
             .into_iter()
             .find(|e| e.kind == UiEventKind::Drag)
             .expect("Drag while pressed");

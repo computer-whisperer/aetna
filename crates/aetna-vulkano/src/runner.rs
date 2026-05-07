@@ -71,7 +71,7 @@ use aetna_core::runtime::{RecordedPaint, RunnerCore, TextRecorder};
 use aetna_core::text::atlas::RunStyle;
 use aetna_core::tree::{Color, FontWeight, TextWrap};
 
-pub use aetna_core::runtime::{PrepareResult, PrepareTimings};
+pub use aetna_core::runtime::{PointerMove, PrepareResult, PrepareTimings};
 
 use crate::icon::IconPaint;
 use crate::image::ImagePaint;
@@ -603,7 +603,7 @@ impl Runner {
         }
     }
 
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Vec<UiEvent> {
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> PointerMove {
         self.core.pointer_moved(x, y)
     }
 

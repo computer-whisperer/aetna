@@ -88,6 +88,28 @@ pub struct PrepareResult {
     pub timings: PrepareTimings,
 }
 
+/// Outcome of a pointer-move dispatch through
+/// [`Core::pointer_moved`] (or its backend wrappers).
+///
+/// Wayland and most X11 compositors deliver `CursorMoved` at very
+/// high frequency while the cursor sits over the surface — even
+/// sub-pixel jitter or per-frame compositor sync ticks count as
+/// movement. The vast majority of those moves are visual no-ops
+/// (the hovered node didn't change, no drag is active, no scrollbar
+/// is dragging), so hosts must gate `request_redraw` on
+/// `needs_redraw` to avoid spinning the rebuild + layout + render
+/// pipeline on every cursor sample.
+#[derive(Debug, Default)]
+pub struct PointerMove {
+    /// Events to dispatch through `App::on_event`. Empty when the
+    /// move didn't trigger a `Drag` or selection update.
+    pub events: Vec<UiEvent>,
+    /// `true` when the runtime's visual state changed enough to
+    /// warrant a redraw — hovered identity changed, scrollbar drag
+    /// updated a scroll offset, or `events` is non-empty.
+    pub needs_redraw: bool,
+}
+
 /// Per-stage CPU timing inside each backend's `prepare`. Cheap to
 /// compute (a handful of `Instant::now()` calls per frame) and useful
 /// for finding the dominant cost when frame budget is tight.
@@ -201,7 +223,7 @@ impl RunnerCore {
     /// originally pressed target. The event's `modifiers` field
     /// reflects the mask currently tracked on `UiState` (set by the
     /// host via `set_modifiers`).
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> Vec<UiEvent> {
+    pub fn pointer_moved(&mut self, x: f32, y: f32) -> PointerMove {
         self.ui_state.pointer_pos = Some((x, y));
 
         // Active scrollbar drag: translate cursor delta into
@@ -217,15 +239,19 @@ impl RunnerCore {
                 drag.start_offset
             };
             let clamped = new_offset.clamp(0.0, drag.max_offset);
-            self.ui_state.scroll_offsets.insert(drag.scroll_id, clamped);
-            return Vec::new();
+            let prev = self.ui_state.scroll_offsets.insert(drag.scroll_id, clamped);
+            let changed = prev.is_none_or(|old| (old - clamped).abs() > f32::EPSILON);
+            return PointerMove {
+                events: Vec::new(),
+                needs_redraw: changed,
+            };
         }
 
         let hit = self
             .last_tree
             .as_ref()
             .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
-        self.ui_state.set_hovered(hit, Instant::now());
+        let hover_changed = self.ui_state.set_hovered(hit, Instant::now());
         let modifiers = self.ui_state.modifiers;
 
         let mut out = Vec::new();
@@ -278,7 +304,11 @@ impl RunnerCore {
             });
         }
 
-        out
+        let needs_redraw = hover_changed || !out.is_empty();
+        PointerMove {
+            events: out,
+            needs_redraw,
+        }
     }
 
     pub fn pointer_left(&mut self) {
@@ -1405,6 +1435,7 @@ mod tests {
         core.pointer_down(cx, cy, PointerButton::Primary);
         let drag = core
             .pointer_moved(cx + 30.0, cy)
+            .events
             .into_iter()
             .find(|e| e.kind == UiEventKind::Drag)
             .expect("drag while pressed");
@@ -1465,7 +1496,45 @@ mod tests {
     #[test]
     fn pointer_moved_without_press_emits_no_drag() {
         let mut core = lay_out_input_tree(false);
-        assert!(core.pointer_moved(50.0, 50.0).is_empty());
+        assert!(core.pointer_moved(50.0, 50.0).events.is_empty());
+    }
+
+    #[test]
+    fn pointer_moved_within_same_hovered_node_does_not_request_redraw() {
+        // Wayland delivers CursorMoved at very high frequency while
+        // the cursor sits over the surface. Hosts gate request_redraw
+        // on `needs_redraw`; this test pins the contract so we don't
+        // regress to the unconditional-redraw behaviour that pegged
+        // settings_modal at 100% CPU under cursor activity.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let (cx, cy) = (btn.x + btn.w * 0.5, btn.y + btn.h * 0.5);
+
+        // First move enters the button — hover identity changes.
+        let first = core.pointer_moved(cx, cy);
+        assert!(first.events.is_empty());
+        assert!(
+            first.needs_redraw,
+            "entering a focusable should warrant a redraw",
+        );
+
+        // Same node, slightly different coords. Hover identity is
+        // unchanged, no drag is active — must not redraw.
+        let second = core.pointer_moved(cx + 1.0, cy);
+        assert!(second.events.is_empty());
+        assert!(
+            !second.needs_redraw,
+            "identical hover, no drag → host should idle",
+        );
+
+        // Moving off the button into empty space changes hover to
+        // None — that's a visible transition (envelope ramps down).
+        let off = core.pointer_moved(0.0, 0.0);
+        assert!(off.events.is_empty());
+        assert!(
+            off.needs_redraw,
+            "leaving a hovered node still warrants a redraw",
+        );
     }
 
     fn lay_out_paragraph_tree() -> RunnerCore {
@@ -1524,7 +1593,7 @@ mod tests {
         core.pointer_down(cx, cy, PointerButton::Primary);
 
         // Drag to the right inside p1.
-        let events = core.pointer_moved(p1.x + p1.w - 10.0, cy);
+        let events = core.pointer_moved(p1.x + p1.w - 10.0, cy).events;
         let sel_event = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -1576,7 +1645,7 @@ mod tests {
         core.pointer_moved(p2.x + 8.0, p2.y + p2.h * 0.5);
         // Now move WELL BELOW p2's rect (well below all selectables).
         // Head should remain in p2 (last leaf in this fixture is p2).
-        let events = core.pointer_moved(p2.x + 8.0, p2.y + p2.h + 200.0);
+        let events = core.pointer_moved(p2.x + 8.0, p2.y + p2.h + 200.0).events;
         let sel = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -1600,7 +1669,7 @@ mod tests {
         // Anchor at the start of p1.
         core.pointer_down(p1.x + 4.0, p1.y + p1.h * 0.5, PointerButton::Primary);
         // Drag down into p2.
-        let events = core.pointer_moved(p2.x + 8.0, p2.y + p2.h * 0.5);
+        let events = core.pointer_moved(p2.x + 8.0, p2.y + p2.h * 0.5).events;
         let sel_event = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -2204,7 +2273,10 @@ mod tests {
         core.pointer_down(thumb.x + thumb.w * 0.5, press_y, PointerButton::Primary);
         // Drag 20 px down — offset should advance by `20 * max_offset / track_remaining`.
         let evt = core.pointer_moved(thumb.x + thumb.w * 0.5, press_y + 20.0);
-        assert!(evt.is_empty(), "thumb-drag move should suppress Drag event");
+        assert!(
+            evt.events.is_empty(),
+            "thumb-drag move should suppress Drag event",
+        );
         let offset = core.ui_state.scroll_offset(&scroll_id);
         let expected = 20.0 * (metrics.max_offset / track_remaining);
         assert!(

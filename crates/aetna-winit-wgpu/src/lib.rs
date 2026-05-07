@@ -295,6 +295,20 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+        // Default to Fifo (vsync) so a redraw loop can't burn faster
+        // than the monitor refresh — mandatory in the wgpu spec, so
+        // the fallback to `present_modes[0]` should never engage on a
+        // conforming driver. Picking the driver's first reported mode
+        // unconditionally landed us on `Mailbox` on some Wayland
+        // setups, which removed the natural ceiling on rendering work.
+        let present_mode = if surface_caps
+            .present_modes
+            .contains(&wgpu::PresentMode::Fifo)
+        {
+            wgpu::PresentMode::Fifo
+        } else {
+            surface_caps.present_modes[0]
+        };
         let config = wgpu::SurfaceConfiguration {
             // COPY_SRC is required so backdrop-sampling shaders can
             // copy the post-Pass-A surface into the runner's snapshot
@@ -304,7 +318,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             format,
             width: size.width.max(1),
             height: size.height.max(1),
-            present_mode: surface_caps.present_modes[0],
+            present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -378,10 +392,19 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         let lx = position.x as f32 / scale;
                         let ly = position.y as f32 / scale;
                         self.last_pointer = Some((lx, ly));
-                        for event in gfx.renderer.pointer_moved(lx, ly) {
+                        let moved = gfx.renderer.pointer_moved(lx, ly);
+                        for event in moved.events {
                             self.app.on_event(event);
                         }
-                        gfx.window.request_redraw();
+                        // Wayland and most X11 compositors deliver
+                        // CursorMoved at high frequency while the
+                        // cursor is over the surface — only redraw
+                        // when the move actually changed something
+                        // (hovered identity, scrollbar drag, drag
+                        // event), per `PointerMove`.
+                        if moved.needs_redraw {
+                            gfx.window.request_redraw();
+                        }
                     }
 
                     WindowEvent::CursorLeft { .. } => {

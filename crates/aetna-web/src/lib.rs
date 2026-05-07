@@ -401,12 +401,23 @@ mod web_entry {
                     );
                     wgpu::TextureUsages::RENDER_ATTACHMENT
                 };
+                // Prefer Fifo (vsync) so redraws can't outrun the
+                // browser's compositor — same rationale as
+                // aetna-winit-wgpu.
+                let present_mode = if surface_caps
+                    .present_modes
+                    .contains(&wgpu::PresentMode::Fifo)
+                {
+                    wgpu::PresentMode::Fifo
+                } else {
+                    surface_caps.present_modes[0]
+                };
                 let config = wgpu::SurfaceConfiguration {
                     usage,
                     format,
                     width: inner.width.max(1),
                     height: inner.height.max(1),
-                    present_mode: surface_caps.present_modes[0],
+                    present_mode,
                     alpha_mode: surface_caps.alpha_modes[0],
                     view_formats: vec![],
                     desired_maximum_frame_latency: 2,
@@ -479,10 +490,13 @@ mod web_entry {
                     let lx = position.x as f32 / scale;
                     let ly = position.y as f32 / scale;
                     self.last_pointer = Some((lx, ly));
-                    for event in gfx.renderer.pointer_moved(lx, ly) {
+                    let moved = gfx.renderer.pointer_moved(lx, ly);
+                    for event in moved.events {
                         self.app.on_event(event);
                     }
-                    gfx.window.request_redraw();
+                    if moved.needs_redraw {
+                        gfx.window.request_redraw();
+                    }
                 }
 
                 WindowEvent::CursorLeft { .. } => {

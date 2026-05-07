@@ -235,10 +235,13 @@ impl<A: App> ApplicationHandler for Host<A> {
                 let lx = position.x as f32 / scale;
                 let ly = position.y as f32 / scale;
                 self.last_pointer = Some((lx, ly));
-                for event in rcx.runner.pointer_moved(lx, ly) {
+                let moved = rcx.runner.pointer_moved(lx, ly);
+                for event in moved.events {
                     self.app.on_event(event);
                 }
-                rcx.window.request_redraw();
+                if moved.needs_redraw {
+                    rcx.window.request_redraw();
+                }
             }
 
             WindowEvent::CursorLeft { .. } => {

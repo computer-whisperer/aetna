@@ -24,7 +24,7 @@ pub mod runner;
 mod text;
 
 pub use naga_compile::{CompileError, wgsl_to_spirv};
-pub use runner::{PrepareResult, PrepareTimings, Runner};
+pub use runner::{PointerMove, PrepareResult, PrepareTimings, Runner};
 
 /// Vulkan device features the runner's stock pipelines depend on.
 /// Hosts must merge this with their own required features when calling

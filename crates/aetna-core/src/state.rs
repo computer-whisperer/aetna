@@ -548,7 +548,12 @@ impl UiState {
     /// node changes (or hover is gained), clears when it goes away.
     /// Also clears the per-session "tooltip dismissed by press" flag
     /// so the next hover starts fresh.
-    pub(crate) fn set_hovered(&mut self, new: Option<UiTarget>, now: Instant) {
+    ///
+    /// Returns `true` when the hovered identity actually changed —
+    /// used by [`crate::runtime::Core::pointer_moved`] to decide
+    /// whether the host should redraw (cursor moves *within* the
+    /// same hovered node are visual no-ops).
+    pub(crate) fn set_hovered(&mut self, new: Option<UiTarget>, now: Instant) -> bool {
         let same = match (&self.hovered, &new) {
             (Some(a), Some(b)) => a.node_id == b.node_id,
             (None, None) => true,
@@ -559,6 +564,7 @@ impl UiState {
             self.tooltip_dismissed_for_hover = false;
         }
         self.hovered = new;
+        !same
     }
 
     pub fn set_focus(&mut self, target: Option<UiTarget>) {
