@@ -420,21 +420,39 @@ impl RunnerCore {
             self.start_selection_drag(point, &mut out, modifiers, (x, y), click_count);
         } else if !self.ui_state.current_selection.is_empty() {
             // Clear-on-click only when the press lands somewhere that
-            // doesn't already own the active selection. Without this
-            // check, clicking inside a text_input whose own selection
-            // lives under its key would have the runtime fire a
-            // SelectionChanged-empty event that races the input's
-            // PointerDown — the input sets the caret, then the
-            // selection-clear event collapses the app's selection
-            // back to default. (User-visible: the caret alternated
-            // between the click position and byte 0.)
-            let click_owns_selection = match (&hit, &self.ui_state.current_selection.range) {
+            // can't take selection ownership itself.
+            //
+            // - If the press is on the widget that already owns the
+            //   selection (same key), the widget's PointerDown
+            //   handler updates its own caret; a runtime clear here
+            //   races and collapses the app's selection back to
+            //   default. (User-visible bug: caret alternated between
+            //   the click position and byte 0 on every other click.)
+            //
+            // - If the press is on a *different* capture_keys widget
+            //   (e.g., dragging from one text_input into another),
+            //   that widget's PointerDown will replace the selection
+            //   with one anchored at the click position. The runtime
+            //   clear would arrive after the replace and wipe the
+            //   anchor — so when the drag began, only `head` would
+            //   advance and `anchor` would default to 0, jumping the
+            //   selection start to the beginning of the text.
+            //
+            // Press on a regular focusable (button, etc.) or in dead
+            // space still clears, matching the browser idiom.
+            let click_handles_selection = match (&hit, &self.ui_state.current_selection.range) {
                 (Some(h), Some(range)) => {
-                    h.key == range.anchor.key || h.key == range.head.key
+                    h.key == range.anchor.key
+                        || h.key == range.head.key
+                        || self
+                            .last_tree
+                            .as_ref()
+                            .and_then(|t| find_capture_keys(t, &h.node_id))
+                            .unwrap_or(false)
                 }
                 _ => false,
             };
-            if !click_owns_selection {
+            if !click_handles_selection {
                 out.push(selection_event(
                     crate::selection::Selection::default(),
                     modifiers,
@@ -1625,6 +1643,35 @@ mod tests {
             core.ui_state.current_selection,
             crate::selection::Selection::caret("ti", 3),
             "runtime mirror is preserved when the click owns the selection"
+        );
+    }
+
+    #[test]
+    fn pointer_down_into_a_different_capture_keys_widget_does_not_clear_first() {
+        // Regression: clicking into text_input A while the selection
+        // lives in text_input B used to trigger the runtime's
+        // clear-fallback. The empty SelectionChanged arrived after
+        // A's PointerDown (which had set anchor = head = click pos),
+        // collapsing the app's selection to default. The next Drag
+        // event then read `selection.within(A) = None`, defaulted
+        // anchor to 0, and only advanced head — so dragging into A
+        // started the selection from byte 0 of the text instead of
+        // the click position.
+        let mut core = lay_out_input_tree(true);
+        // Active selection lives in some other key, not "ti".
+        core.set_selection(crate::selection::Selection::caret("other", 4));
+        let ti = core.rect_of_key("ti").expect("ti rect");
+        let cx = ti.x + ti.w * 0.5;
+        let cy = ti.y + ti.h * 0.5;
+
+        let events = core.pointer_down(cx, cy, PointerButton::Primary);
+        let cleared = events.iter().any(|e| {
+            e.kind == UiEventKind::SelectionChanged
+                && e.selection.as_ref().map(|s| s.is_empty()).unwrap_or(false)
+        });
+        assert!(
+            !cleared,
+            "click on a different capture_keys widget must not race-clear the selection"
         );
     }
 
