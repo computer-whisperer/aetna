@@ -419,13 +419,30 @@ impl RunnerCore {
         {
             self.start_selection_drag(point, &mut out, modifiers, (x, y), click_count);
         } else if !self.ui_state.current_selection.is_empty() {
-            out.push(selection_event(
-                crate::selection::Selection::default(),
-                modifiers,
-                Some((x, y)),
-            ));
-            self.ui_state.current_selection = crate::selection::Selection::default();
-            self.ui_state.selection_drag = None;
+            // Clear-on-click only when the press lands somewhere that
+            // doesn't already own the active selection. Without this
+            // check, clicking inside a text_input whose own selection
+            // lives under its key would have the runtime fire a
+            // SelectionChanged-empty event that races the input's
+            // PointerDown — the input sets the caret, then the
+            // selection-clear event collapses the app's selection
+            // back to default. (User-visible: the caret alternated
+            // between the click position and byte 0.)
+            let click_owns_selection = match (&hit, &self.ui_state.current_selection.range) {
+                (Some(h), Some(range)) => {
+                    h.key == range.anchor.key || h.key == range.head.key
+                }
+                _ => false,
+            };
+            if !click_owns_selection {
+                out.push(selection_event(
+                    crate::selection::Selection::default(),
+                    modifiers,
+                    Some((x, y)),
+                ));
+                self.ui_state.current_selection = crate::selection::Selection::default();
+                self.ui_state.selection_drag = None;
+            }
         }
 
         out
@@ -1573,6 +1590,42 @@ mod tests {
         let range = new_sel.range.as_ref().unwrap();
         assert_eq!(range.anchor.key, "p1", "anchor stays in p1");
         assert_eq!(range.head.key, "p2", "head migrates into p2");
+    }
+
+    #[test]
+    fn pointer_down_on_focusable_owning_selection_does_not_clear_it() {
+        // Regression: clicking inside a text_input (focusable but not
+        // a `.selectable()` leaf) used to fire SelectionChanged-empty
+        // because selection_point_at missed and the runtime's
+        // clear-fallback didn't notice the click landed on the same
+        // widget that owned the active selection. The input's
+        // PointerDown set the caret, then the empty SelectionChanged
+        // collapsed it back to byte 0 every other click.
+        let mut core = lay_out_input_tree(true);
+        // Seed a selection in the input's key — this is what the
+        // text_input would have written back via apply_event_with.
+        core.set_selection(crate::selection::Selection::caret("ti", 3));
+        let ti = core.rect_of_key("ti").expect("ti rect");
+        let cx = ti.x + ti.w * 0.5;
+        let cy = ti.y + ti.h * 0.5;
+
+        let events = core.pointer_down(cx, cy, PointerButton::Primary);
+        let cleared = events
+            .iter()
+            .find(|e| e.kind == UiEventKind::SelectionChanged && e
+                .selection
+                .as_ref()
+                .map(|s| s.is_empty())
+                .unwrap_or(false));
+        assert!(
+            cleared.is_none(),
+            "click on the selection-owning input must not emit a clearing SelectionChanged"
+        );
+        assert_eq!(
+            core.ui_state.current_selection,
+            crate::selection::Selection::caret("ti", 3),
+            "runtime mirror is preserved when the click owns the selection"
+        );
     }
 
     #[test]
