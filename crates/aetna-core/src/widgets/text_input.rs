@@ -1,9 +1,9 @@
 //! Single-line text input widget with selection.
 //!
-//! `text_input(value, selection)` renders a focusable, key-capturing
+//! `text_input(value, selection, key)` renders a focusable, key-capturing
 //! input field with a visible caret and (when non-empty) a tinted
 //! selection rectangle behind the selected glyphs. The application
-//! owns both the string and the [`TextSelection`]; routed events are
+//! owns both the string and the global [`Selection`]; routed events are
 //! folded back via [`apply_event`] in the app's `on_event` handler.
 //!
 //! ```ignore
@@ -11,18 +11,24 @@
 //!
 //! struct Form {
 //!     name: String,
-//!     name_sel: TextSelection,
+//!     selection: Selection,
 //! }
 //!
 //! impl App for Form {
 //!     fn build(&self) -> El {
-//!         text_input(&self.name, self.name_sel).key("name")
+//!         text_input(&self.name, &self.selection, "name")
 //!     }
 //!
 //!     fn on_event(&mut self, e: UiEvent) {
 //!         if e.target_key() == Some("name") {
-//!             text_input::apply_event(&mut self.name, &mut self.name_sel, &e);
+//!             text_input::apply_event(&mut self.name, &mut self.selection, "name", &e);
+//!         } else if let Some(selection) = e.selection.clone() {
+//!             self.selection = selection;
 //!         }
+//!     }
+//!
+//!     fn selection(&self) -> Selection {
+//!         self.selection.clone()
 //!     }
 //! }
 //! ```
@@ -31,7 +37,7 @@
 //!
 //! Composes only the public widget-kit surface. The widget pairs a
 //! caret + character/IME path with selection semantics layered on top
-//! via [`TextSelection`] (a value type, not stored in `widget_state`),
+//! via [`Selection`] (an app-owned value, not stored in `widget_state`),
 //! covering drag-select, shift-extend, replace-on-type, and `Ctrl+A`.
 //! See `widget_kit.md`.
 
@@ -42,7 +48,7 @@ use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::selection::{Selection, SelectionPoint, SelectionRange};
 use crate::style::StyleProfile;
-use crate::text::metrics::{self, hit_text};
+use crate::text::metrics::{self, TextGeometry};
 use crate::tokens;
 use crate::tree::*;
 use crate::widgets::text::text;
@@ -223,14 +229,14 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
     // dots, not under the (invisible) original glyphs.
     let display = display_str(value, opts.mask);
 
-    // Pixel offsets along the (single) shaped run. We measure substrings
-    // independently here, which gives positions that are correct to
-    // within sub-pixel kerning differences vs. the full-string layout.
-    // Good enough for caret + selection placement at typical widths.
+    // Pixel offsets along the same shaped run that paints the input text.
+    // Using `TextGeometry::prefix_width` keeps caret / selection placement
+    // tied to the text engine instead of remeasuring prefix substrings.
+    let geometry = single_line_geometry(&display);
     let to_display = |b: usize| original_to_display_byte(value, b, opts.mask);
-    let head_px = prefix_width(&display, to_display(head));
-    let lo_px = prefix_width(&display, to_display(lo));
-    let hi_px = prefix_width(&display, to_display(hi));
+    let head_px = geometry.prefix_width(to_display(head));
+    let lo_px = geometry.prefix_width(to_display(lo));
+    let hi_px = geometry.prefix_width(to_display(hi));
 
     let mut children: Vec<El> = Vec::with_capacity(4);
 
@@ -326,15 +332,14 @@ fn line_height_px() -> f32 {
     metrics::line_height(tokens::FONT_BASE)
 }
 
-fn prefix_width(value: &str, byte_index: usize) -> f32 {
-    if byte_index == 0 {
-        return 0.0;
-    }
-    metrics::line_width(
-        &value[..byte_index],
+fn single_line_geometry(value: &str) -> TextGeometry<'_> {
+    TextGeometry::new(
+        value,
         tokens::FONT_BASE,
         FontWeight::Regular,
         false,
+        TextWrap::NoWrap,
+        None,
     )
 }
 
@@ -737,17 +742,9 @@ fn caret_from_x(value: &str, local_x: f32, mask: MaskMode) -> usize {
     }
     let probe = display_str(value, mask);
     let local_y = metrics::line_height(tokens::FONT_BASE) * 0.5;
-    let hit = hit_text(
-        &probe,
-        tokens::FONT_BASE,
-        FontWeight::Regular,
-        TextWrap::NoWrap,
-        None,
-        local_x,
-        local_y,
-    );
-    let display_byte = match hit {
-        Some(h) => h.byte_index.min(probe.len()),
+    let geometry = single_line_geometry(&probe);
+    let display_byte = match geometry.hit_byte(local_x, local_y) {
+        Some(byte) => byte.min(probe.len()),
         None => probe.len(),
     };
     display_to_original_byte(value, display_byte, mask)
@@ -1116,7 +1113,8 @@ mod tests {
         // Focused: focus envelope settles to 1 → band fill matches
         // SELECTION_BG.
         let target = state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "ti")
             .expect("ti in focus order")
@@ -1176,7 +1174,8 @@ mod tests {
 
         // Focus the input: focus envelope settles to 1.
         let target = state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "ti")
             .expect("ti in focus order")
@@ -1228,7 +1227,7 @@ mod tests {
     fn caret_paint_alpha_blinks_after_focus_in_live_mode() {
         // Drive the tick at staged Instants so we hit each phase of
         // the blink cycle; verifies the painter actually multiplies
-        // the caret bar's alpha by ui_state.caret_blink_alpha.
+        // the caret bar's alpha by ui_state.caret.blink_alpha.
         use crate::draw_ops::draw_ops;
         use crate::ir::DrawOp;
         use crate::shader::UniformValue;
@@ -1242,22 +1241,23 @@ mod tests {
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.sync_focus_order(&tree);
 
-        // Focus the input — set_focus bumps caret_activity_at.
+        // Focus the input — set_focus bumps caret activity.
         let target = state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "ti")
             .unwrap()
             .clone();
         state.set_focus(Some(target));
-        let activity_at = state.caret_activity_at.expect("set_focus bumps activity");
+        let activity_at = state.caret.activity_at.expect("set_focus bumps activity");
         let input_id = tree.children[0].computed_id.clone();
 
         // Pin focus envelope after each tick so the caret's
         // focus-fade contribution is out of the picture and we can
         // attribute alpha changes purely to the blink.
         let pin_focus = |state: &mut UiState| {
-            state.envelopes.insert(
+            state.animation.envelopes.insert(
                 (input_id.clone(), crate::state::EnvelopeKind::FocusRing),
                 1.0,
             );
@@ -1310,11 +1310,11 @@ mod tests {
         let t0 = Instant::now();
         state.bump_caret_activity(t0);
         state.tick_visual_animations(&mut tree, t0 + Duration::from_millis(1100));
-        assert_eq!(state.caret_blink_alpha, 0.0, "deep in off phase");
+        assert_eq!(state.caret.blink_alpha, 0.0, "deep in off phase");
 
         // Re-bump (e.g. user typed) — alpha snaps back to solid.
         state.bump_caret_activity(t0 + Duration::from_millis(1100));
-        assert_eq!(state.caret_blink_alpha, 1.0, "fresh activity → solid");
+        assert_eq!(state.caret.blink_alpha, 1.0, "fresh activity → solid");
     }
 
     #[test]
@@ -1339,7 +1339,8 @@ mod tests {
         // Focus the input → tick should keep requesting redraws so
         // the on/off cycle keeps animating.
         let target = state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "ti")
             .unwrap()

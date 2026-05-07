@@ -111,8 +111,8 @@ fn push_node(
         // No activity recorded yet → caret stays solid. This keeps
         // headless / pre-event tests deterministic without forcing
         // them to drive the animation tick.
-        if ui_state.caret_activity_at.is_some() {
-            ui_state.caret_blink_alpha
+        if ui_state.caret.activity_at.is_some() {
+            ui_state.caret.blink_alpha
         } else {
             1.0
         }
@@ -317,7 +317,7 @@ fn push_node(
             && let Some(key) = &n.key
             && let Some((lo, hi)) = crate::selection::slice_for_leaf(
                 &ui_state.current_selection,
-                &ui_state.selection_order,
+                &ui_state.selection.order,
                 key,
                 display.len(),
             )
@@ -473,14 +473,14 @@ fn push_node(
     // Scrollbar thumb. Painted *after* children so it sits on top
     // visually, with `own_scissor` so it inherits the scrollable's
     // clip but is otherwise free of the scroll offset (the layout
-    // pass shifts the children, not the thumb). `thumb_rects` is
+    // pass shifts the children, not the thumb). `scroll.thumb_rects` is
     // populated only when the scrollable opted in and content
     // overflows, so the gating is implicit. When the pointer is
     // anywhere within the track or a drag is active, the visible
     // thumb expands to `SCROLLBAR_THUMB_WIDTH_ACTIVE` (right-anchored)
     // so the cursor sits inside the thumb instead of pinning the
     // track's right edge.
-    if let Some(thumb_rect) = ui_state.thumb_rects.get(&n.computed_id) {
+    if let Some(thumb_rect) = ui_state.scroll.thumb_rects.get(&n.computed_id) {
         let active = thumb_is_active(n, ui_state);
         let visible = if active {
             let new_w = tokens::SCROLLBAR_THUMB_WIDTH_ACTIVE.max(thumb_rect.w);
@@ -519,14 +519,14 @@ fn push_node(
 /// the *un-translated* track rect since the pointer position is
 /// captured pre-translate.
 fn thumb_is_active(n: &El, ui_state: &UiState) -> bool {
-    if let Some(drag) = ui_state.thumb_drag.as_ref()
+    if let Some(drag) = ui_state.scroll.thumb_drag.as_ref()
         && drag.scroll_id == n.computed_id
     {
         return true;
     }
     if let (Some((px, py)), Some(track)) = (
         ui_state.pointer_pos,
-        ui_state.thumb_tracks.get(&n.computed_id),
+        ui_state.scroll.thumb_tracks.get(&n.computed_id),
     ) {
         return track.contains(px, py);
     }
@@ -672,7 +672,7 @@ fn opaque(c: Color, opacity: f32) -> Color {
 ///
 /// Hover and press are applied as **envelope mixes**: the eased amounts
 /// `hover` / `press` (both 0..1, written by the animation tracker into
-/// [`UiState::envelopes`]) lerp the build-time colour toward its
+/// [`UiState::envelope`]) lerp the build-time colour toward its
 /// state-modulated form. This composition keeps state easing
 /// independent of mid-flight changes to `n.fill` — the author can swap
 /// a button's colour during a hover and the new colour appears with

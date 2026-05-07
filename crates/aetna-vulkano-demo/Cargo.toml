@@ -18,3 +18,6 @@ aetna-vulkano = { version = "0.2.0", path = "../aetna-vulkano" }
 png = "0.18"
 vulkano = "0.35"
 winit = "0.30"
+
+[dev-dependencies]
+aetna-wgpu = { version = "0.2.0", path = "../aetna-wgpu" }

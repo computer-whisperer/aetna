@@ -458,7 +458,7 @@ pub trait App {
     /// Drain pending toast notifications produced since the last
     /// frame. The runtime calls this once per `prepare_layout`,
     /// stamps each spec with a monotonic id and `expires_at = now +
-    /// ttl`, queues it onto [`crate::state::UiState::toasts`], and
+    /// ttl`, queues it in the runtime toast state, and
     /// synthesizes a `toast_stack` layer at the El root so the
     /// rendered tree mirrors the visible state. Apps typically
     /// accumulate specs in a `Vec<ToastSpec>` field from event

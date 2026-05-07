@@ -49,7 +49,8 @@ fn dump_node(n: &El, ui_state: &UiState, depth: usize, s: &mut String) {
     }
     if n.scrollable {
         let off = ui_state
-            .scroll_offsets
+            .scroll
+            .offsets
             .get(&n.computed_id)
             .copied()
             .unwrap_or(0.0);

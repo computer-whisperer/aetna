@@ -1,9 +1,9 @@
 //! Multi-line text area widget with selection.
 //!
-//! `text_area(value, selection)` is the multi-line companion to
+//! `text_area(value, selection, key)` is the multi-line companion to
 //! [`crate::widgets::text_input::text_input`]. It shares the same app
 //! state shape — a `String` (with embedded `\n`s) and a
-//! [`crate::widgets::text_input::TextSelection`] — and delegates its
+//! global [`crate::selection::Selection`] — and delegates its
 //! invariants (focusable + capture_keys + paint_overflow + style
 //! profile + clipboard helpers) to the same kit primitives.
 //!
@@ -12,18 +12,24 @@
 //!
 //! struct Notes {
 //!     body: String,
-//!     body_sel: TextSelection,
+//!     selection: Selection,
 //! }
 //!
 //! impl App for Notes {
 //!     fn build(&self) -> El {
-//!         text_area(&self.body, self.body_sel).key("body")
+//!         text_area(&self.body, &self.selection, "body")
 //!     }
 //!
 //!     fn on_event(&mut self, e: UiEvent) {
 //!         if e.target_key() == Some("body") {
-//!             text_area::apply_event(&mut self.body, &mut self.body_sel, &e);
+//!             text_area::apply_event(&mut self.body, &mut self.selection, "body", &e);
+//!         } else if let Some(selection) = e.selection.clone() {
+//!             self.selection = selection;
 //!         }
+//!     }
+//!
+//!     fn selection(&self) -> Selection {
+//!         self.selection.clone()
 //!     }
 //! }
 //! ```
@@ -53,7 +59,7 @@ use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::selection::{Selection, SelectionPoint, SelectionRange};
 use crate::style::StyleProfile;
-use crate::text::metrics::{self, caret_xy, hit_text, selection_rects};
+use crate::text::metrics::{self, TextGeometry};
 use crate::tokens;
 use crate::tree::*;
 use crate::widgets::text::text;
@@ -104,15 +110,8 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
     // approximation. This means visible selection bands mirror
     // BufferLine breaks (`\n`) but ignore soft wraps. Soft-wrap
     // selection painting is a future improvement.
-    let rects = selection_rects(
-        value,
-        lo,
-        hi,
-        tokens::FONT_BASE,
-        FontWeight::Regular,
-        TextWrap::NoWrap,
-        None,
-    );
+    let geometry = text_area_geometry(value);
+    let rects = geometry.selection_rects(lo, hi);
     for (rx, ry, rw, rh) in rects {
         children.push(
             El::new(Kind::Custom("text_area_selection"))
@@ -141,14 +140,7 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
     // lives in this area. See the matching gate in
     // `text_input::build_text_input` for the rationale.
     if view.is_some() {
-        let (caret_x, caret_y) = caret_xy(
-            value,
-            head,
-            tokens::FONT_BASE,
-            FontWeight::Regular,
-            TextWrap::NoWrap,
-            None,
-        );
+        let (caret_x, caret_y) = geometry.caret_xy(head);
         children.push(
             caret_bar()
                 .translate(caret_x, caret_y)
@@ -188,6 +180,17 @@ fn caret_bar() -> El {
 
 fn line_height_px() -> f32 {
     metrics::line_height(tokens::FONT_BASE)
+}
+
+fn text_area_geometry(value: &str) -> TextGeometry<'_> {
+    TextGeometry::new(
+        value,
+        tokens::FONT_BASE,
+        FontWeight::Regular,
+        false,
+        TextWrap::NoWrap,
+        None,
+    )
 }
 
 /// Fold a routed [`UiEvent`] into `value` and the global
@@ -434,35 +437,21 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
 /// input unchanged when there is no line in that direction (already at
 /// the first / last visual line).
 fn move_caret_vertically(value: &str, byte_index: usize, direction: i32) -> usize {
-    let (x, y) = caret_xy(
-        value,
-        byte_index,
-        tokens::FONT_BASE,
-        FontWeight::Regular,
-        TextWrap::NoWrap,
-        None,
-    );
-    let line_h = line_height_px();
+    let geometry = text_area_geometry(value);
+    let (x, y) = geometry.caret_xy(byte_index);
+    let line_h = geometry.line_height();
     let target_y = y + direction as f32 * line_h;
     if target_y < -0.5 {
         // Above the first line — clamp to start of value.
         return 0;
     }
-    // Probe slightly inside the target line to make hit_text find it.
+    // Probe slightly inside the target line to make the geometry hit-test find it.
     let probe_y = target_y + line_h * 0.5;
-    let Some(hit) = hit_text(
-        value,
-        tokens::FONT_BASE,
-        FontWeight::Regular,
-        TextWrap::NoWrap,
-        None,
-        x,
-        probe_y,
-    ) else {
+    let Some(byte) = geometry.hit_byte(x, probe_y) else {
         // No line at probe_y — past the bottom of the text. Clamp to end.
         return value.len();
     };
-    line_position_to_byte(value, hit.line, hit.byte_index)
+    byte
 }
 
 /// Resolve the byte offset a pointer event maps to inside a text
@@ -480,40 +469,13 @@ pub fn caret_byte_at(value: &str, event: &UiEvent) -> Option<usize> {
 }
 
 fn caret_from_xy(value: &str, x: f32, y: f32) -> usize {
-    let line_h = line_height_px();
+    let geometry = text_area_geometry(value);
+    let line_h = geometry.line_height();
     let probe_y = y.max(line_h * 0.5);
-    let Some(hit) = hit_text(
-        value,
-        tokens::FONT_BASE,
-        FontWeight::Regular,
-        TextWrap::NoWrap,
-        None,
-        x.max(0.0),
-        probe_y,
-    ) else {
+    let Some(byte) = geometry.hit_byte(x.max(0.0), probe_y) else {
         return value.len();
     };
-    line_position_to_byte(value, hit.line, hit.byte_index)
-}
-
-/// Convert a `(BufferLine_index, byte_in_line)` pair (as returned by
-/// [`hit_text`]) back to a global byte offset into `value`.
-fn line_position_to_byte(value: &str, line: usize, byte_in_line: usize) -> usize {
-    let mut current_line = 0;
-    let mut line_start = 0;
-    for (i, ch) in value.char_indices() {
-        if current_line == line {
-            return clamp_to_char_boundary(value, (line_start + byte_in_line).min(value.len()));
-        }
-        if ch == '\n' {
-            current_line += 1;
-            line_start = i + ch.len_utf8();
-        }
-    }
-    if current_line == line {
-        return clamp_to_char_boundary(value, (line_start + byte_in_line).min(value.len()));
-    }
-    value.len()
+    byte
 }
 
 fn current_line_start(value: &str, byte_index: usize) -> usize {

@@ -197,18 +197,19 @@ fn collect_focus(
 /// been retargeted / cleared against the new tree.
 pub fn sync_popover_focus(root: &El, ui_state: &mut UiState) {
     let new_layers = collect_popover_layer_ids(root);
-    let old_layers = std::mem::take(&mut ui_state.popover_layer_ids);
+    let old_layers = std::mem::take(&mut ui_state.popover_focus.layer_ids);
 
     // Process closes first, in reverse tree order (innermost first), so
     // a same-frame close-then-reopen of a deeper layer pops the right
     // saved focus before pushing the new one.
     for id in old_layers.iter().rev() {
         if !new_layers.contains(id) {
-            let saved = ui_state.focus_stack.pop();
+            let saved = ui_state.popover_focus.focus_stack.pop();
             if ui_state.focused.is_none()
                 && let Some(target) = saved
                 && ui_state
-                    .focus_order
+                    .focus
+                    .order
                     .iter()
                     .any(|t| t.node_id == target.node_id)
             {
@@ -222,7 +223,7 @@ pub fn sync_popover_focus(root: &El, ui_state: &mut UiState) {
     for id in &new_layers {
         if !old_layers.contains(id) {
             if let Some(current) = ui_state.focused.clone() {
-                ui_state.focus_stack.push(current);
+                ui_state.popover_focus.focus_stack.push(current);
             }
             if let Some(first) = first_focusable_in(root, id, ui_state) {
                 ui_state.focused = Some(first);
@@ -230,7 +231,7 @@ pub fn sync_popover_focus(root: &El, ui_state: &mut UiState) {
         }
     }
 
-    ui_state.popover_layer_ids = new_layers;
+    ui_state.popover_focus.layer_ids = new_layers;
 }
 
 /// Collect the `computed_id` of every `Kind::Custom("popover_layer")`

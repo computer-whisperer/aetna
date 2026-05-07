@@ -61,13 +61,13 @@ pub fn synthesize_tooltip(root: &mut El, ui_state: &UiState, now: Instant) -> bo
     // Suppressed: pointer is pressed (about to click — don't pop a
     // tooltip in the user's face), or this hover already had its
     // tooltip dismissed by a press.
-    if ui_state.pressed.is_some() || ui_state.tooltip_dismissed_for_hover {
+    if ui_state.pressed.is_some() || ui_state.tooltip.dismissed_for_hover {
         return false;
     }
     let Some(hover) = ui_state.hovered.as_ref() else {
         return false;
     };
-    let Some(started_at) = ui_state.hover_started_at else {
+    let Some(started_at) = ui_state.tooltip.hover_started_at else {
         return false;
     };
 
@@ -182,7 +182,8 @@ mod tests {
     fn pre_delay_returns_pending_no_layer() {
         let (mut tree, mut state) = lay_out_with_button();
         let trigger = state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "save")
             .cloned()
@@ -201,7 +202,8 @@ mod tests {
     fn post_delay_appends_tooltip_layer() {
         let (mut tree, mut state) = lay_out_with_button();
         let trigger = state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "save")
             .cloned()
@@ -232,7 +234,8 @@ mod tests {
     fn no_tooltip_when_pressed() {
         let (mut tree, mut state) = lay_out_with_button();
         let trigger = state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "save")
             .cloned()
@@ -256,14 +259,15 @@ mod tests {
     fn dismissed_for_hover_blocks_until_re_entry() {
         let (mut tree, mut state) = lay_out_with_button();
         let trigger = state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "save")
             .cloned()
             .unwrap();
         let now = Instant::now();
         state.set_hovered(Some(trigger), now);
-        state.tooltip_dismissed_for_hover = true;
+        state.tooltip.dismissed_for_hover = true;
 
         assign_ids(&mut tree);
         let before = tree.children.len();
@@ -295,10 +299,10 @@ mod tests {
             rect: Rect::new(0.0, 0.0, 10.0, 10.0),
         };
         state.set_hovered(Some(target_a), now);
-        let started = state.hover_started_at;
+        let started = state.tooltip.hover_started_at;
         state.set_hovered(Some(target_b), now + Duration::from_millis(100));
         assert!(
-            state.hover_started_at > started,
+            state.tooltip.hover_started_at > started,
             "timer reset on target change"
         );
     }

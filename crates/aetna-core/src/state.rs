@@ -53,6 +53,52 @@ pub enum EnvelopeKind {
     FocusRing,
 }
 
+/// Runtime visual animation state: app-authored prop animations plus
+/// library-owned hover/press/focus envelopes and their pacing mode.
+#[derive(Default)]
+pub(crate) struct AnimationState {
+    /// In-flight animations keyed by `(computed_id, prop)`. Created
+    /// lazily as state transitions happen; trimmed by
+    /// [`UiState::tick_visual_animations`] when their nodes leave the tree.
+    pub(crate) animations: HashMap<(String, AnimProp), Animation>,
+    /// State-envelope amounts (0..1) per (node, kind), written by the
+    /// animation tick. `draw_ops` reads these to modulate the surface
+    /// visuals; missing entries read as `0.0`.
+    pub(crate) envelopes: HashMap<(String, EnvelopeKind), f32>,
+    /// Animation pacing mode. Default is `Live`; headless render
+    /// binaries switch to `Settled` so single-frame snapshots reflect
+    /// the post-animation visual.
+    pub(crate) mode: AnimationMode,
+}
+
+impl Debug for AnimationState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnimationState")
+            .field("animations", &self.animations)
+            .field("envelopes", &self.envelopes)
+            .field("mode", &self.mode)
+            .finish()
+    }
+}
+
+/// App-declared keyboard shortcuts captured by the host each frame and
+/// matched before focused-widget key handling.
+#[derive(Default)]
+pub(crate) struct HotkeyState {
+    /// App-level hotkey registry; the host snapshots `App::hotkeys()`
+    /// each frame and stores it here. Matched in `key_down` ahead of
+    /// focus activation.
+    pub(crate) registry: Vec<(KeyChord, String)>,
+}
+
+impl Debug for HotkeyState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HotkeyState")
+            .field("registry", &self.registry)
+            .finish()
+    }
+}
+
 /// Per-instance state owned by a widget. Widget authors define their own
 /// state types (e.g. text-input caret + selection, virtual list scroll
 /// offset, dropdown open/closed) and stash them on [`UiState`] keyed by
@@ -98,6 +144,62 @@ impl<T: WidgetState> AnyWidgetState for T {
     }
 }
 
+/// Type-erased per-node widget storage owned by [`UiState`]. Public
+/// access stays through `UiState::widget_state*`; this store just keeps
+/// the raw buckets and their debug summaries together.
+#[derive(Default)]
+struct WidgetStateStore {
+    entries: HashMap<(String, TypeId), Box<dyn AnyWidgetState>>,
+}
+
+impl Debug for WidgetStateStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(
+                self.entries
+                    .iter()
+                    .map(|((id, _), b)| (id.as_str(), b.type_name(), b.debug_summary())),
+            )
+            .finish()
+    }
+}
+
+/// Side maps written by the layout pass and read by hit-testing,
+/// drawing, custom layout callbacks, and keyed overlay placement.
+#[derive(Default)]
+pub(crate) struct LayoutState {
+    /// Computed rect per node, written by the layout pass.
+    pub(crate) computed_rects: HashMap<String, Rect>,
+    /// `key -> computed_id` map, refreshed at the top of every layout
+    /// pass. Populated only for nodes that carry an author-set `key`;
+    /// duplicate keys keep the first entry seen in tree order.
+    pub(crate) key_index: HashMap<String, String>,
+}
+
+impl Debug for LayoutState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LayoutState")
+            .field("computed_rects", &self.computed_rects)
+            .field("key_index", &self.key_index)
+            .finish()
+    }
+}
+
+/// Resolved per-node interaction state written after input processing
+/// and read by animation/drawing passes.
+#[derive(Default)]
+pub(crate) struct NodeInteractionState {
+    pub(crate) nodes: HashMap<String, InteractionState>,
+}
+
+impl Debug for NodeInteractionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeInteractionState")
+            .field("nodes", &self.nodes)
+            .finish()
+    }
+}
+
 /// Layout snapshot for a scrollable node. Written each frame by
 /// `apply_scroll_offset`; read by the scrollbar thumb in `draw_ops`
 /// and by `runtime`'s thumb-drag plumbing. `viewport_h` is the
@@ -111,16 +213,38 @@ pub struct ScrollMetrics {
     pub max_offset: f32,
 }
 
-/// Active scrollbar thumb drag. `start_pointer_y` and `start_offset`
-/// are captured at `pointer_down`; `pointer_moved` updates
-/// `scroll_offsets[scroll_id]` to `start_offset + (dy *
-/// max_offset / track_remaining)` so the cursor-thumb pixel
 /// Active text-selection drag, captured at `pointer_down` on a
 /// selectable leaf. The anchor stays fixed; `pointer_moved` extends
 /// the head and emits `SelectionChanged`.
 #[derive(Clone, Debug)]
 pub(crate) struct SelectionDrag {
     pub anchor: crate::selection::SelectionPoint,
+}
+
+/// Internal selection-manager state derived from the laid-out tree and
+/// active pointer drags. The app-visible selection value remains on
+/// `UiState::current_selection` for compatibility.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SelectionState {
+    /// Selectable text leaves in document (tree) order. Built post-
+    /// layout by [`UiState::sync_selection_order`]; consulted by the
+    /// selection manager to map pointer hits to a
+    /// [`crate::selection::SelectionPoint`] and to walk cross-element
+    /// selections.
+    pub(crate) order: Vec<UiTarget>,
+    /// Active drag, set by `pointer_down` when the press lands on a
+    /// selectable leaf and primary button. The anchor stays fixed for
+    /// the duration of the drag; head moves as the pointer moves.
+    /// Cleared by `pointer_up`.
+    pub(crate) drag: Option<SelectionDrag>,
+}
+
+/// Internal focus traversal data derived from the laid-out tree. The
+/// currently focused target remains on `UiState::focused` for the
+/// existing public API.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FocusState {
+    pub(crate) order: Vec<UiTarget>,
 }
 
 /// Tracks the latest primary `pointer_down` so the next press can
@@ -134,6 +258,14 @@ pub(crate) struct ClickSequence {
     pub pos: (f32, f32),
     pub target_node_id: Option<String>,
     pub count: u8,
+}
+
+/// Runtime multi-click bookkeeping. Tracks the latest primary
+/// `pointer_down` so the next press can decide whether to extend the
+/// sequence or reset to a single click.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ClickState {
+    pub(crate) last: Option<ClickSequence>,
 }
 
 /// Multi-click time window. A press within this duration of the
@@ -164,6 +296,24 @@ pub(crate) fn caret_blink_alpha_for(age: std::time::Duration) -> f32 {
     if (t / half) % 2 == 0 { 1.0 } else { 0.0 }
 }
 
+/// Runtime blink state for the focused text caret. Text widgets update
+/// this through [`UiState::bump_caret_activity`]; the animation tick
+/// resolves the current alpha for paint.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CaretState {
+    /// When the focused-input caret last had visible activity (a
+    /// selection change or a focus transition). `None` before the
+    /// first bump — caret rendering treats that as solid.
+    pub(crate) activity_at: Option<Instant>,
+    /// Current caret blink alpha in `[0.0, 1.0]`, written by the
+    /// animation tick from `activity_at`.
+    pub(crate) blink_alpha: f32,
+}
+
+/// Active scrollbar thumb drag. `start_pointer_y` and `start_offset`
+/// are captured at `pointer_down`; `pointer_moved` updates
+/// `scroll.offsets[scroll_id]` to `start_offset + (dy *
+/// max_offset / track_remaining)` so the cursor-thumb pixel
 /// relationship stays 1:1.
 #[derive(Clone, Debug)]
 pub struct ThumbDrag {
@@ -176,6 +326,82 @@ pub struct ThumbDrag {
     pub track_remaining: f32,
     /// `max_offset` captured at drag start, for the same reason.
     pub max_offset: f32,
+}
+
+/// Runtime state for scrollable nodes. Kept as one subsystem inside
+/// [`UiState`] so layout, paint, and input code do not each grow their
+/// own loose side maps.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ScrollState {
+    /// Scroll offset (logical pixels) per scrollable node, keyed by
+    /// `El::computed_id`. The layout pass reads this when positioning a
+    /// scrollable's children and writes back the clamped value.
+    pub(crate) offsets: HashMap<String, f32>,
+    /// Per-scrollable layout metrics — viewport height, content
+    /// height, max offset — written by the layout pass and read by
+    /// `draw_ops` (to size the scrollbar thumb) and the runtime (to
+    /// translate thumb-drag delta into offset delta).
+    pub(crate) metrics: HashMap<String, ScrollMetrics>,
+    /// Per-scrollable thumb rect (logical pixels), populated alongside
+    /// `metrics` when the scrollable has `scrollbar` enabled and its
+    /// content overflows. Read by `draw_ops` to paint the thumb. An
+    /// entry is *absent* when the scrollbar is disabled or the content
+    /// fits the viewport.
+    pub(crate) thumb_rects: HashMap<String, Rect>,
+    /// Per-scrollable track rect — the full vertical column that
+    /// accepts pointer presses (wider than the visible thumb so the
+    /// thumb is easy to grab; full viewport height so a click on the
+    /// track above/below the thumb pages by a viewport). Same x-extent
+    /// as `thumb_rects` but expanded to `SCROLLBAR_HITBOX_WIDTH` and
+    /// the inner-rect height. Populated alongside `thumb_rects`.
+    pub(crate) thumb_tracks: HashMap<String, Rect>,
+    /// Active scrollbar drag, set by `pointer_down` when the press
+    /// lands inside a thumb rect, consumed by `pointer_moved` to update
+    /// the corresponding `offsets` entry, cleared by `pointer_up`.
+    /// Pre-empts normal hit-test so thumb drags don't also fire
+    /// app-level pointer events.
+    pub(crate) thumb_drag: Option<ThumbDrag>,
+}
+
+/// Runtime queue for toast notifications. Apps provide fire-and-forget
+/// [`crate::toast::ToastSpec`] values; the runtime stamps ids and
+/// expiry deadlines here before [`crate::toast::synthesize_toasts`]
+/// mirrors the queue into a synthetic overlay layer.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ToastState {
+    pub(crate) queue: Vec<crate::toast::Toast>,
+    pub(crate) next_id: u64,
+}
+
+/// Runtime hover timing for tooltips. The hovered target itself stays
+/// in the general pointer interaction state; this bucket only tracks
+/// tooltip-specific delay and per-hover dismissal.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct TooltipState {
+    /// When the current `hovered` target started being hovered. `None`
+    /// when nothing is hovered or the pointer is outside the window.
+    /// Used by [`crate::tooltip`] to gate the hover-delay timer.
+    pub(crate) hover_started_at: Option<Instant>,
+    /// True when the user pressed (or clicked) the hovered node during
+    /// the current hover session. Suppresses the tooltip until the
+    /// pointer leaves and re-enters, matching native behavior.
+    pub(crate) dismissed_for_hover: bool,
+}
+
+/// Focus bookkeeping for runtime-managed popover layers. The active
+/// focus target and tab order stay on `UiState`; this bucket only
+/// tracks layer open/close transitions and saved focus restoration.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PopoverFocusState {
+    /// LIFO of focus targets pushed when popover layers open. Each new
+    /// `Kind::Custom("popover_layer")` snapshots the current focus
+    /// here and auto-focuses into the layer; closing the layer pops and
+    /// restores. See [`crate::focus::sync_popover_focus`].
+    pub(crate) focus_stack: Vec<UiTarget>,
+    /// `computed_id`s of every popover-layer node in the last laid-out
+    /// tree, in tree order. Diffed against the new tree to detect open
+    /// / close transitions.
+    pub(crate) layer_ids: Vec<String>,
 }
 
 /// Internal UI state — interaction trackers + the side maps the library
@@ -200,136 +426,45 @@ pub struct UiState {
     /// same button.
     pub(crate) pressed_secondary: Option<(UiTarget, PointerButton)>,
     pub focused: Option<UiTarget>,
-    pub(crate) focus_order: Vec<UiTarget>,
-    /// Selectable text leaves in document (tree) order. Built post-
-    /// layout by [`Self::sync_selection_order`], parallel to
-    /// [`Self::sync_focus_order`]; consulted by the selection manager
-    /// to map pointer hits to a [`crate::selection::SelectionPoint`]
-    /// and to walk cross-element selections.
-    pub(crate) selection_order: Vec<UiTarget>,
+    pub(crate) focus: FocusState,
     /// Mirror of the application's current
     /// [`crate::selection::Selection`]. Set by the host runner once
     /// per frame from [`crate::event::App::selection`]; read by the
     /// painter to draw highlight bands and by the selection manager
     /// to know what's currently active when extending a drag.
     pub current_selection: crate::selection::Selection,
-    /// Active drag, set by `pointer_down` when the press lands on a
-    /// selectable leaf and primary button. The anchor stays fixed for
-    /// the duration of the drag; head moves as the pointer moves.
-    /// Cleared by `pointer_up`.
-    pub(crate) selection_drag: Option<SelectionDrag>,
-    /// Most recent primary pointer-down record, used to compute the
-    /// next press's click count. `None` until the first primary press.
-    pub(crate) last_click: Option<ClickSequence>,
-    /// When the focused-input caret last had visible activity (a
-    /// selection change or a focus transition). Used by the animation
-    /// tick to drive the caret blink: solid for a brief grace window
-    /// after activity, then cycling on / off until the next bump.
-    /// `None` before the first bump — caret renders solid in that
-    /// pre-activity state, matching tests that don't care about blink.
-    pub(crate) caret_activity_at: Option<Instant>,
-    /// Current caret blink alpha in `[0.0, 1.0]`, written by the
-    /// animation tick from `caret_activity_at`. The painter multiplies
-    /// any node flagged `blink_when_focused` by this value.
-    pub(crate) caret_blink_alpha: f32,
-    /// LIFO of focus targets pushed when popover layers open. Each new
-    /// `Kind::Custom("popover_layer")` snapshots the current focus here
-    /// and auto-focuses into the layer; closing the layer pops and
-    /// restores. See [`crate::focus::sync_popover_focus`].
-    pub(crate) focus_stack: Vec<UiTarget>,
-    /// `computed_id`s of every popover-layer node in the last laid-out
-    /// tree, in tree order. Diffed against the new tree to detect open
-    /// / close transitions.
-    pub(crate) popover_layer_ids: Vec<String>,
-    /// When the current `hovered` target started being hovered. `None`
-    /// when nothing is hovered or the pointer is outside the window.
-    /// Used by [`crate::tooltip`] to gate the hover-delay timer.
-    pub(crate) hover_started_at: Option<Instant>,
-    /// True when the user pressed (or clicked) the hovered node
-    /// during the current hover session. Suppresses the tooltip until
-    /// the pointer leaves and re-enters, matching native behavior.
-    pub(crate) tooltip_dismissed_for_hover: bool,
-    /// Scroll offset (logical pixels) per scrollable node, keyed by
-    /// `El::computed_id`. The layout pass reads this when positioning a
-    /// scrollable's children and writes back the clamped value.
-    pub(crate) scroll_offsets: HashMap<String, f32>,
-    /// Per-scrollable layout metrics — viewport height, content
-    /// height, max offset — written by the layout pass and read by
-    /// `draw_ops` (to size the scrollbar thumb) and the runtime (to
-    /// translate thumb-drag delta into offset delta).
-    pub(crate) scroll_metrics: HashMap<String, ScrollMetrics>,
-    /// Per-scrollable thumb rect (logical pixels), populated alongside
-    /// `scroll_metrics` when the scrollable has `scrollbar` enabled and
-    /// its content overflows. Read by `draw_ops` to paint the thumb.
-    /// An entry is *absent* when the scrollbar is disabled or the
-    /// content fits the viewport.
-    pub(crate) thumb_rects: HashMap<String, Rect>,
-    /// Per-scrollable track rect — the full vertical column that
-    /// accepts pointer presses (wider than the visible thumb so the
-    /// thumb is easy to grab; full viewport height so a click on the
-    /// track above/below the thumb pages by a viewport). Same x-extent
-    /// as `thumb_rects` but expanded to `SCROLLBAR_HITBOX_WIDTH` and
-    /// the inner-rect height. Populated alongside `thumb_rects`.
-    pub(crate) thumb_tracks: HashMap<String, Rect>,
-    /// Active scrollbar drag, set by `pointer_down` when the press
-    /// lands inside a thumb rect, consumed by `pointer_moved` to update
-    /// the corresponding `scroll_offsets` entry, cleared by
-    /// `pointer_up`. Pre-empts normal hit-test so thumb drags don't
-    /// also fire app-level pointer events.
-    pub(crate) thumb_drag: Option<ThumbDrag>,
-    /// Currently visible toast queue. Each `prepare_layout` call drains
-    /// new specs from `App::drain_toasts`, stamps them with monotonic
-    /// `id`s + `expires_at = now + ttl`, then `synthesize_toasts` drops
-    /// expired entries and synthesizes a `toast_stack` layer covering
-    /// the rest. Click on a `toast-dismiss-{id}` button removes the
-    /// matching entry without surfacing an app-level Click event.
-    pub(crate) toasts: Vec<crate::toast::Toast>,
-    /// Monotonic id for the next toast pushed onto `toasts`. Used as
-    /// the dismiss-button suffix so each toast has a unique key in
-    /// the synthesized layer.
-    pub(crate) next_toast_id: u64,
-    /// App-level hotkey registry; the host snapshots `App::hotkeys()`
-    /// each frame and stores it here. Matched in `key_down` ahead of
-    /// focus activation.
-    pub(crate) hotkeys: Vec<(KeyChord, String)>,
-    /// In-flight animations keyed by `(computed_id, prop)`. Created
-    /// lazily as state transitions happen; trimmed by
-    /// [`Self::tick_visual_animations`] when their nodes leave the tree.
-    pub(crate) animations: HashMap<(String, AnimProp), Animation>,
-    /// Animation pacing mode. Default is `Live`; headless render
-    /// binaries switch to `Settled` so single-frame snapshots reflect
-    /// the post-animation visual.
-    animation_mode: AnimationMode,
+    /// Internal selection traversal and drag state.
+    pub(crate) selection: SelectionState,
+    pub(crate) click: ClickState,
+    pub(crate) caret: CaretState,
+    pub(crate) popover_focus: PopoverFocusState,
+    pub(crate) tooltip: TooltipState,
+    pub(crate) scroll: ScrollState,
+    /// Runtime-managed toast notification queue and id allocator.
+    pub(crate) toast: ToastState,
+    /// App-declared keyboard shortcuts and their action names.
+    pub(crate) hotkeys: HotkeyState,
+    /// Visual prop animations, state envelopes, and animation pacing.
+    pub(crate) animation: AnimationState,
 
     // ---- side maps (formerly El bookkeeping) ----
-    /// Computed rect per node, written by the layout pass.
-    pub(crate) computed_rects: HashMap<String, Rect>,
-    /// Library-resolved interaction state per node, derived each frame
-    /// from the focused/pressed/hovered trackers by [`Self::apply_to_state`].
-    pub(crate) node_states: HashMap<String, InteractionState>,
-    /// State-envelope amounts (0..1) per (node, kind), written by the
-    /// animation tick. `draw_ops` reads these to modulate the surface
-    /// visuals; missing entries read as `0.0`.
-    pub(crate) envelopes: HashMap<(String, EnvelopeKind), f32>,
+    /// Layout-owned rect and key-index side maps.
+    pub(crate) layout: LayoutState,
+    /// Per-node interaction states derived from focused/pressed/hovered
+    /// trackers by [`Self::apply_to_state`].
+    pub(crate) node_states: NodeInteractionState,
     /// Per-(node, type) widget state buckets. The library owns the
     /// storage but never reads the values — they're for widget authors
     /// to stash text-input carets, dropdown open flags, etc. Entries
     /// are GC'd alongside envelopes/animations when a node leaves the
     /// tree (see [`Self::tick_visual_animations`]).
-    widget_states: HashMap<(String, TypeId), Box<dyn AnyWidgetState>>,
+    widget_states: WidgetStateStore,
     /// Last known keyboard modifier mask. Updated by the host runner
     /// from winit's `ModifiersChanged`; pointer events stamp this
     /// value into their `UiEvent.modifiers` so widgets that need to
     /// detect Shift+click / Ctrl+drag can read it without separate
     /// plumbing.
     pub modifiers: KeyModifiers,
-    /// `key → computed_id` map, refreshed at the top of every layout
-    /// pass. Used by [`crate::layout::LayoutCtx::rect_of_key`] so
-    /// custom layouts can position children relative to keyed elements
-    /// elsewhere in the tree (e.g. a popover anchored to a button).
-    /// Populated only for nodes that carry an author-set `key`; the
-    /// duplicate-key case keeps the first entry seen in tree order.
-    pub(crate) layout_key_index: HashMap<String, String>,
 }
 
 impl UiState {
@@ -340,7 +475,11 @@ impl UiState {
     /// Look up the layout-assigned rect for `id`; returns a zero rect
     /// when `id` is unknown (pre-layout, or not in the laid-out tree).
     pub fn rect(&self, id: &str) -> Rect {
-        self.computed_rects.get(id).copied().unwrap_or_default()
+        self.layout
+            .computed_rects
+            .get(id)
+            .copied()
+            .unwrap_or_default()
     }
 
     /// Look up the layout-assigned rect for an app-supplied element
@@ -348,7 +487,7 @@ impl UiState {
     /// has not written a rect for that node yet.
     pub fn rect_of_key(&self, root: &El, key: &str) -> Option<Rect> {
         find_target_by_key(root, key)
-            .and_then(|target| self.computed_rects.get(&target.node_id).copied())
+            .and_then(|target| self.layout.computed_rects.get(&target.node_id).copied())
     }
 
     /// Build a [`UiTarget`] for an app-supplied element key using the
@@ -356,14 +495,14 @@ impl UiState {
     /// overlays or forward events into externally painted regions.
     pub fn target_of_key(&self, root: &El, key: &str) -> Option<UiTarget> {
         let target = find_target_by_key(root, key)?;
-        let rect = self.computed_rects.get(&target.node_id).copied()?;
+        let rect = self.layout.computed_rects.get(&target.node_id).copied()?;
         Some(UiTarget { rect, ..target })
     }
 
     /// Resolved interaction state for `id`. Returns
     /// [`InteractionState::Default`] when no tracker matches.
     pub fn node_state(&self, id: &str) -> InteractionState {
-        self.node_states.get(id).copied().unwrap_or_default()
+        self.node_states.nodes.get(id).copied().unwrap_or_default()
     }
 
     /// Resolved pointer cursor for the current frame.
@@ -404,7 +543,8 @@ impl UiState {
     /// Current eased state envelope amount in `[0, 1]` for `(id, kind)`.
     /// Missing entries read as `0.0`.
     pub fn envelope(&self, id: &str, kind: EnvelopeKind) -> f32 {
-        self.envelopes
+        self.animation
+            .envelopes
             .get(&(id.to_string(), kind))
             .copied()
             .unwrap_or(0.0)
@@ -422,7 +562,7 @@ impl UiState {
         target_node_id: Option<&str>,
     ) -> u8 {
         let mut count = 1;
-        if let Some(prev) = self.last_click.as_ref() {
+        if let Some(prev) = self.click.last.as_ref() {
             let dt = now.saturating_duration_since(prev.time);
             let dx = pos.0 - prev.pos.0;
             let dy = pos.1 - prev.pos.1;
@@ -437,7 +577,7 @@ impl UiState {
                 count = prev.count.saturating_add(1);
             }
         }
-        self.last_click = Some(ClickSequence {
+        self.click.last = Some(ClickSequence {
             time: now,
             pos,
             target_node_id: target_node_id.map(str::to_owned),
@@ -451,7 +591,7 @@ impl UiState {
     /// matching `PointerUp` / `Click` events with the same count their
     /// originating `PointerDown` carried.
     pub(crate) fn current_click_count(&self) -> u8 {
-        self.last_click.as_ref().map(|c| c.count).unwrap_or(1)
+        self.click.last.as_ref().map(|c| c.count).unwrap_or(1)
     }
 
     /// Seed or read the persistent scroll offset for `id`. Use this to
@@ -459,12 +599,12 @@ impl UiState {
     /// runs (call [`crate::layout::assign_ids`] first to populate the
     /// node's `computed_id`).
     pub fn set_scroll_offset(&mut self, id: impl Into<String>, value: f32) {
-        self.scroll_offsets.insert(id.into(), value);
+        self.scroll.offsets.insert(id.into(), value);
     }
 
     /// Read the current scroll offset for `id`. Defaults to `0.0`.
     pub fn scroll_offset(&self, id: &str) -> f32 {
-        self.scroll_offsets.get(id).copied().unwrap_or(0.0)
+        self.scroll.offsets.get(id).copied().unwrap_or(0.0)
     }
 
     /// Rebuild the resolved per-node interaction-state side map from
@@ -481,9 +621,10 @@ impl UiState {
     /// position (see `runtime::pointer_moved`); this gating only
     /// affects the visual envelope.
     pub fn apply_to_state(&mut self) {
-        self.node_states.clear();
+        self.node_states.nodes.clear();
         if let Some(target) = &self.focused {
             self.node_states
+                .nodes
                 .insert(target.node_id.clone(), InteractionState::Focus);
         }
         let press_target = match (&self.pressed, &self.hovered) {
@@ -492,6 +633,7 @@ impl UiState {
         };
         if let Some(target) = press_target {
             self.node_states
+                .nodes
                 .insert(target.node_id.clone(), InteractionState::Press);
         }
         if let Some(target) = &self.hovered {
@@ -505,6 +647,7 @@ impl UiState {
                     .unwrap_or(false);
             if !already {
                 self.node_states
+                    .nodes
                     .insert(target.node_id.clone(), InteractionState::Hover);
             }
         }
@@ -512,10 +655,11 @@ impl UiState {
 
     pub fn sync_focus_order(&mut self, root: &El) {
         let order = focus_order(root, self);
-        self.focus_order = order;
+        self.focus.order = order;
         if let Some(focused) = &self.focused {
             if let Some(current) = self
-                .focus_order
+                .focus
+                .order
                 .iter()
                 .find(|t| t.node_id == focused.node_id)
             {
@@ -533,14 +677,14 @@ impl UiState {
     /// processes pointer events.
     pub fn sync_selection_order(&mut self, root: &El) {
         let order = crate::focus::selection_order(root, self);
-        self.selection_order = order;
+        self.selection.order = order;
     }
 
     /// Read access to the current document-order list of selectable
     /// leaves. Mainly for tests; the selection manager uses internal
     /// access.
     pub fn selection_order(&self) -> &[UiTarget] {
-        &self.selection_order
+        &self.selection.order
     }
 
     /// Update the hovered target. Maintains the hover-stable timer
@@ -560,8 +704,8 @@ impl UiState {
             _ => false,
         };
         if !same {
-            self.hover_started_at = new.as_ref().map(|_| now);
-            self.tooltip_dismissed_for_hover = false;
+            self.tooltip.hover_started_at = new.as_ref().map(|_| now);
+            self.tooltip.dismissed_for_hover = false;
         }
         self.hovered = new;
         !same
@@ -569,7 +713,7 @@ impl UiState {
 
     pub fn set_focus(&mut self, target: Option<UiTarget>) {
         if let Some(target) =
-            target.filter(|t| self.focus_order.iter().any(|f| f.node_id == t.node_id))
+            target.filter(|t| self.focus.order.iter().any(|f| f.node_id == t.node_id))
         {
             let changed = self.focused.as_ref().map(|f| &f.node_id) != Some(&target.node_id);
             self.focused = Some(target);
@@ -585,8 +729,8 @@ impl UiState {
     /// something the caret should react to — focusing an input,
     /// moving the caret, replacing the selection.
     pub(crate) fn bump_caret_activity(&mut self, now: Instant) {
-        self.caret_activity_at = Some(now);
-        self.caret_blink_alpha = 1.0;
+        self.caret.activity_at = Some(now);
+        self.caret.blink_alpha = 1.0;
     }
 
     pub fn focus_next(&mut self) -> Option<&UiTarget> {
@@ -602,9 +746,9 @@ impl UiState {
     /// The runtime re-walks the queue each frame and drops expired
     /// entries before synthesizing the toast layer.
     pub fn push_toast(&mut self, spec: crate::toast::ToastSpec, now: Instant) {
-        let id = self.next_toast_id;
-        self.next_toast_id = self.next_toast_id.wrapping_add(1);
-        self.toasts.push(crate::toast::Toast {
+        let id = self.toast.next_id;
+        self.toast.next_id = self.toast.next_id.wrapping_add(1);
+        self.toast.queue.push(crate::toast::Toast {
             id,
             level: spec.level,
             message: spec.message,
@@ -617,14 +761,14 @@ impl UiState {
     /// to programmatically cancel a toast can call this directly via
     /// the `Runner::dismiss_toast` host accessor.
     pub fn dismiss_toast(&mut self, id: u64) {
-        self.toasts.retain(|t| t.id != id);
+        self.toast.queue.retain(|t| t.id != id);
     }
 
     /// Read-only view of the current toast queue (post-expiry).
     /// Used by hosts that want to drive cursor / accessibility state
     /// from the visible stack.
     pub fn toasts(&self) -> &[crate::toast::Toast] {
-        &self.toasts
+        &self.toast.queue
     }
 
     /// Iterate `(scroll_node_id, track_rect)` for every scrollable
@@ -633,7 +777,8 @@ impl UiState {
     /// thumb), to drive screenshot tools, or to test interaction
     /// flows. The map is rebuilt every layout pass.
     pub fn scrollbar_tracks(&self) -> impl Iterator<Item = (&str, &Rect)> {
-        self.thumb_tracks
+        self.scroll
+            .thumb_tracks
             .iter()
             .map(|(id, rect)| (id.as_str(), rect))
     }
@@ -646,9 +791,10 @@ impl UiState {
     /// can branch on whether `y` lands inside the thumb (grab) or
     /// above/below (click-to-page).
     pub fn thumb_at(&self, x: f32, y: f32) -> Option<(String, Rect, Rect)> {
-        for (id, track) in &self.thumb_tracks {
+        for (id, track) in &self.scroll.thumb_tracks {
             if track.contains(x, y) {
                 let thumb = self
+                    .scroll
                     .thumb_rects
                     .get(id)
                     .copied()
@@ -664,7 +810,7 @@ impl UiState {
     /// updated (host can use this to decide whether to request a redraw).
     pub fn pointer_wheel(&mut self, root: &El, point: (f32, f32), dy: f32) -> bool {
         if let Some(id) = scroll_target_at(root, self, point) {
-            *self.scroll_offsets.entry(id).or_insert(0.0) += dy;
+            *self.scroll.offsets.entry(id).or_insert(0.0) += dy;
             true
         } else {
             false
@@ -674,7 +820,7 @@ impl UiState {
     /// Replace the hotkey registry. Called by the host runner from
     /// `App::hotkeys()` once per build cycle.
     pub fn set_hotkeys(&mut self, hotkeys: Vec<(KeyChord, String)>) {
-        self.hotkeys = hotkeys;
+        self.hotkeys.registry = hotkeys;
     }
 
     /// Update the tracked modifier mask. Hosts call this from their
@@ -700,27 +846,31 @@ impl UiState {
     pub fn tick_visual_animations(&mut self, root: &mut El, now: Instant) -> bool {
         let mut visited: HashSet<(String, AnimProp)> = HashSet::new();
         let mut needs_redraw = false;
-        let mode = self.animation_mode;
+        let mode = self.animation.mode;
         tick_node(
             root,
-            &mut self.animations,
-            &mut self.envelopes,
-            &self.node_states,
+            &mut self.animation.animations,
+            &mut self.animation.envelopes,
+            &self.node_states.nodes,
             &mut visited,
             now,
             mode,
             &mut needs_redraw,
         );
         // GC: drop animations whose node left the tree this frame.
-        self.animations.retain(|key, _| visited.contains(key));
+        self.animation
+            .animations
+            .retain(|key, _| visited.contains(key));
         // Build a set of live node ids once — used by both envelope and
         // widget_state GC. Cheaper than the previous per-entry linear
         // scan over `visited`, which now matters because widget_state
         // entries can outnumber envelopes.
         let live_ids: HashSet<&str> = visited.iter().map(|(id, _)| id.as_str()).collect();
-        self.envelopes
+        self.animation
+            .envelopes
             .retain(|(id, _), _| live_ids.contains(id.as_str()));
         self.widget_states
+            .entries
             .retain(|(id, _), _| live_ids.contains(id.as_str()));
 
         // Caret blink. Resolve the new alpha from the activity age,
@@ -728,14 +878,14 @@ impl UiState {
         // is focused so the cycle keeps animating in idle frames.
         // `Settled` mode pins the caret to fully on so headless
         // single-frame snapshots don't randomly catch the off phase.
-        if let Some(activity_at) = self.caret_activity_at {
+        if let Some(activity_at) = self.caret.activity_at {
             let alpha = match mode {
                 AnimationMode::Settled => 1.0,
                 AnimationMode::Live => {
                     caret_blink_alpha_for(now.saturating_duration_since(activity_at))
                 }
             };
-            self.caret_blink_alpha = alpha;
+            self.caret.blink_alpha = alpha;
         }
         if mode == AnimationMode::Live && self.focused_node_captures_keys(root) {
             needs_redraw = true;
@@ -762,6 +912,7 @@ impl UiState {
     /// no entry exists or the entry was inserted as a different type.
     pub fn widget_state<T: WidgetState>(&self, id: &str) -> Option<&T> {
         self.widget_states
+            .entries
             .get(&(id.to_string(), TypeId::of::<T>()))
             .and_then(|b| b.as_any().downcast_ref::<T>())
     }
@@ -775,6 +926,7 @@ impl UiState {
         let key = (id.to_string(), TypeId::of::<T>());
         let entry = self
             .widget_states
+            .entries
             .entry(key)
             .or_insert_with(|| Box::new(T::default()));
         entry
@@ -786,6 +938,7 @@ impl UiState {
     /// Drop the widget state of type `T` for `id`, if any.
     pub fn clear_widget_state<T: WidgetState>(&mut self, id: &str) {
         self.widget_states
+            .entries
             .remove(&(id.to_string(), TypeId::of::<T>()));
     }
 
@@ -794,6 +947,7 @@ impl UiState {
     /// agent loop's view.
     pub fn widget_state_summary(&self, id: &str) -> Vec<(&'static str, String)> {
         self.widget_states
+            .entries
             .iter()
             .filter(|((node_id, _), _)| node_id == id)
             .map(|(_, b)| (b.type_name(), b.debug_summary()))
@@ -805,14 +959,14 @@ impl UiState {
     /// a single-frame snapshot reflects the post-animation visual
     /// without depending on integrator timing.
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {
-        self.animation_mode = mode;
+        self.animation.mode = mode;
     }
 
     /// Whether any visual animation is still moving. The host's runner
     /// uses this (via the renderer's `PrepareResult`) to keep the redraw
     /// loop ticking only while there's motion.
     pub fn has_animations_in_flight(&self) -> bool {
-        self.animations.values().any(is_in_flight)
+        self.animation.animations.values().any(is_in_flight)
     }
 
     /// One-line summary of interactive state for diagnostic logging.
@@ -825,12 +979,18 @@ impl UiState {
                 .unwrap_or_else(|| "-".into())
         };
         let mut env: Vec<String> = self
+            .animation
             .envelopes
             .iter()
             .map(|((id, kind), v)| format!("{id}/{kind:?}={v:.3}"))
             .collect();
         env.sort();
-        let in_flight = self.animations.values().filter(|a| is_in_flight(a)).count();
+        let in_flight = self
+            .animation
+            .animations
+            .values()
+            .filter(|a| is_in_flight(a))
+            .count();
         format!(
             "hov={}|press={}|focus={}|env=[{}]|in_flight={}/{}",
             key(&self.hovered),
@@ -838,7 +998,7 @@ impl UiState {
             key(&self.focused),
             env.join(","),
             in_flight,
-            self.animations.len(),
+            self.animation.animations.len(),
         )
     }
 
@@ -855,6 +1015,7 @@ impl UiState {
     ) -> Option<UiEvent> {
         let (_, name) = self
             .hotkeys
+            .registry
             .iter()
             .find(|(chord, _)| chord.matches(key, modifiers))?;
         Some(UiEvent {
@@ -949,22 +1110,23 @@ impl UiState {
     }
 
     fn move_focus(&mut self, delta: isize) -> Option<&UiTarget> {
-        if self.focus_order.is_empty() {
+        if self.focus.order.is_empty() {
             self.focused = None;
             return None;
         }
         let current = self.focused.as_ref().and_then(|target| {
-            self.focus_order
+            self.focus
+                .order
                 .iter()
                 .position(|t| t.node_id == target.node_id)
         });
-        let len = self.focus_order.len() as isize;
+        let len = self.focus.order.len() as isize;
         let next = match current {
             Some(current) => (current as isize + delta).rem_euclid(len) as usize,
-            None if delta < 0 => self.focus_order.len() - 1,
+            None if delta < 0 => self.focus.order.len() - 1,
             None => 0,
         };
-        self.focused = Some(self.focus_order[next].clone());
+        self.focused = Some(self.focus.order[next].clone());
         self.focused.as_ref()
     }
 }
@@ -976,23 +1138,19 @@ impl Debug for UiState {
             .field("hovered", &self.hovered)
             .field("pressed", &self.pressed)
             .field("focused", &self.focused)
-            .field("focus_order", &self.focus_order)
-            .field("scroll_offsets", &self.scroll_offsets)
+            .field("focus", &self.focus)
+            .field("popover_focus", &self.popover_focus)
+            .field("click", &self.click)
+            .field("caret", &self.caret)
+            .field("scroll", &self.scroll)
+            .field("toast", &self.toast)
+            .field("tooltip", &self.tooltip)
             .field("hotkeys", &self.hotkeys)
-            .field("animations", &self.animations)
-            .field("animation_mode", &self.animation_mode)
-            .field("computed_rects", &self.computed_rects)
+            .field("animation", &self.animation)
+            .field("layout", &self.layout)
             .field("node_states", &self.node_states)
-            .field("envelopes", &self.envelopes)
             .field("modifiers", &self.modifiers)
-            .field(
-                "widget_states",
-                &self
-                    .widget_states
-                    .iter()
-                    .map(|((id, _), b)| (id.as_str(), b.type_name(), b.debug_summary()))
-                    .collect::<Vec<_>>(),
-            )
+            .field("widget_states", &self.widget_states)
             .finish()
     }
 }
@@ -1389,7 +1547,7 @@ mod tests {
         .height(Size::Fixed(100.0));
         let mut state = UiState::new();
         assign_ids(&mut tree);
-        state.scroll_offsets.insert(tree.computed_id.clone(), 60.0);
+        state.scroll.offsets.insert(tree.computed_id.clone(), 60.0);
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
 
         // Buttons hug their text width — click at b1's center after the
@@ -1554,9 +1712,9 @@ mod tests {
         // Inner's id includes its key.
         let inner_id = find_id_for_kind(&tree, "inner").expect("inner id");
         assert!(
-            state.scroll_offsets.contains_key(&inner_id),
+            state.scroll.offsets.contains_key(&inner_id),
             "expected inner offset, got {:?}",
-            state.scroll_offsets.keys().collect::<Vec<_>>()
+            state.scroll.offsets.keys().collect::<Vec<_>>()
         );
     }
 
@@ -1898,7 +2056,11 @@ mod tests {
         state.tick_visual_animations(&mut tree_a, Instant::now());
         let inc_id_a = find_id(&tree_a, "inc").expect("inc id");
         assert!(
-            state.animations.keys().any(|(id, _)| id == &inc_id_a),
+            state
+                .animation
+                .animations
+                .keys()
+                .any(|(id, _)| id == &inc_id_a),
             "expected at least one entry for inc"
         );
 
@@ -1909,7 +2071,11 @@ mod tests {
         state.apply_to_state();
         state.tick_visual_animations(&mut tree_b, Instant::now());
         assert!(
-            !state.animations.keys().any(|(id, _)| id == &inc_id_a),
+            !state
+                .animation
+                .animations
+                .keys()
+                .any(|(id, _)| id == &inc_id_a),
             "stale entries for inc were not GC'd"
         );
     }

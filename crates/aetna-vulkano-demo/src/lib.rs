@@ -346,6 +346,7 @@ impl<A: App> ApplicationHandler for Host<A> {
                 rcx.runner.set_theme(self.app.theme());
                 rcx.runner.set_hotkeys(self.app.hotkeys());
                 rcx.runner.set_selection(self.app.selection());
+                rcx.runner.push_toasts(self.app.drain_toasts());
                 let scale_factor = rcx.window.scale_factor() as f32;
                 let viewport = Rect::new(
                     0.0,
@@ -549,5 +550,52 @@ fn srgb_to_linear(c: f32) -> f32 {
         c / 12.92
     } else {
         ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use aetna_core::{
+        AnimationMode, IconMaterial, KeyChord, KeyModifiers, PointerButton, Rect, Selection, Theme,
+        UiEvent, UiKey, UiState, runtime::PointerMove, toast::ToastSpec,
+    };
+
+    macro_rules! assert_common_runner_surface {
+        ($runner:ty) => {{
+            let _: fn(&mut $runner, u32, u32) = <$runner>::set_surface_size;
+            let _: fn(&mut $runner, Theme) = <$runner>::set_theme;
+            let _: for<'a> fn(&'a $runner) -> &'a Theme = <$runner>::theme;
+            let _: fn(&mut $runner, IconMaterial) = <$runner>::set_icon_material;
+            let _: fn(&$runner) -> IconMaterial = <$runner>::icon_material;
+            let _: for<'a> fn(&'a $runner) -> &'a UiState = <$runner>::ui_state;
+            let _: fn(&$runner) -> String = <$runner>::debug_summary;
+            let _: fn(&$runner, &str) -> Option<Rect> = <$runner>::rect_of_key;
+            let _: fn(&mut $runner, f32, f32) -> PointerMove = <$runner>::pointer_moved;
+            let _: fn(&mut $runner) = <$runner>::pointer_left;
+            let _: fn(&mut $runner, f32, f32, PointerButton) -> Vec<UiEvent> =
+                <$runner>::pointer_down;
+            let _: fn(&mut $runner, f32, f32, PointerButton) -> Vec<UiEvent> =
+                <$runner>::pointer_up;
+            let _: fn(&mut $runner, KeyModifiers) = <$runner>::set_modifiers;
+            let _: fn(&mut $runner, UiKey, KeyModifiers, bool) -> Vec<UiEvent> =
+                <$runner>::key_down;
+            let _: fn(&mut $runner, String) -> Option<UiEvent> = <$runner>::text_input;
+            let _: fn(&mut $runner, Vec<(KeyChord, String)>) = <$runner>::set_hotkeys;
+            let _: fn(&mut $runner, Selection) = <$runner>::set_selection;
+            let _: fn(&mut $runner, Vec<ToastSpec>) = <$runner>::push_toasts;
+            let _: fn(&mut $runner, u64) = <$runner>::dismiss_toast;
+            let _: fn(&mut $runner, AnimationMode) = <$runner>::set_animation_mode;
+            let _: fn(&mut $runner, f32, f32, f32) -> bool = <$runner>::pointer_wheel;
+        }};
+    }
+
+    #[test]
+    fn backend_runners_share_common_interaction_surface() {
+        // Constructors, shader registration, `prepare`, and `render` are
+        // intentionally backend-specific because their GPU handles differ.
+        // This test pins the shared interaction/lifecycle surface so the
+        // two backend runners do not silently drift when core grows.
+        assert_common_runner_surface!(aetna_wgpu::Runner);
+        assert_common_runner_surface!(aetna_vulkano::Runner);
     }
 }

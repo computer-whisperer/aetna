@@ -132,7 +132,7 @@ pub fn render_bundle_themed(
 /// reflects the seeded state.
 ///
 /// Seed scroll offsets by calling [`crate::layout::assign_ids`] first
-/// to populate `computed_id`, then inserting into `ui_state.scroll_offsets`.
+/// to populate `computed_id`, then calling [`UiState::set_scroll_offset`].
 pub fn render_bundle_with(
     root: &mut El,
     ui_state: &mut UiState,

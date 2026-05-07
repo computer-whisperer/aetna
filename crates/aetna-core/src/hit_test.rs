@@ -128,16 +128,16 @@ pub fn selection_point_at(
     let value = node.text.as_deref()?;
     let local_x = (point.0 - painted.x).max(0.0);
     let local_y = (point.1 - painted.y).clamp(0.0, painted.h.max(1.0) - 1.0);
-    let byte = match metrics::hit_text(
+    let geometry = metrics::TextGeometry::new(
         value,
         node.font_size,
         node.font_weight,
+        node.font_mono,
         node.text_wrap,
         Some(painted.w),
-        local_x,
-        local_y,
-    ) {
-        Some(h) => h.byte_index.min(value.len()),
+    );
+    let byte = match geometry.hit_byte(local_x, local_y) {
+        Some(byte) => byte.min(value.len()),
         None => {
             if local_x <= 0.0 {
                 0

@@ -227,11 +227,11 @@ impl RunnerCore {
         self.ui_state.pointer_pos = Some((x, y));
 
         // Active scrollbar drag: translate cursor delta into
-        // `scroll_offsets` updates. The drag is captured at
+        // `scroll.offsets` updates. The drag is captured at
         // `pointer_down` so we can map directly onto the scroll
         // container without going through hit-test, and we suppress
         // the normal hover/Drag event emission while it's in flight.
-        if let Some(drag) = self.ui_state.thumb_drag.clone() {
+        if let Some(drag) = self.ui_state.scroll.thumb_drag.clone() {
             let dy = y - drag.start_pointer_y;
             let new_offset = if drag.track_remaining > 0.0 {
                 drag.start_offset + dy * (drag.max_offset / drag.track_remaining)
@@ -239,7 +239,7 @@ impl RunnerCore {
                 drag.start_offset
             };
             let clamped = new_offset.clamp(0.0, drag.max_offset);
-            let prev = self.ui_state.scroll_offsets.insert(drag.scroll_id, clamped);
+            let prev = self.ui_state.scroll.offsets.insert(drag.scroll_id, clamped);
             let changed = prev.is_none_or(|old| (old - clamped).abs() > f32::EPSILON);
             return PointerMove {
                 events: Vec::new(),
@@ -262,7 +262,7 @@ impl RunnerCore {
         // onto the closest selectable leaf in document order so that
         // dragging *past* the last leaf extends to its end (rather
         // than snapping the head home to the anchor leaf).
-        if let Some(drag) = self.ui_state.selection_drag.clone()
+        if let Some(drag) = self.ui_state.selection.drag.clone()
             && let Some(tree) = self.last_tree.as_ref()
         {
             let head_point =
@@ -344,13 +344,15 @@ impl RunnerCore {
         {
             let metrics = self
                 .ui_state
-                .scroll_metrics
+                .scroll
+                .metrics
                 .get(&scroll_id)
                 .copied()
                 .unwrap_or_default();
             let start_offset = self
                 .ui_state
-                .scroll_offsets
+                .scroll
+                .offsets
                 .get(&scroll_id)
                 .copied()
                 .unwrap_or(0.0);
@@ -361,7 +363,7 @@ impl RunnerCore {
             let grabbed = y >= thumb_rect.y && y <= thumb_rect.y + thumb_rect.h;
             if grabbed {
                 let track_remaining = (metrics.viewport_h - thumb_rect.h).max(0.0);
-                self.ui_state.thumb_drag = Some(crate::state::ThumbDrag {
+                self.ui_state.scroll.thumb_drag = Some(crate::state::ThumbDrag {
                     scroll_id,
                     start_pointer_y: y,
                     start_offset,
@@ -377,7 +379,7 @@ impl RunnerCore {
                 let page = (metrics.viewport_h - SCROLL_PAGE_OVERLAP).max(0.0);
                 let delta = if y < thumb_rect.y { -page } else { page };
                 let new_offset = (start_offset + delta).clamp(0.0, metrics.max_offset);
-                self.ui_state.scroll_offsets.insert(scroll_id, new_offset);
+                self.ui_state.scroll.offsets.insert(scroll_id, new_offset);
             }
             return Vec::new();
         }
@@ -401,7 +403,7 @@ impl RunnerCore {
         self.ui_state.pressed = hit.clone();
         // A press on the hovered node dismisses any tooltip for
         // the rest of this hover session — matches native UIs.
-        self.ui_state.tooltip_dismissed_for_hover = true;
+        self.ui_state.tooltip.dismissed_for_hover = true;
         let modifiers = self.ui_state.modifiers;
 
         // Click counting: extend a multi-click sequence when the press
@@ -489,7 +491,7 @@ impl RunnerCore {
                     Some((x, y)),
                 ));
                 self.ui_state.current_selection = crate::selection::Selection::default();
-                self.ui_state.selection_drag = None;
+                self.ui_state.selection.drag = None;
             }
         }
 
@@ -533,7 +535,7 @@ impl RunnerCore {
         // The drag anchors at the multi-click range's start so a
         // subsequent drag extends from there rather than from the
         // initial click position.
-        self.ui_state.selection_drag = Some(crate::state::SelectionDrag { anchor });
+        self.ui_state.selection.drag = Some(crate::state::SelectionDrag { anchor });
         out.push(selection_event(new_sel, modifiers, Some(pointer)));
     }
 
@@ -549,15 +551,15 @@ impl RunnerCore {
         // the press never went through `pressed` / `pressed_secondary`
         // so there's nothing else to clean up. Released from anywhere;
         // the drag is global once captured, matching native scrollbars.
-        if matches!(button, PointerButton::Primary) && self.ui_state.thumb_drag.is_some() {
-            self.ui_state.thumb_drag = None;
+        if matches!(button, PointerButton::Primary) && self.ui_state.scroll.thumb_drag.is_some() {
+            self.ui_state.scroll.thumb_drag = None;
             return Vec::new();
         }
 
         // End any active text-selection drag. The selection itself
         // persists; only the "currently dragging" flag goes away.
         if matches!(button, PointerButton::Primary) {
-            self.ui_state.selection_drag = None;
+            self.ui_state.selection.drag = None;
         }
 
         let hit = self
@@ -694,7 +696,7 @@ impl RunnerCore {
             && !self.ui_state.current_selection.is_empty()
         {
             self.ui_state.current_selection = crate::selection::Selection::default();
-            self.ui_state.selection_drag = None;
+            self.ui_state.selection.drag = None;
             out.push(selection_event(
                 crate::selection::Selection::default(),
                 modifiers,
@@ -1195,7 +1197,7 @@ fn head_for_drag(
         return Some(p);
     }
 
-    let order = &ui_state.selection_order;
+    let order = &ui_state.selection.order;
     if order.is_empty() {
         return None;
     }
@@ -1466,7 +1468,7 @@ mod tests {
         let mut core = RunnerCore::new();
         core.ui_state
             .push_toast(ToastSpec::success("hi"), Instant::now());
-        let toast_id = core.ui_state.toasts[0].id;
+        let toast_id = core.ui_state.toasts()[0].id;
 
         // Build & lay out a tree with the toast layer appended.
         // Root is `stack(...)` (Axis::Overlay) so the synthesized
@@ -1501,7 +1503,7 @@ mod tests {
             "Click on toast-dismiss should not be surfaced: {kinds:?}",
         );
         assert!(
-            core.ui_state.toasts.iter().all(|t| t.id != toast_id),
+            core.ui_state.toasts().iter().all(|t| t.id != toast_id),
             "toast {toast_id} should be dropped after dismiss-click",
         );
     }
@@ -1593,7 +1595,7 @@ mod tests {
         assert_eq!(range.anchor.key, "p1");
         assert_eq!(range.head.key, "p1");
         assert_eq!(range.anchor.byte, range.head.byte);
-        assert!(core.ui_state.selection_drag.is_some());
+        assert!(core.ui_state.selection.drag.is_some());
     }
 
     #[test]
@@ -1633,7 +1635,7 @@ mod tests {
         core.pointer_moved(p1.x + p1.w - 10.0, cy);
         let _ = core.pointer_up(p1.x + p1.w - 10.0, cy, PointerButton::Primary);
         assert!(
-            core.ui_state.selection_drag.is_none(),
+            core.ui_state.selection.drag.is_none(),
             "drag flag should clear on pointer_up"
         );
         assert!(
@@ -1785,18 +1787,20 @@ mod tests {
         let mut core = lay_out_input_tree(true);
         let target = core
             .ui_state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "ti")
             .cloned();
         core.ui_state.set_focus(target); // focus moves → first bump
-        let after_focus = core.ui_state.caret_activity_at.expect("focus bump");
+        let after_focus = core.ui_state.caret.activity_at.expect("focus bump");
 
         std::thread::sleep(std::time::Duration::from_millis(2));
         let _ = core.key_down(UiKey::ArrowRight, KeyModifiers::default(), false);
         let after_arrow = core
             .ui_state
-            .caret_activity_at
+            .caret
+            .activity_at
             .expect("arrow key bumps even without app-side selection");
         assert!(
             after_arrow > after_focus,
@@ -1809,16 +1813,17 @@ mod tests {
         let mut core = lay_out_input_tree(true);
         let target = core
             .ui_state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "ti")
             .cloned();
         core.ui_state.set_focus(target);
-        let after_focus = core.ui_state.caret_activity_at.unwrap();
+        let after_focus = core.ui_state.caret.activity_at.unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
         let _ = core.text_input("a".into());
-        let after_text = core.ui_state.caret_activity_at.unwrap();
+        let after_text = core.ui_state.caret.activity_at.unwrap();
         assert!(
             after_text > after_focus,
             "TextInput to focused widget bumps caret activity"
@@ -1839,7 +1844,7 @@ mod tests {
         // First click → focus moves → bump.
         core.pointer_down(cx, cy, PointerButton::Primary);
         let _ = core.pointer_up(cx, cy, PointerButton::Primary);
-        let after_first = core.ui_state.caret_activity_at.unwrap();
+        let after_first = core.ui_state.caret.activity_at.unwrap();
 
         // Second click on the same input → focus doesn't move, but
         // it's still caret-relevant activity.
@@ -1847,7 +1852,8 @@ mod tests {
         core.pointer_down(cx + 1.0, cy, PointerButton::Primary);
         let after_second = core
             .ui_state
-            .caret_activity_at
+            .caret
+            .activity_at
             .expect("second click bumps too");
         assert!(
             after_second > after_first,
@@ -1870,7 +1876,7 @@ mod tests {
         // Seed the runtime mirror so the first set_selection below
         // doesn't bump from "default → caret(2)".
         core.set_selection(sel.clone());
-        let baseline = core.ui_state.caret_activity_at;
+        let baseline = core.ui_state.caret.activity_at;
 
         // Build a synthetic ArrowRight KeyDown for the input's key.
         let arrow_right = UiEvent {
@@ -1901,7 +1907,7 @@ mod tests {
         // 2. Next frame's set_selection sees the new value → bump.
         std::thread::sleep(std::time::Duration::from_millis(2));
         core.set_selection(sel);
-        let after = core.ui_state.caret_activity_at.unwrap();
+        let after = core.ui_state.caret.activity_at.unwrap();
         // If a baseline existed, the new bump must be later. Either
         // way the activity is now Some, which the .unwrap() above
         // already enforced.
@@ -1917,7 +1923,7 @@ mod tests {
         // already default-empty).
         core.set_selection(crate::selection::Selection::default());
         assert!(
-            core.ui_state.caret_activity_at.is_none(),
+            core.ui_state.caret.activity_at.is_none(),
             "no-op set_selection should not bump activity"
         );
 
@@ -1926,14 +1932,15 @@ mod tests {
         core.set_selection(sel_a.clone());
         let bumped_at = core
             .ui_state
-            .caret_activity_at
+            .caret
+            .activity_at
             .expect("first real selection bumps");
 
         // Same selection again — must NOT bump (else every frame
         // re-bumps and the caret never blinks).
         core.set_selection(sel_a.clone());
         assert_eq!(
-            core.ui_state.caret_activity_at,
+            core.ui_state.caret.activity_at,
             Some(bumped_at),
             "set_selection with same value is a no-op"
         );
@@ -1943,7 +1950,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(2));
         let sel_b = crate::selection::Selection::caret("p1", 7);
         core.set_selection(sel_b);
-        let new_bump = core.ui_state.caret_activity_at.expect("second bump");
+        let new_bump = core.ui_state.caret.activity_at.expect("second bump");
         assert!(
             new_bump > bumped_at,
             "moving the caret bumps activity again",
@@ -2163,6 +2170,7 @@ mod tests {
         let (mut core, scroll_id) = lay_out_scroll_tree();
         let thumb = core
             .ui_state
+            .scroll
             .thumb_rects
             .get(&scroll_id)
             .copied()
@@ -2178,9 +2186,10 @@ mod tests {
         );
         let drag = core
             .ui_state
+            .scroll
             .thumb_drag
             .as_ref()
-            .expect("thumb_drag should be set after pointer_down on thumb");
+            .expect("scroll.thumb_drag should be set after pointer_down on thumb");
         assert_eq!(drag.scroll_id, scroll_id);
     }
 
@@ -2189,14 +2198,22 @@ mod tests {
         let (mut core, scroll_id) = lay_out_scroll_tree();
         let track = core
             .ui_state
+            .scroll
             .thumb_tracks
             .get(&scroll_id)
             .copied()
             .expect("scrollable should have a track");
-        let thumb = core.ui_state.thumb_rects.get(&scroll_id).copied().unwrap();
+        let thumb = core
+            .ui_state
+            .scroll
+            .thumb_rects
+            .get(&scroll_id)
+            .copied()
+            .unwrap();
         let metrics = core
             .ui_state
-            .scroll_metrics
+            .scroll
+            .metrics
             .get(&scroll_id)
             .copied()
             .unwrap();
@@ -2209,7 +2226,7 @@ mod tests {
         );
         assert!(evt.is_empty(), "track press should not surface PointerDown");
         assert!(
-            core.ui_state.thumb_drag.is_none(),
+            core.ui_state.scroll.thumb_drag.is_none(),
             "track click outside the thumb should not start a drag",
         );
         let after_down = core.ui_state.scroll_offset(&scroll_id);
@@ -2233,12 +2250,14 @@ mod tests {
         core.snapshot(&tree, &mut t);
         let track = core
             .ui_state
+            .scroll
             .thumb_tracks
             .get(&tree.computed_id)
             .copied()
             .unwrap();
         let thumb = core
             .ui_state
+            .scroll
             .thumb_rects
             .get(&tree.computed_id)
             .copied()
@@ -2273,10 +2292,17 @@ mod tests {
     #[test]
     fn thumb_drag_translates_pointer_delta_into_scroll_offset() {
         let (mut core, scroll_id) = lay_out_scroll_tree();
-        let thumb = core.ui_state.thumb_rects.get(&scroll_id).copied().unwrap();
+        let thumb = core
+            .ui_state
+            .scroll
+            .thumb_rects
+            .get(&scroll_id)
+            .copied()
+            .unwrap();
         let metrics = core
             .ui_state
-            .scroll_metrics
+            .scroll
+            .metrics
             .get(&scroll_id)
             .copied()
             .unwrap();
@@ -2307,7 +2333,7 @@ mod tests {
         // Release clears the drag without emitting events.
         let events = core.pointer_up(thumb.x, press_y, PointerButton::Primary);
         assert!(events.is_empty(), "thumb release shouldn't emit events");
-        assert!(core.ui_state.thumb_drag.is_none());
+        assert!(core.ui_state.scroll.thumb_drag.is_none());
     }
 
     #[test]
@@ -2437,7 +2463,8 @@ mod tests {
         // popover opens — we'll exercise transitions from there).
         let target = core
             .ui_state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "opt-green")
             .cloned();
@@ -2541,7 +2568,8 @@ mod tests {
         // opening the menu.
         let trigger = core
             .ui_state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "trigger")
             .cloned();
@@ -2561,12 +2589,12 @@ mod tests {
             "popover open should auto-focus the first menu item",
         );
         assert_eq!(
-            core.ui_state.focus_stack.len(),
+            core.ui_state.popover_focus.focus_stack.len(),
             1,
             "trigger should be saved on the focus stack",
         );
         assert_eq!(
-            core.ui_state.focus_stack[0].key.as_str(),
+            core.ui_state.popover_focus.focus_stack[0].key.as_str(),
             "trigger",
             "saved focus should be the pre-open target",
         );
@@ -2579,7 +2607,8 @@ mod tests {
         run_frame(&mut core, &mut closed);
         let trigger = core
             .ui_state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "trigger")
             .cloned();
@@ -2602,7 +2631,7 @@ mod tests {
             "closing the popover should pop the saved focus",
         );
         assert!(
-            core.ui_state.focus_stack.is_empty(),
+            core.ui_state.popover_focus.focus_stack.is_empty(),
             "focus stack should be drained after restore",
         );
     }
@@ -2631,7 +2660,8 @@ mod tests {
         run_frame(&mut core, &mut closed);
         let trigger = core
             .ui_state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "trigger")
             .cloned();
@@ -2639,7 +2669,7 @@ mod tests {
 
         let mut open = build(true);
         run_frame(&mut core, &mut open);
-        assert_eq!(core.ui_state.focus_stack.len(), 1);
+        assert_eq!(core.ui_state.popover_focus.focus_stack.len(), 1);
 
         // Simulate an intentional focus move to a sibling that is
         // outside the popover (e.g. the user re-tabbed somewhere). Do
@@ -2647,7 +2677,8 @@ mod tests {
         // the tree — the existing focus-order contains "other".
         let other = core
             .ui_state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "other")
             .cloned();
@@ -2660,7 +2691,7 @@ mod tests {
             Some("other"),
             "focus moved before close should not be overridden by restore",
         );
-        assert!(core.ui_state.focus_stack.is_empty());
+        assert!(core.ui_state.popover_focus.focus_stack.is_empty());
     }
 
     #[test]
@@ -2698,7 +2729,8 @@ mod tests {
         run_frame(&mut core, &mut closed);
         let trigger = core
             .ui_state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "trigger")
             .cloned();
@@ -2711,7 +2743,7 @@ mod tests {
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("inner-trigger"),
         );
-        assert_eq!(core.ui_state.focus_stack.len(), 1);
+        assert_eq!(core.ui_state.popover_focus.focus_stack.len(), 1);
 
         // Frame 3: inner also opens. Save inner-trigger, focus inner-a.
         let mut both = build(true, true);
@@ -2720,7 +2752,7 @@ mod tests {
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("inner-a"),
         );
-        assert_eq!(core.ui_state.focus_stack.len(), 2);
+        assert_eq!(core.ui_state.popover_focus.focus_stack.len(), 2);
 
         // Frame 4: inner closes. Pop → restore inner-trigger.
         let mut outer_only = build(true, false);
@@ -2729,7 +2761,7 @@ mod tests {
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("inner-trigger"),
         );
-        assert_eq!(core.ui_state.focus_stack.len(), 1);
+        assert_eq!(core.ui_state.popover_focus.focus_stack.len(), 1);
 
         // Frame 5: outer closes. Pop → restore trigger.
         let mut none = build(false, false);
@@ -2738,7 +2770,7 @@ mod tests {
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("trigger"),
         );
-        assert!(core.ui_state.focus_stack.is_empty());
+        assert!(core.ui_state.popover_focus.focus_stack.is_empty());
     }
 
     #[test]
@@ -2749,7 +2781,8 @@ mod tests {
         let mut core = lay_out_input_tree(false);
         let target = core
             .ui_state
-            .focus_order
+            .focus
+            .order
             .iter()
             .find(|t| t.key == "btn")
             .cloned();

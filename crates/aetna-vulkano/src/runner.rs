@@ -629,6 +629,14 @@ impl Runner {
         self.core.set_selection(selection);
     }
 
+    pub fn push_toasts(&mut self, specs: Vec<aetna_core::toast::ToastSpec>) {
+        self.core.push_toasts(specs);
+    }
+
+    pub fn dismiss_toast(&mut self, id: u64) {
+        self.core.dismiss_toast(id);
+    }
+
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {
         self.core.set_animation_mode(mode);
     }

@@ -1,7 +1,7 @@
 //! Runtime-synthesized toast notifications.
 //!
 //! Apps push toasts via [`App::drain_toasts`]; the runtime stamps each
-//! with a monotonic id + an expiry, queues it on [`UiState::toasts`],
+//! with a monotonic id + an expiry, queues it in [`UiState`],
 //! and synthesizes a `Kind::Custom("toast_stack")` floating layer at
 //! the El root each frame. The layer is bottom-right anchored, hit-test
 //! transparent except for the per-toast dismiss button (which the
@@ -42,7 +42,7 @@ pub enum ToastLevel {
 
 /// What the app produces from [`crate::App::drain_toasts`]. The
 /// runtime stamps an `id` + computes `expires_at` when it queues
-/// the toast onto [`UiState::toasts`].
+/// the toast into [`UiState`]'s runtime queue.
 #[derive(Clone, Debug)]
 pub struct ToastSpec {
     pub level: ToastLevel,
@@ -103,8 +103,8 @@ pub struct Toast {
 /// [])`, which is the same convention apps use for user-composed
 /// popovers and modals. Debug builds panic on a non-overlay root.
 pub fn synthesize_toasts(root: &mut El, ui_state: &mut UiState, now: Instant) -> bool {
-    ui_state.toasts.retain(|t| t.expires_at > now);
-    if ui_state.toasts.is_empty() {
+    ui_state.toast.queue.retain(|t| t.expires_at > now);
+    if ui_state.toast.queue.is_empty() {
         return false;
     }
     debug_assert_eq!(
@@ -115,7 +115,7 @@ pub fn synthesize_toasts(root: &mut El, ui_state: &mut UiState, now: Instant) ->
          `overlays(main, [])`. Got axis = {:?}",
         root.axis,
     );
-    let cards: Vec<El> = ui_state.toasts.iter().map(toast_card).collect();
+    let cards: Vec<El> = ui_state.toast.queue.iter().map(toast_card).collect();
     root.children.push(toast_stack(cards));
     true
 }
@@ -239,8 +239,8 @@ mod tests {
         let later = t0 + Duration::from_secs(1);
         let pending = synthesize_toasts(&mut tree, &mut state, later);
         assert!(pending);
-        assert_eq!(state.toasts.len(), 1, "expired toast dropped");
-        assert_eq!(state.toasts[0].message, "new");
+        assert_eq!(state.toast.queue.len(), 1, "expired toast dropped");
+        assert_eq!(state.toast.queue[0].message, "new");
     }
 
     #[test]

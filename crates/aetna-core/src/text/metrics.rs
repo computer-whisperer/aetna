@@ -59,6 +59,127 @@ pub struct MeasuredText {
     pub line_count: usize,
 }
 
+/// Shared text geometry context for measurement, hit-testing, caret
+/// positioning, and selection rectangles.
+///
+/// This is intentionally a thin value over the existing cosmic-text-backed
+/// helpers: callers spell the text/style/wrap inputs once, then ask the
+/// same context for the geometry operation they need. Keeping these calls
+/// together matters for widgets like `text_input`, `text_area`, and
+/// selectable text, where measurement, hit-testing, caret placement, and
+/// selection bands must agree on font, wrap width, and line metrics.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextGeometry<'a> {
+    text: &'a str,
+    size: f32,
+    weight: FontWeight,
+    mono: bool,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+    layout: TextLayout,
+}
+
+impl<'a> TextGeometry<'a> {
+    pub fn new(
+        text: &'a str,
+        size: f32,
+        weight: FontWeight,
+        mono: bool,
+        wrap: TextWrap,
+        available_width: Option<f32>,
+    ) -> Self {
+        let layout = layout_text(text, size, weight, mono, wrap, available_width);
+        Self {
+            text,
+            size,
+            weight,
+            mono,
+            wrap,
+            available_width,
+            layout,
+        }
+    }
+
+    pub fn text(&self) -> &'a str {
+        self.text
+    }
+
+    pub fn layout(&self) -> &TextLayout {
+        &self.layout
+    }
+
+    pub fn measured(&self) -> MeasuredText {
+        self.layout.measured()
+    }
+
+    pub fn line_height(&self) -> f32 {
+        self.layout.line_height
+    }
+
+    pub fn width(&self) -> f32 {
+        self.layout.width
+    }
+
+    pub fn height(&self) -> f32 {
+        self.layout.height
+    }
+
+    pub fn hit(&self, x: f32, y: f32) -> Option<TextHit> {
+        hit_text(
+            self.text,
+            self.size,
+            self.weight,
+            self.wrap,
+            self.available_width,
+            x,
+            y,
+        )
+    }
+
+    /// Hit-test and convert the result to a global byte offset in
+    /// `self.text`. This is the shape most widgets want; cosmic-text's
+    /// cursor reports `(line, byte-in-line)` and hard line breaks need to
+    /// be folded back into the original string.
+    pub fn hit_byte(&self, x: f32, y: f32) -> Option<usize> {
+        let hit = self.hit(x, y)?;
+        Some(self.byte_from_line_position(hit.line, hit.byte_index))
+    }
+
+    pub fn caret_xy(&self, byte_index: usize) -> (f32, f32) {
+        caret_xy(
+            self.text,
+            byte_index,
+            self.size,
+            self.weight,
+            self.wrap,
+            self.available_width,
+        )
+    }
+
+    /// X position of the caret at `byte_index`. For single-line text this
+    /// replaces ad-hoc substring measurement and preserves shaping/kerning
+    /// decisions made by the text engine.
+    pub fn prefix_width(&self, byte_index: usize) -> f32 {
+        self.caret_xy(byte_index).0
+    }
+
+    pub fn selection_rects(&self, lo: usize, hi: usize) -> Vec<(f32, f32, f32, f32)> {
+        selection_rects(
+            self.text,
+            lo,
+            hi,
+            self.size,
+            self.weight,
+            self.wrap,
+            self.available_width,
+        )
+    }
+
+    fn byte_from_line_position(&self, line: usize, byte_in_line: usize) -> usize {
+        line_position_to_byte(self.text, line, byte_in_line)
+    }
+}
+
 /// Measure text in logical pixels. `available_width` is only used when
 /// `wrap == TextWrap::Wrap`; `None` means measure explicit newlines only.
 pub fn measure_text(
@@ -325,6 +446,34 @@ fn byte_to_line_position(text: &str, byte_index: usize) -> (usize, usize) {
         }
     }
     (line, byte_index - line_start)
+}
+
+fn line_position_to_byte(text: &str, line: usize, byte_in_line: usize) -> usize {
+    let mut current_line = 0;
+    let mut line_start = 0;
+    for (i, ch) in text.char_indices() {
+        if current_line == line {
+            let candidate = line_start + byte_in_line;
+            return clamp_to_char_boundary(text, candidate.min(text.len()));
+        }
+        if ch == '\n' {
+            current_line += 1;
+            line_start = i + ch.len_utf8();
+        }
+    }
+    if current_line == line {
+        clamp_to_char_boundary(text, (line_start + byte_in_line).min(text.len()))
+    } else {
+        text.len()
+    }
+}
+
+fn clamp_to_char_boundary(text: &str, mut byte: usize) -> usize {
+    byte = byte.min(text.len());
+    while byte > 0 && !text.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    byte
 }
 
 fn build_buffer(
@@ -803,6 +952,37 @@ mod tests {
             );
             prev = hit.byte_index;
         }
+    }
+
+    #[test]
+    fn text_geometry_hit_byte_maps_hard_line_offsets_to_source_bytes() {
+        let text = "alpha\nbeta";
+        let geometry = TextGeometry::new(
+            text,
+            16.0,
+            FontWeight::Regular,
+            false,
+            TextWrap::NoWrap,
+            None,
+        );
+        let y = geometry.line_height() * 1.5;
+        let byte = geometry.hit_byte(1000.0, y).expect("hit on second line");
+        assert_eq!(byte, text.len());
+    }
+
+    #[test]
+    fn text_geometry_prefix_width_matches_caret_x() {
+        let text = "hello world";
+        let geometry = TextGeometry::new(
+            text,
+            16.0,
+            FontWeight::Regular,
+            false,
+            TextWrap::NoWrap,
+            None,
+        );
+        let (x, _y) = geometry.caret_xy(5);
+        assert!((geometry.prefix_width(5) - x).abs() < 0.01);
     }
 
     #[test]

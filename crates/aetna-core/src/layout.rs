@@ -171,24 +171,25 @@ pub struct LayoutCtx<'a> {
 pub fn layout(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
     assign_id(root, "root");
     ui_state
+        .layout
         .computed_rects
         .insert(root.computed_id.clone(), viewport);
     rebuild_key_index(root, ui_state);
     // Per-scrollable scratch is rebuilt every layout — entries for
     // scrollables that disappeared mid-frame must not leave stale
     // thumb rects behind for hit-test or paint to find.
-    ui_state.scroll_metrics.clear();
-    ui_state.thumb_rects.clear();
-    ui_state.thumb_tracks.clear();
+    ui_state.scroll.metrics.clear();
+    ui_state.scroll.thumb_rects.clear();
+    ui_state.scroll.thumb_tracks.clear();
     layout_children(root, viewport, ui_state);
 }
 
-/// Walk the tree once and refresh `ui_state.layout_key_index` so
+/// Walk the tree once and refresh `ui_state.layout.key_index` so
 /// `LayoutCtx::rect_of_key` can resolve `key → computed_id` without
 /// re-scanning the tree per lookup. First key wins — duplicate keys
 /// are an author bug, but we don't want to crash layout over it.
 fn rebuild_key_index(root: &El, ui_state: &mut UiState) {
-    ui_state.layout_key_index.clear();
+    ui_state.layout.key_index.clear();
     fn visit(node: &El, index: &mut std::collections::HashMap<String, String>) {
         if let Some(key) = &node.key {
             index
@@ -199,7 +200,7 @@ fn rebuild_key_index(root: &El, ui_state: &mut UiState) {
             visit(c, index);
         }
     }
-    visit(root, &mut ui_state.layout_key_index);
+    visit(root, &mut ui_state.layout.key_index);
 }
 
 /// Assign every node's `computed_id` without positioning anything else.
@@ -254,7 +255,7 @@ fn layout_children(node: &mut El, node_rect: Rect, ui_state: &mut UiState) {
         // paragraph's hit-test target is the Inlines node itself,
         // sized by node_rect.
         for c in &mut node.children {
-            ui_state.computed_rects.insert(
+            ui_state.layout.computed_rects.insert(
                 c.computed_id.clone(),
                 Rect::new(node_rect.x, node_rect.y, 0.0, 0.0),
             );
@@ -282,6 +283,7 @@ fn layout_children(node: &mut El, node_rect: Rect, ui_state: &mut UiState) {
             for c in &mut node.children {
                 let c_rect = overlay_rect(c, inner, node.align, node.justify);
                 ui_state
+                    .layout
                     .computed_rects
                     .insert(c.computed_id.clone(), c_rect);
                 layout_children(c, c_rect, ui_state);
@@ -302,8 +304,8 @@ fn layout_custom(node: &mut El, node_rect: Rect, layout_fn: LayoutFn, ui_state: 
     // key index + computed rects while the surrounding function still
     // holds the mutable borrow needed to insert this node's children
     // back into `computed_rects` afterwards.
-    let key_index = &ui_state.layout_key_index;
-    let computed_rects = &ui_state.computed_rects;
+    let key_index = &ui_state.layout.key_index;
+    let computed_rects = &ui_state.layout.computed_rects;
     let rect_of_key = |key: &str| -> Option<Rect> {
         let id = key_index.get(key)?;
         computed_rects.get(id).copied()
@@ -326,6 +328,7 @@ fn layout_custom(node: &mut El, node_rect: Rect, layout_fn: LayoutFn, ui_state: 
     );
     for (c, c_rect) in node.children.iter_mut().zip(rects) {
         ui_state
+            .layout
             .computed_rects
             .insert(c.computed_id.clone(), c_rect);
         layout_children(c, c_rect, ui_state);
@@ -342,15 +345,17 @@ fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state:
     let total_h = items.count as f32 * items.row_height;
     let max_offset = (total_h - inner.h).max(0.0);
     let stored = ui_state
-        .scroll_offsets
+        .scroll
+        .offsets
         .get(&node.computed_id)
         .copied()
         .unwrap_or(0.0);
     let offset = stored.clamp(0.0, max_offset);
     ui_state
-        .scroll_offsets
+        .scroll
+        .offsets
         .insert(node.computed_id.clone(), offset);
-    ui_state.scroll_metrics.insert(
+    ui_state.scroll.metrics.insert(
         node.computed_id.clone(),
         crate::state::ScrollMetrics {
             viewport_h: inner.h,
@@ -384,6 +389,7 @@ fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state:
         let row_y = inner.y + global_i as f32 * items.row_height - offset;
         let c_rect = Rect::new(inner.x, row_y, inner.w, items.row_height);
         ui_state
+            .layout
             .computed_rects
             .insert(child.computed_id.clone(), c_rect);
         layout_children(child, c_rect, ui_state);
@@ -402,9 +408,10 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
     let inner = node_rect.inset(node.padding);
     if node.children.is_empty() {
         ui_state
-            .scroll_offsets
+            .scroll
+            .offsets
             .insert(node.computed_id.clone(), 0.0);
-        ui_state.scroll_metrics.insert(
+        ui_state.scroll.metrics.insert(
             node.computed_id.clone(),
             crate::state::ScrollMetrics {
                 viewport_h: inner.h,
@@ -422,7 +429,8 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
     let content_h = (content_bottom - inner.y).max(0.0);
     let max_offset = (content_h - inner.h).max(0.0);
     let stored = ui_state
-        .scroll_offsets
+        .scroll
+        .offsets
         .get(&node.computed_id)
         .copied()
         .unwrap_or(0.0);
@@ -433,9 +441,10 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
         }
     }
     ui_state
-        .scroll_offsets
+        .scroll
+        .offsets
         .insert(node.computed_id.clone(), clamped);
-    ui_state.scroll_metrics.insert(
+    ui_state.scroll.metrics.insert(
         node.computed_id.clone(),
         crate::state::ScrollMetrics {
             viewport_h: inner.h,
@@ -474,18 +483,18 @@ fn write_thumb_rect(
     let thumb_y = inner.y + track_remaining * (offset / max_offset);
     let thumb_x = inner.right() - thumb_w - track_inset;
     let track_x = inner.right() - track_w - track_inset;
-    ui_state.thumb_rects.insert(
+    ui_state.scroll.thumb_rects.insert(
         node.computed_id.clone(),
         Rect::new(thumb_x, thumb_y, thumb_w, thumb_h),
     );
-    ui_state.thumb_tracks.insert(
+    ui_state.scroll.thumb_tracks.insert(
         node.computed_id.clone(),
         Rect::new(track_x, inner.y, track_w, inner.h),
     );
 }
 
 fn shift_subtree_y(node: &El, dy: f32, ui_state: &mut UiState) {
-    if let Some(rect) = ui_state.computed_rects.get_mut(&node.computed_id) {
+    if let Some(rect) = ui_state.layout.computed_rects.get_mut(&node.computed_id) {
         rect.y += dy;
     }
     for c in &node.children {
@@ -577,6 +586,7 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
             Rect::new(inner.x + cursor, inner.y + cross_off, main_size, cross_size)
         };
         ui_state
+            .layout
             .computed_rects
             .insert(c.computed_id.clone(), c_rect);
         layout_children(c, c_rect, ui_state);
@@ -1159,13 +1169,14 @@ mod tests {
         .height(Size::Fixed(200.0));
         let mut state = UiState::new();
         assign_ids(&mut root);
-        state.scroll_offsets.insert(root.computed_id.clone(), 80.0);
+        state.scroll.offsets.insert(root.computed_id.clone(), 80.0);
 
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
 
         // Offset is in range, applied verbatim.
         let stored = state
-            .scroll_offsets
+            .scroll
+            .offsets
             .get(&root.computed_id)
             .copied()
             .unwrap_or(0.0);
@@ -1182,11 +1193,13 @@ mod tests {
         );
         // Now overshoot — should clamp to max_offset=160.
         state
-            .scroll_offsets
+            .scroll
+            .offsets
             .insert(root.computed_id.clone(), 9999.0);
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
         let stored = state
-            .scroll_offsets
+            .scroll
+            .offsets
             .get(&root.computed_id)
             .copied()
             .unwrap_or(0.0);
@@ -1201,7 +1214,8 @@ mod tests {
         let mut tiny_state = UiState::new();
         assign_ids(&mut tiny);
         tiny_state
-            .scroll_offsets
+            .scroll
+            .offsets
             .insert(tiny.computed_id.clone(), 50.0);
         layout(
             &mut tiny,
@@ -1210,7 +1224,8 @@ mod tests {
         );
         assert_eq!(
             tiny_state
-                .scroll_offsets
+                .scroll
+                .offsets
                 .get(&tiny.computed_id)
                 .copied()
                 .unwrap_or(0.0),
@@ -1232,7 +1247,8 @@ mod tests {
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
 
         let metrics = state
-            .scroll_metrics
+            .scroll
+            .metrics
             .get(&root.computed_id)
             .copied()
             .expect("scrollable should have metrics");
@@ -1241,6 +1257,7 @@ mod tests {
         assert!((metrics.max_offset - 160.0).abs() < 0.01);
 
         let thumb = state
+            .scroll
             .thumb_rects
             .get(&root.computed_id)
             .copied()
@@ -1259,9 +1276,14 @@ mod tests {
         );
 
         // Slide to half — thumb should be at half the track_remaining.
-        state.scroll_offsets.insert(root.computed_id.clone(), 80.0);
+        state.scroll.offsets.insert(root.computed_id.clone(), 80.0);
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
-        let thumb = state.thumb_rects.get(&root.computed_id).copied().unwrap();
+        let thumb = state
+            .scroll
+            .thumb_rects
+            .get(&root.computed_id)
+            .copied()
+            .unwrap();
         let track_remaining = 200.0 - thumb.h;
         let expected_y = track_remaining * (80.0 / 160.0);
         assert!(
@@ -1285,8 +1307,18 @@ mod tests {
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
 
-        let thumb = state.thumb_rects.get(&root.computed_id).copied().unwrap();
-        let track = state.thumb_tracks.get(&root.computed_id).copied().unwrap();
+        let thumb = state
+            .scroll
+            .thumb_rects
+            .get(&root.computed_id)
+            .copied()
+            .unwrap();
+        let track = state
+            .scroll
+            .thumb_tracks
+            .get(&root.computed_id)
+            .copied()
+            .unwrap();
         // Track wider than thumb on the same right edge.
         assert!(track.w > thumb.w, "track.w {} thumb.w {}", track.w, thumb.w);
         assert!(
@@ -1317,7 +1349,12 @@ mod tests {
             &mut state,
             Rect::new(0.0, 0.0, 300.0, 200.0),
         );
-        assert!(!state.thumb_rects.contains_key(&suppressed.computed_id));
+        assert!(
+            !state
+                .scroll
+                .thumb_rects
+                .contains_key(&suppressed.computed_id)
+        );
 
         // Same scrollable, content fits → no thumb either.
         let mut tiny = scroll([crate::widgets::text::text("one row").height(Size::Fixed(20.0))])
@@ -1328,7 +1365,12 @@ mod tests {
             &mut tiny_state,
             Rect::new(0.0, 0.0, 300.0, 200.0),
         );
-        assert!(!tiny_state.thumb_rects.contains_key(&tiny.computed_id));
+        assert!(
+            !tiny_state
+                .scroll
+                .thumb_rects
+                .contains_key(&tiny.computed_id)
+        );
     }
 
     #[test]
@@ -1519,7 +1561,7 @@ mod tests {
         });
         let mut state = UiState::new();
         assign_ids(&mut root);
-        state.scroll_offsets.insert(root.computed_id.clone(), 120.0);
+        state.scroll.offsets.insert(root.computed_id.clone(), 120.0);
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
 
         assert_eq!(
@@ -1553,7 +1595,8 @@ mod tests {
         assign_ids(&mut root_a);
         // Scroll so row 5 is visible.
         state
-            .scroll_offsets
+            .scroll
+            .offsets
             .insert(root_a.computed_id.clone(), 250.0);
         layout(&mut root_a, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
         let id_at_offset_a = root_a
@@ -1568,7 +1611,8 @@ mod tests {
         let mut root_b = make_root();
         assign_ids(&mut root_b);
         state
-            .scroll_offsets
+            .scroll
+            .offsets
             .insert(root_b.computed_id.clone(), 200.0);
         layout(&mut root_b, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
         let id_at_offset_b = root_b
@@ -1593,11 +1637,13 @@ mod tests {
         let mut state = UiState::new();
         assign_ids(&mut root);
         state
-            .scroll_offsets
+            .scroll
+            .offsets
             .insert(root.computed_id.clone(), 9999.0);
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
         let stored = state
-            .scroll_offsets
+            .scroll
+            .offsets
             .get(&root.computed_id)
             .copied()
             .unwrap_or(0.0);

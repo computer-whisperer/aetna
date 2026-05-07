@@ -116,6 +116,7 @@ dependencies = [
  "aetna-core",
  "aetna-fixtures",
  "aetna-vulkano",
+ "aetna-wgpu",
  "png",
  "vulkano",
  "winit",
