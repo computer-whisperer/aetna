@@ -64,6 +64,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         println!("wrote {}", out.display());
     }
+    if let Some(density_sheet) = reference_density_matrix_sheet(&root, &out_dir)? {
+        let out = out_dir.join("reference_density_matrix_sheet.png");
+        write_png(
+            &out,
+            density_sheet.width,
+            density_sheet.height,
+            &density_sheet.rgba,
+        )?;
+        println!("wrote {}", out.display());
+    }
     Ok(())
 }
 
@@ -175,6 +185,48 @@ fn reference_scale_matrix_sheet(
     }
 
     Ok(Some(contact_sheet(&images, 4)))
+}
+
+fn reference_density_matrix_sheet(
+    root: &Path,
+    aetna_out_dir: &Path,
+) -> Result<Option<Image>, Box<dyn std::error::Error>> {
+    let reference_out_dir = root.join("references/shadcn-calibration/out");
+    let rows = [
+        ("shadcn-calibration", "polish_calibration"),
+        ("shadcn-dashboard-01", "dashboard_01_calibration"),
+        ("shadcn-settings-01", "settings_calibration"),
+    ];
+
+    let mut images = Vec::new();
+    for (reference_slug, aetna_slug) in rows {
+        let shadcn_compact =
+            reference_out_dir.join(format!("{reference_slug}.density-compact.png"));
+        let shadcn_comfortable = reference_out_dir.join(format!("{reference_slug}.png"));
+        let shadcn_spacious =
+            reference_out_dir.join(format!("{reference_slug}.density-spacious.png"));
+        let aetna_compact = aetna_out_dir.join(format!("{aetna_slug}.compact.png"));
+        let aetna_comfortable = aetna_out_dir.join(format!("{aetna_slug}.comfortable.png"));
+        let aetna_spacious = aetna_out_dir.join(format!("{aetna_slug}.spacious.png"));
+        if !shadcn_compact.exists()
+            || !shadcn_comfortable.exists()
+            || !shadcn_spacious.exists()
+            || !aetna_compact.exists()
+            || !aetna_comfortable.exists()
+            || !aetna_spacious.exists()
+        {
+            return Ok(None);
+        }
+
+        images.push(read_png(&shadcn_compact)?);
+        images.push(normalize_for_sheet(read_png(&aetna_compact)?));
+        images.push(read_png(&shadcn_comfortable)?);
+        images.push(normalize_for_sheet(read_png(&aetna_comfortable)?));
+        images.push(read_png(&shadcn_spacious)?);
+        images.push(normalize_for_sheet(read_png(&aetna_spacious)?));
+    }
+
+    Ok(Some(contact_sheet(&images, 6)))
 }
 
 fn contact_sheet(images: &[Image], columns: usize) -> Image {

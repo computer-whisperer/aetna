@@ -25,7 +25,9 @@ Playwright, and pins the browser to deterministic scale contracts:
 - Chromium forced device scale factor: `1`,
 - browser zoom: expected to remain at `1`,
 - shadcn UI scale: controlled by root `font-size`, not desktop zoom,
-- compact shadcn UI scale: `0.875` by default.
+- compact shadcn UI scale diagnostic: `0.875` by default,
+- authored density references: compact, comfortable, and spacious at default
+  shadcn UI scale.
 
 Override these with environment variables:
 
@@ -45,15 +47,34 @@ Use `SHADCN_REFERENCE_UI_SCALE` to model app-level UI scale. Keep
 `SHADCN_REFERENCE_DSF=1` unless the goal is explicitly testing raster
 behavior; Aetna calibration compares logical layout first, then backend pixels.
 
+The app also accepts a `density` query parameter:
+
+```text
+/?view=dashboard-01&density=compact
+/?view=dashboard-01&density=comfortable
+/?view=dashboard-01&density=spacious
+```
+
+This is an authored component/layout density axis. It changes control heights,
+card padding, row heights, and gaps while keeping the root font scale fixed.
+Do not treat it as a replacement for root UI scale diagnostics; the two answer
+different questions.
+
 Outputs:
 
 - `out/shadcn-calibration.png` — local steelman for Aetna's first fixture.
 - `out/shadcn-dashboard-01.png` — local dashboard-01-style density target.
 - `out/shadcn-settings-01.png` — settings/form density and control target.
-- `out/*.compact.png` — stress viewport at compact shadcn UI scale.
+- `out/*.compact.png` — stress viewport at compact root UI scale diagnostic.
 - `out/*.desktop.png` — canonical desktop viewport at default shadcn UI scale.
+- `out/*.density-compact.png` — compact authored density at default UI scale.
+- `out/*.density-spacious.png` — spacious authored density at default UI
+  scale.
 - matching `out/*.json` files — capture metadata with actual DPR, viewport,
   visual viewport scale, and root font size.
+
+The unqualified `out/shadcn-*.png` screenshots are the comfortable authored
+density baseline.
 
 The reference app marks major surfaces with `data-calibration-boundary`.
 `npm run capture` fails before writing a screenshot if a visible descendant

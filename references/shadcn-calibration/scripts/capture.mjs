@@ -32,6 +32,7 @@ const variants = [
     description: "Stress viewport at default shadcn UI scale",
     viewport: stressViewport,
     uiScale,
+    density: "comfortable",
   },
   {
     slug: "compact",
@@ -39,6 +40,7 @@ const variants = [
     description: "Stress viewport at compact shadcn UI scale",
     viewport: stressViewport,
     uiScale: compactUiScale,
+    density: "comfortable",
   },
   {
     slug: "desktop",
@@ -46,6 +48,23 @@ const variants = [
     description: "Canonical desktop viewport at default shadcn UI scale",
     viewport: desktopViewport,
     uiScale,
+    density: "comfortable",
+  },
+  {
+    slug: "density-compact",
+    label: "density compact",
+    description: "Stress viewport with shadcn compact component/layout density",
+    viewport: stressViewport,
+    uiScale,
+    density: "compact",
+  },
+  {
+    slug: "density-spacious",
+    label: "density spacious",
+    description: "Stress viewport with shadcn spacious component/layout density",
+    viewport: stressViewport,
+    uiScale,
+    density: "spacious",
   },
 ]
 
@@ -172,6 +191,7 @@ async function captureOne(context, item, variant) {
   try {
     const url = new URL(item.path, baseUrl)
     url.searchParams.set("uiScale", String(variant.uiScale))
+    url.searchParams.set("density", variant.density)
     await page.goto(url.toString(), { waitUntil: "networkidle" })
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" })
     const overflowFindings = await referenceOverflowFindings(page)
@@ -211,6 +231,7 @@ async function captureOne(context, item, variant) {
             slug: variant.slug || "default",
             label: variant.label,
             description: variant.description,
+            density: variant.density,
           },
           url: url.toString(),
           viewport: variant.viewport,

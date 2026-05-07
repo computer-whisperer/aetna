@@ -343,10 +343,10 @@ struct ControlMetrics {
 
 fn control_metrics(size: ComponentSize, kind: ControlKind) -> ControlMetrics {
     let (height, padding_x, radius, gap): (f32, f32, f32, f32) = match size {
-        ComponentSize::Xs => (24.0, 8.0, 5.0, 4.0),
-        ComponentSize::Sm => (28.0, 10.0, 6.0, 6.0),
-        ComponentSize::Md => (32.0, 12.0, 7.0, 8.0),
-        ComponentSize::Lg => (36.0, 14.0, 8.0, 8.0),
+        ComponentSize::Xs => (28.0, 8.0, 5.0, 4.0),
+        ComponentSize::Sm => (32.0, 10.0, 6.0, 6.0),
+        ComponentSize::Md => (36.0, 12.0, 7.0, 8.0),
+        ComponentSize::Lg => (40.0, 14.0, 8.0, 8.0),
     };
     match kind {
         ControlKind::IconButton => ControlMetrics {
@@ -405,11 +405,11 @@ fn badge_metrics(size: ComponentSize) -> BadgeMetrics {
             padding_x: 7.0,
         },
         ComponentSize::Md => BadgeMetrics {
-            height: 20.0,
+            height: 24.0,
             padding_x: 8.0,
         },
         ComponentSize::Lg => BadgeMetrics {
-            height: 22.0,
+            height: 28.0,
             padding_x: 10.0,
         },
     }
@@ -439,13 +439,13 @@ fn card_metrics(density: Density) -> CardMetrics {
             radius: 7.0,
         },
         Density::Comfortable => CardMetrics {
-            padding: 14.0,
-            gap: 10.0,
+            padding: 16.0,
+            gap: 12.0,
             radius: 8.0,
         },
         Density::Spacious => CardMetrics {
-            padding: 18.0,
-            gap: 12.0,
+            padding: 20.0,
+            gap: 16.0,
             radius: 12.0,
         },
     }
@@ -643,11 +643,11 @@ struct MenuItemMetrics {
 fn menu_item_metrics(density: Density) -> MenuItemMetrics {
     match density {
         Density::Compact => MenuItemMetrics {
-            height: 26.0,
+            height: 30.0,
             padding_x: 8.0,
         },
         Density::Comfortable => MenuItemMetrics {
-            height: 28.0,
+            height: 32.0,
             padding_x: 10.0,
         },
         Density::Spacious => MenuItemMetrics {
@@ -677,7 +677,7 @@ struct RowMetrics {
 fn list_item_metrics(density: Density) -> RowMetrics {
     match density {
         Density::Compact => RowMetrics {
-            height: 30.0,
+            height: 32.0,
             padding_x: 8.0,
             gap: 6.0,
             radius: 6.0,
@@ -700,19 +700,19 @@ fn list_item_metrics(density: Density) -> RowMetrics {
 fn table_header_metrics(density: Density) -> RowMetrics {
     match density {
         Density::Compact => RowMetrics {
-            height: 28.0,
+            height: 32.0,
             padding_x: 8.0,
             gap: 8.0,
             radius: 0.0,
         },
         Density::Comfortable => RowMetrics {
-            height: 32.0,
+            height: 36.0,
             padding_x: 10.0,
             gap: 10.0,
             radius: 0.0,
         },
         Density::Spacious => RowMetrics {
-            height: 38.0,
+            height: 40.0,
             padding_x: 12.0,
             gap: 12.0,
             radius: 0.0,
@@ -723,19 +723,19 @@ fn table_header_metrics(density: Density) -> RowMetrics {
 fn table_row_metrics(density: Density) -> RowMetrics {
     match density {
         Density::Compact => RowMetrics {
-            height: 34.0,
+            height: 40.0,
             padding_x: 8.0,
             gap: 8.0,
             radius: 6.0,
         },
         Density::Comfortable => RowMetrics {
-            height: 40.0,
+            height: 44.0,
             padding_x: 10.0,
             gap: 10.0,
             radius: 7.0,
         },
         Density::Spacious => RowMetrics {
-            height: 48.0,
+            height: 52.0,
             padding_x: 12.0,
             gap: 12.0,
             radius: 8.0,
@@ -783,7 +783,7 @@ mod tests {
             .with_default_component_size(ComponentSize::Lg)
             .apply_to_tree(&mut el);
 
-        assert_eq!(el.height, Size::Fixed(36.0));
+        assert_eq!(el.height, Size::Fixed(40.0));
     }
 
     #[test]
@@ -794,7 +794,7 @@ mod tests {
             .with_default_component_size(ComponentSize::Xs)
             .apply_to_tree(&mut el);
 
-        assert_eq!(el.height, Size::Fixed(36.0));
+        assert_eq!(el.height, Size::Fixed(40.0));
     }
 
     #[test]
@@ -828,7 +828,7 @@ mod tests {
             .with_tab_size(ComponentSize::Lg)
             .apply_to_tree(&mut el);
 
-        assert_eq!(el.children[0].height, Size::Fixed(36.0));
+        assert_eq!(el.children[0].height, Size::Fixed(40.0));
     }
 
     #[test]
@@ -838,7 +838,7 @@ mod tests {
 
         ThemeMetrics::default().apply_to_tree(&mut el);
 
-        assert_eq!(el.children[0].height, Size::Fixed(36.0));
+        assert_eq!(el.children[0].height, Size::Fixed(40.0));
     }
 
     #[test]
@@ -887,7 +887,7 @@ mod tests {
             .with_list_density(Density::Compact)
             .apply_to_tree(&mut el);
 
-        assert_eq!(el.height, Size::Fixed(30.0));
+        assert_eq!(el.height, Size::Fixed(32.0));
         assert_eq!(el.padding, Sides::xy(8.0, 0.0));
         assert_eq!(el.gap, 6.0);
     }
@@ -902,8 +902,8 @@ mod tests {
         metrics.apply_to_tree(&mut header);
         metrics.apply_to_tree(&mut row);
 
-        assert_eq!(header.height, Size::Fixed(38.0));
-        assert_eq!(row.height, Size::Fixed(48.0));
+        assert_eq!(header.height, Size::Fixed(40.0));
+        assert_eq!(row.height, Size::Fixed(52.0));
     }
 
     #[test]

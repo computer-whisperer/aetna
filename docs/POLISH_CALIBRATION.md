@@ -147,10 +147,17 @@ screenshots through Playwright. It pins the default stress reference scale to:
 
 This keeps the web stack comparable to Aetna's logical layout scale. Vary
 `SHADCN_REFERENCE_UI_SCALE` when testing app-level UI scale; avoid changing
-browser zoom or desktop scale for normal polish calibration. The capture also
-writes `.compact` variants at the stress viewport with root font scale `0.875`
-and `.desktop` variants at `1440x900` with root font scale `1`. Every capture
-writes `out/*.json` metadata next to each screenshot so scale drift is visible.
+browser zoom or desktop scale for normal polish calibration.
+
+The capture writes two separate kinds of variants:
+
+- root-scale diagnostics: `.compact` at the stress viewport with root font
+  scale `0.875`, and `.desktop` at `1440x900` with root font scale `1`,
+- authored density references: `.density-compact`, the default capture as
+  comfortable density, and `.density-spacious`, all at root font scale `1`.
+
+Every capture writes `out/*.json` metadata next to each screenshot so scale
+drift is visible.
 
 `make_calibration_sheet` writes the normal Aetna-only sheet and, when shadcn
 captures are present, `reference_calibration_sheet.png` with shadcn references
@@ -158,11 +165,22 @@ paired against Aetna counterparts. When the shadcn variant captures are
 present, it also writes `reference_scale_matrix_sheet.png`. Each matrix row is:
 shadcn stress, shadcn compact, shadcn desktop, Aetna stress.
 
+When authored density captures are present, it also writes
+`reference_density_matrix_sheet.png`. Each matrix row is:
+shadcn density compact, Aetna compact, shadcn default/comfortable, Aetna
+comfortable, shadcn density spacious, Aetna spacious. This is the primary
+sheet for tuning component and layout density because it keeps Chromium,
+desktop scale, browser zoom, device scale factor, and root font scale fixed.
+
 Current shadcn/Aetna pairs:
 
 - `shadcn-calibration.png` / `polish_calibration.png`,
 - `shadcn-dashboard-01.png` / `dashboard_01_calibration.png`,
 - `shadcn-settings-01.png` / `settings_calibration.png`.
+
+The Aetna calibration examples also emit themed density variants:
+`*.compact`, `*.comfortable`, and `*.spacious`. The default unqualified output
+remains the normal Aetna dark theme for compatibility with older sheets.
 
 The shadcn reference app marks major surfaces with
 `data-calibration-boundary`; the capture script fails if visible descendants

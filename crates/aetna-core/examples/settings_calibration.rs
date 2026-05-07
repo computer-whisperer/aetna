@@ -7,19 +7,39 @@
 use aetna_core::prelude::*;
 
 fn main() -> std::io::Result<()> {
-    let mut root = settings_calibration();
     let viewport = Rect::new(0.0, 0.0, 1180.0, 780.0);
-    let bundle = render_bundle(&mut root, viewport, Some(env!("CARGO_PKG_NAME")));
-
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
-    let written = write_bundle(&bundle, &out_dir, "settings_calibration")?;
-    for p in &written {
-        println!("wrote {}", p.display());
-    }
 
-    if !bundle.lint.findings.is_empty() {
-        eprintln!("\nlint findings ({}):", bundle.lint.findings.len());
-        eprint!("{}", bundle.lint.text());
+    let variants = [
+        ("settings_calibration", Theme::aetna_dark()),
+        (
+            "settings_calibration.compact",
+            Theme::aetna_dark().compact(),
+        ),
+        (
+            "settings_calibration.comfortable",
+            Theme::aetna_dark().comfortable(),
+        ),
+        (
+            "settings_calibration.spacious",
+            Theme::aetna_dark().spacious(),
+        ),
+    ];
+    for (name, theme) in variants {
+        let mut root = settings_calibration();
+        let bundle =
+            render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
+        let written = write_bundle(&bundle, &out_dir, name)?;
+        for p in &written {
+            println!("wrote {}", p.display());
+        }
+        if !bundle.lint.findings.is_empty() {
+            eprintln!(
+                "\nlint findings for {name} ({}):",
+                bundle.lint.findings.len()
+            );
+            eprint!("{}", bundle.lint.text());
+        }
     }
 
     Ok(())

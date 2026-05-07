@@ -10,19 +10,36 @@
 use aetna_core::prelude::*;
 
 fn main() -> std::io::Result<()> {
-    let mut root = polish_calibration();
     let viewport = Rect::new(0.0, 0.0, 1180.0, 780.0);
-    let bundle = render_bundle(&mut root, viewport, Some(env!("CARGO_PKG_NAME")));
-
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
-    let written = write_bundle(&bundle, &out_dir, "polish_calibration")?;
-    for p in &written {
-        println!("wrote {}", p.display());
-    }
 
-    if !bundle.lint.findings.is_empty() {
-        eprintln!("\nlint findings ({}):", bundle.lint.findings.len());
-        eprint!("{}", bundle.lint.text());
+    let variants = [
+        ("polish_calibration", Theme::aetna_dark()),
+        ("polish_calibration.compact", Theme::aetna_dark().compact()),
+        (
+            "polish_calibration.comfortable",
+            Theme::aetna_dark().comfortable(),
+        ),
+        (
+            "polish_calibration.spacious",
+            Theme::aetna_dark().spacious(),
+        ),
+    ];
+    for (name, theme) in variants {
+        let mut root = polish_calibration();
+        let bundle =
+            render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
+        let written = write_bundle(&bundle, &out_dir, name)?;
+        for p in &written {
+            println!("wrote {}", p.display());
+        }
+        if !bundle.lint.findings.is_empty() {
+            eprintln!(
+                "\nlint findings for {name} ({}):",
+                bundle.lint.findings.len()
+            );
+            eprint!("{}", bundle.lint.text());
+        }
     }
 
     Ok(())
@@ -261,7 +278,7 @@ fn command_card() -> El {
                 menu_row("alert-circle", "Force push", "Danger"),
             ])
             .width(Size::Fill(1.0)),
-            form_probe(),
+            scroll([form_probe()]).key("form-probe-scroll"),
         ],
     )
     .width(Size::Fill(0.8))
@@ -323,7 +340,7 @@ fn form_probe() -> El {
         text("These are currently hand-styled probes; they should become semantic modifiers.")
             .caption()
             .wrap_text()
-            .max_lines(2)
+            .max_lines(1)
             .width(Size::Fill(1.0)),
     ])
     .gap(tokens::SPACE_SM)

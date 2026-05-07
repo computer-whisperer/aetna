@@ -33,6 +33,77 @@ if (Number.isFinite(referenceUiScale) && referenceUiScale > 0) {
   document.documentElement.dataset.referenceUiScale = String(referenceUiScale)
 }
 
+const densityName = new URLSearchParams(window.location.search).get("density") ?? "comfortable"
+const density = {
+  compact: {
+    button: "h-8 px-3 py-1.5",
+    badge: "h-5 min-w-14 px-2",
+    cardTitle: "p-4 pb-2",
+    cardBody: "p-4 pt-1",
+    cardP: "p-3",
+    input: "h-8 px-2.5",
+    iconBox: "h-6 w-6",
+    pagePad: "p-5",
+    sectionPad: "p-3",
+    gap: "gap-3",
+    space: "space-y-3",
+    navRow: "h-8",
+    tableHeader: "h-8",
+    tableRow: "h-10",
+    preferenceRow: "px-3 py-2",
+  },
+  comfortable: {
+    button: "h-9 px-4 py-2",
+    badge: "h-6 min-w-[4.5rem] px-2.5",
+    cardTitle: "p-5 pb-3",
+    cardBody: "p-5 pt-2",
+    cardP: "p-4",
+    input: "h-9 px-3",
+    iconBox: "h-7 w-7",
+    pagePad: "p-7",
+    sectionPad: "p-4",
+    gap: "gap-4",
+    space: "space-y-4",
+    navRow: "h-10",
+    tableHeader: "h-9",
+    tableRow: "h-[52px]",
+    preferenceRow: "px-4 py-3",
+  },
+  spacious: {
+    button: "h-10 px-5 py-2.5",
+    badge: "h-7 min-w-20 px-3",
+    cardTitle: "p-6 pb-4",
+    cardBody: "p-6 pt-2",
+    cardP: "p-5",
+    input: "h-11 px-4",
+    iconBox: "h-8 w-8",
+    pagePad: "p-8",
+    sectionPad: "p-5",
+    gap: "gap-5",
+    space: "space-y-5",
+    navRow: "h-11",
+    tableHeader: "h-10",
+    tableRow: "h-14",
+    preferenceRow: "px-5 py-4",
+  },
+}[densityName as "compact" | "comfortable" | "spacious"] ?? {
+  button: "h-9 px-4 py-2",
+  badge: "h-6 min-w-[4.5rem] px-2.5",
+  cardTitle: "p-5 pb-3",
+  cardBody: "p-5 pt-2",
+  cardP: "p-4",
+  input: "h-10 px-3",
+  iconBox: "h-7 w-7",
+  pagePad: "p-7",
+  sectionPad: "p-4",
+  gap: "gap-4",
+  space: "space-y-4",
+  navRow: "h-10",
+  tableHeader: "h-9",
+  tableRow: "h-[52px]",
+  preferenceRow: "px-4 py-3",
+}
+
 function Button({
   className,
   variant = "default",
@@ -53,7 +124,8 @@ function Button({
   return (
     <button
       className={cn(
-        "inline-flex h-9 items-center justify-center whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+        density.button,
         variants[variant],
         className,
       )}
@@ -80,7 +152,8 @@ function Badge({
   return (
     <div
       className={cn(
-        "inline-flex h-6 w-fit min-w-[4.5rem] items-center justify-center rounded-full border px-2.5 text-xs font-semibold",
+        "inline-flex w-fit items-center justify-center rounded-full border text-xs font-semibold",
+        density.badge,
         tones[tone],
       )}
     >
@@ -103,10 +176,10 @@ function Card({
       data-calibration-boundary
       className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", className)}
     >
-      <div className="space-y-1.5 p-5 pb-3">
+      <div className={cn("space-y-1.5", density.cardTitle)}>
         <h3 className="text-base font-semibold leading-none tracking-tight">{title}</h3>
       </div>
-      <div className="p-5 pt-2">{children}</div>
+      <div className={density.cardBody}>{children}</div>
     </section>
   )
 }
@@ -115,7 +188,8 @@ function Input({ value, invalid }: { value: string; invalid?: boolean }) {
   return (
     <div
       className={cn(
-        "flex h-10 w-full items-center rounded-md border border-input bg-background px-3 text-sm shadow-sm",
+        "flex w-full items-center rounded-md border border-input bg-background text-sm shadow-sm",
+        density.input,
         invalid && "border-red-500 text-red-100 ring-1 ring-red-500/20",
       )}
     >
@@ -126,7 +200,7 @@ function Input({ value, invalid }: { value: string; invalid?: boolean }) {
 
 function IconBox({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-7 w-7 items-center justify-center rounded-md border bg-muted text-muted-foreground">
+    <div className={cn("flex items-center justify-center rounded-md border bg-muted text-muted-foreground", density.iconBox)}>
       {children}
     </div>
   )
@@ -154,7 +228,7 @@ export function App() {
 function CalibrationReference() {
   return (
     <main className="flex min-h-screen bg-background text-foreground">
-      <aside className="flex w-[220px] flex-col border-r bg-card p-5">
+      <aside className={cn("flex w-[220px] flex-col border-r bg-card", density.cardTitle)}>
         <div>
           <h2 className="text-2xl font-bold">Aetna</h2>
           <p className="mt-2 text-sm text-muted-foreground">calibration</p>
@@ -164,7 +238,8 @@ function CalibrationReference() {
             <div
               key={item}
               className={cn(
-                "flex h-10 items-center gap-3 rounded-lg px-2 text-sm font-medium",
+                "flex items-center gap-3 rounded-lg px-2 text-sm font-medium",
+                density.navRow,
                 i === 0 && "border border-sky-500/50 bg-sky-500/10",
               )}
             >
@@ -178,7 +253,7 @@ function CalibrationReference() {
         </div>
       </aside>
 
-      <section className="flex flex-1 flex-col gap-5 p-7">
+      <section className={cn("flex flex-1 flex-col", density.space, density.pagePad)}>
         <header className="flex h-14 items-start gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Polish calibration</h1>
@@ -192,15 +267,15 @@ function CalibrationReference() {
           </div>
         </header>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className={cn("grid grid-cols-3", density.gap)}>
           <Kpi title="Latency" value="42 ms" delta="-18%" tone="success" />
           <Kpi title="Runs" value="1,284" delta="+12%" tone="success" />
           <Kpi title="Errors" value="7" delta="+2" tone="destructive" />
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(560px,1fr)_320px] gap-3">
+        <div className={cn("grid min-h-0 flex-1 grid-cols-[minmax(560px,1fr)_320px]", density.gap)}>
           <Card title="Reference rows" className="min-h-0">
-            <div className="grid h-8 grid-cols-[7rem_1fr_4.5rem_5.5rem] items-center gap-3 px-2 text-sm text-muted-foreground">
+            <div className={cn("grid grid-cols-[7rem_1fr_4.5rem_5.5rem] items-center gap-3 px-2 text-sm text-muted-foreground", density.tableHeader)}>
               <span>Status</span>
               <span>Surface</span>
               <span>Owner</span>
@@ -212,7 +287,8 @@ function CalibrationReference() {
                 <div
                   key={title}
                   className={cn(
-                    "grid h-[52px] grid-cols-[7rem_1fr_4.5rem_5.5rem] items-center gap-3 rounded-md px-2 text-sm",
+                    "grid grid-cols-[7rem_1fr_4.5rem_5.5rem] items-center gap-3 rounded-md px-2 text-sm",
+                    density.tableRow,
                     i === 0 && "border border-sky-500/50 bg-sky-500/10",
                   )}
                 >
@@ -231,7 +307,7 @@ function CalibrationReference() {
           <Card title="Command surface">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <div className="flex h-10 items-center rounded-md border bg-background pl-9 text-sm text-muted-foreground shadow-sm">
+              <div className={cn("flex items-center rounded-md border bg-background pl-9 text-sm text-muted-foreground shadow-sm", density.input)}>
                 Search commands...
               </div>
             </div>
@@ -241,7 +317,7 @@ function CalibrationReference() {
               <CommandRow icon={<RefreshCw />} label="Refresh repository" shortcut="Ctrl+R" />
               <CommandRow icon={<AlertTriangle />} label="Force push" shortcut="Danger" />
             </div>
-            <div className="mt-4 rounded-lg border bg-muted/50 p-4">
+            <div className={cn("mt-4 rounded-lg border bg-muted/50", density.sectionPad)}>
               <h3 className="font-semibold">Form state probes</h3>
               <div className="mt-4 space-y-3">
                 <Input value="Valid input" />
@@ -338,8 +414,8 @@ function DashboardReference() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-hidden p-4">
-          <div className="grid grid-cols-4 gap-4">
+        <div className={cn("min-h-0 flex-1 overflow-hidden", density.space, density.sectionPad)}>
+          <div className={cn("grid grid-cols-4", density.gap)}>
             <MetricCard
               icon={<CircleDollarSign className="h-4 w-4" />}
               title="Total Revenue"
@@ -370,8 +446,8 @@ function DashboardReference() {
             />
           </div>
 
-          <div className="grid grid-cols-[minmax(0,1fr)_330px] gap-4">
-            <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
+          <div className={cn("grid grid-cols-[minmax(0,1fr)_330px]", density.gap)}>
+            <section data-calibration-boundary className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
               <div className="flex items-center gap-2">
                 <div>
                   <h2 className="text-base font-semibold">Visitors for the last 6 months</h2>
@@ -399,7 +475,7 @@ function DashboardReference() {
               </div>
             </section>
 
-            <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
+            <section data-calibration-boundary className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
               <h2 className="text-base font-semibold">Recent Sales</h2>
               <p className="text-sm text-muted-foreground">You made 265 sales this month.</p>
               <div className="mt-5 space-y-4">
@@ -415,13 +491,13 @@ function DashboardReference() {
             data-calibration-boundary
             className="overflow-hidden rounded-xl border bg-card shadow-sm"
           >
-            <div className="flex h-11 items-center gap-3 border-b px-4">
+            <div className={cn("flex items-center gap-3 border-b px-4", density.navRow)}>
               <h2 className="text-base font-semibold">Documents</h2>
               <Button variant="outline" className="ml-auto h-8 px-3">
                 Columns
               </Button>
             </div>
-            <div className="grid h-9 grid-cols-[2.2rem_1.8fr_1fr_6.5rem_4rem_4rem_8rem_2rem] items-center gap-3 border-b px-4 text-xs font-medium text-muted-foreground">
+            <div className={cn("grid grid-cols-[2.2rem_1.8fr_1fr_6.5rem_4rem_4rem_8rem_2rem] items-center gap-3 border-b px-4 text-xs font-medium text-muted-foreground", density.tableHeader)}>
               <span />
               <span>Header</span>
               <span>Section Type</span>
@@ -435,7 +511,7 @@ function DashboardReference() {
               {dashboardRows.slice(0, 2).map(([header, section, status, target, limit, reviewer], i) => (
                 <div
                   key={header}
-                  className="grid h-10 grid-cols-[2.2rem_1.8fr_1fr_6.5rem_4rem_4rem_8rem_2rem] items-center gap-3 border-b px-4 text-sm last:border-b-0"
+                  className={cn("grid grid-cols-[2.2rem_1.8fr_1fr_6.5rem_4rem_4rem_8rem_2rem] items-center gap-3 border-b px-4 text-sm last:border-b-0", density.tableRow)}
                 >
                   <span className="text-muted-foreground">::</span>
                   <button className="truncate text-left font-medium underline-offset-4 hover:underline">
@@ -504,7 +580,7 @@ function MetricCard({
   note: string
 }) {
   return (
-    <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
+    <section data-calibration-boundary className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
           {icon}
@@ -600,14 +676,15 @@ function SettingsReference() {
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)_300px] gap-4 overflow-hidden p-4">
+        <div className={cn("grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)_300px] overflow-hidden", density.gap, density.sectionPad)}>
           <section data-calibration-boundary className="rounded-xl border bg-card p-2 shadow-sm">
             <div className="space-y-1">
               {["Account", "Security", "Notifications", "Appearance", "Billing"].map((item, i) => (
                 <button
                   key={item}
                   className={cn(
-                    "flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-medium",
+                    "flex w-full items-center gap-2 rounded-md px-3 text-left text-sm font-medium",
+                    density.navRow,
                     i === 0 ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/70",
                   )}
                 >
@@ -618,7 +695,7 @@ function SettingsReference() {
             </div>
           </section>
 
-          <section className="min-h-0 space-y-4 overflow-hidden">
+          <section className={cn("min-h-0 overflow-hidden", density.space)}>
             <div>
               <h2 className="text-2xl font-semibold tracking-tight">Account</h2>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -627,13 +704,13 @@ function SettingsReference() {
             </div>
 
             <div data-calibration-boundary className="rounded-xl border bg-card shadow-sm">
-              <div className="border-b p-4">
+              <div className={cn("border-b", density.cardP)}>
                 <h3 className="text-base font-semibold">Profile</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   This information appears in audit logs and shared documents.
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-4 p-4">
+              <div className={cn("grid grid-cols-2", density.gap, density.cardP)}>
                 <SettingField label="Display name" value="Alicia Koch" />
                 <SettingField label="Email" value="alicia@example.com" icon={<Mail />} />
                 <SettingSelect label="Role" value="Workspace admin" />
@@ -642,7 +719,7 @@ function SettingsReference() {
             </div>
 
             <div data-calibration-boundary className="rounded-xl border bg-card shadow-sm">
-              <div className="border-b p-4">
+              <div className={cn("border-b", density.cardP)}>
                 <h3 className="text-base font-semibold">Preferences</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Defaults used when creating new dashboards and exports.
@@ -668,8 +745,8 @@ function SettingsReference() {
             </div>
           </section>
 
-          <aside className="space-y-4">
-            <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
+          <aside className={density.space}>
+            <section data-calibration-boundary className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
               <div className="flex items-center gap-2">
                 <IconBox>
                   <KeyRound className="h-4 w-4" />
@@ -685,7 +762,7 @@ function SettingsReference() {
               </div>
             </section>
 
-            <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
+            <section data-calibration-boundary className={cn("rounded-xl border bg-card shadow-sm", density.cardP)}>
               <div className="flex items-center gap-2">
                 <IconBox>
                   <Laptop className="h-4 w-4" />
@@ -726,7 +803,7 @@ function SettingField({
       <span className="text-sm font-medium">{label}</span>
       <div className="relative mt-2">
         {icon && <span className="absolute left-3 top-2.5 text-muted-foreground [&>svg]:h-4 [&>svg]:w-4">{icon}</span>}
-        <div className={cn("flex h-9 items-center rounded-md border bg-background px-3 text-sm shadow-sm", icon && "pl-9")}>
+        <div className={cn("flex items-center rounded-md border bg-background text-sm shadow-sm", density.input, icon && "pl-9")}>
           <span className="truncate">{value}</span>
         </div>
       </div>
@@ -738,7 +815,7 @@ function SettingSelect({ label, value }: { label: string; value: string }) {
   return (
     <label className="block min-w-0">
       <span className="text-sm font-medium">{label}</span>
-      <div className="mt-2 flex h-9 items-center rounded-md border bg-background px-3 text-sm shadow-sm">
+      <div className={cn("mt-2 flex items-center rounded-md border bg-background text-sm shadow-sm", density.input)}>
         <span className="truncate">{value}</span>
         <ChevronRight className="ml-auto h-4 w-4 rotate-90 text-muted-foreground" />
       </div>
@@ -758,7 +835,7 @@ function PreferenceRow({
   compact?: boolean
 }) {
   return (
-    <div className={cn("flex items-center gap-4", compact ? "py-2" : "px-4 py-3")}>
+    <div className={cn("flex items-center gap-4", compact ? "py-2" : density.preferenceRow)}>
       <div className="min-w-0">
         <div className="truncate text-sm font-medium">{title}</div>
         <div className="truncate text-xs text-muted-foreground">{description}</div>
