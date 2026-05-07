@@ -702,6 +702,9 @@ impl RunnerCore {
     /// this once per frame alongside `set_hotkeys`, sourcing the value
     /// from [`crate::event::App::selection`].
     pub fn set_selection(&mut self, selection: crate::selection::Selection) {
+        if self.ui_state.current_selection != selection {
+            self.ui_state.bump_caret_activity(Instant::now());
+        }
         self.ui_state.current_selection = selection;
     }
 
@@ -1045,7 +1048,7 @@ impl RunnerCore {
 /// equals `id`, walking the laid-out tree. Returns `None` when the id
 /// isn't found (the focused target outlived its node — a one-frame
 /// race after a rebuild).
-fn find_capture_keys(node: &El, id: &str) -> Option<bool> {
+pub(crate) fn find_capture_keys(node: &El, id: &str) -> Option<bool> {
     if node.computed_id == id {
         return Some(node.capture_keys);
     }

@@ -276,7 +276,8 @@ fn build_text_input(value: &str, selection: TextSelection, opts: TextInputOpts<'
     children.push(
         caret_bar()
             .translate(head_px, 0.0)
-            .alpha_follows_focused_ancestor(),
+            .alpha_follows_focused_ancestor()
+            .blink_when_focused(),
     );
 
     El::new(Kind::Custom("text_input"))
@@ -1175,6 +1176,150 @@ mod tests {
             }
             None
         }
+    }
+
+    #[test]
+    fn caret_blink_alpha_holds_solid_through_grace_then_cycles() {
+        // The blink helper is deterministic on input duration; this
+        // test pins the cycle shape we paint with.
+        use crate::state::caret_blink_alpha_for;
+        use std::time::Duration;
+        // Inside the 500ms grace window → solid.
+        assert_eq!(caret_blink_alpha_for(Duration::from_millis(0)), 1.0);
+        assert_eq!(caret_blink_alpha_for(Duration::from_millis(499)), 1.0);
+        // Past grace, first half of the 1060ms period → on.
+        assert_eq!(caret_blink_alpha_for(Duration::from_millis(500)), 1.0);
+        assert_eq!(caret_blink_alpha_for(Duration::from_millis(1029)), 1.0);
+        // Second half → off.
+        assert_eq!(caret_blink_alpha_for(Duration::from_millis(1030)), 0.0);
+        assert_eq!(caret_blink_alpha_for(Duration::from_millis(1559)), 0.0);
+        // Back to on for the next cycle.
+        assert_eq!(caret_blink_alpha_for(Duration::from_millis(1560)), 1.0);
+    }
+
+    #[test]
+    fn caret_paint_alpha_blinks_after_focus_in_live_mode() {
+        // Drive the tick at staged Instants so we hit each phase of
+        // the blink cycle; verifies the painter actually multiplies
+        // the caret bar's alpha by ui_state.caret_blink_alpha.
+        use crate::draw_ops::draw_ops;
+        use crate::ir::DrawOp;
+        use crate::shader::UniformValue;
+        use crate::state::AnimationMode;
+        use std::time::Duration;
+
+        let mut tree =
+            crate::column([text_input("hi", TextSelection::caret(0)).key("ti")]).padding(20.0);
+        let mut state = UiState::new();
+        state.set_animation_mode(AnimationMode::Live);
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.sync_focus_order(&tree);
+
+        // Focus the input — set_focus bumps caret_activity_at.
+        let target = state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "ti")
+            .unwrap()
+            .clone();
+        state.set_focus(Some(target));
+        let activity_at = state.caret_activity_at.expect("set_focus bumps activity");
+        let input_id = tree.children[0].computed_id.clone();
+
+        // Pin focus envelope after each tick so the caret's
+        // focus-fade contribution is out of the picture and we can
+        // attribute alpha changes purely to the blink.
+        let pin_focus = |state: &mut UiState| {
+            state.envelopes.insert(
+                (input_id.clone(), crate::state::EnvelopeKind::FocusRing),
+                1.0,
+            );
+        };
+
+        // t = 0 → grace, on.
+        state.tick_visual_animations(&mut tree, activity_at);
+        pin_focus(&mut state);
+        assert_eq!(caret_alpha(&tree, &state), Some(255));
+
+        // t = 1100ms → second half of cycle, off.
+        state.tick_visual_animations(&mut tree, activity_at + Duration::from_millis(1100));
+        pin_focus(&mut state);
+        assert_eq!(caret_alpha(&tree, &state), Some(0));
+
+        // t = 1600ms → back on.
+        state.tick_visual_animations(&mut tree, activity_at + Duration::from_millis(1600));
+        pin_focus(&mut state);
+        assert_eq!(caret_alpha(&tree, &state), Some(255));
+
+        fn caret_alpha(tree: &El, state: &UiState) -> Option<u8> {
+            for op in draw_ops(tree, state) {
+                if let DrawOp::Quad { id, uniforms, .. } = op
+                    && id.contains("text_input_caret")
+                    && let Some(UniformValue::Color(c)) = uniforms.get("fill")
+                {
+                    return Some(c.a);
+                }
+            }
+            None
+        }
+    }
+
+    #[test]
+    fn caret_blink_resumes_solid_after_selection_change() {
+        // Editing (selection change) bumps activity, which puts the
+        // caret back into the grace window even mid-cycle.
+        use crate::state::AnimationMode;
+        use std::time::Duration;
+        use web_time::Instant;
+
+        let mut tree =
+            crate::column([text_input("hi", TextSelection::caret(0)).key("ti")]).padding(20.0);
+        let mut state = UiState::new();
+        state.set_animation_mode(AnimationMode::Live);
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.sync_focus_order(&tree);
+
+        // Drive activity to deep into the off phase.
+        let t0 = Instant::now();
+        state.bump_caret_activity(t0);
+        state.tick_visual_animations(&mut tree, t0 + Duration::from_millis(1100));
+        assert_eq!(state.caret_blink_alpha, 0.0, "deep in off phase");
+
+        // Re-bump (e.g. user typed) — alpha snaps back to solid.
+        state.bump_caret_activity(t0 + Duration::from_millis(1100));
+        assert_eq!(state.caret_blink_alpha, 1.0, "fresh activity → solid");
+    }
+
+    #[test]
+    fn caret_tick_requests_redraw_while_capture_keys_node_focused() {
+        // Without this, the host's animation loop wouldn't keep
+        // pumping frames during idle, and the caret would freeze
+        // mid-blink.
+        use crate::state::AnimationMode;
+        use web_time::Instant;
+
+        let mut tree =
+            crate::column([text_input("hi", TextSelection::caret(0)).key("ti")]).padding(20.0);
+        let mut state = UiState::new();
+        state.set_animation_mode(AnimationMode::Live);
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.sync_focus_order(&tree);
+
+        // No focus → no redraw demand from blink.
+        let no_focus = state.tick_visual_animations(&mut tree, Instant::now());
+        assert!(!no_focus, "without focus, blink doesn't request redraws");
+
+        // Focus the input → tick should keep requesting redraws so
+        // the on/off cycle keeps animating.
+        let target = state
+            .focus_order
+            .iter()
+            .find(|t| t.key == "ti")
+            .unwrap()
+            .clone();
+        state.set_focus(Some(target));
+        let focused = state.tick_visual_animations(&mut tree, Instant::now());
+        assert!(focused, "focused capture_keys node → tick demands redraws");
     }
 
     #[test]

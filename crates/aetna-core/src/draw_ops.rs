@@ -103,7 +103,23 @@ fn push_node(
     } else {
         1.0
     };
-    let opacity = inherited_opacity * n.opacity * focus_alpha_mul;
+    // Caret blink: nodes flagged `blink_when_focused` are additionally
+    // multiplied by the runtime's caret-blink alpha. Composes with the
+    // focus envelope above so the caret bar fades in on focus, then
+    // settles into the on/off cycle while focus stays.
+    let blink_alpha_mul = if n.blink_when_focused {
+        // No activity recorded yet → caret stays solid. This keeps
+        // headless / pre-event tests deterministic without forcing
+        // them to drive the animation tick.
+        if ui_state.caret_activity_at.is_some() {
+            ui_state.caret_blink_alpha
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
+    let opacity = inherited_opacity * n.opacity * focus_alpha_mul * blink_alpha_mul;
     // Children inherit the *immediate* focusable ancestor's envelope.
     // When this node is itself focusable, its envelope replaces the
     // inherited one; otherwise the inherited value passes through.

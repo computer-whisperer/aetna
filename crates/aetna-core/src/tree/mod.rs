@@ -89,6 +89,12 @@ pub struct El {
     /// the input is focused, fading via the standard focus animation.
     /// Documented in `widget_kit.md` as part of the public surface.
     pub alpha_follows_focused_ancestor: bool,
+    /// When true, this node's paint opacity is also multiplied by the
+    /// runtime's caret blink alpha. Combine with
+    /// `alpha_follows_focused_ancestor` (the caret should blink only
+    /// while the input is focused) — the two compose multiplicatively.
+    /// Used by `text_input` / `text_area`'s caret bar.
+    pub blink_when_focused: bool,
     /// When true, this node's hover and press visual envelopes are
     /// borrowed from its nearest focusable ancestor instead of being
     /// driven by its own (always-zero) envelope.
@@ -315,6 +321,7 @@ impl Default for El {
             selectable: false,
             capture_keys: false,
             alpha_follows_focused_ancestor: false,
+            blink_when_focused: false,
             state_follows_interactive_ancestor: false,
             source: Source::default(),
             axis: Axis::Overlay,
@@ -425,6 +432,15 @@ impl El {
     /// the focused element" behavior.
     pub fn alpha_follows_focused_ancestor(mut self) -> Self {
         self.alpha_follows_focused_ancestor = true;
+        self
+    }
+    /// Multiply this node's paint opacity by the runtime's caret blink
+    /// alpha (0..1). Composes with [`Self::alpha_follows_focused_ancestor`]
+    /// — the caret bar uses both so it blinks only while the input is
+    /// focused, fading in/out smoothly with focus animation and on/off
+    /// with the blink cycle.
+    pub fn blink_when_focused(mut self) -> Self {
+        self.blink_when_focused = true;
         self
     }
     /// Borrow hover and press visual envelopes from the nearest

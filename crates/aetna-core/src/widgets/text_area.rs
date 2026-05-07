@@ -149,7 +149,8 @@ fn build_text_area(value: &str, selection: TextSelection) -> El {
     children.push(
         caret_bar()
             .translate(caret_x, caret_y)
-            .alpha_follows_focused_ancestor(),
+            .alpha_follows_focused_ancestor()
+            .blink_when_focused(),
     );
 
     El::new(Kind::Custom("text_area"))

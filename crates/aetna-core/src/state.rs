@@ -144,6 +144,29 @@ pub(crate) const MULTI_CLICK_TIME: std::time::Duration =
 /// pointer jitter, narrower than a deliberate move to a new target.
 pub(crate) const MULTI_CLICK_DIST: f32 = 4.0;
 
+/// Caret stays solid for this long after activity (typing, caret
+/// motion, focus arriving) before the blink cycle starts. Prevents
+/// the caret from disappearing mid-keystroke.
+pub(crate) const CARET_BLINK_GRACE: std::time::Duration =
+    std::time::Duration::from_millis(500);
+/// One on / off period of the caret blink. macOS-ish (~530ms each
+/// half) but tunable; the painter only ever sees the resolved alpha,
+/// not the period itself.
+pub(crate) const CARET_BLINK_PERIOD: std::time::Duration =
+    std::time::Duration::from_millis(1060);
+
+/// Resolve the caret blink alpha for the given activity age. Returns
+/// `1.0` while inside the post-activity grace window, then alternates
+/// `1.0` (first half of each period) and `0.0` (second half).
+pub(crate) fn caret_blink_alpha_for(age: std::time::Duration) -> f32 {
+    if age < CARET_BLINK_GRACE {
+        return 1.0;
+    }
+    let t = (age - CARET_BLINK_GRACE).as_millis() as u64;
+    let half = (CARET_BLINK_PERIOD.as_millis() as u64) / 2;
+    if (t / half) % 2 == 0 { 1.0 } else { 0.0 }
+}
+
 /// relationship stays 1:1.
 #[derive(Clone, Debug)]
 pub struct ThumbDrag {
@@ -201,6 +224,17 @@ pub struct UiState {
     /// Most recent primary pointer-down record, used to compute the
     /// next press's click count. `None` until the first primary press.
     pub(crate) last_click: Option<ClickSequence>,
+    /// When the focused-input caret last had visible activity (a
+    /// selection change or a focus transition). Used by the animation
+    /// tick to drive the caret blink: solid for a brief grace window
+    /// after activity, then cycling on / off until the next bump.
+    /// `None` before the first bump — caret renders solid in that
+    /// pre-activity state, matching tests that don't care about blink.
+    pub(crate) caret_activity_at: Option<Instant>,
+    /// Current caret blink alpha in `[0.0, 1.0]`, written by the
+    /// animation tick from `caret_activity_at`. The painter multiplies
+    /// any node flagged `blink_when_focused` by this value.
+    pub(crate) caret_blink_alpha: f32,
     /// LIFO of focus targets pushed when popover layers open. Each new
     /// `Kind::Custom("popover_layer")` snapshots the current focus here
     /// and auto-focuses into the layer; closing the layer pops and
@@ -534,8 +568,22 @@ impl UiState {
         if let Some(target) =
             target.filter(|t| self.focus_order.iter().any(|f| f.node_id == t.node_id))
         {
+            let changed = self.focused.as_ref().map(|f| &f.node_id) != Some(&target.node_id);
             self.focused = Some(target);
+            if changed {
+                self.bump_caret_activity(Instant::now());
+            }
         }
+    }
+
+    /// Reset the caret-blink phase to "fully on": the painter holds
+    /// the caret solid for `CARET_BLINK_GRACE` after this call before
+    /// resuming the on/off cycle. Called whenever the user does
+    /// something the caret should react to — focusing an input,
+    /// moving the caret, replacing the selection.
+    pub(crate) fn bump_caret_activity(&mut self, now: Instant) {
+        self.caret_activity_at = Some(now);
+        self.caret_blink_alpha = 1.0;
     }
 
     pub fn focus_next(&mut self) -> Option<&UiTarget> {
@@ -671,7 +719,36 @@ impl UiState {
             .retain(|(id, _), _| live_ids.contains(id.as_str()));
         self.widget_states
             .retain(|(id, _), _| live_ids.contains(id.as_str()));
+
+        // Caret blink. Resolve the new alpha from the activity age,
+        // then keep requesting redraws as long as a capture_keys node
+        // is focused so the cycle keeps animating in idle frames.
+        // `Settled` mode pins the caret to fully on so headless
+        // single-frame snapshots don't randomly catch the off phase.
+        if let Some(activity_at) = self.caret_activity_at {
+            let alpha = match mode {
+                AnimationMode::Settled => 1.0,
+                AnimationMode::Live => caret_blink_alpha_for(now.saturating_duration_since(activity_at)),
+            };
+            self.caret_blink_alpha = alpha;
+        }
+        if mode == AnimationMode::Live && self.focused_node_captures_keys(root) {
+            needs_redraw = true;
+        }
+
         needs_redraw
+    }
+
+    /// Walk `root` and return whether the currently-focused node has
+    /// `capture_keys` set. Used by the animation tick to keep
+    /// requesting redraws while a text input is focused (so the caret
+    /// blink keeps animating). Returns `false` when no node is focused
+    /// or the focused node isn't in the tree.
+    fn focused_node_captures_keys(&self, root: &El) -> bool {
+        let Some(focused) = self.focused.as_ref() else {
+            return false;
+        };
+        crate::runtime::find_capture_keys(root, &focused.node_id).unwrap_or(false)
     }
 
     // ---- widget_state typed bucket ----
