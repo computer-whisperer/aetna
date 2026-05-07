@@ -57,6 +57,7 @@ use std::panic::Location;
 
 use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
+use crate::metrics::MetricsRole;
 use crate::selection::{Selection, SelectionPoint, SelectionRange};
 use crate::style::StyleProfile;
 use crate::text::metrics::{self, TextGeometry};
@@ -152,6 +153,7 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
     El::new(Kind::Custom("text_area"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::TextArea)
         .surface_role(SurfaceRole::Input)
         .focusable()
         .capture_keys()
@@ -159,13 +161,13 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
         .cursor(Cursor::Text)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
-        .radius(tokens::RADIUS_MD)
+        .default_radius(tokens::RADIUS_MD)
         .axis(Axis::Overlay)
         .align(Align::Start)
         .justify(Justify::Start)
         .width(Size::Fill(1.0))
         .height(Size::Hug)
-        .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+        .default_padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
         .children(children)
 }
 

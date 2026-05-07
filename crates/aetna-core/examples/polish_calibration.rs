@@ -68,6 +68,7 @@ fn nav_item(icon: &'static str, label: &'static str, selected: bool) -> El {
     .gap(tokens::SPACE_SM)
     .height(Size::Fixed(38.0))
     .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .align(Align::Center)
     .radius(tokens::RADIUS_MD)
     .focusable();
 
@@ -116,6 +117,7 @@ fn toolbar() -> El {
     ])
     .gap(tokens::SPACE_SM)
     .height(Size::Fixed(54.0))
+    .align(Align::Center)
 }
 
 fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, positive: bool) -> El {
@@ -231,6 +233,7 @@ fn data_row(
     .height(Size::Fixed(52.0))
     .padding(Sides::xy(tokens::SPACE_SM, 0.0))
     .gap(tokens::SPACE_SM)
+    .align(Align::Center)
     .radius(tokens::RADIUS_SM)
     .focusable();
 
@@ -273,6 +276,7 @@ fn menu_row(icon_name: &'static str, label: &'static str, shortcut: &'static str
     ])
     .height(Size::Fixed(32.0))
     .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .align(Align::Center)
     .radius(tokens::RADIUS_SM)
     .fill(tokens::BG_CARD)
     .focusable()

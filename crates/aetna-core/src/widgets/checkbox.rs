@@ -38,6 +38,7 @@ use crate::anim::Timing;
 use crate::cursor::Cursor;
 use crate::event::UiEvent;
 use crate::icons::icon;
+use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -76,15 +77,16 @@ pub fn checkbox(value: bool) -> El {
     El::new(Kind::Custom("checkbox"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::ChoiceControl)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
         .cursor(Cursor::Pointer)
         .axis(Axis::Overlay)
         .align(Align::Center)
         .justify(Justify::Center)
-        .width(Size::Fixed(SIZE))
-        .height(Size::Fixed(SIZE))
-        .radius(tokens::RADIUS_SM)
+        .default_width(Size::Fixed(SIZE))
+        .default_height(Size::Fixed(SIZE))
+        .default_radius(tokens::RADIUS_SM)
         .fill(fill)
         .stroke(stroke)
         .animate(Timing::SPRING_STANDARD)

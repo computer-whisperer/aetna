@@ -25,6 +25,7 @@
 use std::panic::Location;
 
 use crate::cursor::Cursor;
+use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -35,6 +36,7 @@ pub fn button(label: impl Into<String>) -> El {
     El::new(Kind::Custom("button"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Solid)
+        .metrics_role(MetricsRole::Button)
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
@@ -45,10 +47,10 @@ pub fn button(label: impl Into<String>) -> El {
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
         .text_color(tokens::TEXT_FOREGROUND)
-        .radius(tokens::RADIUS_MD)
-        .width(Size::Hug)
-        .height(Size::Fixed(36.0))
-        .padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_radius(tokens::RADIUS_MD)
+        .default_width(Size::Hug)
+        .default_height(Size::Fixed(32.0))
+        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
 }
 
 #[track_caller]
@@ -56,6 +58,7 @@ pub fn icon_button(source: impl IntoIconSource) -> El {
     El::new(Kind::Custom("icon_button"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Solid)
+        .metrics_role(MetricsRole::IconButton)
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
@@ -66,9 +69,9 @@ pub fn icon_button(source: impl IntoIconSource) -> El {
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
         .text_color(tokens::TEXT_FOREGROUND)
-        .radius(tokens::RADIUS_MD)
-        .width(Size::Fixed(36.0))
-        .height(Size::Fixed(36.0))
+        .default_radius(tokens::RADIUS_MD)
+        .default_width(Size::Fixed(32.0))
+        .default_height(Size::Fixed(32.0))
 }
 
 #[track_caller]
@@ -76,12 +79,13 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
     El::new(Kind::Custom("button_with_icon"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Solid)
+        .metrics_role(MetricsRole::Button)
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
         .cursor(Cursor::Pointer)
         .axis(Axis::Row)
-        .gap(tokens::SPACE_SM)
+        .default_gap(tokens::SPACE_SM)
         .align(Align::Center)
         .justify(Justify::Center)
         .child(
@@ -93,8 +97,8 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
         .text_color(tokens::TEXT_FOREGROUND)
-        .radius(tokens::RADIUS_MD)
-        .width(Size::Hug)
-        .height(Size::Fixed(36.0))
-        .padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_radius(tokens::RADIUS_MD)
+        .default_width(Size::Hug)
+        .default_height(Size::Fixed(32.0))
+        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
 }

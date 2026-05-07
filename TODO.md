@@ -73,3 +73,9 @@ Out of scope; flagged so they don't get rediscovered:
   auto-expansion in `draw_ops`; they must set `paint_overflow`
   manually. Consider a per-shader "shadow extent" metadata if a custom
   shader in the workspace ever ships shadows.
+- **Lint suppressions.** Apps can scope lint findings with
+  `app_path_marker` and post-filter reports, but there is no deliberate
+  in-tree suppression API. Add familiar `.allow_lint(...)` semantics
+  before polishing lints get stricter: suppress by `FindingKind`, require
+  a reason string, keep suppressed findings auditable, and avoid
+  suppressing `DuplicateId` until attribution is stronger.

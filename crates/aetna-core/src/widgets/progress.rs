@@ -32,6 +32,7 @@
 use std::panic::Location;
 
 use crate::layout::LayoutCtx;
+use crate::metrics::MetricsRole;
 use crate::tokens;
 use crate::tree::*;
 
@@ -69,9 +70,10 @@ pub fn progress(value: f32, fill_color: Color) -> El {
             .radius(tokens::RADIUS_PILL),
     ])
     .at_loc(Location::caller())
+    .metrics_role(MetricsRole::Progress)
     .layout(layout)
     .width(Size::Fill(1.0))
-    .height(Size::Fixed(DEFAULT_HEIGHT))
+    .default_height(Size::Fixed(DEFAULT_HEIGHT))
 }
 
 #[cfg(test)]

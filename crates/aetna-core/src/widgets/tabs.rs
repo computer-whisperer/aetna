@@ -64,6 +64,7 @@ use std::panic::Location;
 
 use crate::anim::Timing;
 use crate::event::{UiEvent, UiEventKind};
+use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -173,16 +174,17 @@ pub fn tab_trigger(
     let base = El::new(Kind::Custom("tab_trigger"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::TabTrigger)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
         .key(routed_key)
         .text(label)
         .text_align(TextAlign::Center)
         .text_role(TextRole::Label)
-        .radius(tokens::RADIUS_SM)
+        .default_radius(tokens::RADIUS_SM)
         .width(Size::Fill(1.0))
-        .height(Size::Fixed(28.0))
-        .padding(Sides::xy(tokens::SPACE_MD, 0.0));
+        .default_height(Size::Fixed(32.0))
+        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0));
     // `.current()` / `.ghost()` set fill, stroke, and text_color —
     // adding `.animate(SPRING_QUICK)` after them eases all three
     // between rebuilds, so switching tabs cross-fades the active
@@ -238,15 +240,16 @@ where
         .collect();
     El::new(Kind::Custom("tabs_list"))
         .at_loc(caller)
+        .metrics_role(MetricsRole::TabList)
         .key(key)
         .axis(Axis::Row)
-        .gap(tokens::SPACE_XS)
+        .default_gap(tokens::SPACE_XS)
         .align(Align::Stretch)
         .children(triggers)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
-        .radius(tokens::RADIUS_MD)
-        .padding(Sides::all(tokens::SPACE_XS))
+        .default_radius(tokens::RADIUS_MD)
+        .default_padding(Sides::all(tokens::SPACE_XS))
         .width(Size::Fill(1.0))
         .height(Size::Hug)
 }

@@ -6,6 +6,7 @@
 
 use std::panic::Location;
 
+use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -15,6 +16,7 @@ pub fn badge(label: impl Into<String>) -> El {
     El::new(Kind::Badge)
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Tinted)
+        .metrics_role(MetricsRole::Badge)
         .text(label)
         .text_align(TextAlign::Center)
         .text_role(TextRole::Label)
@@ -22,8 +24,8 @@ pub fn badge(label: impl Into<String>) -> El {
         .text_color(tokens::INFO)
         .fill(tokens::INFO.with_alpha(38))
         .stroke(tokens::INFO.with_alpha(120))
-        .radius(tokens::RADIUS_PILL)
+        .default_radius(tokens::RADIUS_PILL)
         .width(Size::Hug)
-        .height(Size::Fixed(22.0))
-        .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+        .default_height(Size::Fixed(20.0))
+        .default_padding(Sides::xy(tokens::SPACE_SM, 0.0))
 }

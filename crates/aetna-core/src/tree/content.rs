@@ -93,6 +93,8 @@ impl El {
         self.font_size = size;
         self.width = Size::Fixed(size);
         self.height = Size::Fixed(size);
+        self.explicit_width = true;
+        self.explicit_height = true;
         self
     }
 

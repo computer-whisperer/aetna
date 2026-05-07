@@ -117,6 +117,7 @@ pub mod icons;
 pub mod image;
 pub mod ir;
 pub mod layout;
+pub mod metrics;
 #[doc(hidden)]
 pub mod paint;
 pub mod palette;
@@ -158,6 +159,7 @@ pub use hit_test::{hit_test, hit_test_target};
 pub use icons::{IconStroke, all_icon_names, icon, icon_path, icon_strokes, icon_vector_asset};
 pub use ir::{DrawOp, TextAnchor};
 pub use layout::{LayoutCtx, LayoutFn, VirtualItems, layout};
+pub use metrics::{ComponentSize, Density, MetricsRole, ThemeMetrics};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
 pub use state::{AnimationMode, UiState, WidgetState};
 pub use style::StyleProfile;

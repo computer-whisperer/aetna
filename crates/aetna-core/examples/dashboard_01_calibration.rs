@@ -114,6 +114,7 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     .gap(tokens::SPACE_SM)
     .height(Size::Fixed(32.0))
     .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .align(Align::Center)
     .radius(tokens::RADIUS_SM)
     .focusable();
 

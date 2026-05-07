@@ -8,6 +8,7 @@
 use std::panic::Location;
 
 use super::text::h3;
+use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -114,14 +115,15 @@ where
     El::new(Kind::Modal)
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::Panel)
         .surface_role(SurfaceRole::Popover)
         .children(children)
         .fill(tokens::BG_CARD)
         .stroke(tokens::BORDER)
-        .radius(tokens::RADIUS_LG)
+        .default_radius(tokens::RADIUS_LG)
         .shadow(tokens::SHADOW_LG)
-        .padding(tokens::SPACE_LG)
-        .gap(tokens::SPACE_MD)
+        .default_padding(tokens::SPACE_LG)
+        .default_gap(tokens::SPACE_MD)
         .width(Size::Fixed(420.0))
         .height(Size::Hug)
         .axis(Axis::Column)

@@ -25,6 +25,7 @@
 //! - **Typography roles:** `caption`, `label`, `body`, `title`, `heading`, `display`, `code`
 //! - **Text shape:** `bold`, `semibold`, `small`, `xsmall`, `color`
 
+use crate::metrics::ComponentSize;
 use crate::tokens;
 use crate::tree::*;
 
@@ -234,11 +235,19 @@ impl El {
         self
     }
     pub fn small(mut self) -> Self {
-        self.font_size = tokens::FONT_SM;
+        if text_only_leaf(&self) {
+            self.font_size = tokens::FONT_SM;
+        } else {
+            self.component_size = Some(ComponentSize::Sm);
+        }
         self
     }
     pub fn xsmall(mut self) -> Self {
-        self.font_size = tokens::FONT_XS;
+        if text_only_leaf(&self) {
+            self.font_size = tokens::FONT_XS;
+        } else {
+            self.component_size = Some(ComponentSize::Xs);
+        }
         self
     }
     /// Set an explicit text color.

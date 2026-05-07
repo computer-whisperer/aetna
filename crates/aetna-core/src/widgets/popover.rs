@@ -49,6 +49,7 @@
 
 use std::panic::Location;
 
+use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -293,15 +294,16 @@ where
     El::new(Kind::Custom("popover_panel"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::Panel)
         .surface_role(SurfaceRole::Popover)
         .arrow_nav_siblings()
         .children(children)
         .fill(tokens::BG_CARD)
         .stroke(tokens::BORDER)
-        .radius(tokens::RADIUS_SM)
+        .default_radius(tokens::RADIUS_SM)
         .shadow(tokens::SHADOW_MD)
-        .padding(tokens::SPACE_XS)
-        .gap(0.0)
+        .default_padding(tokens::SPACE_XS)
+        .default_gap(0.0)
         .width(Size::Hug)
         .height(Size::Hug)
         .axis(Axis::Column)
@@ -337,15 +339,16 @@ pub fn menu_item(label: impl Into<String>) -> El {
     El::new(Kind::Custom("menu_item"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Solid)
+        .metrics_role(MetricsRole::MenuItem)
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .child(label)
         .fill(tokens::BG_CARD)
-        .radius(tokens::RADIUS_SM)
-        .padding(Sides::xy(tokens::SPACE_MD, 0.0))
-        .gap(0.0)
+        .default_radius(tokens::RADIUS_SM)
+        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_gap(0.0)
         .width(Size::Fill(1.0))
-        .height(Size::Fixed(28.0))
+        .default_height(Size::Fixed(28.0))
         .axis(Axis::Row)
         .align(Align::Center)
         .justify(Justify::Start)

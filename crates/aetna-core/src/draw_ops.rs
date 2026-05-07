@@ -1208,7 +1208,7 @@ mod tests {
         let DrawOp::Quad { scissor, .. } = clipped else {
             panic!("expected button surface quad");
         };
-        assert_eq!(*scissor, Some(Rect::new(0.0, 0.0, 120.0, 36.0)));
+        assert_eq!(*scissor, Some(Rect::new(0.0, 0.0, 120.0, 32.0)));
     }
 
     #[test]
@@ -1497,7 +1497,7 @@ mod tests {
             uniforms.get("vec_c"),
             Some(&UniformValue::Vec4([
                 1.0,
-                tokens::RADIUS_LG,
+                tokens::RADIUS_MD,
                 tokens::SHADOW_LG,
                 0.0
             ]))

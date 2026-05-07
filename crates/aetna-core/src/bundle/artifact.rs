@@ -152,6 +152,7 @@ pub fn render_bundle_with_theme(
     app_path_marker: Option<&str>,
     theme: &Theme,
 ) -> Bundle {
+    theme.apply_metrics(root);
     layout::layout(root, ui_state, viewport);
     let draw_ops = draw_ops::draw_ops_with_theme(root, ui_state, theme);
     let svg = svg_from_ops(viewport.w, viewport.h, &draw_ops, tokens::BG_APP);

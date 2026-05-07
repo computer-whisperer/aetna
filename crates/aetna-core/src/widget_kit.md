@@ -14,7 +14,7 @@ A widget is a function (or struct + builder) that returns an [`El`]. To make wid
 
 ### 1. The `El` builder
 
-The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`, `padding`, `gap`, `axis`, `align`, `justify`), visuals (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`, `surface_role`), text (`text`, `text_color`, `text_align`, `text_role`, `font_size`, `font_weight`, `mono`, `italic`, `underline`, `strikethrough`, `link`, `wrap_text`, `text_overflow`, `ellipsis`, `max_lines`), icons (`icon`, `icon_name`, `icon_size`, `icon_stroke_width`), the paint-time transforms (`opacity`, `translate`, `scale`, `animate`), and the cross-cutting flags `clip()` (scissor children to this node's painted rect) and `scrollable()` (route wheel events to this node so it can scroll). `Kind::Scroll` already turns both on; `clip()` and `scrollable()` are the primitives behind it, available to any user widget that wants the same behaviour without claiming the structural variant.
+The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`, `padding`, `gap`, `axis`, `align`, `justify`, `size`, `density`, `metrics_role`), visuals (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`, `surface_role`), text (`text`, `text_color`, `text_align`, `text_role`, `font_size`, `font_weight`, `mono`, `italic`, `underline`, `strikethrough`, `link`, `wrap_text`, `text_overflow`, `ellipsis`, `max_lines`), icons (`icon`, `icon_name`, `icon_size`, `icon_stroke_width`), the paint-time transforms (`opacity`, `translate`, `scale`, `animate`), and the cross-cutting flags `clip()` (scissor children to this node's painted rect) and `scrollable()` (route wheel events to this node so it can scroll). `Kind::Scroll` already turns both on; `clip()` and `scrollable()` are the primitives behind it, available to any user widget that wants the same behaviour without claiming the structural variant.
 
 ### 1.1 Layout — sizing, alignment, container axes
 
@@ -60,6 +60,65 @@ Common pitfalls to avoid:
 
 Shortcuts: `.fill_size()` for `.width(Fill(1.0)).height(Fill(1.0))`; `.hug()` for both Hug. `.padding(Sides::xy(h, v))` for asymmetric padding.
 
+### 1.2 Component size and content density
+
+Stock controls follow the same vocabulary used by common UI kits:
+`ComponentSize::{Xs, Sm, Md, Lg}` for t-shirt control sizing, and
+`Density::{Compact, Comfortable, Spacious}` for repeated or grouped
+content. Local modifiers use the familiar names:
+
+```rust
+button("Preview").small()
+button("Publish").large()
+text_input(&query, &selection, "search").size(ComponentSize::Sm)
+card("Documents", rows).compact()
+menu_item("Open").dense()
+tabs_list("settings", &tab, tabs).compact()
+progress(value, tokens::PRIMARY).small()
+```
+
+For text leaves, `.small()` / `.xsmall()` keep their typography meaning
+and reduce font size. For stock controls and surfaces, the same modifiers
+set component size. When in doubt, the explicit enum form is available:
+`.size(ComponentSize::Sm)` or `.density(Density::Compact)`.
+
+Themes set the defaults before layout, similar to MUI default props or
+Ant's compact algorithm:
+
+```rust
+Theme::aetna_dark()
+    .with_default_component_size(ComponentSize::Sm)
+    .with_default_density(Density::Compact)
+```
+
+Aetna's built-in default starts at `ComponentSize::Sm` and
+`Density::Compact` so desktop apps land in a denser baseline. Use
+`Theme::aetna_dark().comfortable()` or `Theme::aetna_dark().spacious()`
+when an app needs larger controls or more open grouped surfaces.
+
+Explicit layout calls still win. If an app writes `.height(Size::Fixed(44.0))`
+or `.padding(20.0)`, theme metrics leave that author choice alone.
+Custom widgets opt into the same defaults by setting `.metrics_role(...)`
+to one of the stock `MetricsRole`s; no special `Kind` is required.
+Use `Button` / `IconButton` / `Input` / `TextArea` / `Badge` for
+control-like surfaces, `Card` / `Panel` / `MenuItem` / `ListItem` for
+grouped content, `TableHeader` / `TableRow` for table-like rows,
+`TabTrigger` / `TabList` for segmented controls, `ChoiceControl` /
+`ChoiceItem` for checkbox/radio-style widgets, and `Slider` /
+`Progress` for range indicators.
+
+Theme metrics can tune broad app defaults or a stock family:
+
+```rust
+Theme::aetna_dark()
+    .compact()
+    .with_input_size(ComponentSize::Md)
+    .with_tab_size(ComponentSize::Sm)
+    .with_list_density(Density::Compact)
+    .with_table_density(Density::Compact)
+    .with_panel_density(Density::Comfortable)
+```
+
 ### 2. Identity & a11y tags
 
 - `key(s)` — stable identity for hit-test routing and event delivery.
@@ -94,7 +153,7 @@ Roles apply default size/weight/color so product code can say what a text run is
 
 ### 3.3 Icons
 
-Use `icon("search")` for built-in vector icons, `icon_button("menu")` for the standard 36px icon-only button surface, and `button_with_icon("upload", "Publish")` for label+icon actions. The names intentionally mirror common lucide/shadcn names: `menu`, `search`, `bell`, `layout-dashboard`, `file-text`, `folder`, `users`, `bar-chart`, `git-branch`, `git-commit`, `refresh-cw`, `alert-circle`, `check`, `x`, `plus`, `chevron-right`, and related basics.
+Use `icon("search")` for built-in vector icons, `icon_button("menu")` for the standard theme-sized icon-only button surface, and `button_with_icon("upload", "Publish")` for label+icon actions. The names intentionally mirror common lucide/shadcn names: `menu`, `search`, `bell`, `layout-dashboard`, `file-text`, `folder`, `users`, `bar-chart`, `git-branch`, `git-commit`, `refresh-cw`, `alert-circle`, `check`, `x`, `plus`, `chevron-right`, and related basics.
 
 Icons are normal `El`s: set `.color(...)`, `.icon_size(...)`, `.icon_stroke_width(...)`, width/height, padding, or put them inside rows the same way as text. Tree dumps show `icon=<name>`, draw-op artifacts include `Icon` records, and the SVG fallback renders the vector path directly. The wgpu renderer, browser WebGPU path, and Vulkano renderer all render SVG-backed vector geometry through the shared vector mesh.
 

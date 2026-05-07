@@ -13,6 +13,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::metrics::{ComponentSize, Density, ThemeMetrics};
 use crate::palette::Palette;
 use crate::shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
 use crate::tokens;
@@ -23,6 +24,7 @@ use crate::vector::IconMaterial;
 #[derive(Clone, Debug)]
 pub struct Theme {
     palette: Palette,
+    metrics: ThemeMetrics,
     surface: SurfaceTheme,
     roles: BTreeMap<SurfaceRole, SurfaceTheme>,
     icon_material: IconMaterial,
@@ -30,7 +32,7 @@ pub struct Theme {
 
 impl Theme {
     /// Current default: stock rounded-rect surfaces with the Aetna Dark
-    /// palette.
+    /// palette and compact desktop metrics.
     pub fn aetna_dark() -> Self {
         Self::default()
     }
@@ -53,6 +55,121 @@ impl Theme {
     /// The active runtime palette.
     pub fn palette(&self) -> &Palette {
         &self.palette
+    }
+
+    /// The active layout metrics used to resolve stock widget defaults.
+    pub fn metrics(&self) -> &ThemeMetrics {
+        &self.metrics
+    }
+
+    /// Replace the runtime layout metrics.
+    pub fn with_metrics(mut self, metrics: ThemeMetrics) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
+    /// Set the default t-shirt size for stock controls.
+    pub fn with_default_component_size(mut self, size: ComponentSize) -> Self {
+        self.metrics = self.metrics.with_default_component_size(size);
+        self
+    }
+
+    /// Set the default density for repeated/grouped stock surfaces.
+    pub fn with_default_density(mut self, density: Density) -> Self {
+        self.metrics = self.metrics.with_default_density(density);
+        self
+    }
+
+    /// Compact application defaults, matching the common UI-kit term.
+    pub fn compact(self) -> Self {
+        self.with_default_component_size(ComponentSize::Sm)
+            .with_default_density(Density::Compact)
+    }
+
+    /// Comfortable application defaults.
+    pub fn comfortable(self) -> Self {
+        self.with_default_component_size(ComponentSize::Md)
+            .with_default_density(Density::Comfortable)
+    }
+
+    /// Spacious application defaults.
+    pub fn spacious(self) -> Self {
+        self.with_default_component_size(ComponentSize::Lg)
+            .with_default_density(Density::Spacious)
+    }
+
+    pub fn with_button_size(mut self, size: ComponentSize) -> Self {
+        self.metrics = self.metrics.with_button_size(size);
+        self
+    }
+
+    pub fn with_input_size(mut self, size: ComponentSize) -> Self {
+        self.metrics = self.metrics.with_input_size(size);
+        self
+    }
+
+    pub fn with_badge_size(mut self, size: ComponentSize) -> Self {
+        self.metrics = self.metrics.with_badge_size(size);
+        self
+    }
+
+    pub fn with_tab_size(mut self, size: ComponentSize) -> Self {
+        self.metrics = self.metrics.with_tab_size(size);
+        self
+    }
+
+    pub fn with_choice_size(mut self, size: ComponentSize) -> Self {
+        self.metrics = self.metrics.with_choice_size(size);
+        self
+    }
+
+    pub fn with_slider_size(mut self, size: ComponentSize) -> Self {
+        self.metrics = self.metrics.with_slider_size(size);
+        self
+    }
+
+    pub fn with_progress_size(mut self, size: ComponentSize) -> Self {
+        self.metrics = self.metrics.with_progress_size(size);
+        self
+    }
+
+    pub fn with_card_density(mut self, density: Density) -> Self {
+        self.metrics = self.metrics.with_card_density(density);
+        self
+    }
+
+    pub fn with_panel_density(mut self, density: Density) -> Self {
+        self.metrics = self.metrics.with_panel_density(density);
+        self
+    }
+
+    pub fn with_menu_density(mut self, density: Density) -> Self {
+        self.metrics = self.metrics.with_menu_density(density);
+        self
+    }
+
+    pub fn with_list_density(mut self, density: Density) -> Self {
+        self.metrics = self.metrics.with_list_density(density);
+        self
+    }
+
+    pub fn with_table_density(mut self, density: Density) -> Self {
+        self.metrics = self.metrics.with_table_density(density);
+        self
+    }
+
+    pub fn with_tab_density(mut self, density: Density) -> Self {
+        self.metrics = self.metrics.with_tab_density(density);
+        self
+    }
+
+    pub fn with_choice_density(mut self, density: Density) -> Self {
+        self.metrics = self.metrics.with_choice_density(density);
+        self
+    }
+
+    pub(crate) fn apply_metrics(&self, root: &mut crate::El) {
+        self.metrics.apply_to_tree(root);
     }
 
     /// Shorthand for `self.palette().resolve(c)`. Library code that
@@ -149,6 +266,7 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             palette: Palette::default(),
+            metrics: ThemeMetrics::default(),
             surface: SurfaceTheme {
                 handle: ShaderHandle::Stock(StockShader::RoundedRect),
                 uniforms: UniformBlock::new(),

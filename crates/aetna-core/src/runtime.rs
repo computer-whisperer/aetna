@@ -852,6 +852,7 @@ impl RunnerCore {
         layout::assign_ids(root);
         let tooltip_pending = tooltip::synthesize_tooltip(root, &self.ui_state, t0);
         let toast_pending = toast::synthesize_toasts(root, &mut self.ui_state, t0);
+        self.theme.apply_metrics(root);
         layout::layout(root, &mut self.ui_state, viewport);
         self.ui_state.sync_focus_order(root);
         self.ui_state.sync_selection_order(root);

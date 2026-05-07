@@ -37,6 +37,7 @@
 use std::fmt::Write as _;
 
 use crate::layout;
+use crate::metrics::MetricsRole;
 use crate::state::UiState;
 use crate::tree::*;
 
@@ -57,6 +58,7 @@ pub enum FindingKind {
     Overflow,
     TextOverflow,
     DuplicateId,
+    Alignment,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -208,6 +210,16 @@ fn walk(
         }
     }
 
+    // Row alignment: mirror CSS flex's default `align-items: stretch`,
+    // but catch the common UI-row mistake where a fixed-size visual
+    // child (icon/badge/control) is pinned to the row top beside a
+    // text sibling. The fix is the familiar `items-center` move:
+    // `.align(Align::Center)`.
+    if let Some(blame) = self_blame {
+        lint_row_alignment(n, computed, ui_state, r, blame);
+        lint_overlay_alignment(n, computed, ui_state, r, blame);
+    }
+
     // Text overflow: detect at the node itself (with the node's own
     // padding-aware content region — text_w includes padding so the
     // check fires when the text exceeds the padded content area, not
@@ -308,6 +320,120 @@ fn walk(
     }
 }
 
+fn lint_row_alignment(
+    n: &El,
+    computed: Rect,
+    ui_state: &UiState,
+    r: &mut LintReport,
+    blame: Source,
+) {
+    if !matches!(n.axis, Axis::Row) || !matches!(n.align, Align::Stretch) || n.children.len() < 2 {
+        return;
+    }
+    if !n.children.iter().any(is_text_like_child) {
+        return;
+    }
+
+    let inner = computed.inset(n.padding);
+    if inner.h <= 0.0 {
+        return;
+    }
+
+    for child in &n.children {
+        if !is_fixed_visual_child(child) {
+            continue;
+        }
+        let child_rect = ui_state.rect(&child.computed_id);
+        let top_pinned = (child_rect.y - inner.y).abs() <= 0.5;
+        let visibly_short = child_rect.h + 2.0 < inner.h;
+        if top_pinned && visibly_short {
+            r.findings.push(Finding {
+                kind: FindingKind::Alignment,
+                node_id: n.computed_id.clone(),
+                source: blame,
+                message: format!(
+                    "row has a fixed-size visual child pinned to the top beside text; add .align(Align::Center) to vertically center row content"
+                ),
+            });
+            return;
+        }
+    }
+}
+
+fn lint_overlay_alignment(
+    n: &El,
+    computed: Rect,
+    ui_state: &UiState,
+    r: &mut LintReport,
+    blame: Source,
+) {
+    if !matches!(n.axis, Axis::Overlay)
+        || n.children.is_empty()
+        || !matches!(n.align, Align::Start | Align::Stretch)
+        || !matches!(n.justify, Justify::Start | Justify::SpaceBetween)
+        || !has_visible_surface(n)
+    {
+        return;
+    }
+
+    let inner = computed.inset(n.padding);
+    if inner.w <= 0.0 || inner.h <= 0.0 {
+        return;
+    }
+
+    for child in &n.children {
+        if !is_fixed_visual_child(child) {
+            continue;
+        }
+        let child_rect = ui_state.rect(&child.computed_id);
+        let left_pinned = (child_rect.x - inner.x).abs() <= 0.5;
+        let top_pinned = (child_rect.y - inner.y).abs() <= 0.5;
+        let visibly_narrow = child_rect.w + 2.0 < inner.w;
+        let visibly_short = child_rect.h + 2.0 < inner.h;
+        if left_pinned && top_pinned && visibly_narrow && visibly_short {
+            r.findings.push(Finding {
+                kind: FindingKind::Alignment,
+                node_id: n.computed_id.clone(),
+                source: blame,
+                message: "overlay has a smaller fixed-size visual child pinned to the top-left; add .align(Align::Center).justify(Justify::Center) to center overlay content"
+                    .to_string(),
+            });
+            return;
+        }
+    }
+}
+
+fn is_text_like_child(c: &El) -> bool {
+    c.text.is_some()
+        || c.children
+            .iter()
+            .any(|child| child.text.is_some() || matches!(child.kind, Kind::Text | Kind::Heading))
+}
+
+fn has_visible_surface(n: &El) -> bool {
+    n.fill.is_some() || n.stroke.is_some()
+}
+
+fn is_fixed_visual_child(c: &El) -> bool {
+    let fixed_height = matches!(c.height, Size::Fixed(_));
+    fixed_height
+        && (c.icon.is_some()
+            || matches!(c.kind, Kind::Badge)
+            || matches!(
+                c.metrics_role,
+                Some(
+                    MetricsRole::Button
+                        | MetricsRole::IconButton
+                        | MetricsRole::Input
+                        | MetricsRole::Badge
+                        | MetricsRole::TabTrigger
+                        | MetricsRole::ChoiceControl
+                        | MetricsRole::Slider
+                        | MetricsRole::Progress
+                )
+            ))
+}
+
 fn rect_contains(parent: Rect, child: Rect, tol: f32) -> bool {
     child.x >= parent.x - tol
         && child.y >= parent.y - tol
@@ -395,6 +521,91 @@ mod tests {
                 .findings
                 .iter()
                 .any(|finding| finding.kind == FindingKind::TextOverflow),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn stretch_row_with_top_pinned_icon_and_text_suggests_center_alignment() {
+        let root = crate::row([
+            crate::icon("settings").icon_size(16.0),
+            crate::text("Settings").width(Size::Fill(1.0)),
+        ])
+        .height(Size::Fixed(36.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::Alignment
+                    && finding.message.contains(".align(Align::Center)")),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn centered_row_with_icon_and_text_satisfies_alignment_policy() {
+        let root = crate::row([
+            crate::icon("settings").icon_size(16.0),
+            crate::text("Settings").width(Size::Fill(1.0)),
+        ])
+        .height(Size::Fixed(36.0))
+        .align(Align::Center);
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::Alignment),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn overlay_with_top_left_pinned_icon_suggests_center_alignment() {
+        let icon_slot = crate::stack([crate::icon("settings").icon_size(14.0)])
+            .fill(crate::tokens::BG_MUTED)
+            .width(Size::Fixed(26.0))
+            .height(Size::Fixed(26.0));
+        let root = crate::column([icon_slot]);
+
+        let report = lint_one(root);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::Alignment
+                    && finding.message.contains(".justify(Justify::Center)")),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn centered_overlay_icon_satisfies_alignment_policy() {
+        let icon_slot = crate::stack([crate::icon("settings").icon_size(14.0)])
+            .align(Align::Center)
+            .justify(Justify::Center)
+            .fill(crate::tokens::BG_MUTED)
+            .width(Size::Fixed(26.0))
+            .height(Size::Fixed(26.0));
+        let root = crate::column([icon_slot]);
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::Alignment),
             "{}",
             report.text()
         );

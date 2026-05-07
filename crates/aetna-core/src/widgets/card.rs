@@ -8,6 +8,7 @@
 use std::panic::Location;
 
 use super::text::h3;
+use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -24,16 +25,17 @@ where
     El::new(Kind::Card)
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::Card)
         .surface_role(SurfaceRole::Panel)
         .children(children)
         .fill(tokens::BG_CARD)
         .stroke(tokens::BORDER)
-        .radius(tokens::RADIUS_LG)
+        .default_radius(tokens::RADIUS_MD)
         .shadow(tokens::SHADOW_MD)
-        .padding(tokens::SPACE_LG)
-        .gap(tokens::SPACE_MD)
+        .default_padding(tokens::SPACE_MD)
+        .default_gap(tokens::SPACE_SM)
         .width(Size::Fill(1.0))
-        .height(Size::Hug)
+        .default_height(Size::Hug)
         .axis(Axis::Column)
         .align(Align::Stretch)
 }

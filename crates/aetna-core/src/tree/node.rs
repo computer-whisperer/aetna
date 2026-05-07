@@ -3,6 +3,7 @@
 use crate::anim::Timing;
 use crate::image::{Image, ImageFit};
 use crate::layout::{LayoutFn, VirtualItems};
+use crate::metrics::{ComponentSize, Density, MetricsRole};
 use crate::shader::ShaderBinding;
 use crate::style::StyleProfile;
 
@@ -91,6 +92,26 @@ pub struct El {
     pub justify: Justify,
     pub width: Size,
     pub height: Size,
+    /// Optional t-shirt size for stock widgets. `None` means the active
+    /// theme supplies the component-class default.
+    pub component_size: Option<ComponentSize>,
+    /// Optional content density for repeated/grouped stock surfaces.
+    /// `None` means the active theme supplies the component-class
+    /// default.
+    pub density: Option<Density>,
+    /// Optional theme-facing metrics role. Stock widgets set this so
+    /// the theme can resolve default height/padding/radius before
+    /// layout; app-defined widgets can set the same role to opt into
+    /// identical sizing behavior.
+    pub metrics_role: Option<MetricsRole>,
+    /// Author-overrode layout metrics. Stock constructors set defaults
+    /// without these flags; public modifiers flip them so theme metrics
+    /// do not clobber explicit app choices.
+    pub explicit_width: bool,
+    pub explicit_height: bool,
+    pub explicit_padding: bool,
+    pub explicit_gap: bool,
+    pub explicit_radius: bool,
 
     // Visual style — these still live on `El` because the modifier API
     // (`.fill(c)`, `.radius(r)`, `.shadow(s)`) is what users type. The

@@ -66,6 +66,7 @@
 use std::panic::Location;
 
 use crate::event::{UiEvent, UiEventKind};
+use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -206,22 +207,23 @@ pub fn select_trigger(key: impl Into<String>, current_label: impl Into<String>) 
     El::new(Kind::Custom("select_trigger"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::Input)
         .surface_role(SurfaceRole::Input)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
         .key(key)
         .axis(Axis::Row)
-        .gap(tokens::SPACE_SM)
+        .default_gap(tokens::SPACE_SM)
         .align(Align::Center)
         .child(label)
         .child(chevron)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
         .text_color(tokens::TEXT_FOREGROUND)
-        .radius(tokens::RADIUS_MD)
-        .width(Size::Fill(1.0))
-        .height(Size::Fixed(36.0))
-        .padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_radius(tokens::RADIUS_MD)
+        .default_width(Size::Fill(1.0))
+        .default_height(Size::Fixed(32.0))
+        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
 }
 
 /// The dropdown popover for a `select`. Render this only while the

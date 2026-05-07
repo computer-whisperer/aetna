@@ -39,6 +39,7 @@ impl El {
 
     pub fn radius(mut self, r: f32) -> Self {
         self.radius = r;
+        self.explicit_radius = true;
         self
     }
 
@@ -118,6 +119,12 @@ impl El {
     // ---- Internal: style profile ----
     pub fn style_profile(mut self, p: StyleProfile) -> Self {
         self.style_profile = p;
+        self
+    }
+
+    pub(crate) fn default_radius(mut self, r: f32) -> Self {
+        self.radius = r;
+        self.explicit_radius = false;
         self
     }
 }

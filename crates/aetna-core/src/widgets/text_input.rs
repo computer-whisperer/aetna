@@ -46,6 +46,7 @@ use std::panic::Location;
 
 use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
+use crate::metrics::MetricsRole;
 use crate::selection::{Selection, SelectionPoint, SelectionRange};
 use crate::style::StyleProfile;
 use crate::text::metrics::{self, TextGeometry};
@@ -302,6 +303,7 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
     El::new(Kind::Custom("text_input"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::Input)
         .surface_role(SurfaceRole::Input)
         .focusable()
         .capture_keys()
@@ -309,13 +311,13 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
         .cursor(Cursor::Text)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)
-        .radius(tokens::RADIUS_MD)
+        .default_radius(tokens::RADIUS_MD)
         .axis(Axis::Overlay)
         .align(Align::Start) // children pin to the left edge
         .justify(Justify::Center) // children center vertically
-        .width(Size::Fill(1.0))
-        .height(Size::Fixed(36.0))
-        .padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_width(Size::Fill(1.0))
+        .default_height(Size::Fixed(32.0))
+        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
         .children(children)
 }
 

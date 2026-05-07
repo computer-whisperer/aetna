@@ -49,6 +49,7 @@ use std::panic::Location;
 use crate::anim::Timing;
 use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind};
+use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
@@ -144,11 +145,12 @@ pub fn radio_item(
     let dot_scale = if selected { 1.0 } else { 0.4 };
 
     let indicator = El::new(Kind::Custom("radio-indicator"))
+        .metrics_role(MetricsRole::ChoiceControl)
         .axis(Axis::Overlay)
         .align(Align::Center)
         .justify(Justify::Center)
-        .width(Size::Fixed(INDICATOR_OUTER))
-        .height(Size::Fixed(INDICATOR_OUTER))
+        .default_width(Size::Fixed(INDICATOR_OUTER))
+        .default_height(Size::Fixed(INDICATOR_OUTER))
         .radius(tokens::RADIUS_PILL)
         .fill(tokens::BG_CARD)
         .stroke(stroke)
@@ -167,19 +169,20 @@ pub fn radio_item(
     El::new(Kind::Custom("radio_item"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::ChoiceItem)
         .focusable()
         .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
         .cursor(Cursor::Pointer)
         .key(routed_key)
         .axis(Axis::Row)
-        .gap(tokens::SPACE_SM)
+        .default_gap(tokens::SPACE_SM)
         .align(Align::Center)
         .child(indicator)
         .child(text(label).label())
-        .padding(Sides::xy(0.0, tokens::SPACE_XS))
+        .default_padding(Sides::xy(0.0, tokens::SPACE_XS))
         .width(Size::Fill(1.0))
         .height(Size::Hug)
-        .radius(tokens::RADIUS_SM)
+        .default_radius(tokens::RADIUS_SM)
 }
 
 /// A vertical column of [`radio_item`]s for selecting one value from

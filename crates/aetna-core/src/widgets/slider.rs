@@ -56,6 +56,7 @@ use std::panic::Location;
 use crate::cursor::Cursor;
 use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::layout::LayoutCtx;
+use crate::metrics::MetricsRole;
 use crate::tokens;
 use crate::tree::*;
 
@@ -118,6 +119,7 @@ pub fn slider(value: f32, fill_color: Color) -> El {
             .state_follows_interactive_ancestor(),
     ])
     .at_loc(Location::caller())
+    .metrics_role(MetricsRole::Slider)
     .focusable()
     // Grab at rest, Grabbing while the press is anchored here — the
     // resolver picks `cursor_pressed` only on the literal press target,
@@ -125,7 +127,7 @@ pub fn slider(value: f32, fill_color: Color) -> El {
     .cursor(Cursor::Grab)
     .cursor_pressed(Cursor::Grabbing)
     .layout(layout)
-    .height(Size::Fixed(DEFAULT_HEIGHT))
+    .default_height(Size::Fixed(DEFAULT_HEIGHT))
     .width(Size::Fill(1.0))
 }
 
