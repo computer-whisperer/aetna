@@ -4,9 +4,9 @@
 //!
 //! The handle is a sibling primitive, not a container wrapper. Drop it
 //! between two siblings inside any `row()` / `column()`; the app owns
-//! the size state and folds drag events back through one of the
-//! [`apply_event_*`] helpers (or a custom handler built on
-//! [`delta_from_event`]).
+//! the size state and folds drag events back through
+//! [`apply_event_fixed`] / [`apply_event_weights`] (or a custom handler
+//! built on [`delta_from_event`]).
 //!
 //! # Pinned sidebar (one fixed-pixel pane + one filling pane)
 //!

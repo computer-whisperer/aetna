@@ -1,0 +1,122 @@
+//! Built-in icon-name vocabulary.
+
+/// Built-in icon names. The string forms intentionally mirror common
+/// lucide/shadcn names so agents can reach for familiar labels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum IconName {
+    Activity,
+    AlertCircle,
+    BarChart,
+    Bell,
+    Check,
+    ChevronDown,
+    ChevronRight,
+    Command,
+    Download,
+    FileText,
+    Folder,
+    GitBranch,
+    GitCommit,
+    Info,
+    LayoutDashboard,
+    Menu,
+    MoreHorizontal,
+    Plus,
+    RefreshCw,
+    Search,
+    Settings,
+    Upload,
+    Users,
+    X,
+}
+
+impl IconName {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "activity" => Some(Self::Activity),
+            "alert-circle" | "alert" => Some(Self::AlertCircle),
+            "bar-chart" | "chart-bar" => Some(Self::BarChart),
+            "bell" => Some(Self::Bell),
+            "check" => Some(Self::Check),
+            "chevron-down" => Some(Self::ChevronDown),
+            "chevron-right" => Some(Self::ChevronRight),
+            "command" => Some(Self::Command),
+            "download" => Some(Self::Download),
+            "file-text" | "file" => Some(Self::FileText),
+            "folder" => Some(Self::Folder),
+            "git-branch" => Some(Self::GitBranch),
+            "git-commit" => Some(Self::GitCommit),
+            "info" => Some(Self::Info),
+            "layout-dashboard" | "dashboard" => Some(Self::LayoutDashboard),
+            "menu" => Some(Self::Menu),
+            "more-horizontal" | "more" => Some(Self::MoreHorizontal),
+            "plus" => Some(Self::Plus),
+            "refresh-cw" | "refresh" => Some(Self::RefreshCw),
+            "search" => Some(Self::Search),
+            "settings" => Some(Self::Settings),
+            "upload" => Some(Self::Upload),
+            "users" => Some(Self::Users),
+            "x" | "close" => Some(Self::X),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Activity => "activity",
+            Self::AlertCircle => "alert-circle",
+            Self::BarChart => "bar-chart",
+            Self::Bell => "bell",
+            Self::Check => "check",
+            Self::ChevronDown => "chevron-down",
+            Self::ChevronRight => "chevron-right",
+            Self::Command => "command",
+            Self::Download => "download",
+            Self::FileText => "file-text",
+            Self::Folder => "folder",
+            Self::GitBranch => "git-branch",
+            Self::GitCommit => "git-commit",
+            Self::Info => "info",
+            Self::LayoutDashboard => "layout-dashboard",
+            Self::Menu => "menu",
+            Self::MoreHorizontal => "more-horizontal",
+            Self::Plus => "plus",
+            Self::RefreshCw => "refresh-cw",
+            Self::Search => "search",
+            Self::Settings => "settings",
+            Self::Upload => "upload",
+            Self::Users => "users",
+            Self::X => "x",
+        }
+    }
+
+    pub fn fallback_glyph(self) -> &'static str {
+        match self {
+            Self::Activity => "~",
+            Self::AlertCircle => "!",
+            Self::BarChart => "▮",
+            Self::Bell => "•",
+            Self::Check => "✓",
+            Self::ChevronDown => "⌄",
+            Self::ChevronRight => "›",
+            Self::Command => "⌘",
+            Self::Download => "↓",
+            Self::FileText => "□",
+            Self::Folder => "▱",
+            Self::GitBranch => "⑂",
+            Self::GitCommit => "⊙",
+            Self::Info => "i",
+            Self::LayoutDashboard => "▦",
+            Self::Menu => "☰",
+            Self::MoreHorizontal => "…",
+            Self::Plus => "+",
+            Self::RefreshCw => "↻",
+            Self::Search => "⌕",
+            Self::Settings => "⚙",
+            Self::Upload => "↑",
+            Self::Users => "●",
+            Self::X => "×",
+        }
+    }
+}

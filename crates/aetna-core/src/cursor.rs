@@ -1,7 +1,7 @@
 //! Pointer-cursor model.
 //!
-//! Widgets opt into a non-default cursor by setting [`El::cursor`].
-//! Per-frame the host runner reads [`UiState::cursor`] and forwards
+//! Widgets opt into a non-default cursor by setting [`crate::tree::El::cursor`].
+//! Per-frame the host runner reads [`crate::state::UiState::cursor`] and forwards
 //! the resolved value to the windowing backend (winit's
 //! `Window::set_cursor_icon`, the browser's `canvas.style.cursor`).
 //!
@@ -11,7 +11,7 @@
 //!
 //! # Resolution
 //!
-//! [`UiState::cursor`] picks the active cursor each frame:
+//! [`crate::state::UiState::cursor`] picks the active cursor each frame:
 //!
 //! 1. If a press is captured (button drag, slider thumb, scrollbar
 //!    drag, text selection, …), the cursor follows the *press target*'s

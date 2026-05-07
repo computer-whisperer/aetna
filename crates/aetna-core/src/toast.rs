@@ -1,6 +1,6 @@
 //! Runtime-synthesized toast notifications.
 //!
-//! Apps push toasts via [`App::drain_toasts`]; the runtime stamps each
+//! Apps push toasts via [`crate::App::drain_toasts`]; the runtime stamps each
 //! with a monotonic id + an expiry, queues it in [`UiState`],
 //! and synthesizes a `Kind::Custom("toast_stack")` floating layer at
 //! the El root each frame. The layer is bottom-right anchored, hit-test

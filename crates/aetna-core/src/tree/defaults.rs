@@ -1,0 +1,82 @@
+//! Default values for [`El`].
+//!
+//! Keeping this separate from the field list makes it easier to review
+//! default-policy changes without scanning the whole node surface.
+
+use crate::image::ImageFit;
+use crate::style::StyleProfile;
+
+use super::geometry::Sides;
+use super::layout_types::{Align, Axis, Justify, Size};
+use super::node::El;
+use super::semantics::{Kind, Source, SurfaceRole};
+use super::text_types::{FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
+
+impl Default for El {
+    fn default() -> Self {
+        Self {
+            kind: Kind::Group,
+            style_profile: StyleProfile::TextOnly,
+            key: None,
+            block_pointer: false,
+            focusable: false,
+            selectable: false,
+            capture_keys: false,
+            alpha_follows_focused_ancestor: false,
+            blink_when_focused: false,
+            state_follows_interactive_ancestor: false,
+            source: Source::default(),
+            axis: Axis::Overlay,
+            gap: 0.0,
+            padding: Sides::zero(),
+            align: Align::Stretch,
+            justify: Justify::Start,
+            width: Size::Hug,
+            height: Size::Hug,
+            fill: None,
+            dim_fill: None,
+            stroke: None,
+            stroke_width: 0.0,
+            radius: 0.0,
+            shadow: 0.0,
+            surface_role: SurfaceRole::None,
+            paint_overflow: Sides::zero(),
+            clip: false,
+            scrollable: false,
+            arrow_nav_siblings: false,
+            tooltip: None,
+            cursor: None,
+            cursor_pressed: None,
+            shader_override: None,
+            layout_override: None,
+            virtual_items: None,
+            scrollbar: false,
+            text: None,
+            text_color: None,
+            text_align: TextAlign::Start,
+            text_wrap: TextWrap::NoWrap,
+            text_overflow: TextOverflow::Clip,
+            text_role: TextRole::Body,
+            text_max_lines: None,
+            font_size: crate::tokens::FONT_BASE,
+            font_weight: FontWeight::Regular,
+            font_mono: false,
+            text_italic: false,
+            text_bg: None,
+            text_underline: false,
+            text_strikethrough: false,
+            text_link: None,
+            icon: None,
+            icon_stroke_width: 2.0,
+            image: None,
+            image_tint: None,
+            image_fit: ImageFit::Contain,
+            children: Vec::new(),
+            opacity: 1.0,
+            translate: (0.0, 0.0),
+            scale: 1.0,
+            animate: None,
+            computed_id: String::new(),
+        }
+    }
+}

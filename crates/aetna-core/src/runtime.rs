@@ -89,7 +89,7 @@ pub struct PrepareResult {
 }
 
 /// Outcome of a pointer-move dispatch through
-/// [`Core::pointer_moved`] (or its backend wrappers).
+/// [`RunnerCore::pointer_moved`] (or its backend wrappers).
 ///
 /// Wayland and most X11 compositors deliver `CursorMoved` at very
 /// high frequency while the cursor sits over the surface — even
