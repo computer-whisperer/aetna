@@ -26,7 +26,7 @@ fn main() -> std::io::Result<()> {
         ),
     ];
     for (name, theme) in variants {
-        let mut root = dashboard_01_calibration();
+        let mut root = dashboard_01_calibration(theme.metrics().layout());
         let bundle =
             render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
         let written = write_bundle(&bundle, &out_dir, name)?;
@@ -45,8 +45,8 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn dashboard_01_calibration() -> El {
-    row([dashboard_sidebar(), dashboard_main()])
+fn dashboard_01_calibration(layout: LayoutMetrics) -> El {
+    row([dashboard_sidebar(layout), dashboard_main(layout)])
         .key("metric:root")
         .gap(0.0)
         .fill_size()
@@ -54,7 +54,7 @@ fn dashboard_01_calibration() -> El {
         .fill(tokens::BG_APP)
 }
 
-fn dashboard_sidebar() -> El {
+fn dashboard_sidebar(layout: LayoutMetrics) -> El {
     column([
         row([
             icon_cell("A"),
@@ -106,8 +106,8 @@ fn dashboard_sidebar() -> El {
         .height(Size::Fixed(50.0))
         .align(Align::Center),
     ])
-    .gap(tokens::SPACE_SM)
-    .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+    .gap(layout.cluster_gap)
+    .padding(Sides::xy(layout.section_gap, layout.cluster_gap))
     .key("metric:sidebar")
     .width(Size::Fixed(244.0))
     .height(Size::Fill(1.0))
@@ -139,7 +139,6 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
         format!("side-item-{label}")
     })
     .metrics_role(MetricsRole::ListItem)
-    .compact()
     .align(Align::Center)
     .focusable();
 
@@ -152,9 +151,9 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     item
 }
 
-fn dashboard_main() -> El {
+fn dashboard_main(layout: LayoutMetrics) -> El {
     column([
-        dashboard_header(),
+        dashboard_header(layout),
         column([
             row([
                 metric_card(
@@ -190,22 +189,22 @@ fn dashboard_main() -> El {
                     true,
                 ),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(layout.page_gap),
             row([chart_card(), sales_card()])
-                .gap(tokens::SPACE_MD)
+                .gap(layout.page_gap)
                 .height(Size::Fixed(305.0))
                 .align(Align::Stretch),
             documents_card(),
         ])
-        .gap(tokens::SPACE_MD)
-        .padding(tokens::SPACE_LG)
+        .gap(layout.page_gap)
+        .padding(layout.page_padding)
         .height(Size::Fill(1.0)),
     ])
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }
 
-fn dashboard_header() -> El {
+fn dashboard_header(layout: LayoutMetrics) -> El {
     row([
         icon_button("menu").ghost(),
         divider().width(Size::Fixed(1.0)).height(Size::Fixed(22.0)),
@@ -218,9 +217,9 @@ fn dashboard_header() -> El {
         icon_button("bell").ghost(),
     ])
     .key("metric:header")
-    .gap(tokens::SPACE_SM)
+    .gap(layout.cluster_gap)
     .height(Size::Fixed(56.0))
-    .padding(Sides::xy(tokens::SPACE_MD, 0.0))
+    .padding(Sides::xy(layout.section_gap, 0.0))
     .align(Align::Center)
     .stroke(tokens::BORDER)
 }
@@ -244,13 +243,9 @@ fn metric_card(
         badge
     };
     let value = if title == "Total Revenue" {
-        h2(value)
-            .display()
-            .font_size(24.0)
-            .ellipsis()
-            .key("metric:kpi.value")
+        h2(value).ellipsis().key("metric:kpi.value")
     } else {
-        h2(value).display().font_size(24.0).ellipsis()
+        h2(value).ellipsis()
     };
     card([card_content([
         row([
@@ -360,7 +355,7 @@ fn sale_row(
 fn documents_card() -> El {
     card([
         card_header([card_title("Documents")]),
-        card_content([table([
+        card_content([scroll([table([
             table_header([table_row([
                 table_head("").width(Size::Fixed(35.0)),
                 table_head("Header").width(Size::Fill(1.8)),
@@ -394,11 +389,13 @@ fn documents_card() -> El {
                 ),
             ]),
         ])])
+        .height(Size::Fill(1.0))])
         .gap(0.0)
-        .padding(0.0),
+        .padding(0.0)
+        .height(Size::Fill(1.0)),
     ])
     .key("metric:table.card")
-    .height(Size::Fixed(238.0))
+    .height(Size::Fill(1.0))
 }
 
 fn document_row(
@@ -450,7 +447,7 @@ fn icon_cell(label: &'static str) -> El {
         .style_profile(StyleProfile::Surface)
         .text(label)
         .text_align(TextAlign::Center)
-        .font_size(tokens::FONT_XS)
+        .caption()
         .font_weight(FontWeight::Semibold)
         .fill(tokens::BG_MUTED)
         .radius(tokens::RADIUS_SM)

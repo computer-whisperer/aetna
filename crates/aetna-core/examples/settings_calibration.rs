@@ -26,7 +26,7 @@ fn main() -> std::io::Result<()> {
         ),
     ];
     for (name, theme) in variants {
-        let mut root = settings_calibration();
+        let mut root = settings_calibration(theme.metrics().layout());
         let bundle =
             render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
         let written = write_bundle(&bundle, &out_dir, name)?;
@@ -45,8 +45,8 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn settings_calibration() -> El {
-    row([settings_sidebar(), settings_main()])
+fn settings_calibration(layout: LayoutMetrics) -> El {
+    row([settings_sidebar(layout), settings_main(layout)])
         .key("metric:root")
         .gap(0.0)
         .fill_size()
@@ -54,7 +54,7 @@ fn settings_calibration() -> El {
         .fill(tokens::BG_APP)
 }
 
-fn settings_sidebar() -> El {
+fn settings_sidebar(layout: LayoutMetrics) -> El {
     column([
         row([
             icon_slot("settings"),
@@ -88,8 +88,8 @@ fn settings_sidebar() -> El {
             .fill(tokens::BG_MUTED)
             .radius(tokens::RADIUS_MD),
     ])
-    .gap(tokens::SPACE_SM)
-    .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+    .gap(layout.cluster_gap)
+    .padding(Sides::xy(layout.section_gap, layout.cluster_gap))
     .key("metric:sidebar")
     .width(Size::Fixed(244.0))
     .height(Size::Fill(1.0))
@@ -97,20 +97,24 @@ fn settings_sidebar() -> El {
     .stroke(tokens::BORDER)
 }
 
-fn settings_main() -> El {
+fn settings_main(layout: LayoutMetrics) -> El {
     column([
-        settings_header(),
-        row([settings_nav_card(), settings_body(), settings_aside()])
-            .gap(tokens::SPACE_MD)
-            .padding(tokens::SPACE_MD)
-            .height(Size::Fill(1.0))
-            .align(Align::Stretch),
+        settings_header(layout),
+        row([
+            settings_nav_card(),
+            settings_body(layout),
+            settings_aside(layout),
+        ])
+        .gap(layout.section_gap)
+        .padding(layout.section_gap)
+        .height(Size::Fill(1.0))
+        .align(Align::Stretch),
     ])
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }
 
-fn settings_header() -> El {
+fn settings_header(layout: LayoutMetrics) -> El {
     row([
         icon_button("menu").ghost(),
         divider().width(Size::Fixed(1.0)).height(Size::Fixed(22.0)),
@@ -120,9 +124,9 @@ fn settings_header() -> El {
         button("Save changes").primary(),
     ])
     .key("metric:header")
-    .gap(tokens::SPACE_SM)
+    .gap(layout.cluster_gap)
     .height(Size::Fixed(56.0))
-    .padding(Sides::xy(tokens::SPACE_MD, 0.0))
+    .padding(Sides::xy(layout.section_gap, 0.0))
     .align(Align::Center)
     .stroke(tokens::BORDER)
 }
@@ -177,7 +181,7 @@ fn settings_nav_item(label: &'static str, selected: bool) -> El {
     item
 }
 
-fn settings_body() -> El {
+fn settings_body(layout: LayoutMetrics) -> El {
     column([
         column([
             h1("Account").heading().key("metric:section.title"),
@@ -190,11 +194,11 @@ fn settings_body() -> El {
         .height(Size::Hug),
         scroll([profile_card(), preferences_card()])
             .key("settings-body-scroll")
-            .gap(tokens::SPACE_MD)
+            .gap(layout.section_gap)
             .width(Size::Fill(1.0))
             .height(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_MD)
+    .gap(layout.section_gap)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }
@@ -208,7 +212,7 @@ fn profile_card() -> El {
         card_content([form([
             row([
                 setting_field("Display name", "Alicia Koch", "display-name"),
-                setting_field("Email", "alicia@example.com", "email"),
+                setting_field("Email", "alicia@acme.co", "email"),
             ])
             .gap(tokens::SPACE_MD),
             row([
@@ -295,9 +299,9 @@ fn preference_row(title: &'static str, description: &'static str, control: El) -
     .align(Align::Center)
 }
 
-fn settings_aside() -> El {
+fn settings_aside(layout: LayoutMetrics) -> El {
     column([security_card(), scale_card()])
-        .gap(tokens::SPACE_MD)
+        .gap(layout.section_gap)
         .width(Size::Fixed(300.0))
         .height(Size::Fill(1.0))
 }
@@ -372,7 +376,6 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
         format!("side-item-{label}")
     })
     .metrics_role(MetricsRole::ListItem)
-    .compact()
     .align(Align::Center)
     .focusable();
 

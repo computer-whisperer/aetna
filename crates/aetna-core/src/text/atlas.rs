@@ -491,7 +491,34 @@ impl GlyphAtlas {
         anchor: TextAnchor,
         available_width: Option<f32>,
     ) -> ShapedRun {
-        self.shape_runs_inner(runs, size, wrap, anchor, available_width, false)
+        self.shape_runs_with_line_height(
+            runs,
+            size,
+            line_height(size),
+            wrap,
+            anchor,
+            available_width,
+        )
+    }
+
+    pub fn shape_runs_with_line_height(
+        &mut self,
+        runs: &[(&str, RunStyle)],
+        size: f32,
+        line_height: f32,
+        wrap: TextWrap,
+        anchor: TextAnchor,
+        available_width: Option<f32>,
+    ) -> ShapedRun {
+        self.shape_runs_inner(
+            runs,
+            size,
+            line_height,
+            wrap,
+            anchor,
+            available_width,
+            false,
+        )
     }
 
     /// Rasterize a glyph into the colour-bitmap atlas. Idempotent. Use
@@ -519,19 +546,27 @@ impl GlyphAtlas {
         anchor: TextAnchor,
         available_width: Option<f32>,
     ) -> ShapedRun {
-        self.shape_runs_inner(runs, size, wrap, anchor, available_width, true)
+        self.shape_runs_inner(
+            runs,
+            size,
+            line_height(size),
+            wrap,
+            anchor,
+            available_width,
+            true,
+        )
     }
 
     fn shape_runs_inner(
         &mut self,
         runs: &[(&str, RunStyle)],
         size: f32,
+        line_h: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         available_width: Option<f32>,
         rasterize_into_color_atlas: bool,
     ) -> ShapedRun {
-        let line_h = line_height(size);
         let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_h));
         buffer.set_wrap(match wrap {
             TextWrap::NoWrap => Wrap::None,

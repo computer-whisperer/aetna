@@ -110,6 +110,12 @@ Aetna's built-in default starts at `ComponentSize::Sm` and
 `Theme::aetna_dark().comfortable()` or `Theme::aetna_dark().spacious()`
 when an app needs larger controls or more open grouped surfaces.
 
+Density also owns page-level rhythm. `theme.metrics().layout()` returns
+the Tailwind-shaped spacing ladder used for app chrome: page padding,
+page/section gaps, cluster gaps, and the tighter gap after a page header.
+Use those values for shell layout instead of hand-picking `18px` or
+similar one-off gaps in examples.
+
 Explicit layout calls still win. If an app writes `.height(Size::Fixed(44.0))`
 or `.padding(20.0)`, theme metrics leave that author choice alone.
 Custom widgets opt into the same defaults by setting `.metrics_role(...)`
@@ -166,7 +172,7 @@ For bounded wrapped copy, use `.wrap_text().max_lines(n)`. The draw-op pass clam
 
 `TextRole` (`Body`, `Caption`, `Label`, `Title`, `Heading`, `Display`, `Code`) is the semantic typography role for text-bearing nodes. Set it with `.text_role(...)`, or use the role modifiers `.body()`, `.caption()`, `.label()`, `.title()`, `.heading()`, `.display()`, and `.code()`.
 
-Roles apply default size/weight/color so product code can say what a text run is before overriding a specific detail. For example, table headers and tiny metadata should usually be `.caption()`, button/menu labels should be `.label()`, card titles should be `.title()`, page titles should be `.heading()` or `.display()`, and inline code should use `.code()`. For shadcn-style secondary copy such as page subtitles, card descriptions, and explanatory helper text, prefer `.muted()` on body text; that preserves the normal 14px body rhythm while switching to `TEXT_MUTED_FOREGROUND`. Tree dumps show non-body roles as `text_role=...`, which gives the agent loop a semantic handle when tuning density and hierarchy.
+Roles apply default size/line-height/weight/color so product code can say what a text run is before overriding a specific detail. Aetna's typography tokens intentionally mirror Tailwind pairs such as `text-sm` = 14/20, `text-2xl` = 24/32, and `text-3xl` = 30/36; use `.line_height(...)` only for deliberate custom typography. For example, table headers and tiny metadata should usually be `.caption()`, button/menu labels should be `.label()`, card titles should be `.title()`, page titles should be `.heading()` or `.display()`, and inline code should use `.code()`. For shadcn-style secondary copy such as page subtitles, card descriptions, and explanatory helper text, prefer `.muted()` on body text; that preserves the normal 14px body rhythm while switching to `TEXT_MUTED_FOREGROUND`. Tree dumps show non-body roles as `text_role=...`, which gives the agent loop a semantic handle when tuning density and hierarchy.
 
 ### 3.3 Icons
 

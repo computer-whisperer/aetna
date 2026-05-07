@@ -218,6 +218,7 @@ pub struct El {
     pub text_role: TextRole,
     pub text_max_lines: Option<usize>,
     pub font_size: f32,
+    pub line_height: f32,
     pub font_weight: FontWeight,
     pub font_mono: bool,
     /// Italic styling. Author-set via [`Self::italic`]; honoured when

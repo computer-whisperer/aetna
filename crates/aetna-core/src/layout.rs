@@ -742,9 +742,10 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
                 .map(|w| (w - c.padding.left - c.padding.right).max(1.0)),
         };
         let display = display_text_for_measure(c, text, content_available);
-        let layout = text_metrics::layout_text(
+        let layout = text_metrics::layout_text_with_line_height(
             &display,
             c.font_size,
+            c.line_height,
             c.font_weight,
             c.font_mono,
             c.text_wrap,
@@ -821,9 +822,10 @@ pub(crate) fn text_layout(
             .map(|w| (w - c.padding.left - c.padding.right).max(1.0)),
     };
     let display = display_text_for_measure(c, text, content_available);
-    Some(text_metrics::layout_text(
+    Some(text_metrics::layout_text_with_line_height(
         &display,
         c.font_size,
+        c.line_height,
         c.font_weight,
         c.font_mono,
         c.text_wrap,
@@ -873,9 +875,11 @@ fn apply_min(c: &El, mut w: f32, mut h: f32) -> (f32, f32) {
 fn inline_paragraph_intrinsic(node: &El, available_width: Option<f32>) -> (f32, f32) {
     let concat = concat_inline_text(&node.children);
     let size = inline_paragraph_size(node);
-    let unwrapped = text_metrics::layout_text(
+    let line_height = inline_paragraph_line_height(node);
+    let unwrapped = text_metrics::layout_text_with_line_height(
         &concat,
         size,
+        line_height,
         FontWeight::Regular,
         false,
         TextWrap::NoWrap,
@@ -890,9 +894,10 @@ fn inline_paragraph_intrinsic(node: &El, available_width: Option<f32>) -> (f32, 
             })
             .map(|w| (w - node.padding.left - node.padding.right).max(1.0)),
     };
-    let layout = text_metrics::layout_text(
+    let layout = text_metrics::layout_text_with_line_height(
         &concat,
         size,
+        line_height,
         FontWeight::Regular,
         false,
         node.text_wrap,
@@ -938,6 +943,18 @@ fn inline_paragraph_size(node: &El) -> f32 {
         }
     }
     size
+}
+
+fn inline_paragraph_line_height(node: &El) -> f32 {
+    let mut line_height: f32 = node.line_height;
+    let mut max_size: f32 = node.font_size;
+    for c in &node.children {
+        if matches!(c.kind, Kind::Text) && c.font_size >= max_size {
+            max_size = c.font_size;
+            line_height = c.line_height;
+        }
+    }
+    line_height
 }
 
 #[cfg(test)]

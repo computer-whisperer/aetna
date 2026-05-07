@@ -236,7 +236,7 @@ impl El {
     }
     pub fn small(mut self) -> Self {
         if text_only_leaf(&self) {
-            self.font_size = tokens::FONT_SM;
+            apply_type_token(&mut self, tokens::TEXT_SM);
         } else {
             self.component_size = Some(ComponentSize::Sm);
         }
@@ -244,7 +244,7 @@ impl El {
     }
     pub fn xsmall(mut self) -> Self {
         if text_only_leaf(&self) {
-            self.font_size = tokens::FONT_XS;
+            apply_type_token(&mut self, tokens::TEXT_XS);
         } else {
             self.component_size = Some(ComponentSize::Xs);
         }
@@ -261,46 +261,51 @@ fn text_only_leaf(el: &El) -> bool {
     matches!(el.style_profile, StyleProfile::TextOnly) && el.text.is_some()
 }
 
+fn apply_type_token(el: &mut El, token: tokens::TypeToken) {
+    el.font_size = token.size;
+    el.line_height = token.line_height;
+}
+
 fn apply_text_role(el: &mut El) {
     match el.text_role {
         TextRole::Body => {
-            el.font_size = tokens::FONT_BASE;
+            apply_type_token(el, tokens::TEXT_SM);
             el.font_weight = FontWeight::Regular;
             el.font_mono = false;
             el.text_color = Some(tokens::TEXT_FOREGROUND);
         }
         TextRole::Caption => {
-            el.font_size = tokens::FONT_XS;
+            apply_type_token(el, tokens::TEXT_XS);
             el.font_weight = FontWeight::Regular;
             el.font_mono = false;
             el.text_color = Some(tokens::TEXT_MUTED_FOREGROUND);
         }
         TextRole::Label => {
-            el.font_size = tokens::FONT_BASE;
+            apply_type_token(el, tokens::TEXT_SM);
             el.font_weight = FontWeight::Medium;
             el.font_mono = false;
             el.text_color = Some(tokens::TEXT_FOREGROUND);
         }
         TextRole::Title => {
-            el.font_size = tokens::FONT_LG;
+            apply_type_token(el, tokens::TEXT_BASE);
             el.font_weight = FontWeight::Semibold;
             el.font_mono = false;
             el.text_color = Some(tokens::TEXT_FOREGROUND);
         }
         TextRole::Heading => {
-            el.font_size = tokens::FONT_XL;
+            apply_type_token(el, tokens::TEXT_2XL);
             el.font_weight = FontWeight::Semibold;
             el.font_mono = false;
             el.text_color = Some(tokens::TEXT_FOREGROUND);
         }
         TextRole::Display => {
-            el.font_size = tokens::FONT_XXL;
+            apply_type_token(el, tokens::TEXT_3XL);
             el.font_weight = FontWeight::Bold;
             el.font_mono = false;
             el.text_color = Some(tokens::TEXT_FOREGROUND);
         }
         TextRole::Code => {
-            el.font_size = tokens::FONT_SM;
+            apply_type_token(el, tokens::TEXT_XS);
             el.font_weight = FontWeight::Regular;
             el.font_mono = true;
             el.text_color = Some(tokens::TEXT_FOREGROUND);
@@ -424,12 +429,14 @@ mod tests {
     fn text_roles_apply_inspectable_typographic_defaults() {
         let caption = text("Caption").caption();
         assert_eq!(caption.text_role, TextRole::Caption);
-        assert_eq!(caption.font_size, tokens::FONT_XS);
+        assert_eq!(caption.font_size, tokens::TEXT_XS.size);
+        assert_eq!(caption.line_height, tokens::TEXT_XS.line_height);
         assert_eq!(caption.text_color, Some(tokens::TEXT_MUTED_FOREGROUND));
 
         let label = text("Label").label();
         assert_eq!(label.text_role, TextRole::Label);
-        assert_eq!(label.font_size, tokens::FONT_BASE);
+        assert_eq!(label.font_size, tokens::TEXT_SM.size);
+        assert_eq!(label.line_height, tokens::TEXT_SM.line_height);
         assert_eq!(label.font_weight, FontWeight::Medium);
 
         let code = text("Code").code();

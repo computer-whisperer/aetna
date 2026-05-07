@@ -26,7 +26,7 @@ fn main() -> std::io::Result<()> {
         ),
     ];
     for (name, theme) in variants {
-        let mut root = polish_calibration();
+        let mut root = polish_calibration(theme.metrics().layout());
         let bundle =
             render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
         let written = write_bundle(&bundle, &out_dir, name)?;
@@ -45,8 +45,8 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn polish_calibration() -> El {
-    row([sidebar(), main_panel()])
+fn polish_calibration(layout: LayoutMetrics) -> El {
+    row([sidebar(layout), main_panel(layout)])
         .key("metric:root")
         .gap(0.0)
         .fill_size()
@@ -54,15 +54,12 @@ fn polish_calibration() -> El {
         .fill(tokens::BG_APP)
 }
 
-fn sidebar() -> El {
+fn sidebar(layout: LayoutMetrics) -> El {
     column([
-        column([
-            h2("Aetna"),
-            text("calibration").caption().font_size(tokens::FONT_BASE),
-        ])
-        .key("metric:sidebar.brand")
-        .gap(tokens::SPACE_XS)
-        .height(Size::Hug),
+        column([h2("Aetna"), text("calibration").muted()])
+            .key("metric:sidebar.brand")
+            .gap(tokens::SPACE_XS)
+            .height(Size::Hug),
         spacer().height(Size::Fixed(tokens::SPACE_LG)),
         nav_item("01", "Overview", true),
         nav_item("02", "Commands", false),
@@ -72,7 +69,7 @@ fn sidebar() -> El {
         badge("dark theme").muted(),
     ])
     .gap(tokens::SPACE_SM)
-    .padding(tokens::SPACE_LG)
+    .padding(layout.pane_padding)
     .key("metric:sidebar")
     .width(Size::Fixed(220.0))
     .height(Size::Fill(1.0))
@@ -104,22 +101,27 @@ fn nav_item(icon: &'static str, label: &'static str, selected: bool) -> El {
     item
 }
 
-fn main_panel() -> El {
+fn main_panel(layout: LayoutMetrics) -> El {
     column([
         toolbar(),
-        row([
-            kpi_card("Latency", "42 ms", "-18%", true),
-            kpi_card("Runs", "1,284", "+12%", true),
-            kpi_card("Errors", "7", "+2", false),
+        column([
+            row([
+                kpi_card("Latency", "42 ms", "-18%", true),
+                kpi_card("Runs", "1,284", "+12%", true),
+                kpi_card("Errors", "7", "+2", false),
+            ])
+            .gap(layout.page_gap),
+            row([table_card(), command_card()])
+                .gap(layout.page_gap)
+                .height(Size::Fill(1.0))
+                .align(Align::Stretch),
         ])
-        .gap(tokens::SPACE_MD),
-        row([table_card(), command_card()])
-            .gap(tokens::SPACE_MD)
-            .height(Size::Fill(1.0))
-            .align(Align::Stretch),
+        .gap(layout.page_gap)
+        .height(Size::Fill(1.0))
+        .align(Align::Stretch),
     ])
-    .padding(tokens::SPACE_XL)
-    .gap(tokens::SPACE_LG)
+    .padding(layout.page_padding)
+    .gap(layout.header_after_gap)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }
@@ -132,7 +134,7 @@ fn toolbar() -> El {
                 .muted()
                 .key("metric:page.subtitle"),
         ])
-        .gap(tokens::SPACE_XS)
+        .gap(tokens::SPACE_SM)
         .height(Size::Hug),
         spacer(),
         button_with_icon("search", "Preview")
@@ -144,8 +146,8 @@ fn toolbar() -> El {
     ])
     .key("metric:header")
     .gap(tokens::SPACE_SM)
-    .height(Size::Fixed(64.0))
-    .align(Align::Center)
+    .height(Size::Hug)
+    .align(Align::Start)
 }
 
 fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, positive: bool) -> El {
@@ -396,7 +398,7 @@ fn icon_cell(label: &'static str) -> El {
         .style_profile(StyleProfile::Surface)
         .text(label)
         .text_align(TextAlign::Center)
-        .font_size(tokens::FONT_XS)
+        .caption()
         .font_weight(FontWeight::Semibold)
         .fill(tokens::BG_MUTED)
         .stroke(tokens::BORDER)

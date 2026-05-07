@@ -27,6 +27,21 @@ pub enum Density {
     Spacious,
 }
 
+/// Density-aware spacing for page-level layout rhythm.
+///
+/// This mirrors the Tailwind/shadcn idiom where page padding and
+/// vertical section rhythm are regular spacing-scale tokens, not
+/// ad-hoc fixture values.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayoutMetrics {
+    pub page_padding: f32,
+    pub pane_padding: f32,
+    pub page_gap: f32,
+    pub section_gap: f32,
+    pub cluster_gap: f32,
+    pub header_after_gap: f32,
+}
+
 /// Theme-facing stock metrics role for a widget surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
@@ -90,6 +105,10 @@ impl ThemeMetrics {
 
     pub fn default_density(&self) -> Density {
         self.default_density
+    }
+
+    pub fn layout(&self) -> LayoutMetrics {
+        layout_metrics(self.default_density)
     }
 
     pub fn with_default_component_size(mut self, size: ComponentSize) -> Self {
@@ -359,6 +378,35 @@ impl ThemeMetrics {
             }
             None => {}
         }
+    }
+}
+
+pub fn layout_metrics(density: Density) -> LayoutMetrics {
+    match density {
+        Density::Compact => LayoutMetrics {
+            page_padding: 20.0,
+            pane_padding: 16.0,
+            page_gap: 12.0,
+            section_gap: 12.0,
+            cluster_gap: 8.0,
+            header_after_gap: 4.0,
+        },
+        Density::Comfortable => LayoutMetrics {
+            page_padding: 28.0,
+            pane_padding: 20.0,
+            page_gap: 16.0,
+            section_gap: 16.0,
+            cluster_gap: 8.0,
+            header_after_gap: 8.0,
+        },
+        Density::Spacious => LayoutMetrics {
+            page_padding: 32.0,
+            pane_padding: 24.0,
+            page_gap: 20.0,
+            section_gap: 20.0,
+            cluster_gap: 12.0,
+            header_after_gap: 12.0,
+        },
     }
 }
 
@@ -1233,5 +1281,42 @@ mod tests {
 
         assert_eq!(metrics.default_component_size(), ComponentSize::Sm);
         assert_eq!(metrics.default_density(), Density::Compact);
+    }
+
+    #[test]
+    fn layout_metrics_follow_tailwind_density_rhythm() {
+        assert_eq!(
+            layout_metrics(Density::Compact),
+            LayoutMetrics {
+                page_padding: 20.0,
+                pane_padding: 16.0,
+                page_gap: 12.0,
+                section_gap: 12.0,
+                cluster_gap: 8.0,
+                header_after_gap: 4.0,
+            }
+        );
+        assert_eq!(
+            layout_metrics(Density::Comfortable),
+            LayoutMetrics {
+                page_padding: 28.0,
+                pane_padding: 20.0,
+                page_gap: 16.0,
+                section_gap: 16.0,
+                cluster_gap: 8.0,
+                header_after_gap: 8.0,
+            }
+        );
+        assert_eq!(
+            layout_metrics(Density::Spacious),
+            LayoutMetrics {
+                page_padding: 32.0,
+                pane_padding: 24.0,
+                page_gap: 20.0,
+                section_gap: 20.0,
+                cluster_gap: 12.0,
+                header_after_gap: 12.0,
+            }
+        );
     }
 }

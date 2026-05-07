@@ -444,6 +444,7 @@ impl TextPaint {
         scissor: Option<PhysicalScissor>,
         runs: &[(String, RunStyle)],
         size: f32,
+        line_height: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
@@ -457,7 +458,14 @@ impl TextPaint {
             .iter()
             .map(|(text, style)| (text.as_str(), style.clone()))
             .collect();
-        let shaped = self.atlas.shape_runs(&runs_ref, size, wrap, anchor, avail);
+        let shaped = self.atlas.shape_runs_with_line_height(
+            &runs_ref,
+            size,
+            line_height,
+            wrap,
+            anchor,
+            avail,
+        );
         self.emit_shaped_glyphs(rect, scissor, &shaped, wrap, scale_factor)
     }
 
@@ -982,6 +990,7 @@ impl TextRecorder for TextPaint {
         style: &RunStyle,
         text: &str,
         size: f32,
+        line_height: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
@@ -991,6 +1000,7 @@ impl TextRecorder for TextPaint {
             scissor,
             &[(text.to_string(), style.clone())],
             size,
+            line_height,
             wrap,
             anchor,
             scale_factor,
@@ -1003,11 +1013,21 @@ impl TextRecorder for TextPaint {
         scissor: Option<PhysicalScissor>,
         runs: &[(String, RunStyle)],
         size: f32,
+        line_height: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> std::ops::Range<usize> {
-        self.record_inner(rect, scissor, runs, size, wrap, anchor, scale_factor)
+        self.record_inner(
+            rect,
+            scissor,
+            runs,
+            size,
+            line_height,
+            wrap,
+            anchor,
+            scale_factor,
+        )
     }
 }
 

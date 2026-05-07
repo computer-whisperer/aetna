@@ -181,12 +181,22 @@ impl TextRecorder for PaintRecorder<'_> {
         style: &aetna_core::text::atlas::RunStyle,
         text: &str,
         size: f32,
+        line_height: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> std::ops::Range<usize> {
-        self.text
-            .record(rect, scissor, style, text, size, wrap, anchor, scale_factor)
+        self.text.record(
+            rect,
+            scissor,
+            style,
+            text,
+            size,
+            line_height,
+            wrap,
+            anchor,
+            scale_factor,
+        )
     }
 
     fn record_runs(
@@ -195,12 +205,21 @@ impl TextRecorder for PaintRecorder<'_> {
         scissor: Option<PhysicalScissor>,
         runs: &[(String, RunStyle)],
         size: f32,
+        line_height: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> std::ops::Range<usize> {
-        self.text
-            .record_runs(rect, scissor, runs, size, wrap, anchor, scale_factor)
+        self.text.record_runs(
+            rect,
+            scissor,
+            runs,
+            size,
+            line_height,
+            wrap,
+            anchor,
+            scale_factor,
+        )
     }
 
     fn record_icon(

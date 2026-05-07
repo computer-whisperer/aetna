@@ -28,7 +28,7 @@ fn density_calibration() -> El {
     column([
         row([
             column([
-                h1("Density calibration").display().font_size(24.0),
+                h2("Density calibration"),
                 text("Compact, comfortable, and spacious surfaces using theme metrics roles.")
                     .caption(),
             ])

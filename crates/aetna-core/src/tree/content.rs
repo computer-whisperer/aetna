@@ -61,6 +61,12 @@ impl El {
 
     pub fn font_size(mut self, s: f32) -> Self {
         self.font_size = s;
+        self.line_height = crate::tokens::line_height_for_size(s);
+        self
+    }
+
+    pub fn line_height(mut self, h: f32) -> Self {
+        self.line_height = h.max(1.0);
         self
     }
 
@@ -91,6 +97,7 @@ impl El {
     pub fn icon_size(mut self, size: f32) -> Self {
         let size = size.max(1.0);
         self.font_size = size;
+        self.line_height = size;
         self.width = Size::Fixed(size);
         self.height = Size::Fixed(size);
         self.explicit_width = true;

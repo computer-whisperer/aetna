@@ -959,6 +959,7 @@ impl RunnerCore {
                     color,
                     text: glyph_text,
                     size,
+                    line_height,
                     weight,
                     wrap,
                     anchor,
@@ -997,6 +998,7 @@ impl RunnerCore {
                         &style,
                         glyph_text,
                         *size,
+                        *line_height,
                         *wrap,
                         *anchor,
                         scale_factor,
@@ -1010,6 +1012,7 @@ impl RunnerCore {
                     scissor,
                     runs,
                     size,
+                    line_height,
                     wrap,
                     anchor,
                     ..
@@ -1028,8 +1031,16 @@ impl RunnerCore {
                     if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
                         continue;
                     }
-                    let layers =
-                        text.record_runs(*rect, phys, runs, *size, *wrap, *anchor, scale_factor);
+                    let layers = text.record_runs(
+                        *rect,
+                        phys,
+                        runs,
+                        *size,
+                        *line_height,
+                        *wrap,
+                        *anchor,
+                        scale_factor,
+                    );
                     for index in layers {
                         self.paint_items.push(PaintItem::Text(index));
                     }
@@ -1276,6 +1287,7 @@ pub trait TextRecorder {
         style: &RunStyle,
         text: &str,
         size: f32,
+        line_height: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
@@ -1292,6 +1304,7 @@ pub trait TextRecorder {
         scissor: Option<PhysicalScissor>,
         runs: &[(String, RunStyle)],
         size: f32,
+        line_height: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
@@ -1323,6 +1336,7 @@ pub trait TextRecorder {
             &RunStyle::new(FontWeight::Regular, color),
             glyph,
             size,
+            crate::text::metrics::line_height(size),
             TextWrap::NoWrap,
             TextAnchor::Middle,
             scale_factor,
@@ -1365,6 +1379,7 @@ mod tests {
             _style: &RunStyle,
             _text: &str,
             _size: f32,
+            _line_height: f32,
             _wrap: TextWrap,
             _anchor: TextAnchor,
             _scale_factor: f32,
@@ -1377,6 +1392,7 @@ mod tests {
             _scissor: Option<PhysicalScissor>,
             _runs: &[(String, RunStyle)],
             _size: f32,
+            _line_height: f32,
             _wrap: TextWrap,
             _anchor: TextAnchor,
             _scale_factor: f32,

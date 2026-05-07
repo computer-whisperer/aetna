@@ -351,9 +351,10 @@ fn push_node(
             TextAlign::End => TextAnchor::End,
         };
         let text_color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
-        let layout = text_metrics::layout_text(
+        let layout = text_metrics::layout_text_with_line_height(
             &display,
             painted_font_size,
+            n.line_height * n.scale,
             weight,
             n.font_mono,
             n.text_wrap,
@@ -420,6 +421,7 @@ fn push_node(
             color: text_color,
             text: display,
             size: painted_font_size,
+            line_height: n.line_height * n.scale,
             weight,
             mono: n.font_mono,
             wrap: n.text_wrap,
@@ -484,14 +486,16 @@ fn push_node(
         let runs = collect_inline_runs(n, opacity);
         let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
         let inline_size = inline_paragraph_font_size(n) * n.scale;
+        let inline_line_height = inline_paragraph_line_height(n) * n.scale;
         let anchor = match n.text_align {
             TextAlign::Start => TextAnchor::Start,
             TextAlign::Center => TextAnchor::Middle,
             TextAlign::End => TextAnchor::End,
         };
-        let layout = text_metrics::layout_text(
+        let layout = text_metrics::layout_text_with_line_height(
             &concat,
             inline_size,
+            inline_line_height,
             FontWeight::Regular,
             false,
             n.text_wrap,
@@ -507,6 +511,7 @@ fn push_node(
             shader: ShaderHandle::Stock(StockShader::Text),
             runs,
             size: inline_size,
+            line_height: inline_line_height,
             wrap: n.text_wrap,
             anchor,
             layout,
@@ -655,6 +660,18 @@ fn inline_paragraph_font_size(node: &El) -> f32 {
         }
     }
     size
+}
+
+fn inline_paragraph_line_height(node: &El) -> f32 {
+    let mut line_height: f32 = node.line_height;
+    let mut max_size: f32 = node.font_size;
+    for c in &node.children {
+        if matches!(c.kind, Kind::Text) && c.font_size >= max_size {
+            max_size = c.font_size;
+            line_height = c.line_height;
+        }
+    }
+    line_height
 }
 
 fn translated(r: Rect, offset: (f32, f32)) -> Rect {

@@ -130,6 +130,7 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 color,
                 text,
                 size,
+                line_height,
                 weight,
                 mono,
                 wrap,
@@ -143,7 +144,7 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 let suffix = if text.chars().count() > 40 { "…" } else { "" };
                 let _ = write!(
                     s,
-                    "Glyph  shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} text=\"{preview}{suffix}\" color={} size={size:.1} weight={weight:?} mono={mono} wrap={wrap:?} anchor={anchor:?}",
+                    "Glyph  shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} text=\"{preview}{suffix}\" color={} size={size:.1} line_height={line_height:.1} weight={weight:?} mono={mono} wrap={wrap:?} anchor={anchor:?}",
                     shader.name(),
                     rect.x,
                     rect.y,
@@ -163,6 +164,7 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 shader,
                 runs,
                 size,
+                line_height,
                 wrap,
                 anchor,
                 layout: _,
@@ -177,7 +179,7 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 let bg_runs = runs.iter().filter(|(_, st)| st.bg.is_some()).count();
                 let _ = write!(
                     s,
-                    "Attr   shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} attr=\"{preview}{suffix}\" runs={} bg_runs={bg_runs} size={size:.1} wrap={wrap:?} anchor={anchor:?}",
+                    "Attr   shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} attr=\"{preview}{suffix}\" runs={} bg_runs={bg_runs} size={size:.1} line_height={line_height:.1} wrap={wrap:?} anchor={anchor:?}",
                     shader.name(),
                     rect.x,
                     rect.y,

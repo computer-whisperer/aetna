@@ -47,6 +47,7 @@ pub enum DrawOp {
         color: Color,
         text: String,
         size: f32,
+        line_height: f32,
         weight: FontWeight,
         mono: bool,
         wrap: TextWrap,
@@ -80,6 +81,7 @@ pub enum DrawOp {
         /// embedded `\n` to express in-paragraph hard breaks.
         runs: Vec<(String, RunStyle)>,
         size: f32,
+        line_height: f32,
         wrap: TextWrap,
         anchor: TextAnchor,
         layout: TextLayout,

@@ -74,11 +74,28 @@ pub const TEXT_ON_SOLID_DARK: Color = Color::token("text-on-solid-dark", 8, 16, 
 pub const TEXT_ON_SOLID_LIGHT: Color = Color::token("text-on-solid-light", 250, 250, 252, 255);
 
 // ---- Spacing ----
-pub const SPACE_XS: f32 = 4.0;
-pub const SPACE_SM: f32 = 8.0;
-pub const SPACE_MD: f32 = 12.0;
-pub const SPACE_LG: f32 = 18.0;
-pub const SPACE_XL: f32 = 28.0;
+//
+// Canonical spacing follows Tailwind's numeric scale so layout code
+// reads like the UI examples LLMs have seen most often: `gap-3` is
+// 12 px, `p-4` is 16 px, `mt-2` is 8 px, etc. The named aliases below
+// are kept as transitional vocabulary for existing examples.
+pub const SPACE_0: f32 = 0.0;
+pub const SPACE_1: f32 = 4.0;
+pub const SPACE_2: f32 = 8.0;
+pub const SPACE_3: f32 = 12.0;
+pub const SPACE_4: f32 = 16.0;
+pub const SPACE_5: f32 = 20.0;
+pub const SPACE_6: f32 = 24.0;
+pub const SPACE_7: f32 = 28.0;
+pub const SPACE_8: f32 = 32.0;
+pub const SPACE_10: f32 = 40.0;
+pub const SPACE_12: f32 = 48.0;
+
+pub const SPACE_XS: f32 = SPACE_1;
+pub const SPACE_SM: f32 = SPACE_2;
+pub const SPACE_MD: f32 = SPACE_3;
+pub const SPACE_LG: f32 = SPACE_4;
+pub const SPACE_XL: f32 = SPACE_7;
 
 // ---- Pinned-pane sizing ----
 //
@@ -127,13 +144,69 @@ pub const SHADOW_SM: f32 = 4.0;
 pub const SHADOW_MD: f32 = 12.0;
 pub const SHADOW_LG: f32 = 24.0;
 
-// ---- Font sizes ----
-pub const FONT_XS: f32 = 12.0;
-pub const FONT_SM: f32 = 12.0;
-pub const FONT_BASE: f32 = 14.0;
-pub const FONT_LG: f32 = 16.0;
-pub const FONT_XL: f32 = 24.0;
-pub const FONT_XXL: f32 = 30.0;
+// ---- Typography ----
+//
+// Font-size tokens are pairs, matching Tailwind's default type scale:
+// a `text-sm` token is 14/20, `text-2xl` is 24/32, and so on. Text
+// roles should choose one of these tokens rather than setting a raw
+// font size and letting measurement infer a line height later.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TypeToken {
+    pub size: f32,
+    pub line_height: f32,
+}
+
+pub const TEXT_XS: TypeToken = TypeToken {
+    size: 12.0,
+    line_height: 16.0,
+};
+pub const TEXT_SM: TypeToken = TypeToken {
+    size: 14.0,
+    line_height: 20.0,
+};
+pub const TEXT_BASE: TypeToken = TypeToken {
+    size: 16.0,
+    line_height: 24.0,
+};
+pub const TEXT_LG: TypeToken = TypeToken {
+    size: 18.0,
+    line_height: 28.0,
+};
+pub const TEXT_XL: TypeToken = TypeToken {
+    size: 20.0,
+    line_height: 28.0,
+};
+pub const TEXT_2XL: TypeToken = TypeToken {
+    size: 24.0,
+    line_height: 32.0,
+};
+pub const TEXT_3XL: TypeToken = TypeToken {
+    size: 30.0,
+    line_height: 36.0,
+};
+
+pub fn type_token_for_size(size: f32) -> Option<TypeToken> {
+    [
+        TEXT_XS, TEXT_SM, TEXT_BASE, TEXT_LG, TEXT_XL, TEXT_2XL, TEXT_3XL,
+    ]
+    .into_iter()
+    .find(|token| (token.size - size).abs() < f32::EPSILON)
+}
+
+pub fn line_height_for_size(size: f32) -> f32 {
+    type_token_for_size(size)
+        .map(|token| token.line_height)
+        .unwrap_or((size * 1.3).ceil())
+}
+
+// Transitional font-size aliases. Prefer the `TEXT_*` tokens above in
+// new code so line-height travels with the type choice.
+pub const FONT_XS: f32 = TEXT_XS.size;
+pub const FONT_SM: f32 = TEXT_XS.size;
+pub const FONT_BASE: f32 = TEXT_SM.size;
+pub const FONT_LG: f32 = TEXT_BASE.size;
+pub const FONT_XL: f32 = TEXT_2XL.size;
+pub const FONT_XXL: f32 = TEXT_3XL.size;
 
 // ---- State styling ----
 //

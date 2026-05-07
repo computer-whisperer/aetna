@@ -7,13 +7,13 @@
 //! TTF-advance path remains as a fallback and for monospace until Aetna
 //! has a bundled mono font.
 
+use crate::tokens;
 use crate::tree::{FontWeight, TextWrap};
 use cosmic_text::{
     Attrs, Buffer, Cursor, Family, FontSystem, Metrics, Shaping, Weight, Wrap, fontdb,
 };
 use std::cell::RefCell;
 
-const LINE_HEIGHT_MULTIPLIER: f32 = 1.3;
 const MONO_CHAR_WIDTH_FACTOR: f32 = 0.62;
 
 const BASELINE_MULTIPLIER: f32 = 0.93;
@@ -204,7 +204,34 @@ pub fn layout_text(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> TextLayout {
-    if !mono && let Some(layout) = layout_text_cosmic(text, size, weight, wrap, available_width) {
+    layout_text_with_line_height(
+        text,
+        size,
+        line_height(size),
+        weight,
+        mono,
+        wrap,
+        available_width,
+    )
+}
+
+/// Lay out text with an explicit line-height token. This is the
+/// preferred path for styled elements; [`layout_text`] remains the
+/// fallback for arbitrary measurement callers.
+#[allow(clippy::too_many_arguments)]
+pub fn layout_text_with_line_height(
+    text: &str,
+    size: f32,
+    line_height: f32,
+    weight: FontWeight,
+    mono: bool,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> TextLayout {
+    if !mono
+        && let Some(layout) =
+            layout_text_cosmic(text, size, line_height, weight, wrap, available_width)
+    {
         return layout;
     }
 
@@ -212,7 +239,7 @@ pub fn layout_text(
         (TextWrap::Wrap, Some(width)) => wrap_lines_by_width(text, width, size, weight, mono),
         _ => text.split('\n').map(str::to_string).collect(),
     };
-    build_layout(raw_lines, size, weight, mono)
+    build_layout(raw_lines, size, line_height, weight, mono)
 }
 
 /// Return a single-line string that fits within `available_width`,
@@ -516,8 +543,14 @@ pub fn wrap_lines(
     mono: bool,
 ) -> Vec<String> {
     if !mono
-        && let Some(layout) =
-            layout_text_cosmic(text, size, weight, TextWrap::Wrap, Some(max_width))
+        && let Some(layout) = layout_text_cosmic(
+            text,
+            size,
+            line_height(size),
+            weight,
+            TextWrap::Wrap,
+            Some(max_width),
+        )
     {
         return layout.lines.into_iter().map(|line| line.text).collect();
     }
@@ -572,7 +605,16 @@ fn wrap_lines_by_width(
 /// Measure one single-line string. Newline characters are ignored; use
 /// [`measure_text`] for multi-line text.
 pub fn line_width(text: &str, size: f32, weight: FontWeight, mono: bool) -> f32 {
-    if !mono && let Some(layout) = layout_text_cosmic(text, size, weight, TextWrap::NoWrap, None) {
+    if !mono
+        && let Some(layout) = layout_text_cosmic(
+            text,
+            size,
+            line_height(size),
+            weight,
+            TextWrap::NoWrap,
+            None,
+        )
+    {
         return layout.width;
     }
     line_width_by_ttf(text, size, weight, mono)
@@ -624,23 +666,25 @@ fn line_width_by_ttf(text: &str, size: f32, weight: FontWeight, mono: bool) -> f
 }
 
 pub fn line_height(size: f32) -> f32 {
-    // Ceil to an integer logical pixel. Sub-pixel line heights (e.g.
-    // 14 px × 1.4 = 19.6 px) cascade through Hug heights and centered
-    // `v_offset` math, leaving glyph bottom rows landing on fractional
-    // pixel boundaries — wgpu's anti-aliased blit then makes those rows
-    // ~0.4 alpha and the eye reads it as a 1 px clip. Snapping here
-    // costs at most 1 px of vertical room per text leaf and aligns the
-    // text box with the pixel grid for the whole pipeline.
-    (size * LINE_HEIGHT_MULTIPLIER).ceil()
+    // Styled elements carry an explicit `line_height`; this fallback is
+    // for raw measurement callers and custom `.font_size(...)` values.
+    // Known design-token sizes return their paired Tailwind/shadcn line
+    // height, while arbitrary sizes keep a snapped multiplier.
+    tokens::line_height_for_size(size)
 }
 
-fn build_layout(lines: Vec<String>, size: f32, weight: FontWeight, mono: bool) -> TextLayout {
+fn build_layout(
+    lines: Vec<String>,
+    size: f32,
+    line_height: f32,
+    weight: FontWeight,
+    mono: bool,
+) -> TextLayout {
     let raw_lines = if lines.is_empty() {
         vec![String::new()]
     } else {
         lines
     };
-    let line_height = line_height(size);
     let lines: Vec<TextLine> = raw_lines
         .into_iter()
         .enumerate()
@@ -667,12 +711,21 @@ fn build_layout(lines: Vec<String>, size: f32, weight: FontWeight, mono: bool) -
 fn layout_text_cosmic(
     text: &str,
     size: f32,
+    line_height: f32,
     weight: FontWeight,
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> Option<TextLayout> {
     FONT_SYSTEM.with_borrow_mut(|font_system| {
-        layout_text_cosmic_with(font_system, text, size, weight, wrap, available_width)
+        layout_text_cosmic_with(
+            font_system,
+            text,
+            size,
+            line_height,
+            weight,
+            wrap,
+            available_width,
+        )
     })
 }
 
@@ -680,11 +733,11 @@ fn layout_text_cosmic_with(
     font_system: &mut FontSystem,
     text: &str,
     size: f32,
+    line_height: f32,
     weight: FontWeight,
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> Option<TextLayout> {
-    let line_height = line_height(size);
     let mut buffer = Buffer::new(font_system, Metrics::new(size, line_height));
     buffer.set_wrap(match wrap {
         TextWrap::NoWrap => Wrap::None,
@@ -891,6 +944,15 @@ mod tests {
         assert_eq!(layout.lines[1].y, layout.line_height);
         assert!(layout.lines[0].baseline > layout.lines[0].y);
         assert!(layout.height >= layout.line_height * 2.0);
+    }
+
+    #[test]
+    fn tokenized_line_heights_match_shadcn_scale() {
+        assert_eq!(line_height(12.0), 16.0);
+        assert_eq!(line_height(14.0), 20.0);
+        assert_eq!(line_height(16.0), 24.0);
+        assert_eq!(line_height(24.0), 32.0);
+        assert_eq!(line_height(30.0), 36.0);
     }
 
     #[test]
