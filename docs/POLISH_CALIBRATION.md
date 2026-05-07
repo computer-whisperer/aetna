@@ -127,6 +127,38 @@ Use contact sheets instead of isolated judgment:
 Pairwise comparison is more reliable than asking whether a single screenshot
 "looks good."
 
+The shadcn reference harness lives in `references/shadcn-calibration/`:
+
+```bash
+cd references/shadcn-calibration
+npm run capture
+cd ../..
+cargo run -p aetna-tools --bin make_calibration_sheet
+```
+
+`npm run capture` starts Vite on a free local port and captures Chromium
+screenshots through Playwright. It pins the default reference scale to:
+
+- viewport `1180x780` CSS px,
+- `deviceScaleFactor = 1`,
+- Chromium forced device scale factor `1`,
+- browser zoom `1`,
+- root font size `16px` (`SHADCN_REFERENCE_UI_SCALE=1`).
+
+This keeps the web stack comparable to Aetna's logical layout scale. Vary
+`SHADCN_REFERENCE_UI_SCALE` when testing app-level UI scale; avoid changing
+browser zoom or desktop scale for normal polish calibration. The capture writes
+`out/*.json` metadata next to each screenshot so scale drift is visible.
+
+`make_calibration_sheet` writes the normal Aetna-only sheet and, when shadcn
+captures are present, `reference_calibration_sheet.png` with shadcn references
+paired against Aetna counterparts.
+
+The shadcn reference app marks major surfaces with
+`data-calibration-boundary`; the capture script fails if visible descendants
+overflow those marked boxes. Reference screenshots are inputs to calibration,
+so they should be held to the same mechanical standards as Aetna fixtures.
+
 ### 4. Tune In Order
 
 When a fixture looks off, fix in this order:

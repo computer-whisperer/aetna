@@ -19,6 +19,12 @@ import {
 import type React from "react"
 import { cn } from "./lib/utils"
 
+const referenceUiScale = Number(new URLSearchParams(window.location.search).get("uiScale") ?? "1")
+if (Number.isFinite(referenceUiScale) && referenceUiScale > 0) {
+  document.documentElement.style.fontSize = `${16 * referenceUiScale}px`
+  document.documentElement.dataset.referenceUiScale = String(referenceUiScale)
+}
+
 function Button({
   className,
   variant = "default",
@@ -85,7 +91,10 @@ function Card({
   className?: string
 }) {
   return (
-    <section className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", className)}>
+    <section
+      data-calibration-boundary
+      className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", className)}
+    >
       <div className="space-y-1.5 p-5 pb-3">
         <h3 className="text-base font-semibold leading-none tracking-tight">{title}</h3>
       </div>
@@ -351,7 +360,7 @@ function DashboardReference() {
           </div>
 
           <div className="grid grid-cols-[minmax(0,1fr)_330px] gap-4">
-            <section className="rounded-xl border bg-card p-4 shadow-sm">
+            <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
               <div className="flex items-center gap-2">
                 <div>
                   <h2 className="text-base font-semibold">Visitors for the last 6 months</h2>
@@ -379,7 +388,7 @@ function DashboardReference() {
               </div>
             </section>
 
-            <section className="rounded-xl border bg-card p-4 shadow-sm">
+            <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
               <h2 className="text-base font-semibold">Recent Sales</h2>
               <p className="text-sm text-muted-foreground">You made 265 sales this month.</p>
               <div className="mt-5 space-y-4">
@@ -391,7 +400,10 @@ function DashboardReference() {
             </section>
           </div>
 
-          <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+          <section
+            data-calibration-boundary
+            className="overflow-hidden rounded-xl border bg-card shadow-sm"
+          >
             <div className="flex h-11 items-center gap-3 border-b px-4">
               <h2 className="text-base font-semibold">Documents</h2>
               <Button variant="outline" className="ml-auto h-8 px-3">
@@ -481,15 +493,15 @@ function MetricCard({
   note: string
 }) {
   return (
-    <section className="rounded-xl border bg-card p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {icon}
-        <span>{title}</span>
-      </div>
-      <div className="mt-3 flex items-center gap-2">
-        <div className="text-2xl font-semibold tracking-tight">{value}</div>
+    <section data-calibration-boundary className="rounded-xl border bg-card p-4 shadow-sm">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+          {icon}
+          <span className="truncate">{title}</span>
+        </div>
         <Badge tone={delta.startsWith("+") ? "success" : "warning"}>{delta}</Badge>
       </div>
+      <div className="mt-3 truncate text-2xl font-semibold tracking-tight">{value}</div>
       <p className="mt-3 truncate text-xs text-muted-foreground">{note}</p>
     </section>
   )

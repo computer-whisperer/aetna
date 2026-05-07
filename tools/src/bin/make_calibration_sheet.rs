@@ -4,7 +4,9 @@
 //! `cargo run -p aetna-tools --bin make_calibration_sheet`
 //!
 //! Reads `crates/aetna-core/out/*_calibration.png` and writes
-//! `crates/aetna-core/out/calibration_sheet.png`.
+//! `crates/aetna-core/out/calibration_sheet.png`. If shadcn reference
+//! captures exist under `references/shadcn-calibration/out`, also writes
+//! `crates/aetna-core/out/reference_calibration_sheet.png`.
 
 use std::path::{Path, PathBuf};
 
@@ -40,6 +42,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for path in paths {
         println!("  {}", path.display());
     }
+
+    if let Some(reference_sheet) = reference_comparison_sheet(&root, &out_dir)? {
+        let out = out_dir.join("reference_calibration_sheet.png");
+        write_png(
+            &out,
+            reference_sheet.width,
+            reference_sheet.height,
+            &reference_sheet.rgba,
+        )?;
+        println!("wrote {}", out.display());
+    }
     Ok(())
 }
 
@@ -73,6 +86,46 @@ fn downsample_2x(image: Image) -> Image {
         height,
         rgba,
     }
+}
+
+fn normalize_for_sheet(image: Image) -> Image {
+    if image.width >= 1400 && image.width % 2 == 0 && image.height % 2 == 0 {
+        downsample_2x(image)
+    } else {
+        image
+    }
+}
+
+fn reference_comparison_sheet(
+    root: &Path,
+    aetna_out_dir: &Path,
+) -> Result<Option<Image>, Box<dyn std::error::Error>> {
+    let reference_out_dir = root.join("references/shadcn-calibration/out");
+    let pairs = [
+        (
+            reference_out_dir.join("shadcn-calibration.png"),
+            aetna_out_dir.join("polish_calibration.png"),
+        ),
+        (
+            reference_out_dir.join("shadcn-dashboard-01.png"),
+            aetna_out_dir.join("dashboard_01_calibration.png"),
+        ),
+    ];
+
+    if !pairs
+        .iter()
+        .all(|(reference, aetna)| reference.exists() && aetna.exists())
+    {
+        return Ok(None);
+    }
+
+    let mut images = Vec::new();
+    for (reference, aetna) in pairs {
+        images.push(normalize_for_sheet(read_png(&reference)?));
+        images.push(normalize_for_sheet(read_png(&aetna)?));
+    }
+
+    Ok(Some(contact_sheet(&images, 2)))
 }
 
 fn contact_sheet(images: &[Image], columns: usize) -> Image {
