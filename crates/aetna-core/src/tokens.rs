@@ -18,35 +18,104 @@
 
 use crate::tree::Color;
 
-// ---- Backgrounds ----
-pub const BG_APP: Color = Color::token("bg-app", 14, 16, 22, 255);
-pub const BG_CARD: Color = Color::token("bg-card", 23, 26, 33, 255);
-pub const BG_MUTED: Color = Color::token("bg-muted", 32, 36, 45, 255);
-pub const BG_RAISED: Color = Color::token("bg-raised", 41, 47, 58, 255);
-pub const OVERLAY_SCRIM: Color = Color::token("overlay-scrim", 3, 6, 12, 178);
+// ---- Palette ----
+//
+// Color tokens are gated on the `light_theme` cargo feature — disabled
+// builds get the Aetna Dark palette (the historical default), enabled
+// builds get an Aetna Light palette tuned to mirror shadcn's light
+// baseline. Names, alphas, and the role assignments downstream of these
+// constants stay identical across themes; only the literal RGB shifts.
+// Hover-lightens / press-darkens are still shared — light-theme polish
+// is option-2 work, not option-1 work.
 
-// ---- Text ----
+// Backgrounds
+#[cfg(not(feature = "light_theme"))]
+pub const BG_APP: Color = Color::token("bg-app", 14, 16, 22, 255);
+#[cfg(feature = "light_theme")]
+pub const BG_APP: Color = Color::token("bg-app", 247, 248, 251, 255);
+
+#[cfg(not(feature = "light_theme"))]
+pub const BG_CARD: Color = Color::token("bg-card", 23, 26, 33, 255);
+#[cfg(feature = "light_theme")]
+pub const BG_CARD: Color = Color::token("bg-card", 255, 255, 255, 255);
+
+#[cfg(not(feature = "light_theme"))]
+pub const BG_MUTED: Color = Color::token("bg-muted", 32, 36, 45, 255);
+#[cfg(feature = "light_theme")]
+pub const BG_MUTED: Color = Color::token("bg-muted", 240, 242, 247, 255);
+
+#[cfg(not(feature = "light_theme"))]
+pub const BG_RAISED: Color = Color::token("bg-raised", 41, 47, 58, 255);
+#[cfg(feature = "light_theme")]
+pub const BG_RAISED: Color = Color::token("bg-raised", 255, 255, 255, 255);
+
+#[cfg(not(feature = "light_theme"))]
+pub const OVERLAY_SCRIM: Color = Color::token("overlay-scrim", 3, 6, 12, 178);
+#[cfg(feature = "light_theme")]
+pub const OVERLAY_SCRIM: Color = Color::token("overlay-scrim", 12, 18, 32, 110);
+
+// Text
+#[cfg(not(feature = "light_theme"))]
 pub const TEXT_FOREGROUND: Color = Color::token("text-foreground", 232, 238, 246, 255);
+#[cfg(feature = "light_theme")]
+pub const TEXT_FOREGROUND: Color = Color::token("text-foreground", 19, 24, 33, 255);
+
+#[cfg(not(feature = "light_theme"))]
 pub const TEXT_MUTED_FOREGROUND: Color = Color::token("text-muted-foreground", 148, 160, 176, 255);
+#[cfg(feature = "light_theme")]
+pub const TEXT_MUTED_FOREGROUND: Color = Color::token("text-muted-foreground", 96, 110, 130, 255);
+
 /// Themed link color. Picked up automatically by `.link(url)` runs
 /// (and any `RunStyle.link.is_some()` run, regardless of how it was
-/// constructed). Brighter than `PRIMARY` so an underlined link reads
-/// distinct from the action accent on the dark theme.
+/// constructed). Distinct from `PRIMARY` so an underlined link reads
+/// as a link, not an action accent — brighter on dark, darker on light.
+#[cfg(not(feature = "light_theme"))]
 pub const LINK_FOREGROUND: Color = Color::token("link-foreground", 96, 165, 250, 255);
+#[cfg(feature = "light_theme")]
+pub const LINK_FOREGROUND: Color = Color::token("link-foreground", 37, 99, 235, 255);
 
-// ---- Borders ----
+// Borders
+#[cfg(not(feature = "light_theme"))]
 pub const BORDER: Color = Color::token("border", 50, 58, 72, 255);
+#[cfg(feature = "light_theme")]
+pub const BORDER: Color = Color::token("border", 220, 224, 232, 255);
+
+#[cfg(not(feature = "light_theme"))]
 pub const BORDER_STRONG: Color = Color::token("border-strong", 80, 96, 118, 255);
+#[cfg(feature = "light_theme")]
+pub const BORDER_STRONG: Color = Color::token("border-strong", 180, 188, 200, 255);
 
-// ---- Status colors ----
+// Status
+#[cfg(not(feature = "light_theme"))]
 pub const SUCCESS: Color = Color::token("success", 80, 210, 140, 255);
-pub const WARNING: Color = Color::token("warning", 245, 190, 85, 255);
-pub const DESTRUCTIVE: Color = Color::token("destructive", 245, 95, 110, 255);
-pub const INFO: Color = Color::token("info", 92, 170, 255, 255);
+#[cfg(feature = "light_theme")]
+pub const SUCCESS: Color = Color::token("success", 22, 163, 74, 255);
 
-// ---- Accents ----
+#[cfg(not(feature = "light_theme"))]
+pub const WARNING: Color = Color::token("warning", 245, 190, 85, 255);
+#[cfg(feature = "light_theme")]
+pub const WARNING: Color = Color::token("warning", 217, 119, 6, 255);
+
+#[cfg(not(feature = "light_theme"))]
+pub const DESTRUCTIVE: Color = Color::token("destructive", 245, 95, 110, 255);
+#[cfg(feature = "light_theme")]
+pub const DESTRUCTIVE: Color = Color::token("destructive", 220, 38, 38, 255);
+
+#[cfg(not(feature = "light_theme"))]
+pub const INFO: Color = Color::token("info", 92, 170, 255, 255);
+#[cfg(feature = "light_theme")]
+pub const INFO: Color = Color::token("info", 37, 99, 235, 255);
+
+// Accents
+#[cfg(not(feature = "light_theme"))]
 pub const PRIMARY: Color = Color::token("primary", 92, 170, 255, 255);
+#[cfg(feature = "light_theme")]
+pub const PRIMARY: Color = Color::token("primary", 37, 99, 235, 255);
+
+#[cfg(not(feature = "light_theme"))]
 pub const PRIMARY_HOVER: Color = Color::token("primary-hover", 110, 184, 255, 255);
+#[cfg(feature = "light_theme")]
+pub const PRIMARY_HOVER: Color = Color::token("primary-hover", 29, 78, 216, 255);
 
 // ---- Solid-foreground (text-on-solid-fill colors) ----
 pub const TEXT_ON_SOLID_DARK: Color = Color::token("text-on-solid-dark", 8, 16, 25, 255);
@@ -96,10 +165,17 @@ pub const SCROLLBAR_HITBOX_WIDTH: f32 = 14.0;
 pub const SCROLLBAR_TRACK_INSET: f32 = 2.0;
 pub const SCROLLBAR_THUMB_MIN_H: f32 = 24.0;
 /// Idle thumb fill — subtle on bg-app/bg-card.
+#[cfg(not(feature = "light_theme"))]
 pub const SCROLLBAR_THUMB_FILL: Color = Color::token("scrollbar-thumb", 148, 160, 176, 130);
+#[cfg(feature = "light_theme")]
+pub const SCROLLBAR_THUMB_FILL: Color = Color::token("scrollbar-thumb", 100, 116, 139, 90);
 /// Active (hovered or dragged) thumb fill — fully opaque accent.
+#[cfg(not(feature = "light_theme"))]
 pub const SCROLLBAR_THUMB_FILL_ACTIVE: Color =
     Color::token("scrollbar-thumb-active", 200, 210, 224, 220);
+#[cfg(feature = "light_theme")]
+pub const SCROLLBAR_THUMB_FILL_ACTIVE: Color =
+    Color::token("scrollbar-thumb-active", 71, 85, 105, 220);
 
 // ---- Shadow (passed to renderer as a "level"; backend interprets) ----
 pub const SHADOW_SM: f32 = 4.0;
@@ -139,16 +215,25 @@ pub const STATE_FILL_PRESS_ALPHA: f32 = 0.25;
 /// Opacity multiplier when an element is disabled.
 pub const DISABLED_ALPHA: f32 = 0.5;
 /// Focus ring color (typically a tinted accent).
+#[cfg(not(feature = "light_theme"))]
 pub const FOCUS_RING: Color = Color::token("focus-ring", 92, 170, 255, 200);
+#[cfg(feature = "light_theme")]
+pub const FOCUS_RING: Color = Color::token("focus-ring", 37, 99, 235, 200);
 /// Focus ring outset (additional stroke beyond the element bounds).
 pub const FOCUS_RING_WIDTH: f32 = 2.0;
 /// Background tint for selected text in `text_input` / `text_area`.
 /// Tinted accent at low alpha so glyphs stay readable through the
 /// selection rectangle.
+#[cfg(not(feature = "light_theme"))]
 pub const SELECTION_BG: Color = Color::token("selection-bg", 92, 170, 255, 96);
+#[cfg(feature = "light_theme")]
+pub const SELECTION_BG: Color = Color::token("selection-bg", 37, 99, 235, 64);
 /// Selection-band fill applied while a text input lacks focus. A
 /// neutral, low-saturation cousin of [`SELECTION_BG`]; the painter
 /// lerps from this toward `SELECTION_BG` as the input regains focus
 /// (see [`crate::tree::El::dim_fill`]). Matches the macOS convention
 /// where unfocused selection reads as gray rather than blue.
+#[cfg(not(feature = "light_theme"))]
 pub const SELECTION_BG_UNFOCUSED: Color = Color::token("selection-bg-unfocused", 160, 160, 160, 64);
+#[cfg(feature = "light_theme")]
+pub const SELECTION_BG_UNFOCUSED: Color = Color::token("selection-bg-unfocused", 100, 116, 139, 56);

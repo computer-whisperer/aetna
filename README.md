@@ -223,6 +223,7 @@ tools/                           Rust diagnostics (`aetna-tools`) plus helper sc
 
 ```bash
 cargo run -p aetna-examples --bin showcase            # interactive wgpu host — shared Showcase fixture
+cargo run -p aetna-examples --bin showcase --features light_theme   # same showcase, build-time Aetna Light palette
 cargo run -p aetna-examples --bin counter             # interactive
 cargo run -p aetna-examples --bin scroll_list         # interactive — wheel
 cargo run -p aetna-examples --bin hotkey_picker       # interactive — keyboard

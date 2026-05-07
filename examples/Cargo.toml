@@ -8,6 +8,13 @@ publish = false
 
 # Binaries auto-discovered from `src/bin/*.rs`.
 
+[features]
+# Pass-through to aetna-core's build-time light-mode palette. Enable
+# with `cargo run -p aetna-examples --bin showcase --features
+# light_theme` to see the showcase in Aetna Light. Default builds stay
+# on Aetna Dark.
+light_theme = ["aetna-core/light_theme"]
+
 [dependencies]
 aetna-core = { version = "0.2.0", path = "../crates/aetna-core" }
 aetna-fixtures = { version = "0.2.0", path = "../crates/aetna-fixtures" }
