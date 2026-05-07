@@ -1684,7 +1684,7 @@ fn make_checker(w: u32, h: u32, cell: u32) -> Image {
     let mut pixels = vec![0u8; (w as usize) * (h as usize) * 4];
     for y in 0..h {
         for x in 0..w {
-            let on = ((x / cell) + (y / cell)).is_multiple_of(2);
+            let on = (((x / cell) + (y / cell)) & 1) == 0;
             let v = if on { 240 } else { 32 };
             let i = ((y * w + x) * 4) as usize;
             pixels[i] = v;

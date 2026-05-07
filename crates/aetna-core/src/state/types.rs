@@ -279,11 +279,7 @@ pub(crate) fn caret_blink_alpha_for(age: Duration) -> f32 {
     }
     let t = (age - CARET_BLINK_GRACE).as_millis() as u64;
     let half = (CARET_BLINK_PERIOD.as_millis() as u64) / 2;
-    if (t / half).is_multiple_of(2) {
-        1.0
-    } else {
-        0.0
-    }
+    if ((t / half) & 1) == 0 { 1.0 } else { 0.0 }
 }
 
 /// Runtime blink state for the focused text caret. Text widgets update
