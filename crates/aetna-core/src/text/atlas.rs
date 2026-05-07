@@ -113,11 +113,18 @@ pub struct ShapedGlyph {
 /// a span that wraps across two lines produces two rects. Backends paint
 /// these as solid quads underneath the glyph layer in the same paint
 /// item, so highlights inherit the glyph layer's z-order and scissor.
+///
+/// `decorations` carries underline / strikethrough rects for runs whose
+/// `RunStyle.underline` or `RunStyle.strikethrough` is set (links pull
+/// the same path through their auto-underline). Same per-(run, line)
+/// shape as `highlights`, but backends paint these *on top* of the glyph
+/// layer so a strikethrough actually crosses the glyphs.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShapedRun {
     pub layout: TextLayout,
     pub glyphs: Vec<ShapedGlyph>,
     pub highlights: Vec<HighlightRect>,
+    pub decorations: Vec<DecorationRect>,
 }
 
 /// One inline-run highlight band: a solid background rect spanning one
@@ -127,6 +134,21 @@ pub struct ShapedRun {
 /// shaped line's height.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct HighlightRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub color: Color,
+}
+
+/// One text-decoration rect: a thin solid bar drawn under (underline) or
+/// across (strikethrough) the glyphs of one styled run on one line.
+/// Coordinates are in **logical pixels** relative to the shaped run's
+/// origin, same frame as [`HighlightRect`]. `y`/`h` already encode the
+/// decoration's vertical position (e.g. `baseline + ~size*0.10` for
+/// underline) so backends just paint the rect — no extra metric lookup.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct DecorationRect {
     pub x: f32,
     pub y: f32,
     pub w: f32,
@@ -147,6 +169,17 @@ pub struct RunStyle {
     /// the glyphs that share this run's metadata. `None` skips the
     /// highlight pass for this run.
     pub bg: Option<Color>,
+    /// Underline decoration. Backends emit one solid bar per
+    /// (run, line) at `baseline + ~size * 0.10`.
+    pub underline: bool,
+    /// Strikethrough decoration. Backends emit one solid bar per
+    /// (run, line) at `baseline - ~size * 0.28`.
+    pub strikethrough: bool,
+    /// Optional link target URL. When set, [`RunStyle::with_link`]
+    /// also forces underline + [`crate::tokens::LINK_FOREGROUND`].
+    /// Click hit-testing is not yet wired — the URL is carried so a
+    /// future hit-test pass can route clicks to it.
+    pub link: Option<String>,
 }
 
 impl RunStyle {
@@ -157,6 +190,9 @@ impl RunStyle {
             mono: false,
             color,
             bg: None,
+            underline: false,
+            strikethrough: false,
+            link: None,
         }
     }
     pub fn italic(mut self) -> Self {
@@ -171,6 +207,27 @@ impl RunStyle {
     /// quad spanning the run's per-line extent before the glyphs.
     pub fn with_bg(mut self, bg: Color) -> Self {
         self.bg = Some(bg);
+        self
+    }
+    /// Underline this run.
+    pub fn underline(mut self) -> Self {
+        self.underline = true;
+        self
+    }
+    /// Strikethrough this run.
+    pub fn strikethrough(mut self) -> Self {
+        self.strikethrough = true;
+        self
+    }
+    /// Tag this run as a link to `url`. Sets the run's color to the
+    /// themed link foreground and forces underline so the run reads
+    /// as a hyperlink at a glance — the same shape as `<a>` in HTML.
+    /// The URL is carried in [`RunStyle::link`] for a future
+    /// hit-test pass to consume.
+    pub fn with_link(mut self, url: impl Into<String>) -> Self {
+        self.link = Some(url.into());
+        self.color = crate::tokens::LINK_FOREGROUND;
+        self.underline = true;
         self
     }
 }
@@ -527,8 +584,15 @@ impl GlyphAtlas {
         let mut lines = Vec::new();
         let mut shaped_glyphs = Vec::new();
         let mut highlights: Vec<HighlightRect> = Vec::new();
+        let mut decorations: Vec<DecorationRect> = Vec::new();
         let mut height: f32 = 0.0;
         let mut max_width: f32 = 0.0;
+        // Proportional metrics — close enough for Roboto and most
+        // system fonts without a per-font swash lookup. See the design
+        // notes in `RunStyle::underline` / `with_link`.
+        let decoration_thickness = (size * 0.06).max(1.0);
+        let underline_offset = size * 0.10;
+        let strikethrough_offset = -size * 0.28;
         for run in buffer.layout_runs() {
             height = height.max(run.line_top + run.line_height);
             max_width = max_width.max(run.line_w);
@@ -541,9 +605,38 @@ impl GlyphAtlas {
                 rtl: run.rtl,
             });
 
-            // (run_idx, bg_color, x_min, x_max) — the open highlight on
-            // this line. `None` between runs / for runs with no bg.
-            let mut open: Option<(usize, Color, f32, f32)> = None;
+            // (run_idx, color, x_min, x_max) — the open span on this
+            // line. `None` between runs / for runs that don't carry
+            // the corresponding decoration.
+            let mut open_bg: Option<(usize, Color, f32, f32)> = None;
+            let mut open_underline: Option<(usize, Color, f32, f32)> = None;
+            let mut open_strike: Option<(usize, Color, f32, f32)> = None;
+
+            let close_underline =
+                |open: &mut Option<(usize, Color, f32, f32)>, sink: &mut Vec<DecorationRect>| {
+                    if let Some((_, c, lo, hi)) = open.take() {
+                        sink.push(DecorationRect {
+                            x: lo,
+                            y: run.line_y + underline_offset,
+                            w: (hi - lo).max(0.0),
+                            h: decoration_thickness,
+                            color: c,
+                        });
+                    }
+                };
+            let close_strike = |open: &mut Option<(usize, Color, f32, f32)>,
+                                sink: &mut Vec<DecorationRect>| {
+                if let Some((_, c, lo, hi)) = open.take() {
+                    sink.push(DecorationRect {
+                        x: lo,
+                        y: run.line_y + strikethrough_offset - decoration_thickness * 0.5,
+                        w: (hi - lo).max(0.0),
+                        h: decoration_thickness,
+                        color: c,
+                    });
+                }
+            };
+
             for glyph in run.glyphs.iter() {
                 let physical = glyph.physical((0.0, 0.0), 1.0);
                 let key = glyph_key(physical.cache_key);
@@ -551,17 +644,18 @@ impl GlyphAtlas {
                     self.ensure(key);
                 }
                 let run_idx = glyph.metadata.min(runs.len().saturating_sub(1));
-                let color = runs
-                    .get(run_idx)
-                    .map(|(_, s)| s.color)
-                    .unwrap_or(Color::rgb(0, 0, 0));
-                let bg = runs.get(run_idx).and_then(|(_, s)| s.bg);
+                let style = runs.get(run_idx).map(|(_, s)| s);
+                let color = style.map(|s| s.color).unwrap_or(Color::rgb(0, 0, 0));
+                let bg = style.and_then(|s| s.bg);
+                let want_underline = style.is_some_and(|s| s.underline);
+                let want_strike = style.is_some_and(|s| s.strikethrough);
 
                 let g_left = glyph.x;
                 let g_right = glyph.x + glyph.w;
-                match (open, bg) {
+                // bg highlight — paints behind glyphs.
+                match (open_bg, bg) {
                     (Some((idx, c, lo, hi)), Some(_)) if idx == run_idx => {
-                        open = Some((idx, c, lo.min(g_left), hi.max(g_right)));
+                        open_bg = Some((idx, c, lo.min(g_left), hi.max(g_right)));
                     }
                     (Some((idx, c, lo, hi)), _) => {
                         highlights.push(HighlightRect {
@@ -572,12 +666,45 @@ impl GlyphAtlas {
                             color: c,
                         });
                         let _ = idx;
-                        open = bg.map(|c| (run_idx, c, g_left, g_right));
+                        open_bg = bg.map(|c| (run_idx, c, g_left, g_right));
                     }
                     (None, Some(c)) => {
-                        open = Some((run_idx, c, g_left, g_right));
+                        open_bg = Some((run_idx, c, g_left, g_right));
                     }
                     (None, None) => {}
+                }
+                // Underline + strikethrough — paint on top, color
+                // tracks the run's text color so a link's blue
+                // glyph gets a blue underline without an extra knob.
+                match (open_underline, want_underline) {
+                    (Some((idx, c, lo, hi)), true) if idx == run_idx => {
+                        open_underline = Some((idx, c, lo.min(g_left), hi.max(g_right)));
+                    }
+                    (Some(_), _) => {
+                        close_underline(&mut open_underline, &mut decorations);
+                        if want_underline {
+                            open_underline = Some((run_idx, color, g_left, g_right));
+                        }
+                    }
+                    (None, true) => {
+                        open_underline = Some((run_idx, color, g_left, g_right));
+                    }
+                    (None, false) => {}
+                }
+                match (open_strike, want_strike) {
+                    (Some((idx, c, lo, hi)), true) if idx == run_idx => {
+                        open_strike = Some((idx, c, lo.min(g_left), hi.max(g_right)));
+                    }
+                    (Some(_), _) => {
+                        close_strike(&mut open_strike, &mut decorations);
+                        if want_strike {
+                            open_strike = Some((run_idx, color, g_left, g_right));
+                        }
+                    }
+                    (None, true) => {
+                        open_strike = Some((run_idx, color, g_left, g_right));
+                    }
+                    (None, false) => {}
                 }
 
                 shaped_glyphs.push(ShapedGlyph {
@@ -589,7 +716,7 @@ impl GlyphAtlas {
                     run_index: run_idx as u32,
                 });
             }
-            if let Some((_, c, lo, hi)) = open {
+            if let Some((_, c, lo, hi)) = open_bg {
                 highlights.push(HighlightRect {
                     x: lo,
                     y: run.line_top,
@@ -598,6 +725,8 @@ impl GlyphAtlas {
                     color: c,
                 });
             }
+            close_underline(&mut open_underline, &mut decorations);
+            close_strike(&mut open_strike, &mut decorations);
         }
 
         let layout = TextLayout {
@@ -611,6 +740,7 @@ impl GlyphAtlas {
             layout,
             glyphs: shaped_glyphs,
             highlights,
+            decorations,
         }
     }
 
@@ -1193,6 +1323,126 @@ mod tests {
             Color::rgb(0, 0, 0),
         );
         assert!(shaped.highlights.is_empty());
+    }
+
+    #[test]
+    fn run_with_underline_emits_one_decoration_per_line() {
+        // A single underlined run on a single line produces one
+        // DecorationRect spanning the run's glyph extent at
+        // baseline + ~size*0.10. Color tracks the run's text color
+        // so a link's blue text gets a blue underline.
+        let mut atlas = GlyphAtlas::new();
+        let teal = Color::rgb(20, 200, 200);
+        let runs = [(
+            "underlined",
+            RunStyle::new(FontWeight::Regular, teal).underline(),
+        )];
+        let shaped =
+            atlas.shape_and_rasterize_runs(&runs, 16.0, TextWrap::NoWrap, TextAnchor::Start, None);
+        assert_eq!(
+            shaped.decorations.len(),
+            1,
+            "expected one underline rect, got {:?}",
+            shaped.decorations,
+        );
+        let d = shaped.decorations[0];
+        assert_eq!(d.color, teal);
+        assert!(d.h >= 1.0, "thickness must clamp to >= 1px, got {}", d.h);
+        // Underline sits below the baseline.
+        let line = &shaped.layout.lines[0];
+        assert!(
+            d.y > line.baseline,
+            "underline y={} should be below baseline={}",
+            d.y,
+            line.baseline,
+        );
+        assert!(
+            d.w > 0.0,
+            "underline must span the glyph extent, got w={}",
+            d.w,
+        );
+    }
+
+    #[test]
+    fn run_with_strikethrough_sits_above_baseline() {
+        let mut atlas = GlyphAtlas::new();
+        let runs = [(
+            "struck",
+            RunStyle::new(FontWeight::Regular, Color::rgb(0, 0, 0)).strikethrough(),
+        )];
+        let shaped =
+            atlas.shape_and_rasterize_runs(&runs, 16.0, TextWrap::NoWrap, TextAnchor::Start, None);
+        assert_eq!(shaped.decorations.len(), 1);
+        let d = shaped.decorations[0];
+        let line = &shaped.layout.lines[0];
+        assert!(
+            d.y < line.baseline,
+            "strikethrough y={} should sit above baseline={}",
+            d.y,
+            line.baseline,
+        );
+    }
+
+    #[test]
+    fn run_with_link_emits_underline_in_link_color() {
+        // `.with_link(url)` is a one-call helper: it pins color to
+        // LINK_FOREGROUND, forces underline, and carries the URL
+        // through to RunStyle.link for a future hit-test pass.
+        let mut atlas = GlyphAtlas::new();
+        let runs = [(
+            "click me",
+            RunStyle::new(FontWeight::Regular, Color::rgb(0, 0, 0))
+                .with_link("https://example.com"),
+        )];
+        let shaped =
+            atlas.shape_and_rasterize_runs(&runs, 16.0, TextWrap::NoWrap, TextAnchor::Start, None);
+        assert_eq!(shaped.decorations.len(), 1);
+        assert_eq!(shaped.decorations[0].color, crate::tokens::LINK_FOREGROUND);
+        // Glyphs render in the link color too.
+        assert_eq!(shaped.glyphs[0].color, crate::tokens::LINK_FOREGROUND);
+    }
+
+    #[test]
+    fn underline_wraps_with_text_to_two_decoration_rects() {
+        // A single underlined run that wraps across two lines emits
+        // one DecorationRect per visual line — same shape as the
+        // bg-highlight wrapping case.
+        let mut atlas = GlyphAtlas::new();
+        let runs = [(
+            "the quick brown fox jumps over the lazy dog",
+            RunStyle::new(FontWeight::Regular, Color::rgb(0, 0, 0)).underline(),
+        )];
+        let shaped = atlas.shape_and_rasterize_runs(
+            &runs,
+            16.0,
+            TextWrap::Wrap,
+            TextAnchor::Start,
+            Some(120.0),
+        );
+        assert!(
+            shaped.decorations.len() >= 2,
+            "expected one decoration rect per wrapped line, got {:?}",
+            shaped.decorations,
+        );
+        // No two decoration rects should share a y — one per line.
+        let mut ys: Vec<f32> = shaped.decorations.iter().map(|d| d.y).collect();
+        ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+        assert_eq!(ys.len(), shaped.decorations.len());
+    }
+
+    #[test]
+    fn run_without_decorations_emits_no_decoration_rects() {
+        let mut atlas = GlyphAtlas::new();
+        let shaped = atlas.shape_and_rasterize(
+            "plain",
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            TextAnchor::Start,
+            None,
+            Color::rgb(0, 0, 0),
+        );
+        assert!(shaped.decorations.is_empty());
     }
 
     #[test]

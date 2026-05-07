@@ -1558,6 +1558,22 @@ fn surfaces_view() -> El {
         )
         .muted()
         .small(),
+        h2("Text decorations"),
+        text_runs([
+            text("Inline runs carry "),
+            text("underline").underline(),
+            text(", "),
+            text("strikethrough").strikethrough(),
+            text(", and "),
+            text("links").link("https://aetna.dev"),
+            text(" via per-run flags. The decoration bar tracks each run's "),
+            text("color").italic(),
+            text(" automatically."),
+        ])
+        .padding(tokens::SPACE_LG)
+        .fill(tokens::BG_RAISED)
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_LG),
     ])
     .gap(tokens::SPACE_LG)
 }

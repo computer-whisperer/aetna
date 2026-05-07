@@ -959,6 +959,9 @@ impl RunnerCore {
                     weight,
                     wrap,
                     anchor,
+                    underline,
+                    strikethrough,
+                    link,
                     ..
                 } => {
                     close_run(
@@ -975,13 +978,22 @@ impl RunnerCore {
                     if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
                         continue;
                     }
+                    let mut style = crate::text::atlas::RunStyle::new(*weight, *color);
+                    if *underline {
+                        style = style.underline();
+                    }
+                    if *strikethrough {
+                        style = style.strikethrough();
+                    }
+                    if let Some(url) = link {
+                        style = style.with_link(url.clone());
+                    }
                     let layers = text.record(
                         *rect,
                         phys,
-                        *color,
+                        &style,
                         glyph_text,
                         *size,
-                        *weight,
                         *wrap,
                         *anchor,
                         scale_factor,
@@ -1249,15 +1261,18 @@ pub trait TextRecorder {
     /// Append per-glyph instances for `text` and return the range of
     /// indices written into the backend's `TextLayer` storage. Each
     /// returned index lands in `paint_items` as a `PaintItem::Text`.
+    ///
+    /// `style` carries weight + color + (optional) decoration flags
+    /// — backends fold it into a single-element `(text, style)` slice
+    /// and run the same shaping path as [`Self::record_runs`].
     #[allow(clippy::too_many_arguments)]
     fn record(
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
-        color: Color,
+        style: &RunStyle,
         text: &str,
         size: f32,
-        weight: FontWeight,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
@@ -1302,10 +1317,9 @@ pub trait TextRecorder {
         RecordedPaint::Text(self.record(
             rect,
             scissor,
-            color,
+            &RunStyle::new(FontWeight::Regular, color),
             glyph,
             size,
-            FontWeight::Regular,
             TextWrap::NoWrap,
             TextAnchor::Middle,
             scale_factor,
@@ -1345,10 +1359,9 @@ mod tests {
             &mut self,
             _rect: Rect,
             _scissor: Option<PhysicalScissor>,
-            _color: Color,
+            _style: &RunStyle,
             _text: &str,
             _size: f32,
-            _weight: FontWeight,
             _wrap: TextWrap,
             _anchor: TextAnchor,
             _scale_factor: f32,

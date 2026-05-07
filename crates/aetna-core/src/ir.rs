@@ -52,6 +52,17 @@ pub enum DrawOp {
         wrap: TextWrap,
         anchor: TextAnchor,
         layout: TextLayout,
+        /// Underline / strikethrough state lifted from the source El's
+        /// `text_underline` / `text_strikethrough`. Backends fold them
+        /// into the synthesized [`RunStyle`] before shaping so the
+        /// decoration pass in [`crate::text::atlas`] runs uniformly
+        /// for standalone leaves and attributed paragraphs.
+        underline: bool,
+        strikethrough: bool,
+        /// Optional link URL from the El's `text_link`. Carried for
+        /// future hit-test work; today it just pins color + underline
+        /// via [`RunStyle::with_link`].
+        link: Option<String>,
     },
     /// An attributed paragraph: a sequence of styled runs that flow
     /// together inside one `rect`. The runtime hands `runs` straight to

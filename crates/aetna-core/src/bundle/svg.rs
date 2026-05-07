@@ -81,10 +81,32 @@ fn emit_op(s: &mut String, op: &DrawOp) {
             wrap,
             anchor,
             layout,
+            underline,
+            strikethrough,
+            link,
             ..
         } => {
+            // Links override color with the link-foreground token and
+            // imply an underline; this mirrors `RunStyle::with_link`
+            // so the SVG fallback paints what the GPU paths paint.
+            let (eff_color, eff_underline) = if link.is_some() {
+                (crate::tokens::LINK_FOREGROUND, true)
+            } else {
+                (*color, *underline)
+            };
             emit_glyph_run(
-                s, id, *rect, *color, *size, *weight, *mono, *wrap, *anchor, layout,
+                s,
+                id,
+                *rect,
+                eff_color,
+                *size,
+                *weight,
+                *mono,
+                *wrap,
+                *anchor,
+                layout,
+                eff_underline,
+                *strikethrough,
             );
         }
         DrawOp::AttributedText {
@@ -282,6 +304,8 @@ fn emit_glyph_run(
     wrap: TextWrap,
     anchor: TextAnchor,
     layout: &text_metrics::TextLayout,
+    underline: bool,
+    strikethrough: bool,
 ) {
     let (x, anchor_attr) = match anchor {
         TextAnchor::Start => (rect.x, "start"),
@@ -303,6 +327,7 @@ fn emit_glyph_run(
         FontWeight::Semibold => "600",
         FontWeight::Bold => "700",
     };
+    let decoration_attr = decoration_attr(underline, strikethrough);
     for line in &layout.lines {
         // SVG uses a baseline; glyphon positions by line top. The core
         // text layout carries Roboto's baseline offset so artifacts stay
@@ -310,7 +335,7 @@ fn emit_glyph_run(
         let y = line_top + line.baseline;
         let _ = writeln!(
             s,
-            r#"<text data-node="{}" data-shader="stock::text" x="{:.2}" y="{:.2}" font-family="{}" font-size="{:.2}" font-weight="{}" fill="{}" text-anchor="{}">{}</text>"#,
+            r#"<text data-node="{}" data-shader="stock::text" x="{:.2}" y="{:.2}" font-family="{}" font-size="{:.2}" font-weight="{}" fill="{}" text-anchor="{}"{}>{}</text>"#,
             esc(id),
             x,
             y,
@@ -319,8 +344,21 @@ fn emit_glyph_run(
             weight_str,
             color_svg(color),
             anchor_attr,
+            decoration_attr,
             esc(&line.text)
         );
+    }
+}
+
+/// Build the SVG `text-decoration` attribute string for a span. Returns
+/// an empty string when neither flag is set (so the attribute is
+/// omitted entirely rather than emitted as `text-decoration=""`).
+fn decoration_attr(underline: bool, strikethrough: bool) -> &'static str {
+    match (underline, strikethrough) {
+        (true, true) => r#" text-decoration="underline line-through""#,
+        (true, false) => r#" text-decoration="underline""#,
+        (false, true) => r#" text-decoration="line-through""#,
+        (false, false) => "",
     }
 }
 
@@ -411,13 +449,15 @@ fn emit_attributed_text(
             FontWeight::Bold => "700",
         };
         let style_attr = if style.italic { "italic" } else { "normal" };
+        let decoration_attr = decoration_attr(style.underline, style.strikethrough);
         let _ = write!(
             s,
-            r#"<tspan font-family="{}" font-weight="{}" font-style="{}" fill="{}">{}</tspan>"#,
+            r#"<tspan font-family="{}" font-weight="{}" font-style="{}" fill="{}"{}>{}</tspan>"#,
             family,
             weight_str,
             style_attr,
             color_svg(style.color),
+            decoration_attr,
             esc(text),
         );
     }

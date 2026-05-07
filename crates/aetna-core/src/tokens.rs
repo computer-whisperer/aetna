@@ -28,6 +28,11 @@ pub const OVERLAY_SCRIM: Color = Color::token("overlay-scrim", 3, 6, 12, 178);
 // ---- Text ----
 pub const TEXT_FOREGROUND: Color = Color::token("text-foreground", 232, 238, 246, 255);
 pub const TEXT_MUTED_FOREGROUND: Color = Color::token("text-muted-foreground", 148, 160, 176, 255);
+/// Themed link color. Picked up automatically by `.link(url)` runs
+/// (and any `RunStyle.link.is_some()` run, regardless of how it was
+/// constructed). Brighter than `PRIMARY` so an underlined link reads
+/// distinct from the action accent on the dark theme.
+pub const LINK_FOREGROUND: Color = Color::token("link-foreground", 96, 165, 250, 255);
 
 // ---- Borders ----
 pub const BORDER: Color = Color::token("border", 50, 58, 72, 255);

@@ -366,6 +366,9 @@ fn push_node(
             wrap: n.text_wrap,
             anchor,
             layout,
+            underline: n.text_underline,
+            strikethrough: n.text_strikethrough,
+            link: n.text_link.clone(),
         });
     }
 
@@ -552,6 +555,19 @@ fn collect_inline_runs(node: &El, opacity: f32) -> Vec<(String, RunStyle)> {
                     }
                     if let Some(bg) = c.text_bg {
                         style = style.with_bg(opaque(bg, opacity));
+                    }
+                    if let Some(url) = &c.text_link {
+                        // .with_link sets color + underline; do it
+                        // before the standalone underline / strike
+                        // checks so an explicit `.underline()` on a
+                        // link is a no-op rather than re-stomping.
+                        style = style.with_link(url.clone());
+                    }
+                    if c.text_underline {
+                        style = style.underline();
+                    }
+                    if c.text_strikethrough {
+                        style = style.strikethrough();
                     }
                     runs.push((text.clone(), style));
                 }

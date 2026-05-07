@@ -69,7 +69,7 @@ use aetna_core::ir::TextAnchor;
 use aetna_core::paint::{IconRunKind, PaintItem, PhysicalScissor, QuadInstance};
 use aetna_core::runtime::{RecordedPaint, RunnerCore, TextRecorder};
 use aetna_core::text::atlas::RunStyle;
-use aetna_core::tree::{Color, FontWeight, TextWrap};
+use aetna_core::tree::{Color, TextWrap};
 
 pub use aetna_core::runtime::{PointerMove, PrepareResult, PrepareTimings};
 
@@ -167,25 +167,15 @@ impl TextRecorder for PaintRecorder<'_> {
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
-        color: Color,
+        style: &aetna_core::text::atlas::RunStyle,
         text: &str,
         size: f32,
-        weight: FontWeight,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
     ) -> std::ops::Range<usize> {
-        self.text.record(
-            rect,
-            scissor,
-            color,
-            text,
-            size,
-            weight,
-            wrap,
-            anchor,
-            scale_factor,
-        )
+        self.text
+            .record(rect, scissor, style, text, size, wrap, anchor, scale_factor)
     }
 
     fn record_runs(

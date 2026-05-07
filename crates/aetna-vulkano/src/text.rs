@@ -30,7 +30,7 @@ use aetna_core::text::atlas::{
 use aetna_core::text::msdf_atlas::{
     DEFAULT_BASE_EM, DEFAULT_SPREAD, MsdfAtlas, MsdfAtlasPage, MsdfGlyphKey, MsdfRect, MsdfSlot,
 };
-use aetna_core::tree::{Color, FontWeight, Rect, TextWrap};
+use aetna_core::tree::{Rect, TextWrap};
 use bytemuck::{Pod, Zeroable};
 use cosmic_text::fontdb;
 use smallvec::smallvec;
@@ -272,7 +272,8 @@ impl TextPaint {
         scale_factor: f32,
     ) -> Range<usize> {
         let runs_start = self.runs.len();
-        if shaped.glyphs.is_empty() && shaped.highlights.is_empty() {
+        if shaped.glyphs.is_empty() && shaped.highlights.is_empty() && shaped.decorations.is_empty()
+        {
             return runs_start..runs_start;
         }
 
@@ -351,6 +352,30 @@ impl TextPaint {
                 self.runs.push(TextRun {
                     kind,
                     page,
+                    scissor,
+                    first,
+                    count,
+                });
+            }
+        }
+
+        // Decoration rects (underline / strikethrough). Appended
+        // *after* the glyph runs so they paint on top — the existing
+        // Highlight pipeline draws solid rgba quads, which is exactly
+        // what an underline or strikethrough bar is.
+        if !shaped.decorations.is_empty() {
+            let first = self.highlight_instances.len() as u32;
+            for d in &shaped.decorations {
+                self.highlight_instances.push(HighlightInstance {
+                    rect: [origin_x + d.x, origin_y + d.y, d.w, d.h],
+                    color: rgba_f32(d.color),
+                });
+            }
+            let count = self.highlight_instances.len() as u32 - first;
+            if count > 0 {
+                self.runs.push(TextRun {
+                    kind: TextRunKind::Highlight,
+                    page: 0,
                     scissor,
                     first,
                     count,
@@ -767,10 +792,9 @@ impl TextRecorder for TextPaint {
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
-        color: Color,
+        style: &RunStyle,
         text: &str,
         size: f32,
-        weight: FontWeight,
         wrap: TextWrap,
         anchor: TextAnchor,
         scale_factor: f32,
@@ -778,7 +802,7 @@ impl TextRecorder for TextPaint {
         self.record_inner(
             rect,
             scissor,
-            &[(text.to_string(), RunStyle::new(weight, color))],
+            &[(text.to_string(), style.clone())],
             size,
             wrap,
             anchor,
