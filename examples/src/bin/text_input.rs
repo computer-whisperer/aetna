@@ -41,6 +41,11 @@ struct Form {
     /// own `TextSelection`.
     selection: Selection,
     clipboard: Option<arboard::Clipboard>,
+    /// Last text written to the Linux primary selection. Compared
+    /// against the current selection's text after every event so the
+    /// auto-copy only fires on real changes (no redundant clipboard
+    /// writes during shift-arrow extension or arrow-key navigation).
+    last_primary: String,
 }
 
 impl Default for Form {
@@ -54,7 +59,41 @@ impl Default for Form {
             // arboard fails to initialize on headless / display-less
             // environments. Treat clipboard as best-effort.
             clipboard: arboard::Clipboard::new().ok(),
+            last_primary: String::new(),
         }
+    }
+}
+
+/// Linux primary-selection helpers. On X11 / Wayland, highlighting
+/// text writes it to a "primary" buffer separate from the system
+/// clipboard, and middle-click pastes from that buffer at the click
+/// position. On other platforms these are no-ops — primary selection
+/// isn't a concept on macOS / Windows / web.
+mod primary {
+    #[cfg(target_os = "linux")]
+    pub fn set(clipboard: Option<&mut arboard::Clipboard>, text: &str) {
+        use arboard::{LinuxClipboardKind, SetExtLinux};
+        if let Some(cb) = clipboard {
+            let _ = cb.set().clipboard(LinuxClipboardKind::Primary).text(text);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn get(clipboard: Option<&mut arboard::Clipboard>) -> Option<String> {
+        use arboard::{GetExtLinux, LinuxClipboardKind};
+        let cb = clipboard?;
+        cb.get()
+            .clipboard(LinuxClipboardKind::Primary)
+            .text()
+            .ok()
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn set(_clipboard: Option<&mut arboard::Clipboard>, _text: &str) {}
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn get(_clipboard: Option<&mut arboard::Clipboard>) -> Option<String> {
+        None
     }
 }
 
@@ -144,6 +183,7 @@ impl App for Form {
             && let Some(sel) = event.selection.as_ref()
         {
             self.selection = sel.clone();
+            self.sync_primary();
             return;
         }
         match (event.kind, event.route()) {
@@ -179,6 +219,27 @@ impl App for Form {
             "password" => (&mut self.password, "password"),
             _ => return,
         };
+
+        // Linux middle-click paste: insert primary-clipboard text at
+        // the click position, leaving the system clipboard untouched.
+        // No-op on platforms without primary selection.
+        if event.kind == UiEventKind::MiddleClick {
+            if let Some(byte) = text_input::caret_byte_at(value, &event, &opts) {
+                let mut local = TextSelection::caret(byte);
+                if let Some(text) = primary::get(self.clipboard.as_mut()) {
+                    text_input::replace_selection_with(value, &mut local, &text, &opts);
+                }
+                self.selection.set_within(key_str, local);
+                if self.selection.within(key_str).is_none() {
+                    self.selection.range = Some(SelectionRange {
+                        anchor: SelectionPoint::new(key_str, local.head),
+                        head: SelectionPoint::new(key_str, local.head),
+                    });
+                }
+            }
+            return;
+        }
+
         apply_with_clipboard(
             value,
             &mut self.selection,
@@ -187,6 +248,43 @@ impl App for Form {
             &opts,
             self.clipboard.as_mut(),
         );
+        self.sync_primary();
+    }
+}
+
+impl Form {
+    /// Mirror the current selection's text into the Linux primary
+    /// buffer. Browsers and native Linux apps do this on every
+    /// selection change; middle-click then pastes the most recently
+    /// highlighted text. We dedupe against `last_primary` so a long
+    /// shift-arrow extension or arrow-key drift inside a stable
+    /// selection doesn't churn the clipboard.
+    fn sync_primary(&mut self) {
+        let text = self
+            .selected_text()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_default();
+        if text == self.last_primary {
+            return;
+        }
+        if !text.is_empty() {
+            primary::set(self.clipboard.as_mut(), &text);
+        }
+        self.last_primary = text;
+    }
+
+    fn selected_text(&self) -> Option<String> {
+        let r = self.selection.range.as_ref()?;
+        if r.anchor.key != r.head.key {
+            return None; // cross-leaf selections can't live across these inputs
+        }
+        let value = self.value_for(&r.anchor.key)?;
+        let lo = r.anchor.byte.min(r.head.byte).min(value.len());
+        let hi = r.anchor.byte.max(r.head.byte).min(value.len());
+        if lo >= hi {
+            return None;
+        }
+        Some(value[lo..hi].to_string())
     }
 }
 

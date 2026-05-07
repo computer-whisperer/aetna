@@ -703,6 +703,23 @@ pub fn clipboard_request_for(event: &UiEvent, opts: &TextInputOpts<'_>) -> Optio
     Some(kind)
 }
 
+/// Resolve the byte offset a pointer event maps to inside a text
+/// input's `value`. Returns `None` for events that carry no pointer
+/// coordinate or no target rect — typical of synthesized or routed
+/// events that didn't originate from a press / move on the input.
+///
+/// Apps use this to implement Linux middle-click paste: route the
+/// `MiddleClick` event through this helper to learn where the user
+/// pointed, then `replace_selection_with` the primary-clipboard text
+/// at that position.
+#[track_caller]
+pub fn caret_byte_at(value: &str, event: &UiEvent, opts: &TextInputOpts<'_>) -> Option<usize> {
+    let (px, _py) = event.pointer?;
+    let target = event.target.as_ref()?;
+    let local_x = px - target.rect.x - tokens::SPACE_MD;
+    Some(caret_from_x(value, local_x, opts.mask))
+}
+
 fn caret_from_x(value: &str, local_x: f32, mask: MaskMode) -> usize {
     if value.is_empty() || local_x <= 0.0 {
         return 0;

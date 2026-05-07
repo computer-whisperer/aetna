@@ -465,6 +465,20 @@ fn move_caret_vertically(value: &str, byte_index: usize, direction: i32) -> usiz
     line_position_to_byte(value, hit.line, hit.byte_index)
 }
 
+/// Resolve the byte offset a pointer event maps to inside a text
+/// area's `value`. Mirrors [`crate::widgets::text_input::caret_byte_at`]
+/// but accounts for vertical position as well, so the caller lands on
+/// the line under the pointer. Returns `None` for events without a
+/// pointer or target rect. Used by Linux middle-click paste flows.
+#[track_caller]
+pub fn caret_byte_at(value: &str, event: &UiEvent) -> Option<usize> {
+    let (px, py) = event.pointer?;
+    let target = event.target.as_ref()?;
+    let local_x = px - target.rect.x - tokens::SPACE_MD;
+    let local_y = py - target.rect.y - tokens::SPACE_SM;
+    Some(caret_from_xy(value, local_x, local_y))
+}
+
 fn caret_from_xy(value: &str, x: f32, y: f32) -> usize {
     let line_h = line_height_px();
     let probe_y = y.max(line_h * 0.5);
