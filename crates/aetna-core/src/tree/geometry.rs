@@ -100,6 +100,28 @@ impl Sides {
         }
     }
 
+    /// Horizontal-only padding — sets `left` and `right` to `v`,
+    /// leaves `top` and `bottom` at `0`. Mirrors Tailwind's `px-N`.
+    pub const fn x(v: f32) -> Self {
+        Self {
+            left: v,
+            right: v,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Vertical-only padding — sets `top` and `bottom` to `v`,
+    /// leaves `left` and `right` at `0`. Mirrors Tailwind's `py-N`.
+    pub const fn y(v: f32) -> Self {
+        Self {
+            left: 0.0,
+            right: 0.0,
+            top: v,
+            bottom: v,
+        }
+    }
+
     pub const fn zero() -> Self {
         Self::all(0.0)
     }

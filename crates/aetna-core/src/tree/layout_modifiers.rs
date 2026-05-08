@@ -87,6 +87,61 @@ impl El {
         self
     }
 
+    /// Override only the top padding side, preserving the other three
+    /// sides at their current value (whether from a constructor's
+    /// `default_padding` or a previous explicit `.padding(...)`).
+    /// Mirrors Tailwind's `pt-N`. Marks the padding as explicit, so
+    /// the metrics pass will not stamp a density-driven value over it.
+    pub fn pt(mut self, v: f32) -> Self {
+        self.padding.top = v;
+        self.explicit_padding = true;
+        self
+    }
+
+    /// Override only the bottom padding side. Mirrors Tailwind's `pb-N`.
+    /// See [`Self::pt`] for composition semantics.
+    pub fn pb(mut self, v: f32) -> Self {
+        self.padding.bottom = v;
+        self.explicit_padding = true;
+        self
+    }
+
+    /// Override only the left padding side. Mirrors Tailwind's `pl-N`.
+    /// See [`Self::pt`] for composition semantics.
+    pub fn pl(mut self, v: f32) -> Self {
+        self.padding.left = v;
+        self.explicit_padding = true;
+        self
+    }
+
+    /// Override only the right padding side. Mirrors Tailwind's `pr-N`.
+    /// See [`Self::pt`] for composition semantics.
+    pub fn pr(mut self, v: f32) -> Self {
+        self.padding.right = v;
+        self.explicit_padding = true;
+        self
+    }
+
+    /// Override the horizontal padding sides (left + right), preserving
+    /// `top` and `bottom`. Mirrors Tailwind's `px-N`.
+    /// See [`Self::pt`] for composition semantics.
+    pub fn px(mut self, v: f32) -> Self {
+        self.padding.left = v;
+        self.padding.right = v;
+        self.explicit_padding = true;
+        self
+    }
+
+    /// Override the vertical padding sides (top + bottom), preserving
+    /// `left` and `right`. Mirrors Tailwind's `py-N`.
+    /// See [`Self::pt`] for composition semantics.
+    pub fn py(mut self, v: f32) -> Self {
+        self.padding.top = v;
+        self.padding.bottom = v;
+        self.explicit_padding = true;
+        self
+    }
+
     pub fn gap(mut self, g: f32) -> Self {
         self.gap = g;
         self.explicit_gap = true;
@@ -187,5 +242,60 @@ impl El {
         self.gap = g;
         self.explicit_gap = false;
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tree::Kind;
+
+    fn fresh() -> El {
+        El::new(Kind::Group)
+    }
+
+    #[test]
+    fn pt_sets_only_top_and_marks_explicit() {
+        let el = fresh().pt(7.0);
+        assert_eq!(el.padding, Sides { left: 0.0, right: 0.0, top: 7.0, bottom: 0.0 });
+        assert!(el.explicit_padding);
+    }
+
+    #[test]
+    fn px_py_set_only_their_axis() {
+        let el = fresh().px(4.0).py(2.0);
+        assert_eq!(el.padding, Sides { left: 4.0, right: 4.0, top: 2.0, bottom: 2.0 });
+        assert!(el.explicit_padding);
+    }
+
+    #[test]
+    fn pt_overrides_only_top_when_following_padding() {
+        // Tailwind shape: `p-4 pt-0` keeps left/right/bottom at 4 and zeros only top.
+        let el = fresh().padding(4.0).pt(0.0);
+        assert_eq!(el.padding, Sides { left: 4.0, right: 4.0, top: 0.0, bottom: 4.0 });
+        assert!(el.explicit_padding);
+    }
+
+    #[test]
+    fn pt_after_default_padding_preserves_other_sides_and_marks_explicit() {
+        // Constructor default of all-4, then author overrides just the top to 0.
+        // Other sides keep the default's value; explicit_padding flips so the
+        // metrics pass cannot stamp over the override.
+        let el = fresh().default_padding(4.0).pt(0.0);
+        assert_eq!(el.padding, Sides { left: 4.0, right: 4.0, top: 0.0, bottom: 4.0 });
+        assert!(el.explicit_padding);
+    }
+
+    #[test]
+    fn per_side_chainables_compose() {
+        let el = fresh().pl(1.0).pr(2.0).pt(3.0).pb(4.0);
+        assert_eq!(el.padding, Sides { left: 1.0, right: 2.0, top: 3.0, bottom: 4.0 });
+        assert!(el.explicit_padding);
+    }
+
+    #[test]
+    fn sides_x_and_y_constructors_only_populate_one_axis() {
+        assert_eq!(Sides::x(5.0), Sides { left: 5.0, right: 5.0, top: 0.0, bottom: 0.0 });
+        assert_eq!(Sides::y(5.0), Sides { left: 0.0, right: 0.0, top: 5.0, bottom: 5.0 });
     }
 }
