@@ -247,6 +247,7 @@ fn tooltip_layer() -> El {
                 (w, h),
                 ctx.container,
                 ctx.rect_of_key,
+                tokens::SPACE_1,
             );
             vec![rect]
         })

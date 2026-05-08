@@ -131,6 +131,7 @@ fn tooltip_layer(text: &str, anchor_id: String) -> El {
                 (w, h),
                 ctx.container,
                 ctx.rect_of_id,
+                crate::widgets::popover::ANCHOR_GAP,
             );
             vec![rect]
         })

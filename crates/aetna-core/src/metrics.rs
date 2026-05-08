@@ -942,18 +942,18 @@ struct MenuItemMetrics {
 fn menu_item_metrics(density: Density) -> MenuItemMetrics {
     match density {
         Density::Compact => MenuItemMetrics {
-            height: 30.0,
-            padding_x: 8.0,
+            height: 34.0,
+            padding_x: 14.0,
             gap: 12.0,
         },
         Density::Comfortable => MenuItemMetrics {
-            height: 32.0,
-            padding_x: 10.0,
+            height: 38.0,
+            padding_x: 16.0,
             gap: 12.0,
         },
         Density::Spacious => MenuItemMetrics {
-            height: 34.0,
-            padding_x: 12.0,
+            height: 42.0,
+            padding_x: 18.0,
             gap: 12.0,
         },
     }
@@ -1246,8 +1246,8 @@ mod tests {
             .with_menu_density(Density::Compact)
             .apply_to_tree(&mut el);
 
-        assert_eq!(el.height, Size::Fixed(30.0));
-        assert_eq!(el.padding, Sides::xy(8.0, 0.0));
+        assert_eq!(el.height, Size::Fixed(34.0));
+        assert_eq!(el.padding, Sides::xy(14.0, 0.0));
         assert_eq!(el.gap, 12.0);
     }
 

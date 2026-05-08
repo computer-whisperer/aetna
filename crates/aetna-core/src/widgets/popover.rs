@@ -55,8 +55,12 @@ use crate::tokens;
 use crate::tree::*;
 use crate::widgets::overlay::overlay;
 
-/// Default spacing between a popover panel and its anchor.
-const ANCHOR_GAP: f32 = tokens::SPACE_1;
+/// Default spacing between a tooltip / floating surface and its
+/// anchor. Right-click menus and dropdowns flush their panel against
+/// the trigger (gap = 0) — they pass `0.0` to [`anchor_rect`]
+/// directly. This constant is the breathing-room value tooltips and
+/// other non-menu floating panels use.
+pub const ANCHOR_GAP: f32 = tokens::SPACE_1;
 
 /// Where a popover sits relative to its anchor.
 ///
@@ -137,6 +141,12 @@ impl Anchor {
 /// Compute the laid-out rect for a popover panel of `panel_size`
 /// anchored by `anchor` inside `viewport`.
 ///
+/// `gap` is the breathing-room spacing between the anchor and the
+/// panel along the primary axis (Below/Above/Right/Left). Right-click
+/// menus and dropdowns flush their panel against the trigger by
+/// passing `0.0`; tooltips pass [`ANCHOR_GAP`] for visual separation
+/// from the trigger.
+///
 /// Behavior:
 ///
 /// - **Side::Below / Above** — panel's left edge aligns with the
@@ -144,7 +154,8 @@ impl Anchor {
 ///   side if the requested side would extend past the viewport edge.
 /// - **Side::Right / Left** — panel's top aligns with the anchor's
 ///   top; flips horizontally on overflow.
-/// - **Side::AtPoint** — top-left corner at the anchor point.
+/// - **Side::AtPoint** — top-left corner at the anchor point;
+///   `gap` is ignored (the point is the placement).
 /// - After placement, the rect is shifted (not flipped) so it stays
 ///   within the viewport on the secondary axis. Panels larger than
 ///   the viewport are pinned to the top-left.
@@ -159,6 +170,7 @@ pub fn anchor_rect(
     panel_size: (f32, f32),
     viewport: Rect,
     lookup: &dyn Fn(&str) -> Option<Rect>,
+    gap: f32,
 ) -> Rect {
     let (w, h) = panel_size;
     // Reduce both anchor variants to a single `(anchor_rect, side)`
@@ -176,10 +188,10 @@ pub fn anchor_rect(
     };
 
     let (mut x, mut y) = match side {
-        Side::Below => (anchor_rect.x, anchor_rect.bottom() + ANCHOR_GAP),
-        Side::Above => (anchor_rect.x, anchor_rect.y - ANCHOR_GAP - h),
-        Side::Right => (anchor_rect.right() + ANCHOR_GAP, anchor_rect.y),
-        Side::Left => (anchor_rect.x - ANCHOR_GAP - w, anchor_rect.y),
+        Side::Below => (anchor_rect.x, anchor_rect.bottom() + gap),
+        Side::Above => (anchor_rect.x, anchor_rect.y - gap - h),
+        Side::Right => (anchor_rect.right() + gap, anchor_rect.y),
+        Side::Left => (anchor_rect.x - gap - w, anchor_rect.y),
         Side::AtPoint => (anchor_rect.x, anchor_rect.y),
     };
 
@@ -187,25 +199,25 @@ pub fn anchor_rect(
     // primary axis flips; the secondary axis is shifted (below).
     match side {
         Side::Below if y + h > viewport.bottom() => {
-            let flipped = anchor_rect.y - ANCHOR_GAP - h;
+            let flipped = anchor_rect.y - gap - h;
             if flipped >= viewport.y {
                 y = flipped;
             }
         }
         Side::Above if y < viewport.y => {
-            let flipped = anchor_rect.bottom() + ANCHOR_GAP;
+            let flipped = anchor_rect.bottom() + gap;
             if flipped + h <= viewport.bottom() {
                 y = flipped;
             }
         }
         Side::Right if x + w > viewport.right() => {
-            let flipped = anchor_rect.x - ANCHOR_GAP - w;
+            let flipped = anchor_rect.x - gap - w;
             if flipped >= viewport.x {
                 x = flipped;
             }
         }
         Side::Left if x < viewport.x => {
-            let flipped = anchor_rect.right() + ANCHOR_GAP;
+            let flipped = anchor_rect.right() + gap;
             if flipped + w <= viewport.right() {
                 x = flipped;
             }
@@ -300,10 +312,10 @@ where
         .children(children)
         .fill(tokens::POPOVER)
         .stroke(tokens::BORDER)
-        .default_radius(tokens::RADIUS_SM)
+        .radius(0.0)
         .shadow(tokens::SHADOW_MD)
-        .default_padding(tokens::SPACE_1)
-        .default_gap(0.0)
+        .padding(Sides::zero())
+        .gap(0.0)
         .width(Size::Hug)
         .height(Size::Hug)
         .axis(Axis::Column)
@@ -318,11 +330,14 @@ where
 /// `text_align == Start`; using a child node positions the label via
 /// layout instead.
 ///
-/// The rest `fill` matches the panel surface (`CARD`) — visually
-/// invisible at rest but required so the hover-lighten / press-darken
-/// envelopes (`apply_state` in `draw_ops`) have a colour to mix
-/// against. Without a rest fill, `fill.map(...)` is a no-op and the
-/// item produces no hover visual.
+/// Items render flat — no per-row stroke, shadow, or radius — so a
+/// menu reads as a continuous "receipt" of full-width rows rather
+/// than a stack of independent buttons. The rest `fill` matches the
+/// panel surface so it's visually invisible at rest, but it's
+/// required for the hover-lighten / press-darken envelopes
+/// (`apply_state` in `draw_ops`) to have a colour to mix against.
+/// Without a rest fill, `fill.map(...)` is a no-op and the item
+/// produces no hover visual.
 ///
 /// Apps key these with the action they route to; clicks emit
 /// `UiEventKind::Click` to that key.
@@ -340,11 +355,9 @@ pub fn menu_item(label: impl Into<String>) -> El {
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Solid)
         .metrics_role(MetricsRole::MenuItem)
-        .surface_role(SurfaceRole::Raised)
         .focusable()
         .child(label)
         .fill(tokens::POPOVER)
-        .default_radius(tokens::RADIUS_SM)
         .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
         .default_gap(0.0)
         .width(Size::Fill(1.0))
@@ -399,7 +412,8 @@ fn anchored_panel(anchor: Anchor, panel: El) -> El {
         .fill_size()
         .layout(move |ctx| {
             let (w, h) = (ctx.measure)(&ctx.children[0]);
-            let rect = anchor_rect(&anchor, (w, h), ctx.container, ctx.rect_of_key);
+            // Menus flush against the trigger — no breathing-room gap.
+            let rect = anchor_rect(&anchor, (w, h), ctx.container, ctx.rect_of_key, 0.0);
             vec![rect]
         })
 }
@@ -428,6 +442,7 @@ mod tests {
             (120.0, 60.0),
             vp(),
             &lookup_one("t", trig),
+            ANCHOR_GAP,
         );
         assert_eq!(r.x, 50.0);
         assert_eq!(r.y, 40.0 + 24.0 + ANCHOR_GAP);
@@ -442,6 +457,7 @@ mod tests {
             (120.0, 50.0),
             vp(),
             &lookup_one("t", trig),
+            ANCHOR_GAP,
         );
         assert_eq!(r.x, 60.0);
         assert_eq!(r.y, 200.0 - ANCHOR_GAP - 50.0);
@@ -457,6 +473,7 @@ mod tests {
             (120.0, 60.0),
             vp(),
             &lookup_one("t", trig),
+            ANCHOR_GAP,
         );
         // Above placement: y = trig.y - GAP - h = 270 - 4 - 60 = 206
         assert_eq!(r.y, 270.0 - ANCHOR_GAP - 60.0);
@@ -472,6 +489,7 @@ mod tests {
             (120.0, 320.0),
             vp(),
             &lookup_one("t", trig),
+            ANCHOR_GAP,
         );
         // Panel taller than the whole viewport → pinned to top.
         assert_eq!(r.y, 0.0);
@@ -485,6 +503,7 @@ mod tests {
             (120.0, 60.0),
             vp(),
             &lookup_one("t", trig),
+            ANCHOR_GAP,
         );
         assert_eq!(r.y, 10.0 + 24.0 + ANCHOR_GAP);
     }
@@ -497,6 +516,7 @@ mod tests {
             (80.0, 50.0),
             vp(),
             &lookup_one("t", trig),
+            ANCHOR_GAP,
         );
         // Right placement: x = 390 + 4 = 394 + 80 = 474 > 400 → flip
         // to Left: x = 360 - 4 - 80 = 276
@@ -511,6 +531,7 @@ mod tests {
             (80.0, 50.0),
             vp(),
             &lookup_one("t", trig),
+            ANCHOR_GAP,
         );
         // Left placement: x = 10 - 4 - 80 = -74 → flip to Right.
         assert_eq!(r.x, 10.0 + 30.0 + ANCHOR_GAP);
@@ -523,6 +544,7 @@ mod tests {
             (60.0, 40.0),
             vp(),
             &no_lookup(),
+            ANCHOR_GAP,
         );
         assert_eq!((r.x, r.y), (120.0, 80.0));
     }
@@ -534,6 +556,7 @@ mod tests {
             (60.0, 40.0),
             vp(),
             &no_lookup(),
+            ANCHOR_GAP,
         );
         // Top-left at (380, 280) puts bottom-right at (440, 320),
         // outside (400, 300). Clamp to (340, 260).
@@ -550,6 +573,7 @@ mod tests {
             (100.0, 40.0),
             vp(),
             &lookup_one("t", trig),
+            ANCHOR_GAP,
         );
         // Right edge clamped: x = 400 - 100 = 300.
         assert_eq!(r.x, 300.0);
@@ -562,6 +586,7 @@ mod tests {
             (60.0, 40.0),
             vp(),
             &no_lookup(),
+            ANCHOR_GAP,
         );
         assert_eq!((r.x, r.y), (vp().x, vp().y));
     }
