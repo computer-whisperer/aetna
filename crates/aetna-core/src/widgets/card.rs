@@ -13,6 +13,17 @@
 //! instead of replacing it** — that keeps the surface recipe correct
 //! everywhere. Same applies to right-rail inspector panes and other
 //! "boxed" wrappers that aren't navigation (use `sidebar()` for that).
+//!
+//! `card_header` / `card_content` / `card_footer` do not supply default
+//! padding (unlike `sidebar()`, which bundles `default_padding(SPACE_4)`).
+//! Apply `.padding(SPACE_4)` on `card_header` and `card_footer`, and
+//! `Sides { left: SPACE_4, right: SPACE_4, top: 0.0, bottom: SPACE_4 }`
+//! on `card_content` (or `0.0` when the slot's only child is a
+//! `scroll(...)` that should reach the card edges). A header bar with
+//! a tinted strip — common for inspector panes and diff/hunk frames —
+//! is `card_header([...]).fill(tokens::MUTED).padding(...)`; do not
+//! hand-roll the strip as a `row(...).fill(MUTED).stroke(BORDER)`
+//! sibling of the body.
 
 use std::panic::Location;
 
