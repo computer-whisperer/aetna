@@ -16,8 +16,10 @@ impl UiState {
 
     /// Rebuild the resolved per-node interaction-state side map from
     /// the current focused/pressed/hovered trackers. Press wins over
-    /// Focus on a same-node match; Hover only applies when the node
-    /// isn't already pressed or focused.
+    /// Hover on a same-node match; Hover wins over Focus on a
+    /// same-node match (so a keyboard-auto-focused menu item still
+    /// gets its hover-lighten when the cursor is over it). Focus
+    /// applies on its own when the node isn't pressed or hovered.
     ///
     /// Press is gated on the pointer being currently over the
     /// originally-pressed target — drag the cursor off and the press
@@ -38,25 +40,20 @@ impl UiState {
             (Some(pressed), Some(hovered)) if pressed.node_id == hovered.node_id => Some(pressed),
             _ => None,
         };
-        if let Some(target) = press_target {
-            self.node_states
-                .nodes
-                .insert(target.node_id.clone(), InteractionState::Press);
-        }
         if let Some(target) = &self.hovered {
-            let already = press_target
+            let pressed_same = press_target
                 .map(|p| p.node_id == target.node_id)
-                .unwrap_or(false)
-                || self
-                    .focused
-                    .as_ref()
-                    .map(|f| f.node_id == target.node_id)
-                    .unwrap_or(false);
-            if !already {
+                .unwrap_or(false);
+            if !pressed_same {
                 self.node_states
                     .nodes
                     .insert(target.node_id.clone(), InteractionState::Hover);
             }
+        }
+        if let Some(target) = press_target {
+            self.node_states
+                .nodes
+                .insert(target.node_id.clone(), InteractionState::Press);
         }
     }
 
