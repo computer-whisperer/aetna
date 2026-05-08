@@ -1168,7 +1168,7 @@ fn inputs_on_event(state: &mut InputsState, e: UiEvent) {
         &mut state.region_open,
         &e,
         "inputs-region",
-        |s| Some(s.to_string()),
+        Some,
     ) {
         return;
     }

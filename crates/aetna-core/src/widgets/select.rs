@@ -83,20 +83,20 @@ use crate::{icon, text};
 ///
 /// - `{key}` — toggle (trigger click / activate).
 /// - `{key}:dismiss` — dismiss (scrim click).
-/// - `{key}:option:{value}` — pick an option; the carried `&str` is
+/// - `{key}:option:{value}` — pick an option; the carried `String` is
 ///   the same `{value}` token passed to [`select_option_key`]. Apps
-///   convert it back to their value type (`&str` → `String`,
-///   `s.parse::<u32>()`, an enum lookup, …).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///   move it into their value type (identity for `String`, `s.parse()`
+///   for numbers, a lookup for enums, …).
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum SelectAction<'a> {
+pub enum SelectAction {
     /// The trigger was clicked or activated. Toggle the open flag.
     Toggle,
     /// The dismiss scrim was clicked. Close the menu.
     Dismiss,
     /// An option was picked. The string is the raw value token from
     /// the option key.
-    Pick(&'a str),
+    Pick(String),
 }
 
 /// Classify a routed [`UiEvent`] against a controlled select keyed
@@ -107,11 +107,7 @@ pub enum SelectAction<'a> {
 /// they target a select sub-key. That means an app can call
 /// [`classify_event`] unconditionally inside its event handler
 /// without filtering on `event.kind` first.
-///
-/// The returned [`SelectAction::Pick`] borrows from the event's
-/// routed key, so apps that want to keep the value beyond the match
-/// arm should `.to_string()` or `.parse()` it inline.
-pub fn classify_event<'a>(event: &'a UiEvent, key: &str) -> Option<SelectAction<'a>> {
+pub fn classify_event(event: &UiEvent, key: &str) -> Option<SelectAction> {
     if !matches!(event.kind, UiEventKind::Click | UiEventKind::Activate) {
         return None;
     }
@@ -124,7 +120,7 @@ pub fn classify_event<'a>(event: &'a UiEvent, key: &str) -> Option<SelectAction<
         return Some(SelectAction::Dismiss);
     }
     if let Some(value) = rest.strip_prefix("option:") {
-        return Some(SelectAction::Pick(value));
+        return Some(SelectAction::Pick(value.to_string()));
     }
     None
 }
@@ -135,9 +131,14 @@ pub fn classify_event<'a>(event: &'a UiEvent, key: &str) -> Option<SelectAction<
 /// further dispatch), `false` otherwise.
 ///
 /// `parse` converts the raw option-value token back to the app's
-/// value type. Returning `None` from `parse` ignores the option pick
-/// silently (useful when the option list and the value type can drift
-/// — e.g. a stale event arriving after the underlying data changed).
+/// value type, taking ownership of the picked `String`. Returning
+/// `None` ignores the option pick silently (useful when the option
+/// list and the value type can drift — e.g. a stale event arriving
+/// after the underlying data changed).
+///
+/// For a `String` value field, pass `Some` directly — the picked
+/// string moves straight into the destination. For typed values use
+/// `s.parse().ok()` or a lookup closure.
 ///
 /// ```ignore
 /// use aetna_core::prelude::*;
@@ -152,7 +153,7 @@ pub fn classify_event<'a>(event: &'a UiEvent, key: &str) -> Option<SelectAction<
 ///             &mut self.color_open,
 ///             &event,
 ///             "color",
-///             |s| Some(s.to_string()),
+///             Some,
 ///         );
 ///     }
 ///     // ...
@@ -163,7 +164,7 @@ pub fn apply_event<V>(
     open: &mut bool,
     event: &UiEvent,
     key: &str,
-    parse: impl FnOnce(&str) -> Option<V>,
+    parse: impl FnOnce(String) -> Option<V>,
 ) -> bool {
     let Some(action) = classify_event(event, key) else {
         return false;
@@ -343,7 +344,7 @@ mod tests {
         );
         assert_eq!(
             classify_event(&click_event("color:option:red"), "color"),
-            Some(SelectAction::Pick("red")),
+            Some(SelectAction::Pick("red".to_string())),
         );
 
         // Compound keys (the volume app uses `profile:{card_id}` as the
@@ -359,7 +360,7 @@ mod tests {
         );
         assert_eq!(
             classify_event(&click_event("profile:7:option:42"), "profile:7"),
-            Some(SelectAction::Pick("42")),
+            Some(SelectAction::Pick("42".to_string())),
         );
 
         // Non-matching keys fall through.
@@ -406,7 +407,7 @@ mod tests {
             &mut open,
             &click_event("color"),
             "color",
-            |s| Some(s.to_string()),
+            Some,
         ));
         assert!(open);
         assert_eq!(value, "red");
@@ -417,22 +418,20 @@ mod tests {
             &mut open,
             &click_event("color:option:blue"),
             "color",
-            |s| Some(s.to_string()),
+            Some,
         ));
         assert_eq!(value, "blue");
         assert!(!open);
 
         // Reopen, then dismiss.
-        apply_event(&mut value, &mut open, &click_event("color"), "color", |s| {
-            Some(s.to_string())
-        });
+        apply_event(&mut value, &mut open, &click_event("color"), "color", Some);
         assert!(open);
         assert!(apply_event(
             &mut value,
             &mut open,
             &click_event("color:dismiss"),
             "color",
-            |s| Some(s.to_string()),
+            Some,
         ));
         assert!(!open);
         assert_eq!(value, "blue", "dismiss must not alter the value");
@@ -445,7 +444,7 @@ mod tests {
             &mut open,
             &click_event("unrelated"),
             "color",
-            |s| Some(s.to_string()),
+            Some,
         ));
         assert_eq!((value.as_str(), open), ("v", true));
     }
