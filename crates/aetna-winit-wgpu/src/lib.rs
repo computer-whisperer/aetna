@@ -63,6 +63,26 @@ pub struct HostConfig {
     /// come from `Runner::prepare().needs_redraw`; this is only for
     /// host-owned clocks.
     pub redraw_interval: Option<Duration>,
+    /// Prefer the lowest-latency wgpu present mode the surface
+    /// advertises (`Mailbox`, falling back to `Fifo`). Default is
+    /// `Fifo`, which is vsync-locked and conservative on power.
+    ///
+    /// Why this exists: with `Fifo`, every submit queues a frame for
+    /// the next vsync; if the app submits faster than the display
+    /// refresh, the compositor pulls the *oldest* queued frame at
+    /// each vsync. On Wayland/Mesa during an interactive resize this
+    /// shows up as the window content trailing the cursor in slow
+    /// motion — by the time the latest size we rendered reaches the
+    /// screen, several more compositor `configure` events have
+    /// arrived. `Mailbox` replaces the pending frame on each submit,
+    /// so the next vsync always shows the most recent render.
+    ///
+    /// Cost: with `Mailbox`, render cadence is no longer naturally
+    /// vsync-bounded — an animation that calls `request_redraw` from
+    /// `prepare.needs_redraw` will render at GPU speed. Pair this
+    /// with `redraw_interval` (or accept the cycles) if that's not
+    /// what you want.
+    pub low_latency_present: bool,
 }
 
 impl Default for HostConfig {
@@ -70,6 +90,7 @@ impl Default for HostConfig {
         Self {
             sample_count: DEFAULT_SAMPLE_COUNT,
             redraw_interval: None,
+            low_latency_present: false,
         }
     }
 }
@@ -82,6 +103,11 @@ impl HostConfig {
 
     pub fn with_sample_count(mut self, sample_count: u32) -> Self {
         self.sample_count = sample_count.max(1);
+        self
+    }
+
+    pub fn with_low_latency_present(mut self, low_latency_present: bool) -> Self {
+        self.low_latency_present = low_latency_present;
         self
     }
 }
@@ -205,6 +231,7 @@ fn run_host<A: WinitWgpuApp + 'static>(
         modifiers: KeyModifiers::default(),
         next_periodic_redraw: None,
         last_cursor: Cursor::Default,
+        pending_resize: None,
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -226,6 +253,13 @@ struct Host<A: WinitWgpuApp> {
     /// `set_cursor` is cheap but goes through a syscall on most
     /// platforms.
     last_cursor: Cursor,
+    /// Latest size from `WindowEvent::Resized` not yet applied to the
+    /// surface. Compositors (Wayland especially) deliver a burst of
+    /// resize events during an interactive drag; coalescing them so
+    /// `surface.configure()` + MSAA realloc run once per frame
+    /// instead of once per event keeps the window content from
+    /// trailing the cursor.
+    pending_resize: Option<PhysicalSize<u32>>,
 }
 
 struct Gfx {
@@ -295,13 +329,34 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
-        // Default to Fifo (vsync) so a redraw loop can't burn faster
-        // than the monitor refresh — mandatory in the wgpu spec, so
-        // the fallback to `present_modes[0]` should never engage on a
-        // conforming driver. Picking the driver's first reported mode
-        // unconditionally landed us on `Mailbox` on some Wayland
-        // setups, which removed the natural ceiling on rendering work.
-        let present_mode = if surface_caps
+        // Pick a present mode. `Fifo` is the conservative default —
+        // mandatory in the wgpu spec, vsync-locked, predictable power
+        // cost. `low_latency_present` opts into `Mailbox` (with `Fifo`
+        // fallback) for apps where interaction latency matters more
+        // than steady-state throughput; see `HostConfig` for the
+        // rationale and trade-offs.
+        //
+        // `AETNA_PRESENT_MODE=mailbox|immediate|fifo` overrides at
+        // runtime — useful for diagnosing without a recompile.
+        let mode_override = std::env::var("AETNA_PRESENT_MODE").ok();
+        let prefer_mailbox = self.config.low_latency_present
+            || mode_override.as_deref() == Some("mailbox");
+        let prefer_immediate = mode_override.as_deref() == Some("immediate");
+        let prefer_fifo = mode_override.as_deref() == Some("fifo");
+        let present_mode = if prefer_immediate
+            && surface_caps
+                .present_modes
+                .contains(&wgpu::PresentMode::Immediate)
+        {
+            wgpu::PresentMode::Immediate
+        } else if prefer_mailbox
+            && !prefer_fifo
+            && surface_caps
+                .present_modes
+                .contains(&wgpu::PresentMode::Mailbox)
+        {
+            wgpu::PresentMode::Mailbox
+        } else if surface_caps
             .present_modes
             .contains(&wgpu::PresentMode::Fifo)
         {
@@ -321,7 +376,15 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            // Keep the in-flight queue shallow. With `Fifo` this is a
+            // hint that Mesa's WSI does not always honor — measured
+            // resize lag on Wayland was unaffected by changing this
+            // alone — but it's still the right default: an
+            // interactive UI gains nothing from buffering more than
+            // one frame ahead. Combined with `low_latency_present`
+            // (Mailbox), interactive cadence is bounded by render
+            // time, not by drained queue depth.
+            desired_maximum_frame_latency: 1,
         };
         surface.configure(&device, &config);
 
@@ -369,22 +432,23 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
 
                 match event {
                     WindowEvent::Resized(size) => {
-                        gfx.config.width = size.width.max(1);
-                        gfx.config.height = size.height.max(1);
-                        gfx.surface.configure(&gfx.device, &gfx.config);
-                        gfx.renderer
-                            .set_surface_size(gfx.config.width, gfx.config.height);
-                        let extent = surface_extent(&gfx.config);
-                        if let Some(msaa) = gfx.msaa.as_mut()
-                            && !msaa.matches(extent)
-                        {
-                            *msaa = MsaaTarget::new(
-                                &gfx.device,
-                                gfx.config.format,
-                                extent,
-                                msaa.sample_count,
-                            );
+                        let w = size.width.max(1);
+                        let h = size.height.max(1);
+                        // Drop no-op resizes the compositor sometimes
+                        // re-sends with the same dimensions — running
+                        // surface.configure() for them just stalls the
+                        // GPU pipeline without changing anything.
+                        let already_pending = self
+                            .pending_resize
+                            .map(|s| s.width == w && s.height == h)
+                            .unwrap_or(false);
+                        let same_as_current = self.pending_resize.is_none()
+                            && w == gfx.config.width
+                            && h == gfx.config.height;
+                        if already_pending || same_as_current {
+                            return;
                         }
+                        self.pending_resize = Some(PhysicalSize::new(w, h));
                         gfx.window.request_redraw();
                     }
 
@@ -492,6 +556,28 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                     }
 
                     WindowEvent::RedrawRequested => {
+                        // Apply the latest coalesced resize, if any,
+                        // before acquiring the next surface texture so
+                        // the frame we render matches the size the
+                        // compositor is asking for.
+                        if let Some(size) = self.pending_resize.take() {
+                            gfx.config.width = size.width;
+                            gfx.config.height = size.height;
+                            gfx.surface.configure(&gfx.device, &gfx.config);
+                            gfx.renderer
+                                .set_surface_size(gfx.config.width, gfx.config.height);
+                            let extent = surface_extent(&gfx.config);
+                            if let Some(msaa) = gfx.msaa.as_mut()
+                                && !msaa.matches(extent)
+                            {
+                                *msaa = MsaaTarget::new(
+                                    &gfx.device,
+                                    gfx.config.format,
+                                    extent,
+                                    msaa.sample_count,
+                                );
+                            }
+                        }
                         let frame = match gfx.surface.get_current_texture() {
                             wgpu::CurrentSurfaceTexture::Success(t)
                             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
