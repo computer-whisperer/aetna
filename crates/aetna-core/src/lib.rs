@@ -128,9 +128,10 @@ pub use vector::IconMaterial;
 // app authors aren't tempted to depend on them.
 #[doc(hidden)]
 pub use vector::{
-    VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorLineCap, VectorLineJoin,
-    VectorMesh, VectorMeshOptions, VectorMeshRun, VectorMeshVertex, VectorParseError, VectorPath,
-    VectorSegment, VectorStroke, append_vector_asset_mesh, parse_svg_asset,
+    VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorGradient, VectorGradientStop,
+    VectorLinearGradient, VectorLineCap, VectorLineJoin, VectorMesh, VectorMeshOptions,
+    VectorMeshRun, VectorMeshVertex, VectorParseError, VectorPath, VectorRadialGradient,
+    VectorSegment, VectorSpreadMethod, VectorStroke, append_vector_asset_mesh, parse_svg_asset,
     tessellate_vector_asset,
 };
 

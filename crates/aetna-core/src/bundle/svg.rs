@@ -686,6 +686,10 @@ fn emit_custom_paths(s: &mut String, asset: &VectorAsset, current_color: Color, 
             Some(f) => match f.color {
                 VectorColor::Solid(c) => format!(r#"fill="{}""#, color_svg(c)),
                 VectorColor::CurrentColor => format!(r#"fill="{}""#, color_svg(current_color)),
+                VectorColor::Gradient(idx) => format!(
+                    r#"fill="{}""#,
+                    color_svg(gradient_fallback_color(asset, idx, current_color))
+                ),
             },
             None => r#"fill="none""#.to_string(),
         };
@@ -694,6 +698,9 @@ fn emit_custom_paths(s: &mut String, asset: &VectorAsset, current_color: Color, 
                 let color = match st.color {
                     VectorColor::Solid(c) => color_svg(c),
                     VectorColor::CurrentColor => color_svg(current_color),
+                    VectorColor::Gradient(idx) => {
+                        color_svg(gradient_fallback_color(asset, idx, current_color))
+                    }
                 };
                 let width = if matches!(st.color, VectorColor::CurrentColor) {
                     stroke_width
@@ -706,6 +713,29 @@ fn emit_custom_paths(s: &mut String, asset: &VectorAsset, current_color: Color, 
         };
         let _ = writeln!(s, r#"<path d="{}" {} {}/>"#, d, fill_attr, stroke_attr);
     }
+}
+
+/// SVG-fallback approximation: render a gradient as its first stop's
+/// colour. This path drives diagnostic snapshots, not the GPU pipeline,
+/// so a flat colour is acceptable; a future pass can emit real
+/// `<linearGradient>` / `<radialGradient>` defs.
+fn gradient_fallback_color(asset: &VectorAsset, idx: u32, current_color: Color) -> Color {
+    use crate::vector::VectorGradient;
+    let stops = asset.gradients.get(idx as usize).map(|g| match g {
+        VectorGradient::Linear(g) => g.stops.as_slice(),
+        VectorGradient::Radial(g) => g.stops.as_slice(),
+    });
+    let Some(stops) = stops else {
+        return current_color;
+    };
+    let Some(stop) = stops.first() else {
+        return current_color;
+    };
+    let r = (stop.color[0].clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0).round() as u8;
+    let g = (stop.color[1].clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0).round() as u8;
+    let b = (stop.color[2].clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0).round() as u8;
+    let a = (stop.color[3].clamp(0.0, 1.0) * 255.0).round() as u8;
+    Color::rgba(r, g, b, a)
 }
 
 fn serialize_segments(segments: &[VectorSegment]) -> String {

@@ -26,6 +26,25 @@ use usvg::tiny_skia_path;
 pub struct VectorAsset {
     pub view_box: [f32; 4],
     pub paths: Vec<VectorPath>,
+    /// Gradient table referenced by [`VectorColor::Gradient`] indices. Kept
+    /// as a side-table so [`VectorColor`] stays `Copy`.
+    pub gradients: Vec<VectorGradient>,
+}
+
+impl VectorAsset {
+    /// Whether any path's fill or stroke uses a gradient. Renderers that
+    /// short-cut monochromatic icons through a coverage-only path (e.g.
+    /// MSDF) need to detect this and route to a colour-aware path.
+    pub fn has_gradient(&self) -> bool {
+        self.paths.iter().any(|p| {
+            p.fill
+                .map(|f| matches!(f.color, VectorColor::Gradient(_)))
+                .unwrap_or(false)
+                || p.stroke
+                    .map(|s| matches!(s.color, VectorColor::Gradient(_)))
+                    .unwrap_or(false)
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -65,6 +84,56 @@ pub struct VectorStroke {
 pub enum VectorColor {
     CurrentColor,
     Solid(Color),
+    /// Index into [`VectorAsset::gradients`].
+    Gradient(u32),
+}
+
+/// A linear or radial gradient resolved to absolute SVG/viewBox space. The
+/// stored axis/centre coordinates live in the gradient's own coordinate
+/// system; `absolute_to_local` maps a point in absolute SVG space back into
+/// that system so per-vertex evaluation is one matrix-multiply away.
+#[derive(Clone, Debug, PartialEq)]
+pub enum VectorGradient {
+    Linear(VectorLinearGradient),
+    Radial(VectorRadialGradient),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VectorLinearGradient {
+    pub p1: [f32; 2],
+    pub p2: [f32; 2],
+    pub stops: Vec<VectorGradientStop>,
+    pub spread: VectorSpreadMethod,
+    /// Row-major 2x3 affine `[sx, kx, tx, ky, sy, ty]` mapping absolute
+    /// SVG coordinates into the gradient's own coordinate system.
+    pub absolute_to_local: [f32; 6],
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VectorRadialGradient {
+    pub center: [f32; 2],
+    pub radius: f32,
+    pub focal: [f32; 2],
+    pub focal_radius: f32,
+    pub stops: Vec<VectorGradientStop>,
+    pub spread: VectorSpreadMethod,
+    pub absolute_to_local: [f32; 6],
+}
+
+/// A gradient stop. The colour is stored in linear premultiplied-friendly
+/// floats (sRGB → linear, with the per-stop opacity baked into the alpha)
+/// so vertex interpolation matches what the shader expects.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VectorGradientStop {
+    pub offset: f32,
+    pub color: [f32; 4],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VectorSpreadMethod {
+    Pad,
+    Reflect,
+    Repeat,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -205,7 +274,12 @@ pub fn append_vector_asset_mesh(
     for (path_index, vector_path) in asset.paths.iter().enumerate() {
         let path = build_lyon_path(vector_path, options.rect, [vx, vy], [sx, sy]);
         if let Some(fill) = vector_path.fill {
-            let color = resolve_color(fill.color, options.current_color, fill.opacity);
+            let sampler = ColorSampler::build(
+                fill.color,
+                fill.opacity,
+                options.current_color,
+                &asset.gradients,
+            );
             let mut geometry: VertexBuffers<VectorMeshVertex, u16> = VertexBuffers::new();
             let fill_options =
                 FillOptions::tolerance(options.tolerance).with_fill_rule(match fill.rule {
@@ -216,14 +290,15 @@ pub fn append_vector_asset_mesh(
                 &path,
                 &fill_options,
                 &mut BuffersBuilder::new(&mut geometry, |v: FillVertex<'_>| {
-                    make_mesh_vertex(
+                    make_mesh_vertex_sampled(
                         v.position(),
                         options.rect,
                         [vx, vy],
                         [sx, sy],
-                        color,
+                        &sampler,
                         path_index,
                         VectorPrimitiveKind::Fill,
+                        [0.0, 0.0],
                     )
                 }),
             );
@@ -267,12 +342,12 @@ pub fn append_vector_asset_mesh(
                         lyon_tessellation::Side::Negative => [0.0, 0.0],
                         lyon_tessellation::Side::Positive => [normal.x, normal.y],
                     };
-                    make_mesh_vertex_with_aa(
+                    make_mesh_vertex_sampled(
                         path_pos,
                         options.rect,
                         [vx, vy],
                         [sx, sy],
-                        color,
+                        &sampler,
                         path_index,
                         VectorPrimitiveKind::Fill,
                         aa,
@@ -283,7 +358,12 @@ pub fn append_vector_asset_mesh(
         }
 
         if let Some(stroke) = vector_path.stroke {
-            let color = resolve_color(stroke.color, options.current_color, stroke.opacity);
+            let sampler = ColorSampler::build(
+                stroke.color,
+                stroke.opacity,
+                options.current_color,
+                &asset.gradients,
+            );
             let width = if matches!(stroke.color, VectorColor::CurrentColor) {
                 options.stroke_width * stroke_scale
             } else {
@@ -309,14 +389,15 @@ pub fn append_vector_asset_mesh(
                 &path,
                 &stroke_options,
                 &mut BuffersBuilder::new(&mut geometry, |v: StrokeVertex<'_, '_>| {
-                    make_mesh_vertex(
+                    make_mesh_vertex_sampled(
                         v.position(),
                         options.rect,
                         [vx, vy],
                         [sx, sy],
-                        color,
+                        &sampler,
                         path_index,
                         VectorPrimitiveKind::Stroke,
+                        [0.0, 0.0],
                     )
                 }),
             );
@@ -344,20 +425,33 @@ fn parse_svg_asset_with_color_mode(
     let mut asset = VectorAsset {
         view_box: [0.0, 0.0, size.width(), size.height()],
         paths: Vec::new(),
+        gradients: Vec::new(),
     };
-    collect_group(tree.root(), force_current_color, &mut asset.paths);
+    collect_group(
+        tree.root(),
+        force_current_color,
+        &mut asset.paths,
+        &mut asset.gradients,
+    );
     if asset.paths.is_empty() {
         return Err(VectorParseError::new("SVG produced no renderable paths"));
     }
     Ok(asset)
 }
 
-fn collect_group(group: &usvg::Group, force_current_color: bool, out: &mut Vec<VectorPath>) {
+fn collect_group(
+    group: &usvg::Group,
+    force_current_color: bool,
+    out: &mut Vec<VectorPath>,
+    gradients: &mut Vec<VectorGradient>,
+) {
     for node in group.children() {
         match node {
-            usvg::Node::Group(group) => collect_group(group, force_current_color, out),
+            usvg::Node::Group(group) => {
+                collect_group(group, force_current_color, out, gradients)
+            }
             usvg::Node::Path(path) if path.is_visible() => {
-                if let Some(vector_path) = convert_path(path, force_current_color) {
+                if let Some(vector_path) = convert_path(path, force_current_color, gradients) {
                     out.push(vector_path);
                 }
             }
@@ -366,7 +460,11 @@ fn collect_group(group: &usvg::Group, force_current_color: bool, out: &mut Vec<V
     }
 }
 
-fn convert_path(path: &usvg::Path, force_current_color: bool) -> Option<VectorPath> {
+fn convert_path(
+    path: &usvg::Path,
+    force_current_color: bool,
+    gradients: &mut Vec<VectorGradient>,
+) -> Option<VectorPath> {
     let transform = path.abs_transform();
     let mut segments = Vec::new();
     for segment in path.data().segments() {
@@ -401,16 +499,21 @@ fn convert_path(path: &usvg::Path, force_current_color: bool) -> Option<VectorPa
         segments,
         fill: path
             .fill()
-            .and_then(|fill| convert_fill(fill, force_current_color)),
-        stroke: path
-            .stroke()
-            .and_then(|stroke| convert_stroke(stroke, force_current_color)),
+            .and_then(|fill| convert_fill(fill, transform, force_current_color, gradients)),
+        stroke: path.stroke().and_then(|stroke| {
+            convert_stroke(stroke, transform, force_current_color, gradients)
+        }),
     })
 }
 
-fn convert_fill(fill: &usvg::Fill, force_current_color: bool) -> Option<VectorFill> {
+fn convert_fill(
+    fill: &usvg::Fill,
+    abs_transform: tiny_skia_path::Transform,
+    force_current_color: bool,
+    gradients: &mut Vec<VectorGradient>,
+) -> Option<VectorFill> {
     Some(VectorFill {
-        color: convert_paint(fill.paint(), force_current_color)?,
+        color: convert_paint(fill.paint(), abs_transform, force_current_color, gradients)?,
         opacity: fill.opacity().get(),
         rule: match fill.rule() {
             usvg::FillRule::NonZero => VectorFillRule::NonZero,
@@ -419,9 +522,14 @@ fn convert_fill(fill: &usvg::Fill, force_current_color: bool) -> Option<VectorFi
     })
 }
 
-fn convert_stroke(stroke: &usvg::Stroke, force_current_color: bool) -> Option<VectorStroke> {
+fn convert_stroke(
+    stroke: &usvg::Stroke,
+    abs_transform: tiny_skia_path::Transform,
+    force_current_color: bool,
+    gradients: &mut Vec<VectorGradient>,
+) -> Option<VectorStroke> {
     Some(VectorStroke {
-        color: convert_paint(stroke.paint(), force_current_color)?,
+        color: convert_paint(stroke.paint(), abs_transform, force_current_color, gradients)?,
         opacity: stroke.opacity().get(),
         width: stroke.width().get(),
         line_cap: match stroke.linecap() {
@@ -439,16 +547,116 @@ fn convert_stroke(stroke: &usvg::Stroke, force_current_color: bool) -> Option<Ve
     })
 }
 
-fn convert_paint(paint: &usvg::Paint, force_current_color: bool) -> Option<VectorColor> {
+fn convert_paint(
+    paint: &usvg::Paint,
+    abs_transform: tiny_skia_path::Transform,
+    force_current_color: bool,
+    gradients: &mut Vec<VectorGradient>,
+) -> Option<VectorColor> {
     if force_current_color {
         return Some(VectorColor::CurrentColor);
     }
     match paint {
         usvg::Paint::Color(c) => Some(VectorColor::Solid(Color::rgba(c.red, c.green, c.blue, 255))),
-        usvg::Paint::LinearGradient(_)
-        | usvg::Paint::RadialGradient(_)
-        | usvg::Paint::Pattern(_) => None,
+        usvg::Paint::LinearGradient(lg) => {
+            let g = convert_linear_gradient(lg, abs_transform)?;
+            let idx = gradients.len() as u32;
+            gradients.push(VectorGradient::Linear(g));
+            Some(VectorColor::Gradient(idx))
+        }
+        usvg::Paint::RadialGradient(rg) => {
+            let g = convert_radial_gradient(rg, abs_transform)?;
+            let idx = gradients.len() as u32;
+            gradients.push(VectorGradient::Radial(g));
+            Some(VectorColor::Gradient(idx))
+        }
+        usvg::Paint::Pattern(_) => None,
     }
+}
+
+fn convert_linear_gradient(
+    lg: &usvg::LinearGradient,
+    abs_transform: tiny_skia_path::Transform,
+) -> Option<VectorLinearGradient> {
+    let stops = convert_stops(lg.stops());
+    if stops.is_empty() {
+        return None;
+    }
+    let absolute_to_local = build_absolute_to_local(abs_transform, lg.transform())?;
+    Some(VectorLinearGradient {
+        p1: [lg.x1(), lg.y1()],
+        p2: [lg.x2(), lg.y2()],
+        stops,
+        spread: convert_spread(lg.spread_method()),
+        absolute_to_local,
+    })
+}
+
+fn convert_radial_gradient(
+    rg: &usvg::RadialGradient,
+    abs_transform: tiny_skia_path::Transform,
+) -> Option<VectorRadialGradient> {
+    let stops = convert_stops(rg.stops());
+    if stops.is_empty() {
+        return None;
+    }
+    let absolute_to_local = build_absolute_to_local(abs_transform, rg.transform())?;
+    Some(VectorRadialGradient {
+        center: [rg.cx(), rg.cy()],
+        radius: rg.r().get(),
+        focal: [rg.fx(), rg.fy()],
+        focal_radius: rg.fr().get(),
+        stops,
+        spread: convert_spread(rg.spread_method()),
+        absolute_to_local,
+    })
+}
+
+fn convert_stops(stops: &[usvg::Stop]) -> Vec<VectorGradientStop> {
+    let mut out = Vec::with_capacity(stops.len());
+    let mut last_offset = 0.0_f32;
+    for stop in stops {
+        // SVG requires monotonically non-decreasing offsets; nudge so a
+        // straight binary search over `out` always works.
+        let offset = stop.offset().get().max(last_offset);
+        last_offset = offset;
+        let mut rgba = rgba_f32(Color::rgba(
+            stop.color().red,
+            stop.color().green,
+            stop.color().blue,
+            255,
+        ));
+        rgba[3] *= stop.opacity().get();
+        out.push(VectorGradientStop {
+            offset,
+            color: rgba,
+        });
+    }
+    out
+}
+
+fn convert_spread(method: usvg::SpreadMethod) -> VectorSpreadMethod {
+    match method {
+        usvg::SpreadMethod::Pad => VectorSpreadMethod::Pad,
+        usvg::SpreadMethod::Reflect => VectorSpreadMethod::Reflect,
+        usvg::SpreadMethod::Repeat => VectorSpreadMethod::Repeat,
+    }
+}
+
+/// Build the inverse transform that maps an absolute SVG coordinate (post
+/// `path.abs_transform()`) into the gradient's own coordinate system.
+///
+/// `gradient_transform` from usvg already takes a gradient-local point into
+/// the path's *local* user space (with bbox-units pre-baked). Composing
+/// with `abs_transform` lifts that into absolute space; inverting gives us
+/// the back-mapping the per-vertex sampler needs.
+fn build_absolute_to_local(
+    abs_transform: tiny_skia_path::Transform,
+    gradient_transform: tiny_skia_path::Transform,
+) -> Option<[f32; 6]> {
+    let local_to_absolute = abs_transform.pre_concat(gradient_transform);
+    let inv = local_to_absolute.invert()?;
+    Some([inv.sx, inv.kx, inv.tx, inv.ky, inv.sy, inv.ty])
 }
 
 fn map_point(transform: tiny_skia_path::Transform, mut point: tiny_skia_path::Point) -> [f32; 2] {
@@ -521,34 +729,13 @@ fn map_mesh_point(
     )
 }
 
-fn make_mesh_vertex(
-    p: lyon_tessellation::math::Point,
-    rect: crate::tree::Rect,
-    view_origin: [f32; 2],
-    scale: [f32; 2],
-    color: [f32; 4],
-    path_index: usize,
-    kind: VectorPrimitiveKind,
-) -> VectorMeshVertex {
-    make_mesh_vertex_with_aa(
-        p,
-        rect,
-        view_origin,
-        scale,
-        color,
-        path_index,
-        kind,
-        [0.0, 0.0],
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
-fn make_mesh_vertex_with_aa(
+fn make_mesh_vertex_sampled(
     p: lyon_tessellation::math::Point,
     rect: crate::tree::Rect,
     view_origin: [f32; 2],
     scale: [f32; 2],
-    color: [f32; 4],
+    sampler: &ColorSampler<'_>,
     path_index: usize,
     kind: VectorPrimitiveKind,
     aa: [f32; 2],
@@ -560,7 +747,7 @@ fn make_mesh_vertex_with_aa(
     VectorMeshVertex {
         pos: [p.x, p.y],
         local,
-        color,
+        color: sampler.sample(local),
         meta: [
             path_index as f32,
             match kind {
@@ -574,13 +761,130 @@ fn make_mesh_vertex_with_aa(
     }
 }
 
-fn resolve_color(color: VectorColor, current_color: Color, opacity: f32) -> [f32; 4] {
-    let mut rgba = match color {
-        VectorColor::CurrentColor => rgba_f32(current_color),
-        VectorColor::Solid(color) => rgba_f32(color),
-    };
-    rgba[3] *= opacity.clamp(0.0, 1.0);
-    rgba
+/// Per-vertex colour resolver. Solid/`currentColor` paths bake to a single
+/// constant; gradient paths defer to per-vertex evaluation against the
+/// vertex's SVG-space `local` coordinate.
+enum ColorSampler<'a> {
+    Solid([f32; 4]),
+    Gradient {
+        gradient: &'a VectorGradient,
+        opacity: f32,
+    },
+}
+
+impl<'a> ColorSampler<'a> {
+    fn build(
+        color: VectorColor,
+        opacity: f32,
+        current_color: Color,
+        gradients: &'a [VectorGradient],
+    ) -> Self {
+        let opacity = opacity.clamp(0.0, 1.0);
+        match color {
+            VectorColor::CurrentColor => {
+                let mut c = rgba_f32(current_color);
+                c[3] *= opacity;
+                Self::Solid(c)
+            }
+            VectorColor::Solid(c) => {
+                let mut rgba = rgba_f32(c);
+                rgba[3] *= opacity;
+                Self::Solid(rgba)
+            }
+            VectorColor::Gradient(idx) => match gradients.get(idx as usize) {
+                Some(gradient) => Self::Gradient { gradient, opacity },
+                // Index out of range — should not happen for parsed assets;
+                // keep the path renderable as transparent rather than crashing.
+                None => Self::Solid([0.0; 4]),
+            },
+        }
+    }
+
+    fn sample(&self, abs_local: [f32; 2]) -> [f32; 4] {
+        match self {
+            Self::Solid(c) => *c,
+            Self::Gradient { gradient, opacity } => {
+                let mut c = sample_gradient(gradient, abs_local);
+                c[3] *= *opacity;
+                c
+            }
+        }
+    }
+}
+
+fn sample_gradient(gradient: &VectorGradient, abs_local: [f32; 2]) -> [f32; 4] {
+    match gradient {
+        VectorGradient::Linear(g) => {
+            let local = apply_affine(&g.absolute_to_local, abs_local);
+            let dx = g.p2[0] - g.p1[0];
+            let dy = g.p2[1] - g.p1[1];
+            let len2 = (dx * dx + dy * dy).max(f32::EPSILON);
+            let t = ((local[0] - g.p1[0]) * dx + (local[1] - g.p1[1]) * dy) / len2;
+            sample_stops(&g.stops, apply_spread(t, g.spread))
+        }
+        VectorGradient::Radial(g) => {
+            // Aetna v0: treat radial gradients as concentric about `center`
+            // with radius `radius`. This matches the common authoring case
+            // (focal == centre, focal_radius == 0); offset focal points are
+            // accepted but rendered without the cone-projection nuance.
+            let local = apply_affine(&g.absolute_to_local, abs_local);
+            let dx = local[0] - g.center[0];
+            let dy = local[1] - g.center[1];
+            let radius = g.radius.max(f32::EPSILON);
+            let t = (dx * dx + dy * dy).sqrt() / radius;
+            sample_stops(&g.stops, apply_spread(t, g.spread))
+        }
+    }
+}
+
+fn apply_affine(m: &[f32; 6], p: [f32; 2]) -> [f32; 2] {
+    [
+        p[0] * m[0] + p[1] * m[1] + m[2],
+        p[0] * m[3] + p[1] * m[4] + m[5],
+    ]
+}
+
+fn apply_spread(t: f32, spread: VectorSpreadMethod) -> f32 {
+    match spread {
+        VectorSpreadMethod::Pad => t.clamp(0.0, 1.0),
+        VectorSpreadMethod::Reflect => {
+            let m = t.rem_euclid(2.0);
+            if m > 1.0 {
+                2.0 - m
+            } else {
+                m
+            }
+        }
+        VectorSpreadMethod::Repeat => t.rem_euclid(1.0),
+    }
+}
+
+fn sample_stops(stops: &[VectorGradientStop], t: f32) -> [f32; 4] {
+    if stops.is_empty() {
+        return [0.0; 4];
+    }
+    if t <= stops[0].offset {
+        return stops[0].color;
+    }
+    let last = stops.len() - 1;
+    if t >= stops[last].offset {
+        return stops[last].color;
+    }
+    for i in 1..stops.len() {
+        if t <= stops[i].offset {
+            let prev = &stops[i - 1];
+            let next = &stops[i];
+            let span = (next.offset - prev.offset).max(f32::EPSILON);
+            let frac = ((t - prev.offset) / span).clamp(0.0, 1.0);
+            return [
+                prev.color[0] + (next.color[0] - prev.color[0]) * frac,
+                prev.color[1] + (next.color[1] - prev.color[1]) * frac,
+                prev.color[2] + (next.color[2] - prev.color[2]) * frac,
+                prev.color[3] + (next.color[3] - prev.color[3]) * frac,
+            ];
+        }
+    }
+    stops[last].color
 }
 
 fn append_indexed(
@@ -628,5 +932,170 @@ mod tests {
                 name.name()
             );
         }
+    }
+
+    #[test]
+    fn parses_linear_gradient_paint() {
+        let asset = parse_svg_asset(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                <defs>
+                    <linearGradient id="g" x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#ff0000"/>
+                        <stop offset="1" stop-color="#0000ff"/>
+                    </linearGradient>
+                </defs>
+                <rect width="100" height="100" fill="url(#g)"/>
+            </svg>"##,
+        )
+        .unwrap();
+        assert_eq!(asset.gradients.len(), 1);
+        assert!(matches!(
+            asset.paths[0].fill.unwrap().color,
+            VectorColor::Gradient(_)
+        ));
+        match &asset.gradients[0] {
+            VectorGradient::Linear(g) => {
+                assert_eq!(g.stops.len(), 2);
+                assert_eq!(g.spread, VectorSpreadMethod::Pad);
+                assert_eq!(g.p1, [0.0, 0.0]);
+                assert_eq!(g.p2, [100.0, 0.0]);
+            }
+            other => panic!("expected linear gradient, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bakes_gradient_into_per_vertex_colors() {
+        let asset = parse_svg_asset(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                <defs>
+                    <linearGradient id="g" x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#ff0000"/>
+                        <stop offset="1" stop-color="#0000ff"/>
+                    </linearGradient>
+                </defs>
+                <rect width="100" height="100" fill="url(#g)"/>
+            </svg>"##,
+        )
+        .unwrap();
+        let mesh = tessellate_vector_asset(
+            &asset,
+            VectorMeshOptions::icon(
+                crate::tree::Rect::new(0.0, 0.0, 200.0, 200.0),
+                Color::rgb(0, 0, 0),
+                2.0,
+            ),
+        );
+        assert!(!mesh.vertices.is_empty());
+
+        // Vertices on the left side of the rect should be reddish; on the
+        // right side, bluish. (Linear gradients evaluate in linear-RGB
+        // space, so red dominates in [0]/[2].)
+        let mut min_x_vert = mesh.vertices[0];
+        let mut max_x_vert = mesh.vertices[0];
+        for v in &mesh.vertices {
+            if v.local[0] < min_x_vert.local[0] {
+                min_x_vert = *v;
+            }
+            if v.local[0] > max_x_vert.local[0] {
+                max_x_vert = *v;
+            }
+        }
+        assert!(
+            min_x_vert.color[0] > min_x_vert.color[2],
+            "left edge should be redder: {:?}",
+            min_x_vert.color
+        );
+        assert!(
+            max_x_vert.color[2] > max_x_vert.color[0],
+            "right edge should be bluer: {:?}",
+            max_x_vert.color
+        );
+    }
+
+    #[test]
+    fn has_gradient_distinguishes_flat_from_gradient_assets() {
+        let flat = parse_svg_asset(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="#fff"/></svg>"##,
+        )
+        .unwrap();
+        assert!(!flat.has_gradient());
+
+        let gradient = parse_svg_asset(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                <defs><linearGradient id="g" x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>
+                </linearGradient></defs>
+                <rect width="100" height="100" fill="url(#g)"/>
+            </svg>"##,
+        )
+        .unwrap();
+        assert!(gradient.has_gradient());
+    }
+
+    #[test]
+    fn parses_pipewire_volume_icon_with_all_gradients() {
+        // Sanity-check end-to-end on a real-world authored SVG: five
+        // linear/radial gradients plus an unsupported drop-shadow filter
+        // (which is silently dropped, not an error).
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="arcGradient" x1="210" y1="720" x2="805" y2="260" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0667ff"/>
+      <stop offset="0.52" stop-color="#139cff"/>
+      <stop offset="1" stop-color="#11e4dc"/>
+    </linearGradient>
+    <linearGradient id="dotGradient" x1="585" y1="780" x2="805" y2="455" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#065eff"/>
+      <stop offset="0.55" stop-color="#0d9fff"/>
+      <stop offset="1" stop-color="#10e5dc"/>
+    </linearGradient>
+    <radialGradient id="knobFace" cx="42%" cy="36%" r="72%">
+      <stop offset="0" stop-color="#12366c"/>
+      <stop offset="0.42" stop-color="#0b2554"/>
+      <stop offset="1" stop-color="#071736"/>
+    </radialGradient>
+    <linearGradient id="knobRim" x1="320" y1="310" x2="735" y2="740" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#214f9b"/>
+      <stop offset="0.48" stop-color="#17386f"/>
+      <stop offset="1" stop-color="#285aa7"/>
+    </linearGradient>
+    <linearGradient id="needleGradient" x1="565" y1="425" x2="670" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0872ff"/>
+      <stop offset="1" stop-color="#168aff"/>
+    </linearGradient>
+  </defs>
+  <path d="M 296 720 A 300 300 0 1 1 794 409" fill="none" stroke="url(#arcGradient)" stroke-width="36" stroke-linecap="round"/>
+  <circle cx="512" cy="512" r="210" fill="url(#knobRim)"/>
+  <circle cx="512" cy="512" r="192" fill="url(#knobFace)"/>
+  <line x1="569" y1="433" x2="663" y2="339" stroke="url(#needleGradient)" stroke-width="30" stroke-linecap="round"/>
+  <circle cx="612" cy="787" r="13" fill="url(#dotGradient)"/>
+  <circle cx="664" cy="764" r="14" fill="url(#dotGradient)"/>
+</svg>"##;
+        let asset = parse_svg_asset(svg).unwrap();
+        // 1 arc stroke + 2 knob fills + 1 needle stroke + 2 dot fills = 6 paths.
+        assert_eq!(asset.paths.len(), 6);
+        // At least one gradient per distinct paint server (5). usvg may
+        // duplicate when the same gradient is referenced by multiple
+        // paths after bbox resolution; we don't pin the exact count
+        // because that's a usvg-internal detail.
+        assert!(asset.gradients.len() >= 5);
+
+        let mesh = tessellate_vector_asset(
+            &asset,
+            VectorMeshOptions::icon(
+                crate::tree::Rect::new(0.0, 0.0, 256.0, 256.0),
+                Color::rgb(0, 0, 0),
+                2.0,
+            ),
+        );
+        assert!(!mesh.vertices.is_empty());
+        // Some vertices must carry non-zero colour — if gradients silently
+        // dropped to transparent, every channel would be 0.
+        let any_lit = mesh
+            .vertices
+            .iter()
+            .any(|v| v.color[0] + v.color[1] + v.color[2] > 0.01);
+        assert!(any_lit, "no lit vertices — gradients did not render");
     }
 }

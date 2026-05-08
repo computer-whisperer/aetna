@@ -301,41 +301,48 @@ impl IconPaint {
             return start..start;
         }
         let start = self.runs.len();
-        match self.material {
-            IconMaterial::Flat => {
-                if let Some(slot) = self.msdf_atlas.ensure(source, stroke_width) {
-                    let (page_w, page_h) = self.msdf_page_dims(slot.page);
-                    let instance = msdf_instance_for_icon(rect, color, &slot, page_w, page_h);
-                    let first = self.msdf_instances.len() as u32;
-                    self.msdf_instances.push(instance);
-                    self.runs.push(IconRun {
-                        kind: IconRunKind::Msdf,
-                        scissor,
-                        first,
-                        count: 1,
-                        page: slot.page,
-                        material: IconMaterial::Flat,
-                    });
-                }
+
+        // MSDF only carries one channel of coverage, so it can't represent
+        // SVG paint that varies per fragment (gradients today, patterns
+        // later). For gradient assets, drop into the tess path with the
+        // Flat pipeline — gradient colour is baked into vertex attributes
+        // and the flat shader passes it straight through.
+        let asset_has_gradient = source.vector_asset().has_gradient();
+        let use_msdf = matches!(self.material, IconMaterial::Flat) && !asset_has_gradient;
+
+        if use_msdf {
+            if let Some(slot) = self.msdf_atlas.ensure(source, stroke_width) {
+                let (page_w, page_h) = self.msdf_page_dims(slot.page);
+                let instance = msdf_instance_for_icon(rect, color, &slot, page_w, page_h);
+                let first = self.msdf_instances.len() as u32;
+                self.msdf_instances.push(instance);
+                self.runs.push(IconRun {
+                    kind: IconRunKind::Msdf,
+                    scissor,
+                    first,
+                    count: 1,
+                    page: slot.page,
+                    material: IconMaterial::Flat,
+                });
             }
-            material => {
-                let asset = source.vector_asset();
-                let first = self.tess_vertices.len() as u32;
-                let mesh_run = append_vector_asset_mesh(
-                    asset,
-                    VectorMeshOptions::icon(rect, color, stroke_width),
-                    &mut self.tess_vertices,
-                );
-                if mesh_run.count > 0 {
-                    self.runs.push(IconRun {
-                        kind: IconRunKind::Tess,
-                        scissor,
-                        first,
-                        count: mesh_run.count,
-                        page: 0,
-                        material,
-                    });
-                }
+        } else {
+            let material = self.material;
+            let asset = source.vector_asset();
+            let first = self.tess_vertices.len() as u32;
+            let mesh_run = append_vector_asset_mesh(
+                asset,
+                VectorMeshOptions::icon(rect, color, stroke_width),
+                &mut self.tess_vertices,
+            );
+            if mesh_run.count > 0 {
+                self.runs.push(IconRun {
+                    kind: IconRunKind::Tess,
+                    scissor,
+                    first,
+                    count: mesh_run.count,
+                    page: 0,
+                    material,
+                });
             }
         }
         start..self.runs.len()
