@@ -4,6 +4,15 @@
 //! `card([card_header([...]), card_content([...]), card_footer([...])])`.
 //! `titled_card(title, body)` is a convenience wrapper for older/simple
 //! examples, built from the same anatomy rather than a separate layout.
+//!
+//! `card()` is also the canonical "panel surface" — the bundle of
+//! [`SurfaceRole::Panel`] + `tokens::CARD` fill + `tokens::BORDER`
+//! stroke + radius + shadow that an LLM might otherwise hand-roll. If
+//! the helpers (`card_header`, `card_content`, `card_footer`) don't fit
+//! your data shape, **wrap your custom composition in `card([...])`
+//! instead of replacing it** — that keeps the surface recipe correct
+//! everywhere. Same applies to right-rail inspector panes and other
+//! "boxed" wrappers that aren't navigation (use `sidebar()` for that).
 
 use std::panic::Location;
 

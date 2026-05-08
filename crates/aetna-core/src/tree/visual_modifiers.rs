@@ -48,6 +48,21 @@ impl El {
         self
     }
 
+    /// Tag this node with a semantic [`SurfaceRole`] so the theme can
+    /// route it through the appropriate paint recipe. Most app code
+    /// should not call this directly: the catalog widgets (`card()`,
+    /// `sidebar()`, `dialog()`, `popover()`, `tabs_list()`, etc.) set
+    /// the right role *and* the matching fill / stroke / radius /
+    /// shadow together, while the `.selected()` and `.current()`
+    /// chainables wrap the corresponding state recipes.
+    ///
+    /// Reach for the raw chainable when authoring a new widget or when
+    /// composing a custom container that the catalog doesn't cover —
+    /// and remember that decorative roles (`Panel`, `Raised`, `Popover`,
+    /// `Danger`) require you to supply a fill yourself; see the
+    /// [`SurfaceRole`] doc for the per-variant contract. The bundle
+    /// lint pass flags `Panel` without a fill as
+    /// [`crate::bundle::lint::FindingKind::MissingSurfaceFill`].
     pub fn surface_role(mut self, role: SurfaceRole) -> Self {
         self.surface_role = role;
         self

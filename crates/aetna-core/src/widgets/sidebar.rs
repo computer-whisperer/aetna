@@ -1,4 +1,18 @@
 //! Sidebar anatomy — familiar navigation groups and menu rows.
+//!
+//! `sidebar([...])` is the panel-surface wrapper: it bundles the
+//! canonical [`SurfaceRole::Panel`] + `tokens::CARD` fill +
+//! `tokens::BORDER` stroke + `tokens::SIDEBAR_WIDTH` width recipe.
+//! `sidebar_header`, `sidebar_group`, `sidebar_group_label`,
+//! `sidebar_menu`, `sidebar_menu_item`, `sidebar_menu_button`, and
+//! `sidebar_menu_button_with_icon` are conveniences for the common
+//! flat-nav case.
+//!
+//! When your sidebar has shapes the helpers don't cover (collapsible
+//! sections, count badges on group headers, nested sub-groups, custom
+//! row anatomy), **wrap your custom composition in `sidebar([...])`
+//! and skip the inner helpers** — that keeps the canonical surface
+//! recipe correct without forcing your row data into the helper mold.
 
 use std::panic::Location;
 

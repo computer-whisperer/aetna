@@ -1,51 +1,23 @@
-//! Backend-agnostic UI primitives for Aetna apps.
+#![doc = include_str!("../README.md")]
 //!
-//! Most applications should start with [`prelude`]:
+//! # End-to-end build
 //!
-//! ```
-//! use aetna_core::prelude::*;
-//! ```
-//!
-//! The app-facing model is deliberately small:
-//!
-//! 1. Store your application state in a struct.
-//! 2. Implement [`App`] for that struct.
-//! 3. Refresh external state in [`App::before_build`] when needed.
-//! 4. Return a fresh [`El`] tree from [`App::build`].
-//! 5. Update your state from routed [`UiEvent`] values in
-//!    [`App::on_event`].
-//! 6. Run the app through a host crate such as `aetna-winit-wgpu`, or
-//!    integrate a backend runner directly in a custom host.
-//!
-//! # Quick example
+//! The Counter sketch above renders end to end as:
 //!
 //! ```
 //! use aetna_core::prelude::*;
 //!
-//! struct Counter {
-//!     value: i32,
-//! }
+//! struct Counter { value: i32 }
 //!
 //! impl App for Counter {
 //!     fn build(&self, _cx: &BuildCx) -> El {
 //!         column([
 //!             h1(format!("{}", self.value)),
-//!             row([
-//!                 button("-").key("dec"),
-//!                 button("+").key("inc").primary(),
-//!             ])
-//!             .gap(tokens::SPACE_SM),
+//!             row([button("-").key("dec"), button("+").key("inc").primary()])
+//!                 .gap(tokens::SPACE_SM),
 //!         ])
 //!         .gap(tokens::SPACE_MD)
 //!         .padding(tokens::SPACE_LG)
-//!     }
-//!
-//!     fn on_event(&mut self, event: UiEvent) {
-//!         if event.is_click_or_activate("inc") {
-//!             self.value += 1;
-//!         } else if event.is_click_or_activate("dec") {
-//!             self.value -= 1;
-//!         }
 //!     }
 //! }
 //!
@@ -55,36 +27,6 @@
 //! let bundle = render_bundle(&mut ui, Rect::new(0.0, 0.0, 720.0, 400.0), None);
 //! assert!(!bundle.svg.is_empty());
 //! ```
-//!
-//! # Running a native window
-//!
-//! In a desktop app, add `aetna-winit-wgpu` and pass your `App` to its
-//! host:
-//!
-//! ```ignore
-//! use aetna_core::prelude::*;
-//!
-//! fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let viewport = Rect::new(0.0, 0.0, 720.0, 480.0);
-//!     aetna_winit_wgpu::run("Counter", viewport, Counter { value: 0 })
-//! }
-//! ```
-//!
-//! Use `aetna-wgpu::Runner` directly only when you are writing your own
-//! host or embedding Aetna into an existing render loop.
-//!
-//! # Public API layers
-//!
-//! - [`prelude`] is the app and widget author surface an LLM should
-//!   usually import.
-//! - [`widgets`] contains controlled widget builders and their helper
-//!   modules, such as `text_input::apply_event` and
-//!   `slider::normalized_from_event`.
-//! - [`bundle`] is for headless artifacts, tests, and design review.
-//! - [`ir`], [`paint`], [`runtime`], text atlas, vector mesh, and MSDF
-//!   modules are advanced backend/diagnostic surfaces. They are public
-//!   because sibling backend crates use them, but ordinary app code
-//!   should not start there.
 //!
 //! # Rendering pipeline
 //!
@@ -96,13 +38,6 @@
 //! The stock surface shader is `rounded_rect`; text, icons, custom
 //! shaders, and backdrop-sampling materials all flow through the same
 //! tree and event model.
-//!
-//! # Packaged examples
-//!
-//! The crate ships runnable examples under `examples/`. After adding
-//! the crate from crates.io, inspect or run these for focused usage
-//! patterns: `settings`, `scroll_list`, `virtual_list`, `inline_runs`,
-//! `modal`, `custom_shader`, and `circular_layout`.
 
 pub mod anim;
 pub mod bundle;

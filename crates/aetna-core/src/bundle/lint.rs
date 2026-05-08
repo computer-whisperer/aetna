@@ -60,6 +60,16 @@ pub enum FindingKind {
     DuplicateId,
     Alignment,
     Spacing,
+    /// `surface_role(SurfaceRole::Panel)` on a node with no fill — the
+    /// role only paints stroke + shadow, so the surface reads as a
+    /// thin border floating over the parent. Either set a fill
+    /// (`tokens::CARD` is the usual choice) or — more often — swap to a
+    /// widget like `card()` / `sidebar()` that bundles role + fill +
+    /// stroke + radius + shadow correctly. (`Raised` is *also*
+    /// decorative but this lint stays narrow to `Panel` since
+    /// `button(...).ghost()` legitimately produces a Raised node with
+    /// no fill.)
+    MissingSurfaceFill,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -207,6 +217,23 @@ fn walk(
                     "text_color is a raw rgba({},{},{},{}) — use a token",
                     c.r, c.g, c.b, c.a
                 ),
+            });
+        }
+        // SurfaceRole::Panel only paints stroke + shadow on top of the
+        // node's existing fill. Without a fill, the surface reads as a
+        // thin border over BACKGROUND — the classic "invisible panel"
+        // mistake. Suggest the right widget. (Raised is also
+        // decorative but `button(...).ghost()` legitimately leaves a
+        // Raised node with no fill, so the lint stays narrow.)
+        if n.fill.is_none() && matches!(n.surface_role, SurfaceRole::Panel) {
+            r.findings.push(Finding {
+                kind: FindingKind::MissingSurfaceFill,
+                node_id: n.computed_id.clone(),
+                source: n.source,
+                message:
+                    "surface_role(Panel) without a fill paints only stroke + shadow — \
+                     wrap in card() / sidebar() / dialog() for the canonical recipe, or set .fill(tokens::CARD)"
+                        .to_string(),
             });
         }
     }
@@ -805,6 +832,86 @@ mod tests {
                 .findings
                 .iter()
                 .any(|f| f.kind == FindingKind::TextOverflow || f.kind == FindingKind::Overflow),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn panel_role_without_fill_reports_missing_surface_fill() {
+        let root = crate::column([crate::text("body")])
+            .surface_role(SurfaceRole::Panel)
+            .width(Size::Fixed(120.0))
+            .height(Size::Fixed(40.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::MissingSurfaceFill),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn panel_role_with_fill_satisfies_surface_policy() {
+        let root = crate::column([crate::text("body")])
+            .surface_role(SurfaceRole::Panel)
+            .fill(crate::tokens::CARD)
+            .width(Size::Fixed(120.0))
+            .height(Size::Fixed(40.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::MissingSurfaceFill),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn card_widget_satisfies_surface_policy() {
+        let root = crate::widgets::card::card([crate::text("body")])
+            .width(Size::Fixed(120.0))
+            .height(Size::Fixed(40.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::MissingSurfaceFill),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn fill_providing_roles_do_not_require_explicit_fill() {
+        // Sunken paints palette MUTED.darken(0.08) by default — no
+        // explicit fill needed. Same shape applies to Selected /
+        // Current / Input / Danger; covering Sunken here as a
+        // representative.
+        let root = crate::column([crate::text("body")])
+            .surface_role(SurfaceRole::Sunken)
+            .width(Size::Fixed(120.0))
+            .height(Size::Fixed(40.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::MissingSurfaceFill),
             "{}",
             report.text()
         );
