@@ -119,6 +119,20 @@ pub const SIDEBAR_WIDTH: f32 = 256.0;
 pub const SIDEBAR_WIDTH_MIN: f32 = 180.0;
 pub const SIDEBAR_WIDTH_MAX: f32 = 480.0;
 
+// ---- Control sizing ----
+//
+// Shared row height for input-tier controls — buttons, selects, text
+// inputs, tabs, pagination, command-palette rows. Form layouts depend
+// on these aligning across widget kinds, so the value lives at the
+// token tier rather than each widget hardcoding 32.0. Use this when
+// sizing a parent container that has to fit a control row, or when
+// composing a new control-shaped widget.
+//
+// Matches Tailwind/shadcn `h-8` (32 px) — the default for `Button`,
+// `Input`, `Select`, etc. Square icon-only controls (icon button,
+// pagination cell) use this as both width and height.
+pub const CONTROL_HEIGHT: f32 = 32.0;
+
 // ---- Radius ----
 pub const RADIUS_SM: f32 = 4.0;
 pub const RADIUS_MD: f32 = 8.0;

@@ -193,6 +193,9 @@ pub fn select_option_key(key: &str, value: &impl std::fmt::Display) -> String {
 /// of `[ current_label ▼ ]` keyed by `key`. Click emits `Click` on
 /// `key`; the app toggles its open flag in `on_event`.
 ///
+/// Default height is [`tokens::CONTROL_HEIGHT`] — use that constant
+/// when sizing a parent row that has to fit the trigger.
+///
 /// The trigger is also the anchor key for [`select_menu`] — keep them
 /// identical so the menu drops below the trigger.
 #[track_caller]
@@ -222,7 +225,7 @@ pub fn select_trigger(key: impl Into<String>, current_label: impl Into<String>) 
         .text_color(tokens::FOREGROUND)
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Fill(1.0))
-        .default_height(Size::Fixed(32.0))
+        .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
         .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
 }
 

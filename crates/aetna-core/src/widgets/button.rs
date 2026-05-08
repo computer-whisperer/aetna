@@ -9,9 +9,10 @@
 //! - `.outline()` — outline-only.
 //! - `.destructive()` — solid red, contrasting text.
 //!
-//! Buttons hug their text width and have a fixed comfortable height.
-//! Override with `.width(Size::Fill(1.0))` to stretch — the label stays
-//! horizontally centered.
+//! Buttons hug their text width and default to [`tokens::CONTROL_HEIGHT`]
+//! — the same height used by `select`, `text_input`, and tab triggers,
+//! so they line up in form rows. Override `.width(Size::Fill(1.0))` to
+//! stretch; the label stays horizontally centered.
 //!
 //! # Dogfood note
 //!
@@ -49,7 +50,7 @@ pub fn button(label: impl Into<String>) -> El {
         .text_color(tokens::SECONDARY_FOREGROUND)
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Hug)
-        .default_height(Size::Fixed(32.0))
+        .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
         .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
 }
 
@@ -70,8 +71,8 @@ pub fn icon_button(source: impl IntoIconSource) -> El {
         .stroke(tokens::BORDER)
         .text_color(tokens::SECONDARY_FOREGROUND)
         .default_radius(tokens::RADIUS_MD)
-        .default_width(Size::Fixed(32.0))
-        .default_height(Size::Fixed(32.0))
+        .default_width(Size::Fixed(tokens::CONTROL_HEIGHT))
+        .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
 }
 
 #[track_caller]
@@ -99,6 +100,6 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .text_color(tokens::SECONDARY_FOREGROUND)
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Hug)
-        .default_height(Size::Fixed(32.0))
+        .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
         .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
 }

@@ -314,7 +314,7 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
         .align(Align::Start) // children pin to the left edge
         .justify(Justify::Center) // children center vertically
         .default_width(Size::Fill(1.0))
-        .default_height(Size::Fixed(32.0))
+        .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
         .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
         .children(children)
 }

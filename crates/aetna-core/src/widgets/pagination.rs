@@ -50,8 +50,8 @@ pub fn pagination_link(label: impl Into<String>, current: bool) -> El {
     let link = button(label)
         .at_loc(Location::caller())
         .metrics_role(MetricsRole::Button)
-        .width(Size::Fixed(32.0))
-        .height(Size::Fixed(32.0));
+        .width(Size::Fixed(tokens::CONTROL_HEIGHT))
+        .height(Size::Fixed(tokens::CONTROL_HEIGHT));
     if current {
         link.secondary()
     } else {
@@ -78,7 +78,7 @@ pub fn pagination_ellipsis() -> El {
     text("...")
         .at_loc(Location::caller())
         .muted()
-        .width(Size::Fixed(32.0))
+        .width(Size::Fixed(tokens::CONTROL_HEIGHT))
 }
 
 #[cfg(test)]
@@ -104,8 +104,8 @@ mod tests {
     fn pagination_link_has_fixed_square_box() {
         let current = pagination_link("2", true);
 
-        assert_eq!(current.width, Size::Fixed(32.0));
-        assert_eq!(current.height, Size::Fixed(32.0));
+        assert_eq!(current.width, Size::Fixed(tokens::CONTROL_HEIGHT));
+        assert_eq!(current.height, Size::Fixed(tokens::CONTROL_HEIGHT));
         assert_eq!(current.metrics_role, Some(MetricsRole::Button));
     }
 }

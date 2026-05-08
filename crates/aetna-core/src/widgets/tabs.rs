@@ -183,7 +183,7 @@ pub fn tab_trigger(
         .text_role(TextRole::Label)
         .default_radius(tokens::RADIUS_SM)
         .width(Size::Fill(1.0))
-        .default_height(Size::Fixed(32.0))
+        .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
         .default_padding(Sides::xy(tokens::SPACE_MD, 0.0));
     // `.current()` / `.ghost()` set fill, stroke, and text_color —
     // adding `.animate(SPRING_QUICK)` after them eases all three

@@ -52,7 +52,7 @@ where
         .default_padding(Sides::xy(tokens::SPACE_SM, 0.0))
         .default_gap(tokens::SPACE_SM)
         .width(Size::Fill(1.0))
-        .default_height(Size::Fixed(32.0))
+        .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
 }
 
 #[track_caller]
