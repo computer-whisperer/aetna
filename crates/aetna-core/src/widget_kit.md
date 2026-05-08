@@ -4,7 +4,7 @@
 
 ## The symmetry invariant
 
-If a stock widget (button, card, badge, modal, scroll, …) can do something, a widget defined in an app crate must be able to do the same thing using the same API. No backdoor methods on `El`, no internal-only fields, no library-side `match` on `Kind` that lights up behaviour for one variant but not another.
+If a stock widget (button, card, badge, alert, avatar, skeleton, dialog, sheet, modal, scroll, …) can do something, a widget defined in an app crate must be able to do the same thing using the same API. No backdoor methods on `El`, no internal-only fields, no library-side `match` on `Kind` that lights up behaviour for one variant but not another.
 
 Stock widgets in `crates/aetna-core/src/widgets/` are reference compositions, not privileged code paths. An app can fork any of them and produce an equivalent widget without depending on internals. **`widgets/button.rs` is the dogfood proof** — it uses only the surface documented below.
 
@@ -215,9 +215,11 @@ Icons are normal `El`s: set `.color(...)`, `.icon_size(...)`, `.icon_stroke_widt
 
 Pair `field_row` with `slider::apply_input(&mut value, &event, key, step, page_step)` for forms with several sliders: one call dispatches both the pointer drag and the keyboard arrows, so the event handler stays one branch per slider rather than two `match` blocks dispatching by event source. `bin/settings_modal.rs` is the worked example — a tabbed modal at a custom 720×620 panel size, with a scrollable body between sticky tabs and a sticky footer.
 
-### 3.5 Sizing a modal
+### 3.5 Dialog, sheet, and modal anatomy
 
-The `modal(key, title, body)` helper bakes a 420 px panel; for settings dialogs and other form-heavy modals, compose with `overlay` + `modal_panel` directly so the panel's size lives at the call site:
+Use `dialog(key, [dialog_header([...]), body, dialog_footer([...])])` for the shadcn-shaped path: content, header, title, description, body, footer. Use `sheet(key, SheetSide::Right, [...])` for the same anatomy attached to an edge. Both are pure overlay compositions: scrim first, blocking panel second, no portal or retained overlay stack.
+
+The older `modal(key, title, body)` helper stays as the compact convenience API and bakes a 420 px panel. For settings dialogs and other form-heavy modals, compose with `overlay` + `modal_panel` directly so the panel's size lives at the call site:
 
 ```rust
 overlay([
@@ -379,6 +381,17 @@ The library has a small, named vocabulary precisely so a widget — or an app `b
 - **`column([text(label).label(), text_input(...)]).gap(...)` for vertical fields.** That's `form_item([form_label(label), form_control(text_input(...)), form_description(...)])` inside `form([...])`. The theme owns the field stack rhythm through form density.
 - **`row([...]).metrics_role(TableRow).align(Center)` for table rows.** That's `table_row([...])` inside `table([table_header([...]), table_body([...])])`. `table_header` promotes direct `table_row` children to header metrics, and table rows center their cells by default.
 - **Status as a unicode bullet or emoji** (`text("● Online")`, `text("⚠ Failed")`). That's `badge("Online").success()` / `badge("Failed").destructive()`. Badges read as proper status pills and pick the theme color through the StyleProfile.
+- **Callouts as custom cards.** That's `alert([alert_title("Heads up"), alert_description("Details")]).warning()`: the alert routes through the surface profile and panel density rhythm, so theme tweaks carry across every callout.
+- **Identity chips as ad hoc circles.** That's `avatar_fallback("Alicia Koch")`, `avatar_initials("AK")`, or `avatar_image(img)`. The stock avatar keeps tables, nav, and activity feeds on the same circle size/radius.
+- **Loading placeholders as raw muted boxes.** That's `skeleton()` plus normal `.width(...)` / `.height(...)`, or `skeleton_circle(32.0)` for avatar placeholders.
+- **Command palette rows as repeated `row([...])` snippets.** That's `command_row("git-branch", "New branch", "Ctrl+B")`, or `command_item([command_icon(...), command_label(...), command_shortcut(...)])` when the row needs custom children.
+- **Collapsible sections as button-plus-chevron snippets.** That's `accordion_item(...)`, `accordion_trigger(...)`, and `accordion::apply_event(...)`; the trigger opts into list density, focus, pointer cursor, and the standard chevron treatment.
+- **Sidebar navigation as custom columns.** That's `sidebar(...)`, `sidebar_group(...)`, `sidebar_menu(...)`, and `sidebar_menu_button_with_icon(...)`; the row metrics match list density and selected items use the shared `.current()` treatment.
+- **Toolbars as hand-aligned rows.** That's `toolbar(...)` and `toolbar_group(...)`; action rows should center their controls and use the same gap cadence as table/page chrome.
+- **Dropdown menus as a popover full of custom rows.** That's `dropdown_menu(...)`, `dropdown_menu_content(...)`, `dropdown_menu_label(...)`, `dropdown_menu_separator()`, and `dropdown_menu_item_with_icon_and_shortcut(...)`; the stock rows opt into menu density and arrow navigation.
+- **Dialog and sheet surfaces as custom overlay cards.** That's `dialog(key, [dialog_header([...]), ..., dialog_footer([...])])` or `sheet(key, SheetSide::Right, [...])`; both keep the scrim/panel/block-pointer shape consistent with modal and popover behavior.
+- **Breadcrumbs as slash-delimited text.** That's `breadcrumb_list([breadcrumb_link(...), breadcrumb_separator(), breadcrumb_page(...)])`; the links, current page, separators, and centered row rhythm are separate named pieces.
+- **Pagination as custom button rows.** That's `pagination_content([pagination_previous(), pagination_link("1", true), pagination_next()])`; page links get a stable square control box and previous/next use the built-in chevron icons.
 - **`.gap(0.0)`.** The default *is* `0.0`. Setting it explicitly is noise that signals the author misremembered the default — and usually means actual gap is missing somewhere else where it should be added.
 - **Wrapping a single child in `row([single])` to apply padding.** `.padding(Sides::all(...))` is on every `El`. The wrapper is dead weight.
 - **Tree indent built from `row([spacer().width(Fixed(indent)), ...])`.** Use `.padding(Sides { left: indent, ..Sides::zero() })` on the row — left-only padding does the job without an extra child. `Sides::xy(h, v)` is also there for symmetric horizontal/vertical padding.

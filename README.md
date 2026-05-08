@@ -115,7 +115,20 @@ When scaffolding a UI, prefer the named affordance over the underlying primitive
 | Intent | Idiomatic call | Avoid |
 |---|---|---|
 | Grouped content (settings card, panel of fields) | `card([card_header([card_title("Title")]), card_content([...])])` or `titled_card("Title", [...])` | `column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` |
+| Callout / validation summary | `alert([alert_title("Heads up"), alert_description("Details")]).warning()` | a manually styled card with status-colored text |
 | Status indicator (Online, Pending, Failed) | `badge("Online").success()` (also `.warning()` / `.destructive()` / `.info()` / `.muted()`) | `text("● Online").text_color(SUCCESS)` |
+| User identity chip | `avatar_fallback("Alicia Koch")` or `avatar_image(img)` | a bare image/text node with custom circle styling |
+| Loading placeholder | `skeleton().width(Size::Fixed(220.0))` or `skeleton_circle(32.0)` | hard-coded muted rectangles |
+| Section divider | `separator()` / `vertical_separator()` | hand-rolled 1px boxes |
+| Command/menu row | `command_row("git-branch", "New branch", "Ctrl+B")` or `command_item([...])` | repeating icon-slot/label/shortcut rows by hand |
+| Collapsible section | `accordion_item("settings", "security", "Security", open, [...])` + `accordion::apply_event(...)` | a button plus hand-managed chevron row |
+| Sidebar navigation | `sidebar([sidebar_header(...), sidebar_group([...])])` + `sidebar_menu_button_with_icon(...)` | custom nav rows in every app |
+| Toolbar row | `toolbar([toolbar_title("Documents"), spacer(), toolbar_group([...])])` | ad hoc action rows with inconsistent vertical alignment |
+| Dropdown menu anatomy | `dropdown_menu(key, trigger, [dropdown_menu_label(...), dropdown_menu_item_with_shortcut(...)])` | a popover full of hand-rolled rows |
+| Dialog anatomy | `dialog(key, [dialog_header([...]), body, dialog_footer([...])])` | a custom centered overlay card |
+| Edge sheet | `sheet(key, SheetSide::Right, [sheet_header([...]), body])` | a modal manually pinned to the viewport edge |
+| Breadcrumb path | `breadcrumb_list([breadcrumb_link("Projects"), breadcrumb_separator(), breadcrumb_page("Aetna")])` | a raw slash-delimited text string |
+| Pagination | `pagination_content([pagination_previous(), pagination_link("1", true), pagination_next()])` | unaligned text buttons with custom square sizing |
 | Section heading / page title | `.heading()` / `h2(...)` (or `.title()` / `h3(...)`) | `.font_size(16.0).font_weight(Bold).text_color(...)` |
 | Field label | `.label()` | `.font_weight(Semibold).text_color(...)` |
 | Helper / hint text | `.caption()` or `.muted()` | `.font_size(12.0).text_color(TEXT_MUTED_FOREGROUND)` |
@@ -173,11 +186,23 @@ crates/
       tokens.rs                    const tokens (colors, spacing, radii, type/icon sizes)
 
       widgets/                     stock vocabulary — pure compositions of the public widget-kit surface
+        accordion.rs                 accordion/accordion_item controlled disclosure
+        alert.rs                     alert/alert_title/alert_description callouts
+        avatar.rs                    avatar_initials/avatar_image identity chips
         button.rs                    button("Save").primary() etc.
+        breadcrumb.rs                breadcrumb path anatomy
         card.rs                      card/card_header/card_content/titled_card
         badge.rs                     badge("12")
+        command.rs                   command_item / command_row / command_shortcut
+        dialog.rs                    dialog/dialog_content/header/footer/title/description
+        dropdown_menu.rs             dropdown_menu_content/items/label/separator/shortcut
+        separator.rs                 separator / vertical_separator
+        sheet.rs                     edge-attached dialog surfaces
+        sidebar.rs                   sidebar groups and menu buttons
+        skeleton.rs                  loading placeholder blocks
         text.rs                      h1/h2/h3/paragraph/mono/text
         overlay.rs                   overlay/scrim/modal/modal_panel
+        pagination.rs                pagination controls
         tabs.rs                      tabs_list / tab_trigger (shadcn-shaped)
         switch.rs                    controlled bool with animated thumb
         checkbox.rs                  controlled bool with animated check
@@ -188,6 +213,7 @@ crates/
         popover.rs                   anchored popover / dropdown / context-menu
         text_input.rs                single-line input + selection + clipboard
         text_area.rs                 multi-line input with wrapping caret
+        toolbar.rs                   page/table toolbar rows
 
       text/                        text shaping + atlas infrastructure
         atlas.rs                     unified RGBA glyph atlas (color emoji + outline glyphs)

@@ -307,10 +307,12 @@ fn command_card() -> El {
             .key("metric:command.input")
             .width(Size::Fill(1.0)),
             popover_panel([
-                menu_row("git-branch", "New branch", "Ctrl+B"),
-                menu_row("git-commit", "Commit staged files", "Ctrl+Enter"),
-                menu_row("refresh-cw", "Refresh repository", "Ctrl+R"),
-                menu_row("alert-circle", "Force push", "Danger"),
+                command_row("git-branch", "New branch", "Ctrl+B").key("metric:command.row"),
+                command_row("git-commit", "Commit staged files", "Ctrl+Enter")
+                    .key("command-row-commit"),
+                command_row("refresh-cw", "Refresh repository", "Ctrl+R")
+                    .key("command-row-refresh"),
+                command_row("alert-circle", "Force push", "Danger").key("command-row-force"),
             ])
             .width(Size::Fill(1.0)),
             scroll([form_probe()]).key("form-probe-scroll"),
@@ -320,40 +322,6 @@ fn command_card() -> El {
     .key("metric:command.card")
     .width(Size::Fill(0.8))
     .height(Size::Fill(1.0))
-}
-
-fn menu_row(icon_name: &'static str, label: &'static str, shortcut: &'static str) -> El {
-    row([
-        icon_slot(icon_name),
-        text(label).ellipsis().width(Size::Fill(1.0)),
-        mono(shortcut).caption(),
-    ])
-    .key(if label == "New branch" {
-        "metric:command.row".to_string()
-    } else {
-        format!("command-row-{label}")
-    })
-    .metrics_role(MetricsRole::MenuItem)
-    .align(Align::Center)
-    .fill(tokens::BG_CARD)
-    .focusable()
-}
-
-fn icon_slot(icon_name: &'static str) -> El {
-    El::new(Kind::Custom("icon_cell"))
-        .style_profile(StyleProfile::Surface)
-        .child(
-            icon(icon_name)
-                .color(tokens::TEXT_FOREGROUND)
-                .icon_size(tokens::ICON_XS),
-        )
-        .align(Align::Center)
-        .justify(Justify::Center)
-        .fill(tokens::BG_MUTED)
-        .stroke(tokens::BORDER)
-        .radius(tokens::RADIUS_SM)
-        .width(Size::Fixed(26.0))
-        .height(Size::Fixed(26.0))
 }
 
 fn form_probe() -> El {

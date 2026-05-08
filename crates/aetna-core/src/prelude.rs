@@ -50,17 +50,45 @@ pub use crate::tree::{
     divider, hard_break, image, row, scroll, spacer, stack, text_runs, virtual_list,
 };
 pub use crate::vector::IconMaterial;
+pub use crate::widgets::accordion::{
+    self, AccordionAction, accordion, accordion_content, accordion_item, accordion_item_key,
+    accordion_separator, accordion_trigger, accordion_trigger_with_icon,
+};
+pub use crate::widgets::alert::{alert, alert_description, alert_title};
+pub use crate::widgets::avatar::{
+    DEFAULT_AVATAR_SIZE, avatar_fallback, avatar_image, avatar_initials,
+};
 pub use crate::widgets::badge::badge;
+pub use crate::widgets::breadcrumb::{
+    breadcrumb, breadcrumb_item, breadcrumb_link, breadcrumb_list, breadcrumb_page,
+    breadcrumb_separator,
+};
 pub use crate::widgets::button::{button, button_with_icon, icon_button};
 pub use crate::widgets::card::{
     card, card_content, card_description, card_footer, card_header, card_title, titled_card,
 };
 pub use crate::widgets::checkbox::{self, checkbox};
+pub use crate::widgets::command::{
+    self, command_group, command_icon, command_item, command_label, command_row, command_shortcut,
+};
+pub use crate::widgets::dialog::{
+    dialog, dialog_content, dialog_description, dialog_footer, dialog_header, dialog_title,
+};
+pub use crate::widgets::dropdown_menu::{
+    self, dropdown_menu, dropdown_menu_content, dropdown_menu_group, dropdown_menu_icon,
+    dropdown_menu_item, dropdown_menu_item_label, dropdown_menu_item_with_icon,
+    dropdown_menu_item_with_icon_and_shortcut, dropdown_menu_item_with_shortcut,
+    dropdown_menu_label, dropdown_menu_separator, dropdown_menu_shortcut,
+};
 pub use crate::widgets::form::{
     field_row, form, form_control, form_description, form_item, form_label, form_message,
     form_section,
 };
 pub use crate::widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
+pub use crate::widgets::pagination::{
+    self, pagination, pagination_content, pagination_ellipsis, pagination_item, pagination_link,
+    pagination_next, pagination_previous,
+};
 pub use crate::widgets::popover::{
     Anchor, Side, anchor_rect, context_menu, dropdown, menu_item, popover, popover_panel,
 };
@@ -70,6 +98,16 @@ pub use crate::widgets::resize_handle::{self, ResizeDrag, ResizeWeightsDrag, res
 pub use crate::widgets::select::{
     self, SelectAction, select_menu, select_option_key, select_trigger,
 };
+pub use crate::widgets::separator::{separator, vertical_separator};
+pub use crate::widgets::sheet::{
+    self, SheetSide, sheet, sheet_content, sheet_description, sheet_footer, sheet_header,
+    sheet_title,
+};
+pub use crate::widgets::sidebar::{
+    self, sidebar, sidebar_group, sidebar_group_label, sidebar_header, sidebar_menu,
+    sidebar_menu_button, sidebar_menu_button_with_icon, sidebar_menu_item, sidebar_menu_label,
+};
+pub use crate::widgets::skeleton::{self, skeleton, skeleton_circle};
 pub use crate::widgets::slider::{self, SliderAction, slider};
 pub use crate::widgets::switch::{self, switch};
 pub use crate::widgets::table::{
@@ -80,6 +118,9 @@ pub use crate::widgets::text::{h1, h2, h3, mono, paragraph, text};
 pub use crate::widgets::text_area::{self, text_area};
 pub use crate::widgets::text_input::{
     self, ClipboardKind, MaskMode, TextInputOpts, TextSelection, text_input, text_input_with,
+};
+pub use crate::widgets::toolbar::{
+    self, toolbar, toolbar_description, toolbar_group, toolbar_title,
 };
 
 pub use crate::selection::{Selection, SelectionPoint, SelectionRange, selected_text};
