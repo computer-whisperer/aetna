@@ -1385,6 +1385,7 @@ fn split_on_event(state: &mut SplitState, event: UiEvent) {
         &event,
         SPLIT_HANDLE_KEY,
         Axis::Row,
+        resize_handle::Side::Start,
         tokens::SIDEBAR_WIDTH_MIN,
         tokens::SIDEBAR_WIDTH_MAX,
     );

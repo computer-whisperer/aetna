@@ -12,7 +12,7 @@
 //!
 //! ```ignore
 //! use aetna_core::prelude::*;
-//! use aetna_core::widgets::resize_handle::{self, ResizeDrag};
+//! use aetna_core::widgets::resize_handle::{self, ResizeDrag, Side};
 //!
 //! struct Editor {
 //!     sidebar_w: f32,
@@ -45,12 +45,19 @@
 //!             &event,
 //!             "sidebar:resize",
 //!             Axis::Row,
+//!             Side::Start,
 //!             tokens::SIDEBAR_WIDTH_MIN,
 //!             tokens::SIDEBAR_WIDTH_MAX,
 //!         );
 //!     }
 //! }
 //! ```
+//!
+//! Pass `Side::End` instead when the controlled value lives on the
+//! right (Row) or bottom (Column) of the handle — e.g. an inspector
+//! pane pinned to the right edge of a row, with a filling editor on
+//! its left. Drag direction and the Arrow / Home / End keys flip
+//! accordingly so drag-left grows a right-anchored pane.
 //!
 //! # Weighted split (two `Fill` siblings sharing a parent)
 //!
@@ -187,6 +194,37 @@ pub struct ResizeDrag {
     pub initial: f32,
 }
 
+/// Which side of the handle the controlled value lives on.
+///
+/// For `Side::Start` (left of a Row handle, top of a Column handle),
+/// drag-right or drag-down grows the value: a left-anchored sidebar
+/// gets wider as the handle moves right. For `Side::End` (right of a
+/// Row handle, bottom of a Column handle), the relationship flips:
+/// drag-left or drag-up grows the value, since the right-anchored
+/// pane gains pixels as the handle's position recedes from the
+/// right edge. Arrow / PageUp / PageDown / Home / End all mirror the
+/// same flip so keyboard nudges feel symmetric to the drag.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Side {
+    /// Left of a Row handle, top of a Column handle.
+    #[default]
+    Start,
+    /// Right of a Row handle, bottom of a Column handle.
+    End,
+}
+
+impl Side {
+    /// Sign multiplier for "pointer / arrow movement → value delta."
+    /// `+1.0` for `Start` (drag-right grows), `-1.0` for `End`
+    /// (drag-left grows).
+    fn sign(self) -> f32 {
+        match self {
+            Side::Start => 1.0,
+            Side::End => -1.0,
+        }
+    }
+}
+
 /// Drag-anchor state for [`apply_event_weights`]. Captures the pointer
 /// position and the pair of weights at the moment the drag began so
 /// the helper can recompute absolute target weights each frame.
@@ -223,18 +261,22 @@ pub fn delta_from_event(drag: &ResizeDrag, event: &UiEvent, axis: Axis) -> Optio
 /// Handles the full drag lifecycle: PointerDown captures the anchor,
 /// Drag updates the value, PointerUp clears the anchor. Arrow keys on
 /// the focused handle nudge by [`KEYBOARD_STEP_PX`]; PageUp /
-/// PageDown by [`KEYBOARD_PAGE_STEP_PX`]; Home / End jump to `min` /
-/// `max`.
+/// PageDown by [`KEYBOARD_PAGE_STEP_PX`]; Home / End jump to one
+/// extreme.
 ///
 /// `axis` must match the axis the handle was constructed with —
 /// `Axis::Row` for a sidebar in a row, `Axis::Column` for a top pane
-/// in a column.
+/// in a column. `side` says which side of the handle the value
+/// lives on; `Side::Start` for the common left/top-anchored case,
+/// `Side::End` to flip drag and keyboard direction for a right- or
+/// bottom-anchored pane.
 pub fn apply_event_fixed(
     value: &mut f32,
     drag: &mut ResizeDrag,
     event: &UiEvent,
     key: &str,
     axis: Axis,
+    side: Side,
     min: f32,
     max: f32,
 ) -> bool {
@@ -256,7 +298,8 @@ pub fn apply_event_fixed(
             let Some(pos) = event.pointer else {
                 return false;
             };
-            let next = (drag.initial + project(pos, axis) - anchor).clamp(min, max);
+            let pixel_delta = (project(pos, axis) - anchor) * side.sign();
+            let next = (drag.initial + pixel_delta).clamp(min, max);
             let changed = (next - *value).abs() > f32::EPSILON;
             *value = next;
             changed
@@ -265,7 +308,7 @@ pub fn apply_event_fixed(
             drag.anchor = None;
             false
         }
-        UiEventKind::KeyDown => apply_key(value, event, min, max),
+        UiEventKind::KeyDown => apply_key(value, event, side, min, max),
         _ => false,
     }
 }
@@ -339,18 +382,29 @@ pub fn apply_event_weights(
     }
 }
 
-fn apply_key(value: &mut f32, event: &UiEvent, min: f32, max: f32) -> bool {
+fn apply_key(value: &mut f32, event: &UiEvent, side: Side, min: f32, max: f32) -> bool {
     let Some(press) = event.key_press.as_ref() else {
         return false;
     };
     let prev = *value;
+    // Same sign trick as the pointer drag: ArrowRight/Down "moves the
+    // handle in the +axis direction" — that grows a Start-side value
+    // and shrinks an End-side one. Home/End follow the same rule by
+    // mapping to whichever extreme the handle's leftmost/topmost
+    // position represents.
+    let step = KEYBOARD_STEP_PX * side.sign();
+    let page_step = KEYBOARD_PAGE_STEP_PX * side.sign();
+    let (home_target, end_target) = match side {
+        Side::Start => (min, max),
+        Side::End => (max, min),
+    };
     let next = match press.key {
-        UiKey::ArrowRight | UiKey::ArrowDown => *value + KEYBOARD_STEP_PX,
-        UiKey::ArrowLeft | UiKey::ArrowUp => *value - KEYBOARD_STEP_PX,
-        UiKey::PageUp => *value + KEYBOARD_PAGE_STEP_PX,
-        UiKey::PageDown => *value - KEYBOARD_PAGE_STEP_PX,
-        UiKey::Home => min,
-        UiKey::End => max,
+        UiKey::ArrowRight | UiKey::ArrowDown => *value + step,
+        UiKey::ArrowLeft | UiKey::ArrowUp => *value - step,
+        UiKey::PageUp => *value + page_step,
+        UiKey::PageDown => *value - page_step,
+        UiKey::Home => home_target,
+        UiKey::End => end_target,
         _ => return false,
     };
     *value = next.clamp(min, max);
@@ -456,6 +510,7 @@ mod tests {
             &pointer_event(UiEventKind::PointerDown, "h", 300.0),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -468,6 +523,7 @@ mod tests {
             &pointer_event(UiEventKind::Drag, "h", 350.0),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -479,6 +535,7 @@ mod tests {
             &pointer_event(UiEventKind::Drag, "h", 380.0),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -490,6 +547,7 @@ mod tests {
             &pointer_event(UiEventKind::PointerUp, "h", 380.0),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -506,6 +564,7 @@ mod tests {
             &pointer_event(UiEventKind::PointerDown, "h", 300.0),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -516,6 +575,7 @@ mod tests {
             &pointer_event(UiEventKind::Drag, "h", 1000.0),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -527,6 +587,7 @@ mod tests {
             &pointer_event(UiEventKind::Drag, "h", 0.0),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -543,6 +604,7 @@ mod tests {
             &pointer_event(UiEventKind::PointerDown, "other", 300.0),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -561,6 +623,7 @@ mod tests {
             &key_event("h", UiKey::ArrowRight),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -572,6 +635,7 @@ mod tests {
             &key_event("h", UiKey::Home),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -584,6 +648,7 @@ mod tests {
             &key_event("h", UiKey::ArrowLeft),
             "h",
             Axis::Row,
+            Side::Start,
             180.0,
             480.0,
         );
@@ -668,5 +733,116 @@ mod tests {
         let drag = ResizeDrag::default();
         let drag_event = pointer_event(UiEventKind::Drag, "h", 350.0);
         assert!(delta_from_event(&drag, &drag_event, Axis::Row).is_none());
+    }
+
+    #[test]
+    fn fixed_drag_with_end_side_inverts_direction() {
+        // Right-anchored pane: drag-LEFT should grow the value, since
+        // the handle moving leftward expands the pane on its right.
+        let mut value = 256.0;
+        let mut drag = ResizeDrag::default();
+
+        apply_event_fixed(
+            &mut value,
+            &mut drag,
+            &pointer_event(UiEventKind::PointerDown, "h", 800.0),
+            "h",
+            Axis::Row,
+            Side::End,
+            180.0,
+            480.0,
+        );
+
+        // Drag the handle 50px LEFT — pointer goes 800 → 750, pixel
+        // delta is -50, but a right-anchored value should grow by 50.
+        apply_event_fixed(
+            &mut value,
+            &mut drag,
+            &pointer_event(UiEventKind::Drag, "h", 750.0),
+            "h",
+            Axis::Row,
+            Side::End,
+            180.0,
+            480.0,
+        );
+        assert!(
+            (value - 306.0).abs() < 1e-3,
+            "drag-left on End side should grow value, got {value}",
+        );
+
+        // Drag the handle 30px RIGHT past the original anchor — should
+        // shrink back below the initial.
+        apply_event_fixed(
+            &mut value,
+            &mut drag,
+            &pointer_event(UiEventKind::Drag, "h", 830.0),
+            "h",
+            Axis::Row,
+            Side::End,
+            180.0,
+            480.0,
+        );
+        assert!(
+            (value - 226.0).abs() < 1e-3,
+            "drag-right on End side should shrink value, got {value}",
+        );
+    }
+
+    #[test]
+    fn fixed_arrow_keys_with_end_side_invert_direction() {
+        let mut value = 256.0;
+        let mut drag = ResizeDrag::default();
+
+        // ArrowLeft on End side grows (matches drag-left).
+        apply_event_fixed(
+            &mut value,
+            &mut drag,
+            &key_event("h", UiKey::ArrowLeft),
+            "h",
+            Axis::Row,
+            Side::End,
+            180.0,
+            480.0,
+        );
+        assert!((value - (256.0 + KEYBOARD_STEP_PX)).abs() < 1e-3);
+
+        // ArrowRight on End side shrinks.
+        apply_event_fixed(
+            &mut value,
+            &mut drag,
+            &key_event("h", UiKey::ArrowRight),
+            "h",
+            Axis::Row,
+            Side::End,
+            180.0,
+            480.0,
+        );
+        assert!((value - 256.0).abs() < 1e-3);
+
+        // Home on End side jumps to MAX (handle leftmost = pane
+        // largest). End on End side jumps to MIN.
+        apply_event_fixed(
+            &mut value,
+            &mut drag,
+            &key_event("h", UiKey::Home),
+            "h",
+            Axis::Row,
+            Side::End,
+            180.0,
+            480.0,
+        );
+        assert_eq!(value, 480.0);
+
+        apply_event_fixed(
+            &mut value,
+            &mut drag,
+            &key_event("h", UiKey::End),
+            "h",
+            Axis::Row,
+            Side::End,
+            180.0,
+            480.0,
+        );
+        assert_eq!(value, 180.0);
     }
 }
