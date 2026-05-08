@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-labelledby="title desc">
+  <title id="title">PipeWire Volume Control Icon</title>
+  <desc id="desc">A dark rotary volume knob with blue-to-cyan volume arc, dotted scale, and pointer mark.</desc>
+  <defs>
+    <linearGradient id="arcGradient" x1="210" y1="720" x2="805" y2="260" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0667ff"/>
+      <stop offset="0.52" stop-color="#139cff"/>
+      <stop offset="1" stop-color="#11e4dc"/>
+    </linearGradient>
+
+    <linearGradient id="dotGradient" x1="585" y1="780" x2="805" y2="455" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#065eff"/>
+      <stop offset="0.55" stop-color="#0d9fff"/>
+      <stop offset="1" stop-color="#10e5dc"/>
+    </linearGradient>
+
+    <radialGradient id="knobFace" cx="42%" cy="36%" r="72%">
+      <stop offset="0" stop-color="#12366c"/>
+      <stop offset="0.42" stop-color="#0b2554"/>
+      <stop offset="1" stop-color="#071736"/>
+    </radialGradient>
+
+    <linearGradient id="knobRim" x1="320" y1="310" x2="735" y2="740" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#214f9b"/>
+      <stop offset="0.48" stop-color="#17386f"/>
+      <stop offset="1" stop-color="#285aa7"/>
+    </linearGradient>
+
+    <linearGradient id="needleGradient" x1="565" y1="425" x2="670" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0872ff"/>
+      <stop offset="1" stop-color="#168aff"/>
+    </linearGradient>
+
+    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#00102c" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <!-- transparent background -->
+  <rect width="1024" height="1024" fill="none"/>
+
+  <!-- outer gain arc: radius 300 centered on the knob at 512,512 -->
+  <path d="M 296 720
+           A 300 300 0 1 1 794 409"
+        fill="none"
+        stroke="url(#arcGradient)"
+        stroke-width="36"
+        stroke-linecap="round"/>
+
+  <!-- knob body -->
+  <g filter="url(#softShadow)">
+    <circle cx="512" cy="512" r="210" fill="url(#knobRim)"/>
+    <circle cx="512" cy="512" r="192" fill="url(#knobFace)"/>
+  </g>
+
+  <!-- pointer slot/indicator -->
+  <line x1="569" y1="433" x2="663" y2="339"
+        stroke="url(#needleGradient)"
+        stroke-width="30"
+        stroke-linecap="round"/>
+
+  <!-- dotted level scale -->
+  <g fill="url(#dotGradient)">
+    <circle cx="612" cy="787" r="13"/>
+    <circle cx="664" cy="764" r="14"/>
+    <circle cx="713" cy="729" r="14"/>
+    <circle cx="751" cy="681" r="15"/>
+    <circle cx="777" cy="622" r="16"/>
+    <circle cx="795" cy="561" r="17"/>
+    <circle cx="795" cy="496" r="17"/>
+  </g>
+</svg>

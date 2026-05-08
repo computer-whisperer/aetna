@@ -23,9 +23,70 @@
 //! minimal-fixture proof points alongside this. Showcase is the
 //! integration view; they're the unit views.
 
+use std::sync::LazyLock;
+
 use aetna_core::prelude::*;
 
 pub const LIQUID_GLASS_WGSL: &str = include_str!("../shaders/liquid_glass.wgsl");
+
+// SVG fixtures used by the Icons section. Each is `LazyLock`-cached so
+// every render of the section reuses the same `SvgIcon` (the renderer
+// dedups by content hash, so this is mostly a parse-cost saving).
+const PIPEWIRE_VOLUME_SVG: &str = include_str!("../icons/pipewire-volume.svg");
+
+const LINEAR_HORIZONTAL_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="32" x2="64" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff5577"/>
+      <stop offset="1" stop-color="#5577ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="url(#g)"/>
+</svg>"##;
+
+const LINEAR_DIAGONAL_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="0.5" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="url(#g)"/>
+</svg>"##;
+
+const RADIAL_BBOX_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="g" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="0.5" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#7c2d12"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="32" r="28" fill="url(#g)"/>
+</svg>"##;
+
+const STROKED_GRADIENT_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <path d="M 12 32 A 20 20 0 1 1 52 32" fill="none" stroke="url(#g)" stroke-width="6" stroke-linecap="round"/>
+  <line x1="12" y1="48" x2="52" y2="48" stroke="url(#g)" stroke-width="6" stroke-linecap="round"/>
+</svg>"##;
+
+static PIPEWIRE_VOLUME: LazyLock<SvgIcon> =
+    LazyLock::new(|| SvgIcon::parse(PIPEWIRE_VOLUME_SVG).expect("pipewire icon parses"));
+static LINEAR_HORIZONTAL: LazyLock<SvgIcon> =
+    LazyLock::new(|| SvgIcon::parse(LINEAR_HORIZONTAL_SVG).expect("linear-horizontal parses"));
+static LINEAR_DIAGONAL: LazyLock<SvgIcon> =
+    LazyLock::new(|| SvgIcon::parse(LINEAR_DIAGONAL_SVG).expect("linear-diagonal parses"));
+static RADIAL_BBOX: LazyLock<SvgIcon> =
+    LazyLock::new(|| SvgIcon::parse(RADIAL_BBOX_SVG).expect("radial-bbox parses"));
+static STROKED_GRADIENT: LazyLock<SvgIcon> =
+    LazyLock::new(|| SvgIcon::parse(STROKED_GRADIENT_SVG).expect("stroked-gradient parses"));
 
 /// Which section the user is currently looking at.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -44,6 +105,7 @@ pub enum Section {
     Surfaces,
     Toasts,
     Images,
+    Icons,
 }
 
 impl Section {
@@ -62,6 +124,7 @@ impl Section {
             Section::Surfaces => "Surfaces",
             Section::Toasts => "Toasts",
             Section::Images => "Images",
+            Section::Icons => "Icons",
         }
     }
 
@@ -80,10 +143,11 @@ impl Section {
             Section::Surfaces => "nav-surfaces",
             Section::Toasts => "nav-toasts",
             Section::Images => "nav-images",
+            Section::Icons => "nav-icons",
         }
     }
 
-    const ALL: [Section; 13] = [
+    const ALL: [Section; 14] = [
         Section::Counter,
         Section::List,
         Section::Palette,
@@ -97,6 +161,7 @@ impl Section {
         Section::Surfaces,
         Section::Toasts,
         Section::Images,
+        Section::Icons,
     ];
 }
 
@@ -380,6 +445,7 @@ impl App for Showcase {
             Section::Surfaces => {} // static fixture, no events
             Section::Toasts => toasts_on_event(&mut self.toasts, event),
             Section::Images => {} // static fixture, no events
+            Section::Icons => {}  // static fixture, no events
         }
     }
 
@@ -463,6 +529,7 @@ fn content(app: &Showcase) -> El {
         Section::Surfaces => surfaces_view(),
         Section::Toasts => toasts_view(&app.toasts),
         Section::Images => images_view(),
+        Section::Icons => icons_view(),
     };
     column([body])
         .padding(tokens::SPACE_7)
@@ -1810,8 +1877,6 @@ fn toasts_on_event(state: &mut ToastsState, e: UiEvent) {
 // a backend texture-cache slot, so the four `image(SOLID.clone())`
 // calls in the avatar row map to one GPU upload.
 
-use std::sync::LazyLock;
-
 static GRID_RG: LazyLock<Image> =
     LazyLock::new(|| make_gradient(64, 64, [255, 64, 64], [64, 96, 255]));
 static GRID_GB: LazyLock<Image> =
@@ -1958,6 +2023,90 @@ fn fit_demo(label: &str, fit: ImageFit) -> El {
     ])
     .gap(tokens::SPACE_1)
     .align(Align::Center)
+}
+
+// ---- Icons section ----
+//
+// Exercises the custom-SVG path through `SvgIcon`. Built-in lucide icons
+// are mostly monochrome line art; this section is where gradient-laden,
+// full-colour artwork lives — both as a real-world fixture (the
+// authored pipewire volume icon) and as targeted corner cases for the
+// gradient code (linear horizontal/diagonal, radial w/ bbox units, and a
+// stroked gradient).
+
+fn icons_view() -> El {
+    column([
+        h2("Icons"),
+        paragraph(
+            "`icon(...)` accepts a built-in `IconName` (drawn through the \
+             monochrome MSDF atlas) or an app-supplied `SvgIcon` with \
+             gradients (which routes through the tessellated path with \
+             gradient colour baked per vertex).",
+        )
+        .muted(),
+
+        titled_card(
+            "Built-in lucide icons (monochrome / MSDF)",
+            vec![
+                row([
+                    builtin_icon_tile(IconName::Activity, tokens::WARNING),
+                    builtin_icon_tile(IconName::Bell, tokens::PRIMARY),
+                    builtin_icon_tile(IconName::Check, tokens::SUCCESS),
+                    builtin_icon_tile(IconName::AlertCircle, tokens::DESTRUCTIVE),
+                    builtin_icon_tile(IconName::Settings, tokens::FOREGROUND),
+                ])
+                .gap(tokens::SPACE_3),
+            ],
+        ),
+
+        // Custom SVG icons (gradient-driven, tess path). Pipewire on the
+        // left as the hero artwork; the synthetic corner cases on the
+        // right each isolate one gradient feature so a regression shows
+        // up as a single tile going visibly wrong.
+        titled_card(
+            "Gradient SVGs (custom / tessellated)",
+            vec![
+                row([
+                    custom_icon_tile(&PIPEWIRE_VOLUME, "pipewire-volume", 128.0),
+                    custom_icon_tile(&LINEAR_HORIZONTAL, "linear h", 64.0),
+                    custom_icon_tile(&LINEAR_DIAGONAL, "linear ↘ 3-stop", 64.0),
+                    custom_icon_tile(&RADIAL_BBOX, "radial bbox", 64.0),
+                    custom_icon_tile(&STROKED_GRADIENT, "stroked", 64.0),
+                ])
+                .gap(tokens::SPACE_3)
+                .align(Align::Center),
+            ],
+        ),
+    ])
+    .gap(tokens::SPACE_4)
+    .align(Align::Start)
+}
+
+fn builtin_icon_tile(name: IconName, tint: Color) -> El {
+    column([
+        icon(name).icon_size(28.0).text_color(tint),
+        text(name.name()).small().muted().center_text(),
+    ])
+    .gap(tokens::SPACE_1)
+    .align(Align::Center)
+    .padding(tokens::SPACE_3)
+    .width(Size::Fixed(110.0))
+    .fill(tokens::CARD)
+    .stroke(tokens::BORDER)
+    .radius(tokens::RADIUS_MD)
+}
+
+fn custom_icon_tile(svg: &LazyLock<SvgIcon>, label: &str, size: f32) -> El {
+    column([
+        icon((**svg).clone()).icon_size(size),
+        text(label.to_string()).small().muted().center_text(),
+    ])
+    .gap(tokens::SPACE_2)
+    .align(Align::Center)
+    .padding(tokens::SPACE_3)
+    .fill(tokens::CARD)
+    .stroke(tokens::BORDER)
+    .radius(tokens::RADIUS_MD)
 }
 
 #[cfg(test)]
