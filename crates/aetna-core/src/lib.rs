@@ -163,6 +163,11 @@ pub use widgets::dropdown_menu::{
     dropdown_menu_item_with_icon_and_shortcut, dropdown_menu_item_with_shortcut,
     dropdown_menu_label, dropdown_menu_separator, dropdown_menu_shortcut,
 };
+pub use widgets::editor_tabs::{
+    ActiveTabStyle, CloseVisibility, EditorTabsAction, EditorTabsConfig, editor_tab,
+    editor_tab_add_key, editor_tab_close_key, editor_tab_select_key, editor_tabs,
+    editor_tabs_with,
+};
 pub use widgets::form::{
     field_row, form, form_control, form_description, form_item, form_label, form_message,
     form_section,

@@ -17,6 +17,7 @@ pub mod checkbox;
 pub mod command;
 pub mod dialog;
 pub mod dropdown_menu;
+pub mod editor_tabs;
 pub mod form;
 pub mod overlay;
 pub mod pagination;

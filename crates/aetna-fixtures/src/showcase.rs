@@ -100,6 +100,7 @@ pub enum Section {
     Forms,
     Inputs,
     Tabs,
+    EditorTabs,
     Split,
     Glass,
     Surfaces,
@@ -119,6 +120,7 @@ impl Section {
             Section::Forms => "Forms",
             Section::Inputs => "Inputs",
             Section::Tabs => "Tabs",
+            Section::EditorTabs => "Editor tabs",
             Section::Split => "Split",
             Section::Glass => "Glass",
             Section::Surfaces => "Surfaces",
@@ -138,6 +140,7 @@ impl Section {
             Section::Forms => "nav-forms",
             Section::Inputs => "nav-inputs",
             Section::Tabs => "nav-tabs",
+            Section::EditorTabs => "nav-editor-tabs",
             Section::Split => "nav-split",
             Section::Glass => "nav-glass",
             Section::Surfaces => "nav-surfaces",
@@ -147,7 +150,7 @@ impl Section {
         }
     }
 
-    const ALL: [Section; 14] = [
+    const ALL: [Section; 15] = [
         Section::Counter,
         Section::List,
         Section::Palette,
@@ -156,6 +159,7 @@ impl Section {
         Section::Forms,
         Section::Inputs,
         Section::Tabs,
+        Section::EditorTabs,
         Section::Split,
         Section::Glass,
         Section::Surfaces,
@@ -273,6 +277,34 @@ impl Default for TabsState {
     }
 }
 
+struct EditorTabsState {
+    /// Open documents, in display order. Each entry is the routing
+    /// token (and label) for one tab.
+    docs: Vec<String>,
+    /// The currently active tab — must always exist in `docs`.
+    active: String,
+    /// Counter used to mint unique names for newly-added tabs.
+    next_id: u32,
+    /// Active-tab visual treatment selected from the trio of options
+    /// at the top of the section. Drives `EditorTabsConfig`.
+    active_style: ActiveTabStyle,
+    /// Close-icon visibility selected from the second trio. Drives
+    /// `EditorTabsConfig`.
+    close_visibility: CloseVisibility,
+}
+
+impl Default for EditorTabsState {
+    fn default() -> Self {
+        Self {
+            docs: vec!["README.md".into(), "main.rs".into(), "Cargo.toml".into()],
+            active: "main.rs".into(),
+            next_id: 1,
+            active_style: ActiveTabStyle::Lifted,
+            close_visibility: CloseVisibility::ActiveAndDimmed,
+        }
+    }
+}
+
 struct SplitState {
     /// Current sidebar width in logical pixels.
     sidebar_w: f32,
@@ -346,6 +378,7 @@ pub struct Showcase {
     forms: FormsState,
     inputs: InputsState,
     tabs: TabsState,
+    editor_tabs: EditorTabsState,
     split: SplitState,
     glass: GlassState,
     toasts: ToastsState,
@@ -440,6 +473,7 @@ impl App for Showcase {
             Section::Forms => forms_on_event(&mut self.forms, event),
             Section::Inputs => inputs_on_event(&mut self.inputs, event),
             Section::Tabs => tabs_on_event(&mut self.tabs, event),
+            Section::EditorTabs => editor_tabs_on_event(&mut self.editor_tabs, event),
             Section::Split => split_on_event(&mut self.split, event),
             Section::Glass => glass_on_event(&mut self.glass, event),
             Section::Surfaces => {} // static fixture, no events
@@ -520,6 +554,7 @@ fn content(app: &Showcase) -> El {
         Section::Forms => forms_view(&app.forms),
         Section::Inputs => inputs_view(&app.inputs),
         Section::Tabs => tabs_view(&app.tabs),
+        Section::EditorTabs => editor_tabs_view(&app.editor_tabs),
         Section::Split => split_view(&app.split),
         Section::Glass => {
             return glass_view(&app.glass)
@@ -1375,6 +1410,178 @@ fn tabs_on_event(state: &mut TabsState, e: UiEvent) {
             _ => {}
         }
     }
+}
+
+// ---- Editor tabs section ----
+//
+// Exercises the closeable / addable tab strip — the VS Code / Chrome
+// idiom — alongside two `tabs_list` rows that drive the strip's two
+// configurable knobs. The `tabs_list` controls reuse the segmented
+// pattern they're designed for (a small set of mutually exclusive
+// choices); the `editor_tabs` strip below them holds the open
+// "documents" the user can rearrange and grow.
+
+fn active_style_token(s: ActiveTabStyle) -> &'static str {
+    match s {
+        ActiveTabStyle::Lifted => "lifted",
+        ActiveTabStyle::TopAccent => "top-accent",
+        ActiveTabStyle::BottomRule => "bottom-rule",
+        // ActiveTabStyle is non_exhaustive — fall back to "lifted"
+        // (the default) for any future variant the showcase doesn't
+        // yet model.
+        _ => "lifted",
+    }
+}
+
+fn parse_active_style(raw: &str) -> Option<ActiveTabStyle> {
+    match raw {
+        "lifted" => Some(ActiveTabStyle::Lifted),
+        "top-accent" => Some(ActiveTabStyle::TopAccent),
+        "bottom-rule" => Some(ActiveTabStyle::BottomRule),
+        _ => None,
+    }
+}
+
+fn close_visibility_token(c: CloseVisibility) -> &'static str {
+    match c {
+        CloseVisibility::ActiveAndDimmed => "dimmed",
+        CloseVisibility::Always => "always",
+        CloseVisibility::ActiveOnly => "active-only",
+        // Non_exhaustive — fall back to "dimmed" (the default).
+        _ => "dimmed",
+    }
+}
+
+fn parse_close_visibility(raw: &str) -> Option<CloseVisibility> {
+    match raw {
+        "dimmed" => Some(CloseVisibility::ActiveAndDimmed),
+        "always" => Some(CloseVisibility::Always),
+        "active-only" => Some(CloseVisibility::ActiveOnly),
+        _ => None,
+    }
+}
+
+fn editor_tabs_view(state: &EditorTabsState) -> El {
+    // Segmented-control labels are kept short ("Top" / "Bottom",
+    // "Dimmed" / "Active") so each trigger fits its share of the
+    // tabs_list row at the section's natural width — long-form
+    // names live in the captions above each picker.
+    let style_picker = column([
+        text("Active tab treatment").caption().muted(),
+        tabs_list(
+            "et-style",
+            &active_style_token(state.active_style),
+            [
+                ("lifted", "Lifted"),
+                ("top-accent", "Top"),
+                ("bottom-rule", "Bottom"),
+            ],
+        ),
+    ])
+    .gap(tokens::SPACE_1)
+    .width(Size::Fill(1.0));
+
+    let close_picker = column([
+        text("Close icon visibility").caption().muted(),
+        tabs_list(
+            "et-close",
+            &close_visibility_token(state.close_visibility),
+            [
+                ("dimmed", "Dimmed"),
+                ("always", "Always"),
+                ("active-only", "Active"),
+            ],
+        ),
+    ])
+    .gap(tokens::SPACE_1)
+    .width(Size::Fill(1.0));
+
+    let strip = editor_tabs_with(
+        "et-strip",
+        &state.active,
+        state.docs.iter().map(|d| (d.clone(), d.clone())),
+        EditorTabsConfig {
+            active_style: state.active_style,
+            close_visibility: state.close_visibility,
+        },
+    );
+
+    // The "panel" below the strip — the core point of the lifted
+    // treatment is that the active tab's CARD fill visually attaches
+    // to a CARD-filled panel below it.
+    let panel = column([
+        h2(state.active.clone()),
+        text(format!(
+            "{} open tab{} — click any tab to switch, × to close, + to open a new one.",
+            state.docs.len(),
+            if state.docs.len() == 1 { "" } else { "s" },
+        ))
+        .muted(),
+    ])
+    .gap(tokens::SPACE_2)
+    .padding(tokens::SPACE_4)
+    .fill(tokens::CARD)
+    .stroke(tokens::BORDER)
+    .width(Size::Fill(1.0))
+    .height(Size::Fill(1.0));
+
+    // Strip + panel sit in their own gap-0 column so the active
+    // tab's CARD fill flows directly into the CARD-filled panel
+    // below — that visual merge is the whole point of the Lifted
+    // treatment. The outer column's SPACE_4 gap keeps the title and
+    // pickers airy without breaking the tab/panel attachment.
+    let strip_and_panel = column([strip, panel])
+        .gap(0.0)
+        .height(Size::Fill(1.0));
+    column([
+        h1("Editor tabs"),
+        text(
+            "Closeable, addable tab strip — the VS Code / Chrome idiom. \
+             Distinct from `tabs_list` (the shadcn segmented control), \
+             which drives the two pickers below.",
+        )
+        .muted()
+        .wrap_text(),
+        row([style_picker, close_picker])
+            .gap(tokens::SPACE_6)
+            .align(Align::Start),
+        strip_and_panel,
+    ])
+    .gap(tokens::SPACE_4)
+    .height(Size::Fill(1.0))
+}
+
+fn editor_tabs_on_event(state: &mut EditorTabsState, e: UiEvent) {
+    // Editor-tabs strip — the main interaction. The mint_new closure
+    // borrows `next_id` mutably and synthesizes a unique label/value
+    // each time the user clicks `+`.
+    let mut counter = state.next_id;
+    let did_strip = editor_tabs::apply_event(
+        &mut state.docs,
+        &mut state.active,
+        &e,
+        "et-strip",
+        |s| Some(s.to_string()),
+        || {
+            let id = counter;
+            counter += 1;
+            format!("untitled-{id}")
+        },
+    );
+    state.next_id = counter;
+    if did_strip {
+        return;
+    }
+    // The two segmented controls reconfigure the strip live.
+    if tabs::apply_event(&mut state.active_style, &e, "et-style", parse_active_style) {
+        return;
+    }
+    let _ = tabs::apply_event(
+        &mut state.close_visibility,
+        &e,
+        "et-close",
+        parse_close_visibility,
+    );
 }
 
 // ---- Split section ----
@@ -2255,6 +2462,28 @@ mod tests {
         assert_eq!(s.tab, "appearance");
         tabs_on_event(&mut s, click("tabs-settings:tab:advanced"));
         assert_eq!(s.tab, "advanced");
+    }
+
+    #[test]
+    fn editor_tabs_section_select_close_add_round_trip() {
+        let mut s = EditorTabsState::default();
+        assert_eq!(s.active, "main.rs");
+        // Selecting a different tab swaps active.
+        editor_tabs_on_event(&mut s, click("et-strip:tab:README.md"));
+        assert_eq!(s.active, "README.md");
+        // Closing the active tab picks the same-index neighbour.
+        editor_tabs_on_event(&mut s, click("et-strip:close:README.md"));
+        assert_eq!(s.active, "main.rs");
+        assert!(!s.docs.iter().any(|d| d == "README.md"));
+        // Adding mints a unique label/value and activates it.
+        editor_tabs_on_event(&mut s, click("et-strip:add"));
+        assert_eq!(s.active, "untitled-1");
+        assert_eq!(s.docs.last().map(String::as_str), Some("untitled-1"));
+        // The two segmented controls reconfigure the strip live.
+        editor_tabs_on_event(&mut s, click("et-style:tab:top-accent"));
+        assert_eq!(s.active_style, ActiveTabStyle::TopAccent);
+        editor_tabs_on_event(&mut s, click("et-close:tab:always"));
+        assert_eq!(s.close_visibility, CloseVisibility::Always);
     }
 
     #[test]
