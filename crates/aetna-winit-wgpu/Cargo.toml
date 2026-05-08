@@ -1,6 +1,6 @@
 [package]
 name = "aetna-winit-wgpu"
-version = "0.2.0"
+version = "0.3.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -17,8 +17,8 @@ categories = ["gui"]
 path = "src/lib.rs"
 
 [dependencies]
-aetna-core = { version = "0.2.0", path = "../aetna-core" }
-aetna-wgpu = { version = "0.2.0", path = "../aetna-wgpu" }
+aetna-core = { version = "0.3.0", path = "../aetna-core" }
+aetna-wgpu = { version = "0.3.0", path = "../aetna-wgpu" }
 pollster = "0.4"
 wgpu = "29"
 winit = "0.30"

@@ -1,6 +1,6 @@
 [package]
 name = "aetna-examples"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Aetna — interactive examples built from the reusable host and fixture crates"
 license = "MIT OR Apache-2.0"
@@ -9,9 +9,9 @@ publish = false
 # Binaries auto-discovered from `src/bin/*.rs`.
 
 [dependencies]
-aetna-core = { version = "0.2.0", path = "../crates/aetna-core" }
-aetna-fixtures = { version = "0.2.0", path = "../crates/aetna-fixtures" }
-aetna-winit-wgpu = { version = "0.2.0", path = "../crates/aetna-winit-wgpu" }
+aetna-core = { version = "0.3.0", path = "../crates/aetna-core" }
+aetna-fixtures = { version = "0.3.0", path = "../crates/aetna-fixtures" }
+aetna-winit-wgpu = { version = "0.3.0", path = "../crates/aetna-winit-wgpu" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # `wayland-data-control` is required so arboard talks to native
