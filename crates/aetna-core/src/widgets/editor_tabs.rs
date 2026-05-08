@@ -109,23 +109,30 @@ pub enum ActiveTabStyle {
 
 /// When the close (`×`) icon is rendered on each tab.
 ///
-/// The runtime can't trigger app-side rerenders on hover, so this is
-/// the closest approximation of "show on hover only" that works
-/// without a hovered-tab field on the app side.
+/// All three variants keep the close icon in the tab layout so the
+/// tab geometry stays stable across selection. They differ only in
+/// the rest-state opacity: `ActiveOrHover` hides it entirely until a
+/// hover signal arrives, `Dimmed` keeps a faint hint, and `Always`
+/// shows it unconditionally.
+///
+/// The hover signal cascades from the tab through
+/// [`crate::tree::El::reveal_on_hover`] — when the user mouses over
+/// the tab (or directly over the `×`), the icon eases up to full
+/// opacity via the runtime's hover envelope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum CloseVisibility {
-    /// Render on every tab; full opacity on the active tab, dimmed
-    /// on the rest. Default — keeps the strip readable without
-    /// hiding the close affordance entirely.
+    /// VS Code default: full opacity on the active tab, invisible on
+    /// inactive tabs at rest, eased up to full on hover (of either
+    /// the tab body or the `×` itself).
     #[default]
-    ActiveAndDimmed,
-    /// Render on every tab at full opacity. Matches Antd's
-    /// `editable-card` tabs.
+    ActiveOrHover,
+    /// Always at full opacity. Matches Antd `editable-card` tabs.
     Always,
-    /// Only render on the active tab. Inactive tabs hug their label
-    /// width (the tab geometry shifts on selection).
-    ActiveOnly,
+    /// Always visible but de-emphasized on inactive non-hovered tabs
+    /// (rest at 40% opacity), brightening to full on hover. A softer
+    /// "always discoverable" variant.
+    Dimmed,
 }
 
 /// Configuration for [`editor_tabs_with`]. Public-fields struct so
@@ -297,29 +304,32 @@ pub fn editor_tab(
         tokens::MUTED_FOREGROUND
     });
 
-    // Render the close icon? `Always` and the active tab always show
-    // it; `ActiveAndDimmed` shows it on inactive tabs at reduced
-    // opacity; `ActiveOnly` omits it from inactive tabs.
-    let close_opacity: Option<f32> = match (selected, config.close_visibility) {
-        (_, CloseVisibility::Always) => Some(1.0),
-        (true, _) => Some(1.0),
-        (false, CloseVisibility::ActiveAndDimmed) => Some(0.4),
-        (false, CloseVisibility::ActiveOnly) => None,
-    };
-    let close = close_opacity.map(|o| {
-        icon_button(IconName::X)
-            .key(close_key)
-            .icon_size(tokens::ICON_XS)
-            .ghost()
-            .width(Size::Fixed(tokens::SPACE_5))
-            .height(Size::Fixed(tokens::SPACE_5))
-            .opacity(o)
-    });
-
-    let mut body_children: Vec<El> = vec![label_el];
-    if let Some(c) = close {
-        body_children.push(c);
+    // The close icon is always present in the layout so tab geometry
+    // stays stable across selection. The active tab paints it at full
+    // opacity; inactive tabs use `reveal_on_hover(rest)` so the icon
+    // eases between its rest opacity and full as the tab (or the icon
+    // itself) is hovered.
+    let mut close = icon_button(IconName::X)
+        .key(close_key)
+        .icon_size(tokens::ICON_XS)
+        .ghost()
+        .width(Size::Fixed(tokens::SPACE_5))
+        .height(Size::Fixed(tokens::SPACE_5));
+    if !selected {
+        let rest = match config.close_visibility {
+            CloseVisibility::ActiveOrHover => 0.0,
+            CloseVisibility::Dimmed => 0.4,
+            CloseVisibility::Always => 1.0,
+        };
+        // Only attach the modifier when it would do something (rest <
+        // 1.0). At 1.0 the modifier is a no-op; skipping it keeps
+        // tree dumps for the `Always` flavor uncluttered.
+        if rest < 1.0 {
+            close = close.reveal_on_hover(rest);
+        }
     }
+
+    let body_children: Vec<El> = vec![label_el, close];
     let body = row(body_children)
         .gap(tokens::SPACE_2)
         .align(Align::Center)
@@ -564,44 +574,51 @@ mod tests {
     }
 
     #[test]
-    fn close_visibility_active_only_omits_close_on_inactive_tabs() {
+    fn close_visibility_active_or_hover_hides_close_at_rest_on_inactive() {
         let cfg = EditorTabsConfig {
-            close_visibility: CloseVisibility::ActiveOnly,
+            close_visibility: CloseVisibility::ActiveOrHover,
             ..Default::default()
         };
-        // Each tab is `column([body])` (Lifted) — body is the first
-        // child, which is itself a row of [label, maybe close].
+        // Each tab is `column([body])` (Lifted); body is the first
+        // child, which is a row of [label, close]. The close icon is
+        // always present in the layout — only its rest opacity changes
+        // — so geometry stays stable across selection.
         let active = editor_tab("docs", "readme", "README.md", true, cfg);
         let inactive = editor_tab("docs", "readme", "README.md", false, cfg);
         let active_body = &active.children[0];
         let inactive_body = &inactive.children[0];
-        assert_eq!(
-            active_body.children.len(),
-            2,
-            "active tab should carry its close icon",
-        );
-        assert_eq!(
-            inactive_body.children.len(),
-            1,
-            "inactive tab should drop the close icon under ActiveOnly",
-        );
+        assert_eq!(active_body.children.len(), 2);
+        assert_eq!(inactive_body.children.len(), 2);
+        // The active tab's close paints at full opacity (no modifier).
+        let active_close = &active_body.children[1];
+        assert_eq!(active_close.reveal_on_hover, None);
+        // The inactive tab's close is invisible at rest, fades in on
+        // hover via the runtime's hover envelope cascade.
+        let inactive_close = &inactive_body.children[1];
+        assert_eq!(inactive_close.reveal_on_hover, Some(0.0));
     }
 
     #[test]
-    fn close_visibility_dimmed_keeps_close_present_with_lower_opacity() {
+    fn close_visibility_dimmed_uses_partial_rest_opacity() {
         let cfg = EditorTabsConfig {
-            close_visibility: CloseVisibility::ActiveAndDimmed,
+            close_visibility: CloseVisibility::Dimmed,
             ..Default::default()
         };
         let inactive = editor_tab("docs", "readme", "README.md", false, cfg);
         let body = &inactive.children[0];
         let close = &body.children[1];
-        assert!(close.opacity < 1.0, "close should be dimmed on inactive tab");
-        assert!(close.opacity > 0.0);
+        // Dimmed sits between hidden and visible — close should rest
+        // around 0.4 alpha and ease up on hover.
+        match close.reveal_on_hover {
+            Some(rest) => {
+                assert!(rest > 0.0 && rest < 1.0, "Dimmed rest should be partial; got {rest}");
+            }
+            None => panic!("Dimmed should attach reveal_on_hover so hover composes the alpha"),
+        }
     }
 
     #[test]
-    fn close_visibility_always_keeps_close_at_full_opacity() {
+    fn close_visibility_always_skips_reveal_on_hover() {
         let cfg = EditorTabsConfig {
             close_visibility: CloseVisibility::Always,
             ..Default::default()
@@ -609,7 +626,10 @@ mod tests {
         let inactive = editor_tab("docs", "readme", "README.md", false, cfg);
         let body = &inactive.children[0];
         let close = &body.children[1];
-        assert_eq!(close.opacity, 1.0);
+        // `Always` is full opacity unconditionally — the modifier is a
+        // no-op at rest=1.0, so we skip attaching it to keep tree
+        // dumps for this flavor uncluttered.
+        assert_eq!(close.reveal_on_hover, None);
     }
 
     #[test]

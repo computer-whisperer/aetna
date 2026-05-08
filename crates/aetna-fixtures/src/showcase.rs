@@ -300,7 +300,7 @@ impl Default for EditorTabsState {
             active: "main.rs".into(),
             next_id: 1,
             active_style: ActiveTabStyle::Lifted,
-            close_visibility: CloseVisibility::ActiveAndDimmed,
+            close_visibility: CloseVisibility::ActiveOrHover,
         }
     }
 }
@@ -1444,19 +1444,19 @@ fn parse_active_style(raw: &str) -> Option<ActiveTabStyle> {
 
 fn close_visibility_token(c: CloseVisibility) -> &'static str {
     match c {
-        CloseVisibility::ActiveAndDimmed => "dimmed",
+        CloseVisibility::ActiveOrHover => "hover",
+        CloseVisibility::Dimmed => "dimmed",
         CloseVisibility::Always => "always",
-        CloseVisibility::ActiveOnly => "active-only",
-        // Non_exhaustive — fall back to "dimmed" (the default).
-        _ => "dimmed",
+        // Non_exhaustive — fall back to "hover" (the default).
+        _ => "hover",
     }
 }
 
 fn parse_close_visibility(raw: &str) -> Option<CloseVisibility> {
     match raw {
-        "dimmed" => Some(CloseVisibility::ActiveAndDimmed),
+        "hover" => Some(CloseVisibility::ActiveOrHover),
+        "dimmed" => Some(CloseVisibility::Dimmed),
         "always" => Some(CloseVisibility::Always),
-        "active-only" => Some(CloseVisibility::ActiveOnly),
         _ => None,
     }
 }
@@ -1487,9 +1487,9 @@ fn editor_tabs_view(state: &EditorTabsState) -> El {
             "et-close",
             &close_visibility_token(state.close_visibility),
             [
+                ("hover", "Hover"),
                 ("dimmed", "Dimmed"),
                 ("always", "Always"),
-                ("active-only", "Active"),
             ],
         ),
     ])
@@ -2484,6 +2484,10 @@ mod tests {
         assert_eq!(s.active_style, ActiveTabStyle::TopAccent);
         editor_tabs_on_event(&mut s, click("et-close:tab:always"));
         assert_eq!(s.close_visibility, CloseVisibility::Always);
+        editor_tabs_on_event(&mut s, click("et-close:tab:dimmed"));
+        assert_eq!(s.close_visibility, CloseVisibility::Dimmed);
+        editor_tabs_on_event(&mut s, click("et-close:tab:hover"));
+        assert_eq!(s.close_visibility, CloseVisibility::ActiveOrHover);
     }
 
     #[test]
