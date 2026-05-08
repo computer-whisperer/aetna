@@ -10,43 +10,27 @@ fn main() -> std::io::Result<()> {
     let viewport = Rect::new(0.0, 0.0, 1180.0, 780.0);
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
 
-    let variants = [
-        ("dashboard_01_calibration", Theme::aetna_dark()),
-        (
-            "dashboard_01_calibration.compact",
-            Theme::aetna_dark().compact(),
-        ),
-        (
-            "dashboard_01_calibration.comfortable",
-            Theme::aetna_dark().comfortable(),
-        ),
-        (
-            "dashboard_01_calibration.spacious",
-            Theme::aetna_dark().spacious(),
-        ),
-    ];
-    for (name, theme) in variants {
-        let mut root = dashboard_01_calibration(theme.metrics().layout());
-        let bundle =
-            render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
-        let written = write_bundle(&bundle, &out_dir, name)?;
-        for p in &written {
-            println!("wrote {}", p.display());
-        }
-        if !bundle.lint.findings.is_empty() {
-            eprintln!(
-                "\nlint findings for {name} ({}):",
-                bundle.lint.findings.len()
-            );
-            eprint!("{}", bundle.lint.text());
-        }
+    let name = "dashboard_01_calibration";
+    let theme = Theme::aetna_dark();
+    let mut root = dashboard_01_calibration();
+    let bundle = render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
+    let written = write_bundle(&bundle, &out_dir, name)?;
+    for p in &written {
+        println!("wrote {}", p.display());
+    }
+    if !bundle.lint.findings.is_empty() {
+        eprintln!(
+            "\nlint findings for {name} ({}):",
+            bundle.lint.findings.len()
+        );
+        eprint!("{}", bundle.lint.text());
     }
 
     Ok(())
 }
 
-fn dashboard_01_calibration(layout: LayoutMetrics) -> El {
-    row([dashboard_sidebar(layout), dashboard_main(layout)])
+fn dashboard_01_calibration() -> El {
+    row([dashboard_sidebar(), dashboard_main()])
         .key("metric:root")
         .gap(0.0)
         .fill_size()
@@ -54,7 +38,7 @@ fn dashboard_01_calibration(layout: LayoutMetrics) -> El {
         .fill(tokens::BACKGROUND)
 }
 
-fn dashboard_sidebar(layout: LayoutMetrics) -> El {
+fn dashboard_sidebar() -> El {
     column([
         row([
             icon_cell("A"),
@@ -106,8 +90,8 @@ fn dashboard_sidebar(layout: LayoutMetrics) -> El {
         .height(Size::Fixed(50.0))
         .align(Align::Center),
     ])
-    .gap(layout.cluster_gap)
-    .padding(Sides::xy(layout.section_gap, layout.cluster_gap))
+    .gap(tokens::SPACE_2)
+    .padding(Sides::xy(tokens::SPACE_4, tokens::SPACE_2))
     .key("metric:sidebar")
     .width(Size::Fixed(244.0))
     .height(Size::Fill(1.0))
@@ -154,9 +138,9 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     item
 }
 
-fn dashboard_main(layout: LayoutMetrics) -> El {
+fn dashboard_main() -> El {
     column([
-        dashboard_header(layout),
+        dashboard_header(),
         column([
             row([
                 metric_card(
@@ -192,22 +176,22 @@ fn dashboard_main(layout: LayoutMetrics) -> El {
                     true,
                 ),
             ])
-            .gap(layout.page_gap),
+            .gap(tokens::SPACE_4),
             row([chart_card(), sales_card()])
-                .gap(layout.page_gap)
+                .gap(tokens::SPACE_4)
                 .height(Size::Fixed(306.0))
                 .align(Align::Stretch),
             documents_card(),
         ])
-        .gap(layout.page_gap)
-        .padding(layout.page_padding)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
         .height(Size::Fill(1.0)),
     ])
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }
 
-fn dashboard_header(layout: LayoutMetrics) -> El {
+fn dashboard_header() -> El {
     row([
         icon_button("menu").ghost(),
         divider().width(Size::Fixed(1.0)).height(Size::Fixed(22.0)),
@@ -220,9 +204,9 @@ fn dashboard_header(layout: LayoutMetrics) -> El {
         icon_button("bell").ghost(),
     ])
     .key("metric:header")
-    .gap(layout.cluster_gap)
+    .gap(tokens::SPACE_2)
     .height(Size::Fixed(56.0))
-    .padding(Sides::xy(layout.section_gap, 0.0))
+    .padding(Sides::xy(tokens::SPACE_4, 0.0))
     .align(Align::Center)
     .stroke(tokens::BORDER)
 }

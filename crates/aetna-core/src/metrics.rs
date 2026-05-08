@@ -1,8 +1,11 @@
-//! Component sizing and content-density vocabulary.
+//! Component sizing vocabulary.
 //!
-//! Public names intentionally match familiar UI-kit conventions:
-//! components have t-shirt `size`s, repeated information surfaces have
-//! `density`, and theme defaults can set both globally.
+//! Stock controls (button / input / badge / tab / choice / slider /
+//! progress) carry a t-shirt `size` that maps 1:1 to shadcn's `size`
+//! prop. Container surfaces (card / form / list / menu / table / panel)
+//! bake their padding / gap / height / radius recipes directly in their
+//! constructors — there is no global density knob, the way Tailwind /
+//! shadcn picks padding per component class.
 
 use crate::tree::{El, Sides, Size};
 
@@ -15,31 +18,6 @@ pub enum ComponentSize {
     #[default]
     Md,
     Lg,
-}
-
-/// Information density for repeated or grouped content.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[non_exhaustive]
-pub enum Density {
-    Compact,
-    #[default]
-    Comfortable,
-    Spacious,
-}
-
-/// Density-aware spacing for page-level layout rhythm.
-///
-/// This mirrors the Tailwind/shadcn idiom where page padding and
-/// vertical section rhythm are regular spacing-scale tokens, not
-/// ad-hoc fixture values.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LayoutMetrics {
-    pub page_padding: f32,
-    pub pane_padding: f32,
-    pub page_gap: f32,
-    pub section_gap: f32,
-    pub cluster_gap: f32,
-    pub header_after_gap: f32,
 }
 
 /// Theme-facing stock metrics role for a widget surface.
@@ -75,7 +53,6 @@ pub enum MetricsRole {
 #[derive(Clone, Debug)]
 pub struct ThemeMetrics {
     default_component_size: ComponentSize,
-    default_density: Density,
     button_size: Option<ComponentSize>,
     input_size: Option<ComponentSize>,
     badge_size: Option<ComponentSize>,
@@ -94,21 +71,8 @@ impl ThemeMetrics {
         self.default_component_size
     }
 
-    pub fn default_density(&self) -> Density {
-        self.default_density
-    }
-
-    pub fn layout(&self) -> LayoutMetrics {
-        layout_metrics(self.default_density)
-    }
-
     pub fn with_default_component_size(mut self, size: ComponentSize) -> Self {
         self.default_component_size = size;
-        self
-    }
-
-    pub fn with_default_density(mut self, density: Density) -> Self {
-        self.default_density = density;
         self
     }
 
@@ -267,47 +231,15 @@ impl ThemeMetrics {
     }
 }
 
-pub fn layout_metrics(density: Density) -> LayoutMetrics {
-    match density {
-        Density::Compact => LayoutMetrics {
-            page_padding: 20.0,
-            pane_padding: 16.0,
-            page_gap: 12.0,
-            section_gap: 12.0,
-            cluster_gap: 8.0,
-            header_after_gap: 4.0,
-        },
-        Density::Comfortable => LayoutMetrics {
-            page_padding: 28.0,
-            pane_padding: 20.0,
-            page_gap: 16.0,
-            section_gap: 16.0,
-            cluster_gap: 8.0,
-            header_after_gap: 8.0,
-        },
-        Density::Spacious => LayoutMetrics {
-            page_padding: 32.0,
-            pane_padding: 24.0,
-            page_gap: 20.0,
-            section_gap: 20.0,
-            cluster_gap: 12.0,
-            header_after_gap: 12.0,
-        },
-    }
-}
-
 impl Default for ThemeMetrics {
     fn default() -> Self {
         Self {
-            // `Density` is now a layout-only knob (page padding, page
-            // gap, section gap — see `layout_metrics`). Widget surfaces
-            // bake their padding / gap / height / radius recipes into
-            // their constructors directly. The default of `Compact`
-            // keeps Aetna's denser-than-shadcn page rhythm; apps can
-            // opt back to `Comfortable` or `Spacious` via
-            // `Theme::comfortable()` / `Theme::spacious()`.
+            // Aetna's baseline component size is `Sm` so desktop apps
+            // land in a denser-than-web baseline. Bump everything one
+            // rung with `Theme::with_default_component_size(Md)`, or
+            // override per-call with `.size(...)` / `.medium()` /
+            // `.large()`.
             default_component_size: ComponentSize::Sm,
-            default_density: Density::Compact,
             button_size: None,
             input_size: None,
             badge_size: None,
@@ -536,28 +468,20 @@ mod tests {
     }
 
     #[test]
-    fn card_slot_defaults_match_shadcn_stock_and_ignore_theme_density() {
-        // After the density removal, card_header / card_content / card_footer
-        // bake shadcn's `p-6` / `p-6 pt-0` recipe directly via
-        // `default_padding(...)` in the constructor. The metrics pass leaves
-        // those slots alone, so changing theme density has no effect on them.
-        let mut spacious = titled_card("Settings", [crate::text("Body")]);
-        let mut compact = titled_card("Settings", [crate::text("Body")]);
-
-        ThemeMetrics::default()
-            .with_default_density(Density::Spacious)
-            .apply_to_tree(&mut spacious);
-        ThemeMetrics::default()
-            .with_default_density(Density::Compact)
-            .apply_to_tree(&mut compact);
+    fn card_slot_defaults_match_shadcn_stock() {
+        // card_header / card_content / card_footer bake shadcn's `p-6`
+        // / `p-6 pt-0` recipe directly via `default_padding(...)` in
+        // the constructor. The metrics pass leaves those slots alone.
+        let mut t = titled_card("Settings", [crate::text("Body")]);
+        ThemeMetrics::default().apply_to_tree(&mut t);
 
         // Outer card is unpadded; the slots own all the spacing.
-        assert_eq!(spacious.padding, Sides::zero());
+        assert_eq!(t.padding, Sides::zero());
         // Header: SPACE_6 on all four sides.
-        assert_eq!(spacious.children[0].padding, Sides::all(tokens::SPACE_6));
+        assert_eq!(t.children[0].padding, Sides::all(tokens::SPACE_6));
         // Content: SPACE_6 on left / right / bottom, 0 on top (`p-6 pt-0`).
         assert_eq!(
-            spacious.children[1].padding,
+            t.children[1].padding,
             Sides {
                 left: tokens::SPACE_6,
                 right: tokens::SPACE_6,
@@ -565,9 +489,6 @@ mod tests {
                 bottom: tokens::SPACE_6,
             }
         );
-        // Density does not move the values.
-        assert_eq!(compact.children[0].padding, spacious.children[0].padding);
-        assert_eq!(compact.children[1].padding, spacious.children[1].padding);
     }
 
     #[test]
@@ -665,43 +586,5 @@ mod tests {
         let metrics = ThemeMetrics::default();
 
         assert_eq!(metrics.default_component_size(), ComponentSize::Sm);
-        assert_eq!(metrics.default_density(), Density::Compact);
-    }
-
-    #[test]
-    fn layout_metrics_follow_tailwind_density_rhythm() {
-        assert_eq!(
-            layout_metrics(Density::Compact),
-            LayoutMetrics {
-                page_padding: 20.0,
-                pane_padding: 16.0,
-                page_gap: 12.0,
-                section_gap: 12.0,
-                cluster_gap: 8.0,
-                header_after_gap: 4.0,
-            }
-        );
-        assert_eq!(
-            layout_metrics(Density::Comfortable),
-            LayoutMetrics {
-                page_padding: 28.0,
-                pane_padding: 20.0,
-                page_gap: 16.0,
-                section_gap: 16.0,
-                cluster_gap: 8.0,
-                header_after_gap: 8.0,
-            }
-        );
-        assert_eq!(
-            layout_metrics(Density::Spacious),
-            LayoutMetrics {
-                page_padding: 32.0,
-                pane_padding: 24.0,
-                page_gap: 20.0,
-                section_gap: 20.0,
-                cluster_gap: 12.0,
-                header_after_gap: 12.0,
-            }
-        );
     }
 }

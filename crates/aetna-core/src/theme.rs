@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::metrics::{ComponentSize, Density, ThemeMetrics};
+use crate::metrics::{ComponentSize, ThemeMetrics};
 use crate::palette::Palette;
 use crate::shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
 use crate::tokens;
@@ -119,30 +119,6 @@ impl Theme {
     pub fn with_default_component_size(mut self, size: ComponentSize) -> Self {
         self.metrics = self.metrics.with_default_component_size(size);
         self
-    }
-
-    /// Set the default density for repeated/grouped stock surfaces.
-    pub fn with_default_density(mut self, density: Density) -> Self {
-        self.metrics = self.metrics.with_default_density(density);
-        self
-    }
-
-    /// Compact application defaults, matching the common UI-kit term.
-    pub fn compact(self) -> Self {
-        self.with_default_component_size(ComponentSize::Sm)
-            .with_default_density(Density::Compact)
-    }
-
-    /// Comfortable application defaults.
-    pub fn comfortable(self) -> Self {
-        self.with_default_component_size(ComponentSize::Md)
-            .with_default_density(Density::Comfortable)
-    }
-
-    /// Spacious application defaults.
-    pub fn spacious(self) -> Self {
-        self.with_default_component_size(ComponentSize::Lg)
-            .with_default_density(Density::Spacious)
     }
 
     pub fn with_button_size(mut self, size: ComponentSize) -> Self {

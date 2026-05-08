@@ -10,43 +10,27 @@ fn main() -> std::io::Result<()> {
     let viewport = Rect::new(0.0, 0.0, 1180.0, 780.0);
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
 
-    let variants = [
-        ("settings_calibration", Theme::aetna_dark()),
-        (
-            "settings_calibration.compact",
-            Theme::aetna_dark().compact(),
-        ),
-        (
-            "settings_calibration.comfortable",
-            Theme::aetna_dark().comfortable(),
-        ),
-        (
-            "settings_calibration.spacious",
-            Theme::aetna_dark().spacious(),
-        ),
-    ];
-    for (name, theme) in variants {
-        let mut root = settings_calibration(theme.metrics().layout());
-        let bundle =
-            render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
-        let written = write_bundle(&bundle, &out_dir, name)?;
-        for p in &written {
-            println!("wrote {}", p.display());
-        }
-        if !bundle.lint.findings.is_empty() {
-            eprintln!(
-                "\nlint findings for {name} ({}):",
-                bundle.lint.findings.len()
-            );
-            eprint!("{}", bundle.lint.text());
-        }
+    let name = "settings_calibration";
+    let theme = Theme::aetna_dark();
+    let mut root = settings_calibration();
+    let bundle = render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
+    let written = write_bundle(&bundle, &out_dir, name)?;
+    for p in &written {
+        println!("wrote {}", p.display());
+    }
+    if !bundle.lint.findings.is_empty() {
+        eprintln!(
+            "\nlint findings for {name} ({}):",
+            bundle.lint.findings.len()
+        );
+        eprint!("{}", bundle.lint.text());
     }
 
     Ok(())
 }
 
-fn settings_calibration(layout: LayoutMetrics) -> El {
-    row([settings_sidebar(layout), settings_main(layout)])
+fn settings_calibration() -> El {
+    row([settings_sidebar(), settings_main()])
         .key("metric:root")
         .gap(0.0)
         .fill_size()
@@ -54,7 +38,7 @@ fn settings_calibration(layout: LayoutMetrics) -> El {
         .fill(tokens::BACKGROUND)
 }
 
-fn settings_sidebar(layout: LayoutMetrics) -> El {
+fn settings_sidebar() -> El {
     column([
         row([
             icon_slot("settings"),
@@ -88,8 +72,8 @@ fn settings_sidebar(layout: LayoutMetrics) -> El {
             .fill(tokens::MUTED)
             .radius(tokens::RADIUS_MD),
     ])
-    .gap(layout.cluster_gap)
-    .padding(Sides::xy(layout.section_gap, layout.cluster_gap))
+    .gap(tokens::SPACE_2)
+    .padding(Sides::xy(tokens::SPACE_4, tokens::SPACE_2))
     .key("metric:sidebar")
     .width(Size::Fixed(244.0))
     .height(Size::Fill(1.0))
@@ -97,16 +81,16 @@ fn settings_sidebar(layout: LayoutMetrics) -> El {
     .stroke(tokens::BORDER)
 }
 
-fn settings_main(layout: LayoutMetrics) -> El {
+fn settings_main() -> El {
     column([
-        settings_header(layout),
+        settings_header(),
         row([
             settings_nav_card(),
-            settings_body(layout),
-            settings_aside(layout),
+            settings_body(),
+            settings_aside(),
         ])
-        .gap(layout.section_gap)
-        .padding(layout.section_gap)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_4)
         .height(Size::Fill(1.0))
         .align(Align::Stretch),
     ])
@@ -114,7 +98,7 @@ fn settings_main(layout: LayoutMetrics) -> El {
     .height(Size::Fill(1.0))
 }
 
-fn settings_header(layout: LayoutMetrics) -> El {
+fn settings_header() -> El {
     row([
         icon_button("menu").ghost(),
         divider().width(Size::Fixed(1.0)).height(Size::Fixed(22.0)),
@@ -124,9 +108,9 @@ fn settings_header(layout: LayoutMetrics) -> El {
         button("Save changes").primary(),
     ])
     .key("metric:header")
-    .gap(layout.cluster_gap)
+    .gap(tokens::SPACE_2)
     .height(Size::Fixed(56.0))
-    .padding(Sides::xy(layout.section_gap, 0.0))
+    .padding(Sides::xy(tokens::SPACE_4, 0.0))
     .align(Align::Center)
     .stroke(tokens::BORDER)
 }
@@ -181,7 +165,7 @@ fn settings_nav_item(label: &'static str, selected: bool) -> El {
     item
 }
 
-fn settings_body(layout: LayoutMetrics) -> El {
+fn settings_body() -> El {
     column([
         column([
             h1("Account").heading().key("metric:section.title"),
@@ -194,11 +178,11 @@ fn settings_body(layout: LayoutMetrics) -> El {
         .height(Size::Hug),
         scroll([profile_card(), preferences_card()])
             .key("settings-body-scroll")
-            .gap(layout.section_gap)
+            .gap(tokens::SPACE_4)
             .width(Size::Fill(1.0))
             .height(Size::Fill(1.0)),
     ])
-    .gap(layout.section_gap)
+    .gap(tokens::SPACE_4)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }
@@ -299,9 +283,9 @@ fn preference_row(title: &'static str, description: &'static str, control: El) -
     .align(Align::Center)
 }
 
-fn settings_aside(layout: LayoutMetrics) -> El {
+fn settings_aside() -> El {
     column([security_card(), scale_card()])
-        .gap(layout.section_gap)
+        .gap(tokens::SPACE_4)
         .width(Size::Fixed(300.0))
         .height(Size::Fill(1.0))
 }
@@ -376,6 +360,9 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
         format!("side-item-{label}")
     })
     .metrics_role(MetricsRole::ListItem)
+    .gap(tokens::SPACE_2)
+    .padding(Sides::xy(tokens::SPACE_3, 0.0))
+    .height(Size::Fixed(40.0))
     .align(Align::Center)
     .focusable();
 

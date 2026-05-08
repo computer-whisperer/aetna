@@ -14,7 +14,7 @@ A widget is a function (or struct + builder) that returns an [`El`]. To make wid
 
 ### 1. The `El` builder
 
-The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`, `padding`, `gap`, `axis`, `align`, `justify`, `size`, `density`, `metrics_role`), visuals (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`, `surface_role`), text (`text`, `text_color`, `text_align`, `text_role`, `font_size`, `font_weight`, `mono`, `italic`, `underline`, `strikethrough`, `link`, `wrap_text`, `text_overflow`, `ellipsis`, `max_lines`), icons (`icon`, `icon_name`, `icon_size`, `icon_stroke_width`), the paint-time transforms (`opacity`, `translate`, `scale`, `animate`), and the cross-cutting flags `clip()` (scissor children to this node's painted rect) and `scrollable()` (route wheel events to this node so it can scroll). `Kind::Scroll` already turns both on; `clip()` and `scrollable()` are the primitives behind it, available to any user widget that wants the same behaviour without claiming the structural variant.
+The whole grammar from `crates/aetna-core/src/tree/`. Sizing (`width`, `height`, `padding`, `gap`, `axis`, `align`, `justify`, `size`, `metrics_role`), visuals (`fill`, `stroke`, `stroke_width`, `radius`, `shadow`, `surface_role`), text (`text`, `text_color`, `text_align`, `text_role`, `font_size`, `font_weight`, `mono`, `italic`, `underline`, `strikethrough`, `link`, `wrap_text`, `text_overflow`, `ellipsis`, `max_lines`), icons (`icon`, `icon_name`, `icon_size`, `icon_stroke_width`), the paint-time transforms (`opacity`, `translate`, `scale`, `animate`), and the cross-cutting flags `clip()` (scissor children to this node's painted rect) and `scrollable()` (route wheel events to this node so it can scroll). `Kind::Scroll` already turns both on; `clip()` and `scrollable()` are the primitives behind it, available to any user widget that wants the same behaviour without claiming the structural variant.
 
 ### 1.1 Layout — sizing, alignment, container axes
 
@@ -70,68 +70,65 @@ Common pitfalls to avoid:
 
 Shortcuts: `.fill_size()` for `.width(Fill(1.0)).height(Fill(1.0))`; `.hug()` for both Hug. `.padding(Sides::xy(h, v))` for asymmetric padding.
 
-### 1.2 Component size and content density
+### 1.2 Component size
 
-Stock controls follow the same vocabulary used by common UI kits:
-`ComponentSize::{Xs, Sm, Md, Lg}` for t-shirt control sizing, and
-`Density::{Compact, Comfortable, Spacious}` for repeated or grouped
-content. Local modifiers use the familiar names:
+Stock controls have a t-shirt size that matches shadcn's `size` prop
+1:1: `ComponentSize::{Xs, Sm, Md, Lg}`. Local modifiers:
 
 ```rust
 button("Preview").small()
 button("Publish").large()
 text_input(&query, &selection, "search").size(ComponentSize::Sm)
-card([
-    card_header([card_title("Documents")]),
-    card_content([form([
-        form_item([
-            form_label("Display name"),
-            form_control(text_input(&name, &selection, "display-name")),
-            form_description("Shown in shared workspace activity."),
-        ]),
-        form_item([
-            form_label("Status"),
-            form_control(select_trigger("status", "Active")),
-        ]),
-    ])]),
-])
-button("Save").size(ComponentSize::Lg)
 progress(value, tokens::PRIMARY).small()
 ```
-
-There is one density knob, and it lives on the `Theme`, not on
-individual widgets. `Theme::compact()` / `comfortable()` / `spacious()`
-selects the page-level rhythm — `theme.metrics().layout()` returns the
-Tailwind-shaped spacing ladder used for app chrome (page padding,
-page/section gaps, cluster gaps, the tighter gap after a page header).
-Use those values for shell layout instead of hand-picking `18px` or
-similar one-off gaps in examples.
-
-Component-level sizing follows shadcn's `size` prop: `.size(ComponentSize::Sm
-| Md | Lg)` or the chainables `.medium()` / `.large()` on buttons,
-inputs, badges, tab triggers, choice controls, sliders, and progress
-bars. There is no per-widget density knob — denser cards / lists /
-menus / tables come from explicit per-call overrides
-(`card_header([...]).padding(SPACE_3)`, `accordion_trigger(...).height(Size::Fixed(32.0))`),
-matching how Tailwind / shadcn authors override stock components.
 
 Aetna's built-in default starts at `ComponentSize::Sm` so desktop apps
 land in a denser baseline. Use
 `Theme::aetna_dark().with_default_component_size(ComponentSize::Md)`
-to bump everything one rung.
+to bump everything one rung, or
+`Theme::aetna_dark().with_button_size(ComponentSize::Md)` to scope a
+size override to a single control class.
 
 Explicit layout calls always win. If an app writes
 `.height(Size::Fixed(44.0))` or `.padding(20.0)`, the metrics pass
 leaves that author choice alone. Custom widgets opt into stock control
 sizing by setting `.metrics_role(...)` to one of the stock
-`MetricsRole`s. Use `Button` / `IconButton` / `Input` / `TextArea` /
-`Badge` for control-like surfaces, `Card` / `CardHeader` /
-`CardContent` / `CardFooter` / `Form` / `FormItem` / `Panel` /
-`MenuItem` / `ListItem` for grouped content (these now bake their own
-padding / gap / height / radius recipes — the metrics pass leaves them
-alone), `TabTrigger` / `TabList` for segmented controls,
-`ChoiceControl` / `ChoiceItem` for checkbox/radio-style widgets, and
-`Slider` / `Progress` for range indicators.
+`MetricsRole`s — `Button` / `IconButton` / `Input` / `TextArea` /
+`Badge` for control-like surfaces, `TabTrigger` / `ChoiceControl` for
+size-driven children, and `Slider` / `Progress` for range indicators.
+
+### 1.2.1 Page rhythm and per-call padding
+
+There is **no global density knob**. Container surfaces (card / form /
+list / menu / table / panel / tabs / text-area) bake their padding /
+gap / height / radius recipes directly in their constructors —
+shadcn's stock recipe, visible at the call site. The metrics pass does
+not override them. Override per-call, Tailwind-shaped:
+
+```rust
+card_header([card_title("Documents")])              // shadcn p-6 baked in
+card_header([card_title("Settings")]).padding(tokens::SPACE_4)  // p-4 override
+card_content([scroll([...])]).padding(0.0)          // flush scroll
+card_content([rows]).pt(tokens::SPACE_2)            // p-6 + pt-2 (= shadcn p-6 pt-0 idiom)
+accordion_trigger(...)                              // 40px tall, SPACE_3 sides baked in
+accordion_trigger(...).height(Size::Fixed(32.0))    // override one widget
+```
+
+Page-level rhythm (page padding, section gaps, cluster gaps) is also
+not configured by a knob — pick a `tokens::SPACE_*` constant where you
+need it, the way a Tailwind author writes `p-8` / `space-y-6` /
+`gap-4`. The token ladder maps 1:1 to Tailwind's spacing scale
+(`SPACE_4` = `16` = `p-4`, `SPACE_6` = `24` = `p-6`, `SPACE_8` = `32`
+= `p-8`). For a typical shadcn-shaped app shell:
+
+```rust
+column([
+    toolbar([toolbar_title("Documents"), spacer(), button("New").primary()]),
+    /* content */
+])
+.padding(tokens::SPACE_8)       // p-8 page chrome
+.gap(tokens::SPACE_6)           // space-y-6 between sections
+```
 
 ### 1.3 Typography family
 
@@ -197,18 +194,19 @@ Theme metrics can tune the global page rhythm and per-control-class sizes:
 
 ```rust
 Theme::aetna_dark()
-    .compact()                              // page-level spacing rhythm
-    .with_input_size(ComponentSize::Md)     // bump inputs one size up
-    .with_tab_size(ComponentSize::Sm)       // tabs stay denser
+    .with_default_component_size(ComponentSize::Md)  // bump every control one size
+    .with_input_size(ComponentSize::Sm)              // but keep inputs Sm
+    .with_tab_size(ComponentSize::Sm)                // and tabs Sm
 ```
 
-Card / form / list / menu / panel / preference / table padding and
-gaps are baked into each constructor (shadcn-shaped defaults visible
-at the call site) and override via `.padding(...)` / `.pt(...)` /
-`.px(...)` / `.height(...)` / `.gap(...)` per call. There is no
-`with_*_density` knob anymore — those produced silent global drift
-that an LLM author could not predict from reading a single
-constructor.
+Card / form / list / menu / panel / preference / table padding, gap,
+height, and radius are baked into each constructor (shadcn-shaped
+defaults visible at the call site) and override per-call via
+`.padding(...)` / `.pt(...)` / `.px(...)` / `.height(...)` / `.gap(...)`.
+There is no `Density` enum, no `with_*_density` knob, no
+`Theme::compact()` — the previous global selectors produced silent
+drift across surfaces that an LLM author could not predict from
+reading a single constructor.
 
 ### 2. Identity & a11y tags
 
@@ -417,17 +415,17 @@ The library has a small, named vocabulary precisely so a widget — or an app `b
 
 - **`.font_size(...).font_weight(...).text_color(...)` on a single text node.** That's what role modifiers exist for. `.heading()`, `.title()`, `.label()`, `.caption()`, `.code()` set size + weight + theme-aware color in one call. Reaching for the underlying primitives is how typography drifts (one hand-written 16px semibold title looks subtly different from another).
 - **`column([...]).fill(CARD).stroke(BORDER).radius(...)` for grouped content.** That's `card([card_header([card_title("Title")]), card_content([...])])`. Cards route through `SurfaceRole::Panel` so the theme can swap the material later (shader, shadow, inset) without touching the call site.
-- **`column([text(label).label(), text_input(...)]).gap(...)` for vertical fields.** That's `form_item([form_label(label), form_control(text_input(...)), form_description(...)])` inside `form([...])`. The theme owns the field stack rhythm through form density.
+- **`column([text(label).label(), text_input(...)]).gap(...)` for vertical fields.** That's `form_item([form_label(label), form_control(text_input(...)), form_description(...)])` inside `form([...])`. `form_item` bakes `gap(SPACE_2)` (≈ shadcn `space-y-2`) and `form` bakes `gap(SPACE_3)`; override per-call when a layout calls for tighter or looser stacks.
 - **`row([...]).metrics_role(TableRow).align(Center)` for table rows.** That's `table_row([...])` inside `table([table_header([...]), table_body([...])])`. `table_header` promotes direct `table_row` children to header metrics, and table rows center their cells by default.
 - **Status as a unicode bullet or emoji** (`text("● Online")`, `text("⚠ Failed")`). That's `badge("Online").success()` / `badge("Failed").destructive()`. Badges read as proper status pills and pick the theme color through the StyleProfile.
-- **Callouts as custom cards.** That's `alert([alert_title("Heads up"), alert_description("Details")]).warning()`: the alert routes through the surface profile and panel density rhythm, so theme tweaks carry across every callout.
+- **Callouts as custom cards.** That's `alert([alert_title("Heads up"), alert_description("Details")]).warning()`: the alert bundles the surface profile, the destructive/warning/info color route, and the shadcn-shaped padding recipe so callouts stay visually consistent.
 - **Identity chips as ad hoc circles.** That's `avatar_fallback("Alicia Koch")`, `avatar_initials("AK")`, or `avatar_image(img)`. The stock avatar keeps tables, nav, and activity feeds on the same circle size/radius.
 - **Loading placeholders as raw muted boxes.** That's `skeleton()` plus normal `.width(...)` / `.height(...)`, or `skeleton_circle(32.0)` for avatar placeholders.
 - **Command palette rows as repeated `row([...])` snippets.** That's `command_row("git-branch", "New branch", "Ctrl+B")`, or `command_item([command_icon(...), command_label(...), command_shortcut(...)])` when the row needs custom children.
-- **Collapsible sections as button-plus-chevron snippets.** That's `accordion_item(...)`, `accordion_trigger(...)`, and `accordion::apply_event(...)`; the trigger opts into list density, focus, pointer cursor, and the standard chevron treatment.
-- **Sidebar navigation as custom columns.** That's `sidebar(...)`, `sidebar_group(...)`, `sidebar_menu(...)`, and `sidebar_menu_button_with_icon(...)`; the row metrics match list density and selected items use the shared `.current()` treatment.
+- **Collapsible sections as button-plus-chevron snippets.** That's `accordion_item(...)`, `accordion_trigger(...)`, and `accordion::apply_event(...)`; the trigger bakes a 40px-tall list-row recipe with focus, pointer cursor, and the standard chevron treatment.
+- **Sidebar navigation as custom columns.** That's `sidebar(...)`, `sidebar_group(...)`, `sidebar_menu(...)`, and `sidebar_menu_button_with_icon(...)`; the buttons share the same 40px list-row recipe, and selected items use the shared `.current()` treatment.
 - **Toolbars as hand-aligned rows.** That's `toolbar(...)` and `toolbar_group(...)`; action rows should center their controls and use the same gap cadence as table/page chrome.
-- **Dropdown menus as a popover full of custom rows.** That's `dropdown_menu(...)`, `dropdown_menu_content(...)`, `dropdown_menu_label(...)`, `dropdown_menu_separator()`, and `dropdown_menu_item_with_icon_and_shortcut(...)`; the stock rows opt into menu density and arrow navigation.
+- **Dropdown menus as a popover full of custom rows.** That's `dropdown_menu(...)`, `dropdown_menu_content(...)`, `dropdown_menu_label(...)`, `dropdown_menu_separator()`, and `dropdown_menu_item_with_icon_and_shortcut(...)`; the stock rows bake the shadcn-shaped menu-item recipe (height + side padding + gap + radius) and arrow navigation.
 - **Dialog and sheet surfaces as custom overlay cards.** That's `dialog(key, [dialog_header([...]), ..., dialog_footer([...])])` or `sheet(key, SheetSide::Right, [...])`; both keep the scrim/panel/block-pointer shape consistent with modal and popover behavior.
 - **Breadcrumbs as slash-delimited text.** That's `breadcrumb_list([breadcrumb_link(...), breadcrumb_separator(), breadcrumb_page(...)])`; the links, current page, separators, and centered row rhythm are separate named pieces.
 - **Pagination as custom button rows.** That's `pagination_content([pagination_previous(), pagination_link("1", true), pagination_next()])`; page links get a stable square control box and previous/next use the built-in chevron icons.

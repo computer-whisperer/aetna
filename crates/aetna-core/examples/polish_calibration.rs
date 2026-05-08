@@ -13,40 +13,27 @@ fn main() -> std::io::Result<()> {
     let viewport = Rect::new(0.0, 0.0, 1180.0, 780.0);
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
 
-    let variants = [
-        ("polish_calibration", Theme::aetna_dark()),
-        ("polish_calibration.compact", Theme::aetna_dark().compact()),
-        (
-            "polish_calibration.comfortable",
-            Theme::aetna_dark().comfortable(),
-        ),
-        (
-            "polish_calibration.spacious",
-            Theme::aetna_dark().spacious(),
-        ),
-    ];
-    for (name, theme) in variants {
-        let mut root = polish_calibration(theme.metrics().layout());
-        let bundle =
-            render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
-        let written = write_bundle(&bundle, &out_dir, name)?;
-        for p in &written {
-            println!("wrote {}", p.display());
-        }
-        if !bundle.lint.findings.is_empty() {
-            eprintln!(
-                "\nlint findings for {name} ({}):",
-                bundle.lint.findings.len()
-            );
-            eprint!("{}", bundle.lint.text());
-        }
+    let name = "polish_calibration";
+    let theme = Theme::aetna_dark();
+    let mut root = polish_calibration();
+    let bundle = render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
+    let written = write_bundle(&bundle, &out_dir, name)?;
+    for p in &written {
+        println!("wrote {}", p.display());
+    }
+    if !bundle.lint.findings.is_empty() {
+        eprintln!(
+            "\nlint findings for {name} ({}):",
+            bundle.lint.findings.len()
+        );
+        eprint!("{}", bundle.lint.text());
     }
 
     Ok(())
 }
 
-fn polish_calibration(layout: LayoutMetrics) -> El {
-    row([sidebar(layout), main_panel(layout)])
+fn polish_calibration() -> El {
+    row([sidebar(), main_panel()])
         .key("metric:root")
         .gap(0.0)
         .fill_size()
@@ -54,7 +41,7 @@ fn polish_calibration(layout: LayoutMetrics) -> El {
         .fill(tokens::BACKGROUND)
 }
 
-fn sidebar(layout: LayoutMetrics) -> El {
+fn sidebar() -> El {
     column([
         column([h2("Aetna"), text("calibration").muted()])
             .key("metric:sidebar.brand")
@@ -69,7 +56,7 @@ fn sidebar(layout: LayoutMetrics) -> El {
         badge("dark theme").muted(),
     ])
     .gap(tokens::SPACE_2)
-    .padding(layout.pane_padding)
+    .padding(tokens::SPACE_5)
     .key("metric:sidebar")
     .width(Size::Fixed(220.0))
     .height(Size::Fill(1.0))
@@ -101,7 +88,7 @@ fn nav_item(icon: &'static str, label: &'static str, selected: bool) -> El {
     item
 }
 
-fn main_panel(layout: LayoutMetrics) -> El {
+fn main_panel() -> El {
     column([
         toolbar(),
         column([
@@ -110,18 +97,18 @@ fn main_panel(layout: LayoutMetrics) -> El {
                 kpi_card("Runs", "1,284", "+12%", true),
                 kpi_card("Errors", "7", "+2", false),
             ])
-            .gap(layout.page_gap),
+            .gap(tokens::SPACE_4),
             row([table_card(), command_card()])
-                .gap(layout.page_gap)
+                .gap(tokens::SPACE_4)
                 .height(Size::Fill(1.0))
                 .align(Align::Stretch),
         ])
-        .gap(layout.page_gap)
+        .gap(tokens::SPACE_4)
         .height(Size::Fill(1.0))
         .align(Align::Stretch),
     ])
-    .padding(layout.page_padding)
-    .gap(layout.header_after_gap)
+    .padding(tokens::SPACE_7)
+    .gap(tokens::SPACE_2)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }

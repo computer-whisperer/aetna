@@ -20,7 +20,7 @@ fn main() -> std::io::Result<()> {
     ];
 
     for (name, theme) in variants {
-        let mut root = comparison_screen(theme.font_family(), theme.metrics().layout());
+        let mut root = comparison_screen(theme.font_family());
         let bundle =
             render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
         let written = write_bundle(&bundle, &out_dir, name)?;
@@ -39,7 +39,7 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn comparison_screen(family: FontFamily, layout: LayoutMetrics) -> El {
+fn comparison_screen(family: FontFamily) -> El {
     column([
         row([
             column([
@@ -55,19 +55,19 @@ fn comparison_screen(family: FontFamily, layout: LayoutMetrics) -> El {
         .height(Size::Fixed(64.0))
         .align(Align::Center),
         row([
-            column([kpi_row(), command_surface(layout)])
-                .gap(layout.section_gap)
+            column([kpi_row(), command_surface()])
+                .gap(tokens::SPACE_4)
                 .width(Size::Fill(1.0)),
             column([copy_card(), table_card()])
-                .gap(layout.section_gap)
+                .gap(tokens::SPACE_4)
                 .width(Size::Fill(1.0)),
         ])
-        .gap(layout.section_gap)
+        .gap(tokens::SPACE_4)
         .height(Size::Fill(1.0)),
     ])
     .key("metric:root")
-    .padding(layout.page_padding)
-    .gap(layout.section_gap)
+    .padding(tokens::SPACE_7)
+    .gap(tokens::SPACE_4)
     .fill_size()
     .fill(tokens::BACKGROUND)
 }
@@ -110,7 +110,7 @@ fn kpi_card(
     .width(Size::Fill(1.0))
 }
 
-fn command_surface(layout: LayoutMetrics) -> El {
+fn command_surface() -> El {
     titled_card(
         "Command surface",
         [
@@ -127,17 +127,6 @@ fn command_surface(layout: LayoutMetrics) -> El {
             .gap(0.0),
         ],
     )
-    .density(layout_density_hint(layout))
-}
-
-fn layout_density_hint(layout: LayoutMetrics) -> Density {
-    if layout.page_padding <= 16.0 {
-        Density::Compact
-    } else if layout.page_padding >= 32.0 {
-        Density::Spacious
-    } else {
-        Density::Comfortable
-    }
 }
 
 fn menu_row(icon_name: &'static str, label: &'static str, shortcut: &'static str) -> El {

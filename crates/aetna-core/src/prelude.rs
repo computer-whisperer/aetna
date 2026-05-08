@@ -29,7 +29,7 @@ pub use crate::icons::{all_icon_names, icon};
 pub use crate::image::{Image, ImageFit};
 pub use crate::ir::{DrawOp, TextAnchor};
 pub use crate::layout::{LayoutCtx, LayoutFn, VirtualItems};
-pub use crate::metrics::{ComponentSize, Density, LayoutMetrics, MetricsRole, ThemeMetrics};
+pub use crate::metrics::{ComponentSize, MetricsRole, ThemeMetrics};
 pub use crate::palette::Palette;
 pub use crate::shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
 pub use crate::state::{AnimationMode, WidgetState};
