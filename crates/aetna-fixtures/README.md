@@ -1,6 +1,6 @@
 # aetna-fixtures
 
-![Showcase — Forms section: progress bar, checkboxes, radio group](https://raw.githubusercontent.com/computer-whisperer/aetna/v0.2.0/assets/showcase_forms.png)
+![Showcase — Forms section: progress bar, checkboxes, radio group](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/showcase_forms.png)
 
 Backend-neutral Aetna fixture apps and render trees.
 

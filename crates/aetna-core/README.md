@@ -1,6 +1,6 @@
 # aetna-core
 
-![Aetna showcase — Settings section, headless wgpu render](https://raw.githubusercontent.com/computer-whisperer/aetna/v0.2.0/assets/showcase_settings.png)
+![Aetna showcase — Settings section, headless wgpu render](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/showcase_settings.png)
 
 Backend-agnostic UI primitives for Aetna apps.
 
@@ -14,7 +14,7 @@ struct Counter {
 }
 
 impl App for Counter {
-    fn build(&self) -> El {
+    fn build(&self, _cx: &BuildCx) -> El {
         column([
             h1(format!("{}", self.value)),
             row([

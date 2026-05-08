@@ -1,6 +1,6 @@
 # aetna-winit-wgpu
 
-![Settings section — running through the native winit + wgpu host](https://raw.githubusercontent.com/computer-whisperer/aetna/v0.2.0/assets/showcase_settings.png)
+![Settings section — running through the native winit + wgpu host](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/showcase_settings.png)
 
 Optional native desktop host for Aetna apps using `winit` and `wgpu`.
 

@@ -19,8 +19,13 @@ selection model (`.selectable()` + cross-leaf drag + double/triple-click
 + Linux primary-selection + integration with `text_input` / `text_area`),
 caret blink, the pointer-cursor model + native/web cursor forwarding,
 text decorations (`.underline()` / `.strikethrough()` / `.link(url)`),
-and shadcn-aligned interaction-feedback polish. New work lands as
-numbered slices below.
+Inter as the default UI font, shadcn-shaped palette tokens and stock
+zinc/neutral plus Radix slate+blue palettes, theme-driven component
+size/density metrics, card/form/text rhythm polish, table/sidebar/menu/
+command/dropdown/dialog/sheet/widget-kit expansion, lint coverage for
+icon/text row spacing and alignment, calibration/reference harnesses,
+and shadcn-aligned interaction-feedback polish including non-hovering
+tab-list gaps. New work lands as numbered slices below.
 
 ## Floating-layer architecture (ratified)
 
