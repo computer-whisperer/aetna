@@ -95,48 +95,43 @@ card([
         ]),
     ])]),
 ])
-.compact()
-menu_item("Open").dense()
-tabs_list("settings", &tab, tabs).compact()
+button("Save").size(ComponentSize::Lg)
 progress(value, tokens::PRIMARY).small()
 ```
 
-For text leaves, `.small()` / `.xsmall()` keep their typography meaning
-and reduce font size. For stock controls and surfaces, the same modifiers
-set component size. When in doubt, the explicit enum form is available:
-`.size(ComponentSize::Sm)` or `.density(Density::Compact)`.
-
-Themes set the defaults before layout, similar to MUI default props or
-Ant's compact algorithm:
-
-```rust
-Theme::aetna_dark()
-    .with_default_component_size(ComponentSize::Sm)
-    .with_default_density(Density::Compact)
-```
-
-Aetna's built-in default starts at `ComponentSize::Sm` and
-`Density::Compact` so desktop apps land in a denser baseline. Use
-`Theme::aetna_dark().comfortable()` or `Theme::aetna_dark().spacious()`
-when an app needs larger controls or more open grouped surfaces.
-
-Density also owns page-level rhythm. `theme.metrics().layout()` returns
-the Tailwind-shaped spacing ladder used for app chrome: page padding,
-page/section gaps, cluster gaps, and the tighter gap after a page header.
+There is one density knob, and it lives on the `Theme`, not on
+individual widgets. `Theme::compact()` / `comfortable()` / `spacious()`
+selects the page-level rhythm — `theme.metrics().layout()` returns the
+Tailwind-shaped spacing ladder used for app chrome (page padding,
+page/section gaps, cluster gaps, the tighter gap after a page header).
 Use those values for shell layout instead of hand-picking `18px` or
 similar one-off gaps in examples.
 
-Explicit layout calls still win. If an app writes `.height(Size::Fixed(44.0))`
-or `.padding(20.0)`, theme metrics leave that author choice alone.
-Custom widgets opt into the same defaults by setting `.metrics_role(...)`
-to one of the stock `MetricsRole`s; no special `Kind` is required.
-Use `Button` / `IconButton` / `Input` / `TextArea` / `Badge` for
-control-like surfaces, `Card` / `CardHeader` / `CardContent` /
-`CardFooter` / `Form` / `FormItem` / `Panel` / `MenuItem` / `ListItem` for grouped content,
-`PreferenceRow` for two-line settings rows, `TableHeader` / `TableRow` for table-like rows,
-`TabTrigger` / `TabList` for segmented controls, `ChoiceControl` /
-`ChoiceItem` for checkbox/radio-style widgets, and `Slider` /
-`Progress` for range indicators.
+Component-level sizing follows shadcn's `size` prop: `.size(ComponentSize::Sm
+| Md | Lg)` or the chainables `.medium()` / `.large()` on buttons,
+inputs, badges, tab triggers, choice controls, sliders, and progress
+bars. There is no per-widget density knob — denser cards / lists /
+menus / tables come from explicit per-call overrides
+(`card_header([...]).padding(SPACE_3)`, `accordion_trigger(...).height(Size::Fixed(32.0))`),
+matching how Tailwind / shadcn authors override stock components.
+
+Aetna's built-in default starts at `ComponentSize::Sm` so desktop apps
+land in a denser baseline. Use
+`Theme::aetna_dark().with_default_component_size(ComponentSize::Md)`
+to bump everything one rung.
+
+Explicit layout calls always win. If an app writes
+`.height(Size::Fixed(44.0))` or `.padding(20.0)`, the metrics pass
+leaves that author choice alone. Custom widgets opt into stock control
+sizing by setting `.metrics_role(...)` to one of the stock
+`MetricsRole`s. Use `Button` / `IconButton` / `Input` / `TextArea` /
+`Badge` for control-like surfaces, `Card` / `CardHeader` /
+`CardContent` / `CardFooter` / `Form` / `FormItem` / `Panel` /
+`MenuItem` / `ListItem` for grouped content (these now bake their own
+padding / gap / height / radius recipes — the metrics pass leaves them
+alone), `TabTrigger` / `TabList` for segmented controls,
+`ChoiceControl` / `ChoiceItem` for checkbox/radio-style widgets, and
+`Slider` / `Progress` for range indicators.
 
 ### 1.3 Typography family
 
@@ -198,19 +193,22 @@ separator/card stroke, `INPUT` is the stronger control stroke, and
 selection colors are extension tokens because they describe a specific
 component/domain rather than the reusable core palette.
 
-Theme metrics can tune broad app defaults or a stock family:
+Theme metrics can tune the global page rhythm and per-control-class sizes:
 
 ```rust
 Theme::aetna_dark()
-    .compact()
-    .with_input_size(ComponentSize::Md)
-    .with_tab_size(ComponentSize::Sm)
-    .with_form_density(Density::Comfortable)
-    .with_list_density(Density::Compact)
-    .with_preference_density(Density::Compact)
-    .with_table_density(Density::Compact)
-    .with_panel_density(Density::Comfortable)
+    .compact()                              // page-level spacing rhythm
+    .with_input_size(ComponentSize::Md)     // bump inputs one size up
+    .with_tab_size(ComponentSize::Sm)       // tabs stay denser
 ```
+
+Card / form / list / menu / panel / preference / table padding and
+gaps are baked into each constructor (shadcn-shaped defaults visible
+at the call site) and override via `.padding(...)` / `.pt(...)` /
+`.px(...)` / `.height(...)` / `.gap(...)` per call. There is no
+`with_*_density` knob anymore — those produced silent global drift
+that an LLM author could not predict from reading a single
+constructor.
 
 ### 2. Identity & a11y tags
 

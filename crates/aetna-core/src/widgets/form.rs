@@ -52,6 +52,7 @@ where
         .metrics_role(MetricsRole::Form)
         .width(Size::Fill(1.0))
         .height(Size::Hug)
+        .default_gap(tokens::SPACE_3)
 }
 
 #[track_caller]
@@ -65,6 +66,7 @@ where
         .metrics_role(MetricsRole::Form)
         .width(Size::Fill(1.0))
         .height(Size::Hug)
+        .default_gap(tokens::SPACE_3)
 }
 
 #[track_caller]
@@ -78,6 +80,7 @@ where
         .metrics_role(MetricsRole::FormItem)
         .width(Size::Fill(1.0))
         .height(Size::Hug)
+        .default_gap(tokens::SPACE_2)
 }
 
 #[track_caller]

@@ -9,6 +9,7 @@ use std::panic::Location;
 
 use super::text::text;
 use crate::metrics::MetricsRole;
+use crate::tokens;
 use crate::tree::*;
 
 #[track_caller]
@@ -40,9 +41,19 @@ where
         .height(Size::Hug)
         .align(Align::Stretch);
 
+    // Promote `table_row(...)` children from body-row metrics to header
+    // metrics, and override the body-row default height + radius with
+    // the header's recipe (shorter, no rounded corners). Explicit
+    // overrides on the row itself still win.
     for row in &mut header.children {
         if row.metrics_role == Some(MetricsRole::TableRow) {
             row.metrics_role = Some(MetricsRole::TableHeader);
+            if !row.explicit_height {
+                row.height = Size::Fixed(36.0);
+            }
+            if !row.explicit_radius {
+                row.radius = 0.0;
+            }
         }
     }
 
@@ -75,6 +86,10 @@ where
         .metrics_role(MetricsRole::TableRow)
         .width(Size::Fill(1.0))
         .align(Align::Center)
+        .default_height(Size::Fixed(52.0))
+        .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
+        .default_gap(tokens::SPACE_3)
+        .default_radius(tokens::RADIUS_MD)
 }
 
 #[track_caller]

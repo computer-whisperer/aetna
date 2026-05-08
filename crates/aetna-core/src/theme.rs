@@ -180,41 +180,6 @@ impl Theme {
         self
     }
 
-    pub fn with_panel_density(mut self, density: Density) -> Self {
-        self.metrics = self.metrics.with_panel_density(density);
-        self
-    }
-
-    pub fn with_menu_density(mut self, density: Density) -> Self {
-        self.metrics = self.metrics.with_menu_density(density);
-        self
-    }
-
-    pub fn with_list_density(mut self, density: Density) -> Self {
-        self.metrics = self.metrics.with_list_density(density);
-        self
-    }
-
-    pub fn with_preference_density(mut self, density: Density) -> Self {
-        self.metrics = self.metrics.with_preference_density(density);
-        self
-    }
-
-    pub fn with_table_density(mut self, density: Density) -> Self {
-        self.metrics = self.metrics.with_table_density(density);
-        self
-    }
-
-    pub fn with_tab_density(mut self, density: Density) -> Self {
-        self.metrics = self.metrics.with_tab_density(density);
-        self
-    }
-
-    pub fn with_choice_density(mut self, density: Density) -> Self {
-        self.metrics = self.metrics.with_choice_density(density);
-        self
-    }
-
     pub(crate) fn apply_metrics(&self, root: &mut crate::El) {
         self.metrics.apply_to_tree(root);
         apply_font_family(root, self.font_family);

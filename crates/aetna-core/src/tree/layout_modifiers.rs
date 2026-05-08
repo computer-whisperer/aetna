@@ -1,7 +1,7 @@
 //! Layout and child-list modifiers for [`El`].
 
 use crate::layout::{LayoutCtx, LayoutFn};
-use crate::metrics::{ComponentSize, Density, MetricsRole};
+use crate::metrics::{ComponentSize, MetricsRole};
 
 use super::geometry::{Rect, Sides};
 use super::layout_types::{Align, Axis, Justify, Size};
@@ -51,33 +51,10 @@ impl El {
         self.size(ComponentSize::Lg)
     }
 
-    /// Set content density for repeated/grouped stock surfaces.
-    pub fn density(mut self, density: Density) -> Self {
-        self.density = Some(density);
-        self
-    }
-
     /// Set the theme-facing stock metrics role for this widget.
     pub fn metrics_role(mut self, role: MetricsRole) -> Self {
         self.metrics_role = Some(role);
         self
-    }
-
-    pub fn compact(self) -> Self {
-        self.density(Density::Compact)
-    }
-
-    /// Alias for [`Self::compact`], matching MUI/List terminology.
-    pub fn dense(self) -> Self {
-        self.compact()
-    }
-
-    pub fn comfortable(self) -> Self {
-        self.density(Density::Comfortable)
-    }
-
-    pub fn spacious(self) -> Self {
-        self.density(Density::Spacious)
     }
 
     // ---- Layout (container) ----

@@ -142,6 +142,8 @@ pub fn sidebar_menu_button_with_icon(
     .fill(tokens::CARD)
     .default_radius(tokens::RADIUS_SM)
     .default_gap(tokens::SPACE_2)
+    .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
+    .default_height(Size::Fixed(40.0))
     .width(Size::Fill(1.0))
     .align(Align::Center);
     if current {

@@ -83,14 +83,6 @@ pub struct ThemeMetrics {
     choice_size: Option<ComponentSize>,
     slider_size: Option<ComponentSize>,
     progress_size: Option<ComponentSize>,
-    form_density: Option<Density>,
-    panel_density: Option<Density>,
-    menu_density: Option<Density>,
-    list_density: Option<Density>,
-    preference_density: Option<Density>,
-    table_density: Option<Density>,
-    tab_density: Option<Density>,
-    choice_density: Option<Density>,
 }
 
 impl ThemeMetrics {
@@ -155,46 +147,6 @@ impl ThemeMetrics {
         self
     }
 
-    pub fn with_form_density(mut self, density: Density) -> Self {
-        self.form_density = Some(density);
-        self
-    }
-
-    pub fn with_panel_density(mut self, density: Density) -> Self {
-        self.panel_density = Some(density);
-        self
-    }
-
-    pub fn with_menu_density(mut self, density: Density) -> Self {
-        self.menu_density = Some(density);
-        self
-    }
-
-    pub fn with_list_density(mut self, density: Density) -> Self {
-        self.list_density = Some(density);
-        self
-    }
-
-    pub fn with_preference_density(mut self, density: Density) -> Self {
-        self.preference_density = Some(density);
-        self
-    }
-
-    pub fn with_table_density(mut self, density: Density) -> Self {
-        self.table_density = Some(density);
-        self
-    }
-
-    pub fn with_tab_density(mut self, density: Density) -> Self {
-        self.tab_density = Some(density);
-        self
-    }
-
-    pub fn with_choice_density(mut self, density: Density) -> Self {
-        self.choice_density = Some(density);
-        self
-    }
-
     pub(crate) fn apply_to_tree(&self, root: &mut El) {
         self.apply_to_el(root);
         for child in &mut root.children {
@@ -226,8 +178,9 @@ impl ThemeMetrics {
                 apply_control(el, control_metrics(size, ControlKind::Input));
             }
             Some(MetricsRole::TextArea) => {
-                let density = el.density.unwrap_or(self.default_density);
-                apply_text_area(el, text_area_metrics(density));
+                // TextArea bakes its padding + radius recipe directly
+                // in the constructor (`widgets/text_area.rs`). The
+                // metrics pass leaves it alone.
             }
             Some(MetricsRole::Badge) => {
                 let size = el
@@ -248,62 +201,22 @@ impl ThemeMetrics {
                 // stock recipe). Override per-call with `.padding(...)`,
                 // `.pt(...)` / `.px(...)` / etc.
             }
-            Some(MetricsRole::Form) => {
-                let density = el
-                    .density
-                    .or(self.form_density)
-                    .unwrap_or(self.default_density);
-                apply_form(el, form_metrics(density));
-                apply_form_density_to_children(el);
-            }
-            Some(MetricsRole::FormItem) => {
-                let density = el
-                    .density
-                    .or(self.form_density)
-                    .unwrap_or(self.default_density);
-                apply_form_item(el, form_item_metrics(density));
-            }
-            Some(MetricsRole::Panel) => {
-                let density = el
-                    .density
-                    .or(self.panel_density)
-                    .unwrap_or(self.default_density);
-                apply_panel(el, card_metrics(density));
-            }
-            Some(MetricsRole::MenuItem) => {
-                let density = el
-                    .density
-                    .or(self.menu_density)
-                    .unwrap_or(self.default_density);
-                apply_menu_item(el, menu_item_metrics(density));
-            }
-            Some(MetricsRole::ListItem) => {
-                let density = el
-                    .density
-                    .or(self.list_density)
-                    .unwrap_or(self.default_density);
-                apply_list_item(el, list_item_metrics(density));
-            }
-            Some(MetricsRole::PreferenceRow) => {
-                let density = el
-                    .density
-                    .or(self.preference_density)
-                    .unwrap_or(self.default_density);
-                apply_preference_row(el, preference_row_metrics(density));
-            }
-            Some(MetricsRole::TableHeader) => {
-                let density = el
-                    .density
-                    .or(self.table_density)
-                    .unwrap_or(self.default_density);
-                apply_table_header(el, table_header_metrics(density));
-            }
-            Some(MetricsRole::TableRow) => {
-                let density = el
-                    .density
-                    .or(self.table_density)
-                    .unwrap_or(self.default_density);
-                apply_table_row(el, table_row_metrics(density));
+            Some(
+                MetricsRole::Form
+                | MetricsRole::FormItem
+                | MetricsRole::Panel
+                | MetricsRole::MenuItem
+                | MetricsRole::ListItem
+                | MetricsRole::PreferenceRow
+                | MetricsRole::TableHeader
+                | MetricsRole::TableRow,
+            ) => {
+                // These surfaces bake their padding / gap / height /
+                // radius recipe directly in their constructors (see
+                // `widgets/{form,alert,dialog,sheet,overlay,popover,
+                // dropdown_menu,accordion,sidebar,command,table}.rs`).
+                // The metrics pass does not touch them. Override per
+                // call with `.padding(...)` / `.height(...)` / etc.
             }
             Some(MetricsRole::TabTrigger) => {
                 let size = el
@@ -313,11 +226,9 @@ impl ThemeMetrics {
                 apply_control(el, control_metrics(size, ControlKind::Button));
             }
             Some(MetricsRole::TabList) => {
-                let density = el
-                    .density
-                    .or(self.tab_density)
-                    .unwrap_or(self.default_density);
-                apply_tab_list(el, tab_list_metrics(density));
+                // Padding, gap, and radius are baked into
+                // `tabs_list()`. The metrics pass only propagates the
+                // optional `ComponentSize` down to TabTrigger children.
                 if let Some(size) = el.component_size {
                     apply_tab_trigger_size_to_children(el, size);
                 }
@@ -330,11 +241,9 @@ impl ThemeMetrics {
                 apply_choice_control(el, choice_control_metrics(size));
             }
             Some(MetricsRole::ChoiceItem) => {
-                let density = el
-                    .density
-                    .or(self.choice_density)
-                    .unwrap_or(self.default_density);
-                apply_choice_item(el, choice_item_metrics(density));
+                // Padding, gap, and radius are baked into `radio_item()`.
+                // The metrics pass only propagates `ComponentSize` down
+                // to the ChoiceControl child.
                 if let Some(size) = el.component_size {
                     apply_choice_control_size_to_children(el, size);
                 }
@@ -390,9 +299,13 @@ pub fn layout_metrics(density: Density) -> LayoutMetrics {
 impl Default for ThemeMetrics {
     fn default() -> Self {
         Self {
-            // Aetna's baseline is intentionally denser than generic
-            // web defaults; apps can opt back to `comfortable()` or
-            // `spacious()` at the theme boundary.
+            // `Density` is now a layout-only knob (page padding, page
+            // gap, section gap — see `layout_metrics`). Widget surfaces
+            // bake their padding / gap / height / radius recipes into
+            // their constructors directly. The default of `Compact`
+            // keeps Aetna's denser-than-shadcn page rhythm; apps can
+            // opt back to `Comfortable` or `Spacious` via
+            // `Theme::comfortable()` / `Theme::spacious()`.
             default_component_size: ComponentSize::Sm,
             default_density: Density::Compact,
             button_size: None,
@@ -402,14 +315,6 @@ impl Default for ThemeMetrics {
             choice_size: None,
             slider_size: None,
             progress_size: None,
-            form_density: None,
-            panel_density: None,
-            menu_density: None,
-            list_density: None,
-            preference_density: None,
-            table_density: None,
-            tab_density: None,
-            choice_density: None,
         }
     }
 }
@@ -515,158 +420,6 @@ fn apply_badge(el: &mut El, metrics: BadgeMetrics) {
     }
 }
 
-#[derive(Clone, Copy)]
-struct CardMetrics {
-    padding: f32,
-    gap: f32,
-    radius: f32,
-}
-
-fn card_metrics(density: Density) -> CardMetrics {
-    match density {
-        Density::Compact => CardMetrics {
-            padding: 12.0,
-            gap: 8.0,
-            radius: 7.0,
-        },
-        Density::Comfortable => CardMetrics {
-            padding: 16.0,
-            gap: 12.0,
-            radius: 8.0,
-        },
-        Density::Spacious => CardMetrics {
-            padding: 20.0,
-            gap: 16.0,
-            radius: 12.0,
-        },
-    }
-}
-
-#[derive(Clone, Copy)]
-struct FormMetrics {
-    gap: f32,
-}
-
-fn form_metrics(density: Density) -> FormMetrics {
-    match density {
-        Density::Compact => FormMetrics { gap: 10.0 },
-        Density::Comfortable => FormMetrics { gap: 12.0 },
-        Density::Spacious => FormMetrics { gap: 16.0 },
-    }
-}
-
-fn form_item_metrics(density: Density) -> FormMetrics {
-    match density {
-        Density::Compact => FormMetrics { gap: 4.0 },
-        Density::Comfortable => FormMetrics { gap: 6.0 },
-        Density::Spacious => FormMetrics { gap: 8.0 },
-    }
-}
-
-fn apply_form(el: &mut El, metrics: FormMetrics) {
-    if !el.explicit_gap {
-        el.gap = metrics.gap;
-    }
-}
-
-fn apply_form_item(el: &mut El, metrics: FormMetrics) {
-    if !el.explicit_gap {
-        el.gap = metrics.gap;
-    }
-}
-
-fn apply_form_density_to_children(el: &mut El) {
-    let Some(density) = el.density else {
-        return;
-    };
-    apply_form_density_to_descendants(&mut el.children, density);
-}
-
-fn apply_form_density_to_descendants(children: &mut [El], density: Density) {
-    for child in children {
-        if child.metrics_role == Some(MetricsRole::FormItem) && child.density.is_none() {
-            child.density = Some(density);
-        }
-        apply_form_density_to_descendants(&mut child.children, density);
-    }
-}
-
-fn apply_card(el: &mut El, metrics: CardMetrics) {
-    if !el.explicit_padding {
-        el.padding = Sides::all(metrics.padding);
-    }
-    if !el.explicit_gap {
-        el.gap = metrics.gap;
-    }
-    if !el.explicit_radius {
-        el.radius = metrics.radius;
-    }
-}
-
-fn apply_panel(el: &mut El, metrics: CardMetrics) {
-    apply_card(el, metrics);
-}
-
-#[derive(Clone, Copy)]
-struct TextAreaMetrics {
-    padding_x: f32,
-    padding_y: f32,
-    radius: f32,
-}
-
-fn text_area_metrics(density: Density) -> TextAreaMetrics {
-    match density {
-        Density::Compact => TextAreaMetrics {
-            padding_x: 10.0,
-            padding_y: 6.0,
-            radius: 7.0,
-        },
-        Density::Comfortable => TextAreaMetrics {
-            padding_x: 12.0,
-            padding_y: 8.0,
-            radius: 7.0,
-        },
-        Density::Spacious => TextAreaMetrics {
-            padding_x: 14.0,
-            padding_y: 10.0,
-            radius: 8.0,
-        },
-    }
-}
-
-fn apply_text_area(el: &mut El, metrics: TextAreaMetrics) {
-    if !el.explicit_padding {
-        el.padding = Sides::xy(metrics.padding_x, metrics.padding_y);
-    }
-    if !el.explicit_radius {
-        el.radius = metrics.radius;
-    }
-}
-
-fn tab_list_metrics(density: Density) -> CardMetrics {
-    match density {
-        Density::Compact => CardMetrics {
-            padding: 3.0,
-            gap: 3.0,
-            radius: 7.0,
-        },
-        Density::Comfortable => CardMetrics {
-            padding: 4.0,
-            gap: 4.0,
-            radius: 8.0,
-        },
-        Density::Spacious => CardMetrics {
-            padding: 6.0,
-            gap: 6.0,
-            radius: 10.0,
-        },
-    }
-}
-
-fn apply_tab_list(el: &mut El, metrics: CardMetrics) {
-    apply_card(el, metrics);
-}
-
 fn apply_tab_trigger_size_to_children(el: &mut El, size: ComponentSize) {
     for child in &mut el.children {
         if matches!(child.metrics_role, Some(MetricsRole::TabTrigger))
@@ -701,45 +454,6 @@ fn apply_choice_control(el: &mut El, metrics: ChoiceControlMetrics) {
     }
 }
 
-#[derive(Clone, Copy)]
-struct ChoiceItemMetrics {
-    padding_y: f32,
-    gap: f32,
-    radius: f32,
-}
-
-fn choice_item_metrics(density: Density) -> ChoiceItemMetrics {
-    match density {
-        Density::Compact => ChoiceItemMetrics {
-            padding_y: 2.0,
-            gap: 6.0,
-            radius: 5.0,
-        },
-        Density::Comfortable => ChoiceItemMetrics {
-            padding_y: 4.0,
-            gap: 8.0,
-            radius: 6.0,
-        },
-        Density::Spacious => ChoiceItemMetrics {
-            padding_y: 6.0,
-            gap: 10.0,
-            radius: 8.0,
-        },
-    }
-}
-
-fn apply_choice_item(el: &mut El, metrics: ChoiceItemMetrics) {
-    if !el.explicit_padding {
-        el.padding = Sides::xy(0.0, metrics.padding_y);
-    }
-    if !el.explicit_gap {
-        el.gap = metrics.gap;
-    }
-    if !el.explicit_radius {
-        el.radius = metrics.radius;
-    }
-}
-
 fn apply_choice_control_size_to_children(el: &mut El, size: ComponentSize) {
     for child in &mut el.children {
         if matches!(child.metrics_role, Some(MetricsRole::ChoiceControl))
@@ -771,176 +485,6 @@ fn progress_metrics(size: ComponentSize) -> f32 {
 fn apply_single_axis_height(el: &mut El, height: f32) {
     if !el.explicit_height {
         el.height = Size::Fixed(height);
-    }
-}
-
-#[derive(Clone, Copy)]
-struct MenuItemMetrics {
-    height: f32,
-    padding_x: f32,
-    gap: f32,
-}
-
-fn menu_item_metrics(density: Density) -> MenuItemMetrics {
-    match density {
-        Density::Compact => MenuItemMetrics {
-            height: 34.0,
-            padding_x: 14.0,
-            gap: 12.0,
-        },
-        Density::Comfortable => MenuItemMetrics {
-            height: 38.0,
-            padding_x: 16.0,
-            gap: 12.0,
-        },
-        Density::Spacious => MenuItemMetrics {
-            height: 42.0,
-            padding_x: 18.0,
-            gap: 12.0,
-        },
-    }
-}
-
-fn apply_menu_item(el: &mut El, metrics: MenuItemMetrics) {
-    if !el.explicit_height {
-        el.height = Size::Fixed(metrics.height);
-    }
-    if !el.explicit_padding {
-        el.padding = Sides::xy(metrics.padding_x, 0.0);
-    }
-    if !el.explicit_gap {
-        el.gap = metrics.gap;
-    }
-}
-
-#[derive(Clone, Copy)]
-struct RowMetrics {
-    height: f32,
-    padding_x: f32,
-    gap: f32,
-    radius: f32,
-}
-
-fn list_item_metrics(density: Density) -> RowMetrics {
-    match density {
-        Density::Compact => RowMetrics {
-            height: 32.0,
-            padding_x: 8.0,
-            gap: 6.0,
-            radius: 6.0,
-        },
-        Density::Comfortable => RowMetrics {
-            height: 40.0,
-            padding_x: 10.0,
-            gap: 8.0,
-            radius: 7.0,
-        },
-        Density::Spacious => RowMetrics {
-            height: 44.0,
-            padding_x: 12.0,
-            gap: 10.0,
-            radius: 8.0,
-        },
-    }
-}
-
-fn preference_row_metrics(density: Density) -> RowMetrics {
-    match density {
-        Density::Compact => RowMetrics {
-            height: 52.0,
-            padding_x: 12.0,
-            gap: 16.0,
-            radius: 0.0,
-        },
-        Density::Comfortable => RowMetrics {
-            height: 60.0,
-            padding_x: 16.0,
-            gap: 16.0,
-            radius: 0.0,
-        },
-        Density::Spacious => RowMetrics {
-            height: 68.0,
-            padding_x: 20.0,
-            gap: 16.0,
-            radius: 0.0,
-        },
-    }
-}
-
-fn table_header_metrics(density: Density) -> RowMetrics {
-    match density {
-        Density::Compact => RowMetrics {
-            height: 32.0,
-            padding_x: 8.0,
-            gap: 8.0,
-            radius: 0.0,
-        },
-        Density::Comfortable => RowMetrics {
-            height: 36.0,
-            padding_x: 10.0,
-            gap: 10.0,
-            radius: 0.0,
-        },
-        Density::Spacious => RowMetrics {
-            height: 40.0,
-            padding_x: 12.0,
-            gap: 12.0,
-            radius: 0.0,
-        },
-    }
-}
-
-fn table_row_metrics(density: Density) -> RowMetrics {
-    match density {
-        Density::Compact => RowMetrics {
-            height: 40.0,
-            padding_x: 8.0,
-            gap: 8.0,
-            radius: 6.0,
-        },
-        Density::Comfortable => RowMetrics {
-            height: 52.0,
-            padding_x: 10.0,
-            gap: 10.0,
-            radius: 7.0,
-        },
-        Density::Spacious => RowMetrics {
-            height: 56.0,
-            padding_x: 12.0,
-            gap: 12.0,
-            radius: 8.0,
-        },
-    }
-}
-
-fn apply_list_item(el: &mut El, metrics: RowMetrics) {
-    apply_row_metrics(el, metrics);
-}
-
-fn apply_preference_row(el: &mut El, metrics: RowMetrics) {
-    apply_row_metrics(el, metrics);
-}
-
-fn apply_table_header(el: &mut El, metrics: RowMetrics) {
-    apply_row_metrics(el, metrics);
-}
-
-fn apply_table_row(el: &mut El, metrics: RowMetrics) {
-    apply_row_metrics(el, metrics);
-}
-
-fn apply_row_metrics(el: &mut El, metrics: RowMetrics) {
-    if !el.explicit_height {
-        el.height = Size::Fixed(metrics.height);
-    }
-    if !el.explicit_padding {
-        el.padding = Sides::xy(metrics.padding_x, 0.0);
-    }
-    if !el.explicit_gap {
-        el.gap = metrics.gap;
-    }
-    if !el.explicit_radius {
-        el.radius = metrics.radius;
     }
 }
 
@@ -1048,18 +592,6 @@ mod tests {
     }
 
     #[test]
-    fn theme_choice_density_applies_to_radio_like_items() {
-        let mut el = El::new(crate::Kind::Custom("choice")).metrics_role(MetricsRole::ChoiceItem);
-
-        ThemeMetrics::default()
-            .with_choice_density(Density::Spacious)
-            .apply_to_tree(&mut el);
-
-        assert_eq!(el.padding, Sides::xy(0.0, 6.0));
-        assert_eq!(el.gap, 10.0);
-    }
-
-    #[test]
     fn local_choice_item_size_applies_to_child_control() {
         let control =
             El::new(crate::Kind::Custom("choice-control")).metrics_role(MetricsRole::ChoiceControl);
@@ -1086,76 +618,46 @@ mod tests {
     }
 
     #[test]
-    fn list_density_applies_to_list_item_defaults() {
-        let mut el = El::new(crate::Kind::Custom("list-item")).metrics_role(MetricsRole::ListItem);
-
-        ThemeMetrics::default()
-            .with_list_density(Density::Compact)
-            .apply_to_tree(&mut el);
-
-        assert_eq!(el.height, Size::Fixed(32.0));
-        assert_eq!(el.padding, Sides::xy(8.0, 0.0));
-        assert_eq!(el.gap, 6.0);
+    fn raw_metrics_role_tags_no_longer_override_widget_defaults() {
+        // After the density removal, surfaces like Form / FormItem /
+        // ListItem / MenuItem / TableRow / PreferenceRow / ChoiceItem /
+        // TextArea / TabList / Panel bake their padding / gap / height /
+        // radius recipes into their constructors. The metrics pass does
+        // not stamp anything onto bare-tagged Els (it only propagates
+        // ComponentSize down to TabTrigger / ChoiceControl children).
+        // This test asserts the absence — a bare El tagged with one of
+        // those roles comes out with zero padding, zero gap, and Hug
+        // height, exactly as if the role was unset.
+        for role in [
+            MetricsRole::Form,
+            MetricsRole::FormItem,
+            MetricsRole::ListItem,
+            MetricsRole::MenuItem,
+            MetricsRole::PreferenceRow,
+            MetricsRole::TableRow,
+            MetricsRole::TableHeader,
+            MetricsRole::ChoiceItem,
+            MetricsRole::TextArea,
+            MetricsRole::TabList,
+            MetricsRole::Panel,
+        ] {
+            let mut el = El::new(crate::Kind::Custom("bare")).metrics_role(role);
+            ThemeMetrics::default().apply_to_tree(&mut el);
+            assert_eq!(el.padding, Sides::zero(), "role {role:?} stamped padding");
+            assert_eq!(el.gap, 0.0, "role {role:?} stamped gap");
+            assert_eq!(el.height, Size::Hug, "role {role:?} stamped height");
+            assert_eq!(el.radius, 0.0, "role {role:?} stamped radius");
+        }
     }
 
     #[test]
-    fn menu_density_applies_to_icon_text_row_gap() {
-        let mut el = El::new(crate::Kind::Custom("menu-item")).metrics_role(MetricsRole::MenuItem);
-
-        ThemeMetrics::default()
-            .with_menu_density(Density::Compact)
-            .apply_to_tree(&mut el);
-
-        assert_eq!(el.height, Size::Fixed(34.0));
-        assert_eq!(el.padding, Sides::xy(14.0, 0.0));
-        assert_eq!(el.gap, 12.0);
-    }
-
-    #[test]
-    fn preference_density_applies_to_two_line_settings_rows() {
-        let mut el =
-            El::new(crate::Kind::Custom("preference-row")).metrics_role(MetricsRole::PreferenceRow);
-
-        ThemeMetrics::default()
-            .with_preference_density(Density::Spacious)
-            .apply_to_tree(&mut el);
-
-        assert_eq!(el.height, Size::Fixed(68.0));
-        assert_eq!(el.padding, Sides::xy(20.0, 0.0));
-        assert_eq!(el.gap, 16.0);
-    }
-
-    #[test]
-    fn table_density_applies_to_table_rows() {
-        let mut header =
-            El::new(crate::Kind::Custom("header")).metrics_role(MetricsRole::TableHeader);
-        let mut row = El::new(crate::Kind::Custom("row")).metrics_role(MetricsRole::TableRow);
-        let metrics = ThemeMetrics::default().with_table_density(Density::Spacious);
-
-        metrics.apply_to_tree(&mut header);
-        metrics.apply_to_tree(&mut row);
-
-        assert_eq!(header.height, Size::Fixed(40.0));
-        assert_eq!(row.height, Size::Fixed(56.0));
-    }
-
-    #[test]
-    fn form_density_applies_to_forms_and_form_items() {
-        let mut form = El::new(crate::Kind::Custom("form"))
-            .metrics_role(MetricsRole::Form)
-            .density(Density::Spacious)
-            .child(El::new(crate::Kind::Custom("row")).child(
-                El::new(crate::Kind::Custom("form-item")).metrics_role(MetricsRole::FormItem),
-            ));
-
-        ThemeMetrics::default().apply_to_tree(&mut form);
-
-        assert_eq!(form.gap, 16.0);
-        assert_eq!(
-            form.children[0].children[0].density,
-            Some(Density::Spacious)
-        );
-        assert_eq!(form.children[0].children[0].gap, 8.0);
+    fn form_constructor_bakes_default_gap() {
+        // Smoke test for the constructor-baked recipe: form() picks up
+        // SPACE_3 between items, form_item() picks up SPACE_2.
+        let mut f = crate::form([crate::form_item([crate::text("body")])]);
+        ThemeMetrics::default().apply_to_tree(&mut f);
+        assert_eq!(f.gap, tokens::SPACE_3);
+        assert_eq!(f.children[0].gap, tokens::SPACE_2);
     }
 
     #[test]

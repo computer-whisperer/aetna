@@ -36,7 +36,6 @@ impl Default for El {
             width: Size::Hug,
             height: Size::Hug,
             component_size: None,
-            density: None,
             metrics_role: None,
             explicit_width: false,
             explicit_height: false,

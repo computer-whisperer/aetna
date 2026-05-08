@@ -3,7 +3,7 @@
 use crate::anim::Timing;
 use crate::image::{Image, ImageFit};
 use crate::layout::{LayoutFn, VirtualItems};
-use crate::metrics::{ComponentSize, Density, MetricsRole};
+use crate::metrics::{ComponentSize, MetricsRole};
 use crate::shader::ShaderBinding;
 use crate::style::StyleProfile;
 
@@ -117,10 +117,6 @@ pub struct El {
     /// Optional t-shirt size for stock widgets. `None` means the active
     /// theme supplies the component-class default.
     pub component_size: Option<ComponentSize>,
-    /// Optional content density for repeated/grouped stock surfaces.
-    /// `None` means the active theme supplies the component-class
-    /// default.
-    pub density: Option<Density>,
     /// Optional theme-facing metrics role. Stock widgets set this so
     /// the theme can resolve default height/padding/radius before
     /// layout; app-defined widgets can set the same role to opt into

@@ -139,6 +139,9 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
         format!("side-item-{label}")
     })
     .metrics_role(MetricsRole::ListItem)
+    .gap(tokens::SPACE_2)
+    .padding(Sides::xy(tokens::SPACE_3, 0.0))
+    .height(Size::Fixed(40.0))
     .align(Align::Center)
     .focusable();
 
