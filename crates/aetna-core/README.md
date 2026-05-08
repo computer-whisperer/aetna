@@ -90,7 +90,7 @@ primitives. The list is short:
 | Raster image (logo, screenshot, thumbnail) | `image(Image::from_rgba8(...)).image_fit(ImageFit::Contain)` | reaching for a custom shader |
 | Throwaway notification | accumulate `ToastSpec::success("Saved")` and return them from `App::drain_toasts` | spinning a manual modal with a timer |
 
-Smells that mean an affordance is being missed: `column(...).surface_role(SurfaceRole::Panel)` (use `card()` or `sidebar()` — Panel decorates, it doesn't fill); a `row([title, spacer(), action]).fill(MUTED).stroke(BORDER)` *header bar* sitting above a body inside a `card` — that's a hand-rolled `card_header`, lift the row into `card_header([...]).padding(SPACE_4).fill(MUTED)` (or split each "header bar over body" block into its own `card([card_header(...), card_content(...)])` and stack them in a column); a `column([row, body]).fill(CARD).stroke(BORDER)` reinventing the card silhouette (call `card([...])`); `.gap(0.0)` (already the default — delete it); `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier); wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly); an explicit `.fill(tokens::BACKGROUND)` on the root (the host already paints it); and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
+Smells that mean an affordance is being missed: `column(...).surface_role(SurfaceRole::Panel)` (use `card()` or `sidebar()` — Panel decorates, it doesn't fill); a `row([title, spacer(), action]).fill(MUTED).stroke(BORDER)` *header bar* sitting above a body inside a `card` — that's a hand-rolled `card_header`, lift the row into `card_header([...]).fill(MUTED)` (or split each "header bar over body" block into its own `card([card_header(...), card_content(...)])` and stack them in a column); a `column([row, body]).fill(CARD).stroke(BORDER)` reinventing the card silhouette (call `card([...])`); `.gap(0.0)` (already the default — delete it); `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier); wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly); an explicit `.fill(tokens::BACKGROUND)` on the root (the host already paints it); and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
 
 ## Common app shells
 
@@ -124,11 +124,14 @@ for the inspector pane the same way — it gives you the same recipe the
 sidebar uses, just at `Size::Fixed(WIDTH)` instead of `SIDEBAR_WIDTH`.
 Reach into `card_header` for selected-item identity (title, metadata,
 copy / open actions) and `card_content` for the scrollable body. The
-slots don't supply default padding, so apply `.padding(...)` on each
-slot — `card_header` typically gets `SPACE_4`, `card_content` gets
-`Sides { left: SPACE_4, right: SPACE_4, top: 0.0, bottom: SPACE_4 }`
-or `0.0` when its only child is a `scroll(...)` that should reach the
-edges.
+slots pick up density-aware default padding from the metrics pass
+(shadcn's anatomy at Compact / Comfortable / Spacious — see
+[`metrics::card_header_metrics`](crate::metrics::card_header_metrics)),
+so naive use produces the right visual without an explicit
+`.padding(...)`. Override only when the design intentionally deviates:
+pass `.padding(0.0)` on `card_content` when its only child is a
+`scroll(...)` that should reach the card edges, or pass `Sides { ... }`
+when you want a fixed recipe that won't adapt across densities.
 
 ```ignore
 row([
@@ -140,9 +143,7 @@ row([
                 .align(Align::Center)
                 .gap(tokens::SPACE_2),
             text(item.subtitle.clone()).muted().caption(),
-        ])
-        .padding(tokens::SPACE_4)
-        .gap(tokens::SPACE_1),
+        ]),
         card_content([scroll([/* sub-cards, fields */])])
             .padding(0.0)
             .height(Size::Fill(1.0)),

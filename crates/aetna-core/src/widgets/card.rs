@@ -14,16 +14,27 @@
 //! everywhere. Same applies to right-rail inspector panes and other
 //! "boxed" wrappers that aren't navigation (use `sidebar()` for that).
 //!
-//! `card_header` / `card_content` / `card_footer` do not supply default
-//! padding (unlike `sidebar()`, which bundles `default_padding(SPACE_4)`).
-//! Apply `.padding(SPACE_4)` on `card_header` and `card_footer`, and
-//! `Sides { left: SPACE_4, right: SPACE_4, top: 0.0, bottom: SPACE_4 }`
-//! on `card_content` (or `0.0` when the slot's only child is a
-//! `scroll(...)` that should reach the card edges). A header bar with
-//! a tinted strip — common for inspector panes and diff/hunk frames —
-//! is `card_header([...]).fill(tokens::MUTED).padding(...)`; do not
-//! hand-roll the strip as a `row(...).fill(MUTED).stroke(BORDER)`
-//! sibling of the body.
+//! Default padding and gap for the slots are density-driven and
+//! supplied by the metrics pass — see [`crate::metrics::card_header_metrics`],
+//! [`card_content_metrics`](crate::metrics::card_content_metrics), and
+//! [`card_footer_metrics`](crate::metrics::card_footer_metrics). The
+//! values mirror shadcn's anatomy at three densities (Compact:
+//! `16/16/16/8` header + `16/16/4/16` content; Comfortable: `20/20/20/12` +
+//! `20/20/8/20`; Spacious: `24/24/24/16` + `24/24/8/24`), so the visual
+//! rhythm comes from `card_header`'s heavier bottom padding rather than
+//! from doubling header + content top paddings. Naive
+//! `card([card_header([...]), card_content([...])])` produces correct
+//! visuals on first try — *do not* add explicit `.padding(...)` to
+//! match shadcn's `p-6` literal, since that takes you off the
+//! density-aware path. Override only when the design intentionally
+//! deviates: pass `.padding(0.0)` when the slot's only child is a
+//! `scroll(...)` that should reach the card edges, or pass
+//! `Sides { ... }` to set a custom recipe (and accept that explicit
+//! padding will not adapt across densities). A header bar with a
+//! tinted strip — common for inspector panes and diff/hunk frames —
+//! is `card_header([...]).fill(tokens::MUTED)`; do not hand-roll the
+//! strip as a `row(...).fill(MUTED).stroke(BORDER)` sibling of the
+//! body.
 
 use std::panic::Location;
 
