@@ -89,22 +89,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         in.params.x,
         in.params.x > 0.0,
     );
-    let inner_r = max(outer_r - thickness, 0.0);
+    let half_thickness = thickness * 0.5;
+    // Centerline of the ring; the SDF treats the arc as a capsule
+    // (tube of radius `half_thickness`) along this circular curve, so
+    // the ends round naturally instead of cutting sharply at the
+    // angular boundary.
+    let center_r = max(outer_r - half_thickness, 0.0);
 
     let local = in.pos_px - in.inner_center;
     let dist = length(local);
-    let aa = max(fwidth(dist), 0.5);
-
-    // Ring coverage — 1 inside [inner_r, outer_r], smoothed at the
-    // boundaries.
-    let outer = 1.0 - smoothstep(outer_r - aa, outer_r + aa, dist);
-    let inner = smoothstep(inner_r - aa, inner_r + aa, dist);
-    let ring = outer * inner;
-    if (ring <= 0.0) {
-        return vec4<f32>(0.0);
-    }
-
-    // 12 o'clock = 0, increasing clockwise (theta in [-PI, PI]).
     let theta = atan2(local.x, -local.y);
 
     let max_sweep = select(DEFAULT_MAX_SWEEP, in.params.y, in.params.y > 0.0);
@@ -118,30 +111,45 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let start_angle = frame.time * head_rate;
     let signed_span = max_sweep * cos(frame.time * pulse_rate);
     let end_angle = start_angle + signed_span;
-
-    // Reduce the arc to "midpoint plus half-extent" so the inside/
-    // outside test is a single shortest-angular-distance check.
     let midpoint = (start_angle + end_angle) * 0.5;
     let half_extent = abs(signed_span) * 0.5;
 
-    // Wrap (theta - midpoint) into [-PI, PI] without trig — the
-    // shortest signed angle from midpoint to this fragment's theta.
+    // Shortest signed angle from midpoint to this fragment's theta,
+    // wrapped into [-PI, PI] without a trig call.
     let raw = theta - midpoint;
     let wrapped = raw - TAU * floor((raw + PI) / TAU);
-    let arc_dist = abs(wrapped);
+    let abs_delta = abs(wrapped);
 
-    // Antialiasing band, expressed in radians at the centerline radius.
-    let center_r = max((outer_r + inner_r) * 0.5, 1.0);
-    let aa_rad = max(aa / center_r, 0.001);
-    let arc_alpha = 1.0 - smoothstep(half_extent - aa_rad, half_extent + aa_rad, arc_dist);
+    // Capsule SDF for the swept arc. Inside the angular band, the
+    // closest centerline point is on the ring at the same angle as
+    // the fragment. Past either end, the closest centerline point is
+    // the nearer endpoint — `length(local - cap_pos)` then becomes
+    // the distance to that endpoint, and subtracting half_thickness
+    // gives the rounded cap.
+    var arc_sdf: f32;
+    if (abs_delta <= half_extent) {
+        arc_sdf = abs(dist - center_r) - half_thickness;
+    } else {
+        let cap_angle = midpoint + sign(wrapped) * half_extent;
+        let cap_pos = vec2<f32>(center_r * sin(cap_angle), -center_r * cos(cap_angle));
+        arc_sdf = length(local - cap_pos) - half_thickness;
+    }
+
+    let aa = max(fwidth(arc_sdf), 0.5);
+    let arc_alpha = 1.0 - smoothstep(0.0, aa, arc_sdf);
+
+    // Track: full ring at the same centerline radius, same thickness.
+    // Caps wrap around naturally because there's no angular gap.
+    let track_sdf = abs(dist - center_r) - half_thickness;
+    let track_alpha = 1.0 - smoothstep(0.0, aa, track_sdf);
 
     // "src over dst" composite with arc as the foreground layer.
     // Doing it in non-premultiplied space keeps the framebuffer blend
     // (which expects straight alpha) honest when the track is fully
     // transparent — `mix(track.rgb, arc.rgb, arc_alpha)` would otherwise
     // pull arc edges toward black.
-    let track_a = in.track_color.a * ring;
-    let arc_a = in.arc_color.a * ring * arc_alpha;
+    let track_a = in.track_color.a * track_alpha;
+    let arc_a = in.arc_color.a * arc_alpha;
     let out_a = arc_a + track_a * (1.0 - arc_a);
     if (out_a <= 1e-4) {
         return vec4<f32>(0.0);
