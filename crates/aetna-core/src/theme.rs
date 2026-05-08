@@ -17,7 +17,7 @@ use crate::metrics::{ComponentSize, Density, ThemeMetrics};
 use crate::palette::Palette;
 use crate::shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
 use crate::tokens;
-use crate::tree::{Color, SurfaceRole};
+use crate::tree::{Color, FontFamily, SurfaceRole};
 use crate::vector::IconMaterial;
 
 /// Runtime paint theme for implicit widget visuals.
@@ -28,6 +28,7 @@ pub struct Theme {
     surface: SurfaceTheme,
     roles: BTreeMap<SurfaceRole, SurfaceTheme>,
     icon_material: IconMaterial,
+    font_family: FontFamily,
 }
 
 impl Theme {
@@ -60,6 +61,18 @@ impl Theme {
     /// The active layout metrics used to resolve stock widget defaults.
     pub fn metrics(&self) -> &ThemeMetrics {
         &self.metrics
+    }
+
+    /// The default proportional UI font family applied to text nodes
+    /// that do not set `.font_family(...)` themselves.
+    pub fn font_family(&self) -> FontFamily {
+        self.font_family
+    }
+
+    /// Set the default proportional UI font family.
+    pub fn with_font_family(mut self, family: FontFamily) -> Self {
+        self.font_family = family;
+        self
     }
 
     /// Replace the runtime layout metrics.
@@ -175,6 +188,7 @@ impl Theme {
 
     pub(crate) fn apply_metrics(&self, root: &mut crate::El) {
         self.metrics.apply_to_tree(root);
+        apply_font_family(root, self.font_family);
     }
 
     /// Shorthand for `self.palette().resolve(c)`. Library code that
@@ -279,6 +293,7 @@ impl Default for Theme {
             },
             roles: BTreeMap::new(),
             icon_material: IconMaterial::Flat,
+            font_family: FontFamily::default(),
         }
     }
 }
@@ -367,6 +382,15 @@ fn apply_role_material(role: SurfaceRole, uniforms: &mut UniformBlock, palette: 
     }
 }
 
+fn apply_font_family(node: &mut crate::El, family: FontFamily) {
+    if !node.explicit_font_family {
+        node.font_family = family;
+    }
+    for child in &mut node.children {
+        apply_font_family(child, family);
+    }
+}
+
 fn default_color(uniforms: &mut UniformBlock, key: &'static str, color: Color) {
     uniforms.entry(key).or_insert(UniformValue::Color(color));
 }
@@ -393,10 +417,32 @@ fn as_f32(value: Option<&UniformValue>) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tree::column;
+    use crate::widgets::text::text;
 
     #[test]
     fn theme_can_route_icon_material() {
         let theme = Theme::default().with_icon_material(IconMaterial::Relief);
         assert_eq!(theme.icon_material(), IconMaterial::Relief);
+    }
+
+    #[test]
+    fn theme_font_family_applies_to_unset_text_nodes() {
+        let mut root = column([text("Themed")]);
+        Theme::default()
+            .with_font_family(FontFamily::Inter)
+            .apply_metrics(&mut root);
+
+        assert_eq!(root.children[0].font_family, FontFamily::Inter);
+    }
+
+    #[test]
+    fn explicit_font_family_survives_theme_default() {
+        let mut root = column([text("Pinned").roboto()]);
+        Theme::default()
+            .with_font_family(FontFamily::Inter)
+            .apply_metrics(&mut root);
+
+        assert_eq!(root.children[0].font_family, FontFamily::Roboto);
     }
 }

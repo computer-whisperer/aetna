@@ -3,12 +3,12 @@
 //! The production wgpu path uses [`crate::text::atlas::GlyphAtlas`] for
 //! shaping + rasterization; layout, lint, SVG artifacts, and draw-op IR
 //! all share this core layout artifact for measurement. Proportional
-//! text is shaped through `cosmic-text` using bundled Roboto; the older
+//! text is shaped through `cosmic-text` using bundled UI fonts; the older
 //! TTF-advance path remains as a fallback and for monospace until Aetna
 //! has a bundled mono font.
 
 use crate::tokens;
-use crate::tree::{FontWeight, TextWrap};
+use crate::tree::{FontFamily, FontWeight, TextWrap};
 use cosmic_text::{
     Attrs, Buffer, Cursor, Family, FontSystem, Metrics, Shaping, Weight, Wrap, fontdb,
 };
@@ -72,6 +72,7 @@ pub struct MeasuredText {
 pub struct TextGeometry<'a> {
     text: &'a str,
     size: f32,
+    family: FontFamily,
     weight: FontWeight,
     mono: bool,
     wrap: TextWrap,
@@ -88,10 +89,32 @@ impl<'a> TextGeometry<'a> {
         wrap: TextWrap,
         available_width: Option<f32>,
     ) -> Self {
-        let layout = layout_text(text, size, weight, mono, wrap, available_width);
+        Self::new_with_family(
+            text,
+            size,
+            FontFamily::default(),
+            weight,
+            mono,
+            wrap,
+            available_width,
+        )
+    }
+
+    pub fn new_with_family(
+        text: &'a str,
+        size: f32,
+        family: FontFamily,
+        weight: FontWeight,
+        mono: bool,
+        wrap: TextWrap,
+        available_width: Option<f32>,
+    ) -> Self {
+        let layout =
+            layout_text_with_family(text, size, family, weight, mono, wrap, available_width);
         Self {
             text,
             size,
+            family,
             weight,
             mono,
             wrap,
@@ -125,9 +148,10 @@ impl<'a> TextGeometry<'a> {
     }
 
     pub fn hit(&self, x: f32, y: f32) -> Option<TextHit> {
-        hit_text(
+        hit_text_with_family(
             self.text,
             self.size,
+            self.family,
             self.weight,
             self.wrap,
             self.available_width,
@@ -146,10 +170,11 @@ impl<'a> TextGeometry<'a> {
     }
 
     pub fn caret_xy(&self, byte_index: usize) -> (f32, f32) {
-        caret_xy(
+        caret_xy_with_family(
             self.text,
             byte_index,
             self.size,
+            self.family,
             self.weight,
             self.wrap,
             self.available_width,
@@ -164,11 +189,12 @@ impl<'a> TextGeometry<'a> {
     }
 
     pub fn selection_rects(&self, lo: usize, hi: usize) -> Vec<(f32, f32, f32, f32)> {
-        selection_rects(
+        selection_rects_with_family(
             self.text,
             lo,
             hi,
             self.size,
+            self.family,
             self.weight,
             self.wrap,
             self.available_width,
@@ -204,10 +230,32 @@ pub fn layout_text(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> TextLayout {
-    layout_text_with_line_height(
+    layout_text_with_family(
+        text,
+        size,
+        FontFamily::default(),
+        weight,
+        mono,
+        wrap,
+        available_width,
+    )
+}
+
+/// Lay out text with an explicit proportional UI font family.
+pub fn layout_text_with_family(
+    text: &str,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    mono: bool,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> TextLayout {
+    layout_text_with_line_height_and_family(
         text,
         size,
         line_height(size),
+        family,
         weight,
         mono,
         wrap,
@@ -228,18 +276,50 @@ pub fn layout_text_with_line_height(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> TextLayout {
+    layout_text_with_line_height_and_family(
+        text,
+        size,
+        line_height,
+        FontFamily::default(),
+        weight,
+        mono,
+        wrap,
+        available_width,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn layout_text_with_line_height_and_family(
+    text: &str,
+    size: f32,
+    line_height: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    mono: bool,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> TextLayout {
     if !mono
-        && let Some(layout) =
-            layout_text_cosmic(text, size, line_height, weight, wrap, available_width)
+        && let Some(layout) = layout_text_cosmic(
+            text,
+            size,
+            line_height,
+            family,
+            weight,
+            wrap,
+            available_width,
+        )
     {
         return layout;
     }
 
     let raw_lines = match (wrap, available_width) {
-        (TextWrap::Wrap, Some(width)) => wrap_lines_by_width(text, width, size, weight, mono),
+        (TextWrap::Wrap, Some(width)) => {
+            wrap_lines_by_width(text, width, size, family, weight, mono)
+        }
         _ => text.split('\n').map(str::to_string).collect(),
     };
-    build_layout(raw_lines, size, line_height, weight, mono)
+    build_layout(raw_lines, size, line_height, family, weight, mono)
 }
 
 /// Return a single-line string that fits within `available_width`,
@@ -251,16 +331,35 @@ pub fn ellipsize_text(
     mono: bool,
     available_width: f32,
 ) -> String {
+    ellipsize_text_with_family(
+        text,
+        size,
+        FontFamily::default(),
+        weight,
+        mono,
+        available_width,
+    )
+}
+
+pub fn ellipsize_text_with_family(
+    text: &str,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    mono: bool,
+    available_width: f32,
+) -> String {
     if available_width <= 0.0 || text.is_empty() {
         return String::new();
     }
-    let full = layout_text(text, size, weight, mono, TextWrap::NoWrap, None);
+    let full = layout_text_with_family(text, size, family, weight, mono, TextWrap::NoWrap, None);
     if full.width <= available_width + 0.5 {
         return text.to_string();
     }
 
     let ellipsis = "…";
-    let ellipsis_w = layout_text(ellipsis, size, weight, mono, TextWrap::NoWrap, None).width;
+    let ellipsis_w =
+        layout_text_with_family(ellipsis, size, family, weight, mono, TextWrap::NoWrap, None).width;
     if ellipsis_w > available_width + 0.5 {
         return ellipsis.to_string();
     }
@@ -272,7 +371,16 @@ pub fn ellipsize_text(
         let mid = (lo + hi).div_ceil(2);
         let candidate: String = chars[..mid].iter().collect();
         let candidate = format!("{candidate}{ellipsis}");
-        let width = layout_text(&candidate, size, weight, mono, TextWrap::NoWrap, None).width;
+        let width = layout_text_with_family(
+            &candidate,
+            size,
+            family,
+            weight,
+            mono,
+            TextWrap::NoWrap,
+            None,
+        )
+        .width;
         if width <= available_width + 0.5 {
             lo = mid;
         } else {
@@ -294,13 +402,34 @@ pub fn clamp_text_to_lines(
     available_width: f32,
     max_lines: usize,
 ) -> String {
+    clamp_text_to_lines_with_family(
+        text,
+        size,
+        FontFamily::default(),
+        weight,
+        mono,
+        available_width,
+        max_lines,
+    )
+}
+
+pub fn clamp_text_to_lines_with_family(
+    text: &str,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    mono: bool,
+    available_width: f32,
+    max_lines: usize,
+) -> String {
     if text.is_empty() || available_width <= 0.0 || max_lines == 0 {
         return String::new();
     }
 
-    let layout = layout_text(
+    let layout = layout_text_with_family(
         text,
         size,
+        family,
         weight,
         mono,
         TextWrap::Wrap,
@@ -318,7 +447,7 @@ pub fn clamp_text_to_lines(
         .collect();
     if let Some(last) = lines.last_mut() {
         let marked = format!("{last}…");
-        *last = ellipsize_text(&marked, size, weight, mono, available_width);
+        *last = ellipsize_text_with_family(&marked, size, family, weight, mono, available_width);
     }
     lines.join("\n")
 }
@@ -357,6 +486,29 @@ pub fn hit_text(
     x: f32,
     y: f32,
 ) -> Option<TextHit> {
+    hit_text_with_family(
+        text,
+        size,
+        FontFamily::default(),
+        weight,
+        wrap,
+        available_width,
+        x,
+        y,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn hit_text_with_family(
+    text: &str,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+    x: f32,
+    y: f32,
+) -> Option<TextHit> {
     FONT_SYSTEM.with_borrow_mut(|font_system| {
         let line_height = line_height(size);
         let mut buffer = Buffer::new(font_system, Metrics::new(size, line_height));
@@ -372,7 +524,7 @@ pub fn hit_text(
             None,
         );
         let attrs = Attrs::new()
-            .family(Family::Name("Roboto"))
+            .family(Family::Name(family.family_name()))
             .weight(cosmic_weight(weight));
         buffer.set_text(text, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(font_system, false);
@@ -403,10 +555,38 @@ pub fn caret_xy(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> (f32, f32) {
+    caret_xy_with_family(
+        text,
+        byte_index,
+        size,
+        FontFamily::default(),
+        weight,
+        wrap,
+        available_width,
+    )
+}
+
+pub fn caret_xy_with_family(
+    text: &str,
+    byte_index: usize,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> (f32, f32) {
     let (target_line, byte_in_line) = byte_to_line_position(text, byte_index);
     FONT_SYSTEM.with_borrow_mut(|font_system| {
         let line_h = line_height(size);
-        let buffer = build_buffer(font_system, text, size, weight, wrap, available_width);
+        let buffer = build_buffer(
+            font_system,
+            text,
+            size,
+            family,
+            weight,
+            wrap,
+            available_width,
+        );
         let cursor = Cursor::new(target_line, byte_in_line);
         // cosmic-text's Buffer::cursor_position handles the past-end case
         // (caret after the last glyph on a line) which highlight() omits
@@ -436,13 +616,44 @@ pub fn selection_rects(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> Vec<(f32, f32, f32, f32)> {
+    selection_rects_with_family(
+        text,
+        lo,
+        hi,
+        size,
+        FontFamily::default(),
+        weight,
+        wrap,
+        available_width,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn selection_rects_with_family(
+    text: &str,
+    lo: usize,
+    hi: usize,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> Vec<(f32, f32, f32, f32)> {
     if lo >= hi {
         return Vec::new();
     }
     let (lo_line, lo_in_line) = byte_to_line_position(text, lo);
     let (hi_line, hi_in_line) = byte_to_line_position(text, hi);
     FONT_SYSTEM.with_borrow_mut(|font_system| {
-        let buffer = build_buffer(font_system, text, size, weight, wrap, available_width);
+        let buffer = build_buffer(
+            font_system,
+            text,
+            size,
+            family,
+            weight,
+            wrap,
+            available_width,
+        );
         let c_lo = Cursor::new(lo_line, lo_in_line);
         let c_hi = Cursor::new(hi_line, hi_in_line);
         let mut rects = Vec::new();
@@ -507,6 +718,7 @@ fn build_buffer(
     font_system: &mut FontSystem,
     text: &str,
     size: f32,
+    family: FontFamily,
     weight: FontWeight,
     wrap: TextWrap,
     available_width: Option<f32>,
@@ -525,7 +737,7 @@ fn build_buffer(
         None,
     );
     let attrs = Attrs::new()
-        .family(Family::Name("Roboto"))
+        .family(Family::Name(family.family_name()))
         .weight(cosmic_weight(weight));
     buffer.set_text(text, &attrs, Shaping::Advanced, None);
     buffer.shape_until_scroll(font_system, false);
@@ -542,11 +754,23 @@ pub fn wrap_lines(
     weight: FontWeight,
     mono: bool,
 ) -> Vec<String> {
+    wrap_lines_with_family(text, max_width, size, FontFamily::default(), weight, mono)
+}
+
+pub fn wrap_lines_with_family(
+    text: &str,
+    max_width: f32,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    mono: bool,
+) -> Vec<String> {
     if !mono
         && let Some(layout) = layout_text_cosmic(
             text,
             size,
             line_height(size),
+            family,
             weight,
             TextWrap::Wrap,
             Some(max_width),
@@ -554,13 +778,14 @@ pub fn wrap_lines(
     {
         return layout.lines.into_iter().map(|line| line.text).collect();
     }
-    wrap_lines_by_width(text, max_width, size, weight, mono)
+    wrap_lines_by_width(text, max_width, size, family, weight, mono)
 }
 
 fn wrap_lines_by_width(
     text: &str,
     max_width: f32,
     size: f32,
+    family: FontFamily,
     weight: FontWeight,
     mono: bool,
 ) -> Vec<String> {
@@ -578,16 +803,20 @@ fn wrap_lines_by_width(
         let mut line = String::new();
         for word in paragraph.split_whitespace() {
             if line.is_empty() {
-                push_word_wrapped(&mut out, &mut line, word, max_width, size, weight, mono);
+                push_word_wrapped(
+                    &mut out, &mut line, word, max_width, size, family, weight, mono,
+                );
                 continue;
             }
 
             let candidate = format!("{line} {word}");
-            if line_width(&candidate, size, weight, mono) <= max_width {
+            if line_width_with_family(&candidate, size, family, weight, mono) <= max_width {
                 line = candidate;
             } else {
                 out.push(std::mem::take(&mut line));
-                push_word_wrapped(&mut out, &mut line, word, max_width, size, weight, mono);
+                push_word_wrapped(
+                    &mut out, &mut line, word, max_width, size, family, weight, mono,
+                );
             }
         }
 
@@ -605,11 +834,22 @@ fn wrap_lines_by_width(
 /// Measure one single-line string. Newline characters are ignored; use
 /// [`measure_text`] for multi-line text.
 pub fn line_width(text: &str, size: f32, weight: FontWeight, mono: bool) -> f32 {
+    line_width_with_family(text, size, FontFamily::default(), weight, mono)
+}
+
+pub fn line_width_with_family(
+    text: &str,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    mono: bool,
+) -> f32 {
     if !mono
         && let Some(layout) = layout_text_cosmic(
             text,
             size,
             line_height(size),
+            family,
             weight,
             TextWrap::NoWrap,
             None,
@@ -617,10 +857,16 @@ pub fn line_width(text: &str, size: f32, weight: FontWeight, mono: bool) -> f32 
     {
         return layout.width;
     }
-    line_width_by_ttf(text, size, weight, mono)
+    line_width_by_ttf(text, size, family, weight, mono)
 }
 
-fn line_width_by_ttf(text: &str, size: f32, weight: FontWeight, mono: bool) -> f32 {
+fn line_width_by_ttf(
+    text: &str,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    mono: bool,
+) -> f32 {
     if mono {
         return text
             .chars()
@@ -631,7 +877,7 @@ fn line_width_by_ttf(text: &str, size: f32, weight: FontWeight, mono: bool) -> f
             * MONO_CHAR_WIDTH_FACTOR;
     }
 
-    let Ok(face) = ttf_parser::Face::parse(font_bytes(weight), 0) else {
+    let Ok(face) = ttf_parser::Face::parse(font_bytes(family, weight), 0) else {
         return fallback_line_width(text, size, mono);
     };
     let scale = size / face.units_per_em() as f32;
@@ -644,7 +890,7 @@ fn line_width_by_ttf(text: &str, size: f32, weight: FontWeight, mono: bool) -> f
             continue;
         }
         if c == '\t' {
-            width += line_width("    ", size, weight, mono);
+            width += line_width_with_family("    ", size, family, weight, mono);
             prev = None;
             continue;
         }
@@ -677,6 +923,7 @@ fn build_layout(
     lines: Vec<String>,
     size: f32,
     line_height: f32,
+    family: FontFamily,
     weight: FontWeight,
     mono: bool,
 ) -> TextLayout {
@@ -691,7 +938,7 @@ fn build_layout(
         .map(|(i, text)| {
             let y = i as f32 * line_height;
             TextLine {
-                width: line_width(&text, size, weight, mono),
+                width: line_width_with_family(&text, size, family, weight, mono),
                 text,
                 y,
                 baseline: y + size * BASELINE_MULTIPLIER,
@@ -712,6 +959,7 @@ fn layout_text_cosmic(
     text: &str,
     size: f32,
     line_height: f32,
+    family: FontFamily,
     weight: FontWeight,
     wrap: TextWrap,
     available_width: Option<f32>,
@@ -722,6 +970,7 @@ fn layout_text_cosmic(
             text,
             size,
             line_height,
+            family,
             weight,
             wrap,
             available_width,
@@ -734,6 +983,7 @@ fn layout_text_cosmic_with(
     text: &str,
     size: f32,
     line_height: f32,
+    family: FontFamily,
     weight: FontWeight,
     wrap: TextWrap,
     available_width: Option<f32>,
@@ -751,7 +1001,7 @@ fn layout_text_cosmic_with(
         None,
     );
     let attrs = Attrs::new()
-        .family(Family::Name("Roboto"))
+        .family(Family::Name(family.family_name()))
         .weight(cosmic_weight(weight));
     buffer.set_text(text, &attrs, Shaping::Advanced, None);
     buffer.shape_until_scroll(font_system, false);
@@ -782,18 +1032,18 @@ fn layout_text_cosmic_with(
     })
 }
 
-// `FontSystem` construction loads three full Roboto faces (~450KB total)
-// and builds a fontdb. Doing it per text-shape call burned ~22ms in the
-// layout pass on the wasm showcase — basically all of it. Cache once
-// per thread; cosmic-text's internal shape cache also accumulates across
-// calls now, which is the side benefit.
+// `FontSystem` construction loads the bundled UI faces and builds a
+// fontdb. Doing it per text-shape call burned ~22ms in the layout pass
+// on the wasm showcase — basically all of it. Cache once per thread;
+// cosmic-text's internal shape cache also accumulates across calls now,
+// which is the side benefit.
 thread_local! {
-    static FONT_SYSTEM: RefCell<FontSystem> = RefCell::new(roboto_font_system());
+    static FONT_SYSTEM: RefCell<FontSystem> = RefCell::new(bundled_font_system());
 }
 
-fn roboto_font_system() -> FontSystem {
+fn bundled_font_system() -> FontSystem {
     let mut db = fontdb::Database::new();
-    db.set_sans_serif_family("Roboto");
+    db.set_sans_serif_family(FontFamily::default().family_name());
     for bytes in aetna_fonts::DEFAULT_FONTS {
         db.load_font_data(bytes.to_vec());
     }
@@ -832,17 +1082,20 @@ fn push_word_wrapped(
     word: &str,
     max_width: f32,
     size: f32,
+    family: FontFamily,
     weight: FontWeight,
     mono: bool,
 ) {
-    if line_width(word, size, weight, mono) <= max_width {
+    if line_width_with_family(word, size, family, weight, mono) <= max_width {
         line.push_str(word);
         return;
     }
 
     for ch in word.chars() {
         let candidate = format!("{line}{ch}");
-        if !line.is_empty() && line_width(&candidate, size, weight, mono) > max_width {
+        if !line.is_empty()
+            && line_width_with_family(&candidate, size, family, weight, mono) > max_width
+        {
             out.push(std::mem::take(line));
         }
         line.push(ch);
@@ -868,26 +1121,38 @@ fn kern(face: &ttf_parser::Face<'_>, left: ttf_parser::GlyphId, right: ttf_parse
         .unwrap_or(0.0)
 }
 
-fn font_bytes(weight: FontWeight) -> &'static [u8] {
+fn font_bytes(family: FontFamily, weight: FontWeight) -> &'static [u8] {
     // ttf-parser fallback path (used only when cosmic-text is bypassed
     // for monospace measurement, etc.). Sourced from aetna-fonts so we
     // share one bundle with the cosmic-text path.
-    #[cfg(feature = "roboto")]
-    {
-        match weight {
-            FontWeight::Regular => aetna_fonts::ROBOTO_REGULAR,
-            FontWeight::Medium => aetna_fonts::ROBOTO_MEDIUM,
-            FontWeight::Semibold | FontWeight::Bold => aetna_fonts::ROBOTO_BOLD,
+    match family {
+        FontFamily::Inter => {
+            #[cfg(feature = "inter")]
+            {
+                let _ = weight;
+                aetna_fonts::INTER_VARIABLE
+            }
+            #[cfg(not(feature = "inter"))]
+            {
+                let _ = weight;
+                &[]
+            }
         }
-    }
-    #[cfg(not(feature = "roboto"))]
-    {
-        let _ = weight;
-        // No bundled face — caller must use the fallback width
-        // estimator below. Returning an empty slice keeps the type
-        // signature identical; any reader that touches it with an
-        // empty slice falls through to the heuristic.
-        &[]
+        FontFamily::Roboto => {
+            #[cfg(feature = "roboto")]
+            {
+                match weight {
+                    FontWeight::Regular => aetna_fonts::ROBOTO_REGULAR,
+                    FontWeight::Medium => aetna_fonts::ROBOTO_MEDIUM,
+                    FontWeight::Semibold | FontWeight::Bold => aetna_fonts::ROBOTO_BOLD,
+                }
+            }
+            #[cfg(not(feature = "roboto"))]
+            {
+                let _ = weight;
+                &[]
+            }
+        }
     }
 }
 
@@ -906,6 +1171,29 @@ mod tests {
         let wide = line_width("WWWWWW", 16.0, FontWeight::Regular, false);
 
         assert!(wide > narrow * 2.0, "wide={wide} narrow={narrow}");
+    }
+
+    #[test]
+    fn font_family_changes_proportional_measurement() {
+        let roboto = line_width_with_family(
+            "Save changes",
+            14.0,
+            FontFamily::Roboto,
+            FontWeight::Semibold,
+            false,
+        );
+        let inter = line_width_with_family(
+            "Save changes",
+            14.0,
+            FontFamily::Inter,
+            FontWeight::Semibold,
+            false,
+        );
+
+        assert!(
+            (inter - roboto).abs() > 1.0,
+            "inter={inter} roboto={roboto}"
+        );
     }
 
     #[test]

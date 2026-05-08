@@ -6,11 +6,11 @@ rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Bundled font assets for Aetna (Roboto + Noto fallback faces)"
+description = "Bundled font assets for Aetna (Inter, Roboto, and Noto fallback faces)"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 documentation = "https://docs.rs/aetna-fonts"
-keywords = ["fonts", "ui", "noto", "roboto", "typography"]
+keywords = ["fonts", "ui", "inter", "noto", "typography"]
 categories = ["gui"]
 include = [
     "src/**/*.rs",
@@ -29,7 +29,8 @@ path = "src/lib.rs"
 # matching font family — split out so each published `.crate`
 # artifact stays under crates.io's per-crate upload size limit.
 default = ["default_fonts"]
-default_fonts = ["roboto", "emoji", "symbols"]
+default_fonts = ["inter", "roboto", "emoji", "symbols"]
+inter = ["dep:aetna-fonts-inter"]
 roboto = ["dep:aetna-fonts-roboto"]
 # NotoColorEmoji (CBDT bitmaps). Requires aetna-core's atlas RGBA path
 # (introduced alongside this feature) to render in color rather than as
@@ -38,6 +39,7 @@ emoji = ["dep:aetna-fonts-emoji"]
 symbols = ["dep:aetna-fonts-symbols"]
 
 [dependencies]
+aetna-fonts-inter = { version = "0.1.0", path = "../aetna-fonts-inter", optional = true }
 aetna-fonts-roboto = { version = "0.1.0", path = "../aetna-fonts-roboto", optional = true }
 aetna-fonts-emoji = { version = "0.1.0", path = "../aetna-fonts-emoji", optional = true }
 aetna-fonts-symbols = { version = "0.1.0", path = "../aetna-fonts-symbols", optional = true }

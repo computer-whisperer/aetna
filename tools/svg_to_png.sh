@@ -9,6 +9,8 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+export FONTCONFIG_FILE="$PWD/tools/aetna-fontconfig.conf"
+
 picker() {
     # Prefer rsvg-convert: more lenient with the SVG dialect we emit.
     # Fall back to resvg.

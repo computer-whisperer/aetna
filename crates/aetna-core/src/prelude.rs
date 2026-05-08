@@ -36,16 +36,18 @@ pub use crate::state::{AnimationMode, WidgetState};
 pub use crate::style::StyleProfile;
 pub use crate::svg_icon::{IconSource, IntoIconSource, SvgIcon};
 pub use crate::text::metrics::{
-    MeasuredText, TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text, line_height,
-    line_width, measure_text, selection_rects, wrap_lines,
+    MeasuredText, TextHit, TextLayout, TextLine, caret_xy, caret_xy_with_family, hit_text,
+    hit_text_with_family, layout_text, layout_text_with_family,
+    layout_text_with_line_height_and_family, line_height, line_width, line_width_with_family,
+    measure_text, selection_rects, selection_rects_with_family, wrap_lines, wrap_lines_with_family,
 };
 pub use crate::theme::Theme;
 pub use crate::toast::{Toast, ToastLevel, ToastSpec};
 pub use crate::tokens;
 pub use crate::tree::{
-    Align, Axis, Color, El, FontWeight, IconName, InteractionState, Justify, Kind, Rect, Sides,
-    Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column, divider,
-    hard_break, image, row, scroll, spacer, stack, text_runs, virtual_list,
+    Align, Axis, Color, El, FontFamily, FontWeight, IconName, InteractionState, Justify, Kind,
+    Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column,
+    divider, hard_break, image, row, scroll, spacer, stack, text_runs, virtual_list,
 };
 pub use crate::vector::IconMaterial;
 pub use crate::widgets::badge::badge;

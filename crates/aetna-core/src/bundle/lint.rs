@@ -59,6 +59,7 @@ pub enum FindingKind {
     TextOverflow,
     DuplicateId,
     Alignment,
+    Spacing,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -218,6 +219,7 @@ fn walk(
     if let Some(blame) = self_blame {
         lint_row_alignment(n, computed, ui_state, r, blame);
         lint_overlay_alignment(n, computed, ui_state, r, blame);
+        lint_row_visual_text_spacing(n, ui_state, r, blame);
     }
 
     // Text overflow: detect at the node itself (with the node's own
@@ -403,6 +405,37 @@ fn lint_overlay_alignment(
     }
 }
 
+fn lint_row_visual_text_spacing(n: &El, ui_state: &UiState, r: &mut LintReport, blame: Source) {
+    if !matches!(n.axis, Axis::Row) || n.children.len() < 2 {
+        return;
+    }
+
+    for pair in n.children.windows(2) {
+        let [visual, text] = pair else {
+            continue;
+        };
+        if !is_visual_cluster_child(visual) || !is_text_like_child(text) {
+            continue;
+        }
+
+        let visual_rect = ui_state.rect(&visual.computed_id);
+        let text_rect = ui_state.rect(&text.computed_id);
+        let gap = text_rect.x - visual_rect.right();
+        if gap < 4.0 {
+            r.findings.push(Finding {
+                kind: FindingKind::Spacing,
+                node_id: n.computed_id.clone(),
+                source: blame,
+                message: format!(
+                    "row places text {:.0}px after an icon/control slot; add .gap(tokens::SPACE_2) or use a stock menu/list row",
+                    gap.max(0.0)
+                ),
+            });
+            return;
+        }
+    }
+}
+
 fn is_text_like_child(c: &El) -> bool {
     c.text.is_some()
         || c.children
@@ -432,6 +465,18 @@ fn is_fixed_visual_child(c: &El) -> bool {
                         | MetricsRole::Progress
                 )
             ))
+}
+
+fn is_visual_cluster_child(c: &El) -> bool {
+    let fixed_box = matches!(c.width, Size::Fixed(_)) && matches!(c.height, Size::Fixed(_));
+    fixed_box
+        && (c.icon.is_some()
+            || matches!(c.kind, Kind::Badge)
+            || matches!(
+                c.metrics_role,
+                Some(MetricsRole::IconButton | MetricsRole::Badge | MetricsRole::ChoiceControl)
+            )
+            || (has_visible_surface(c) && c.children.iter().any(is_fixed_visual_child)))
 }
 
 fn rect_contains(parent: Rect, child: Rect, tol: f32) -> bool {
@@ -563,6 +608,56 @@ mod tests {
                 .findings
                 .iter()
                 .any(|finding| finding.kind == FindingKind::Alignment),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn row_with_icon_slot_touching_text_reports_spacing() {
+        let icon_slot = crate::stack([crate::icon("settings").icon_size(crate::tokens::ICON_XS)])
+            .align(Align::Center)
+            .justify(Justify::Center)
+            .fill(crate::tokens::BG_MUTED)
+            .width(Size::Fixed(26.0))
+            .height(Size::Fixed(26.0));
+        let root = crate::row([icon_slot, crate::text("Settings").width(Size::Fill(1.0))])
+            .height(Size::Fixed(32.0))
+            .align(Align::Center);
+
+        let report = lint_one(root);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::Spacing
+                    && finding.message.contains(".gap(tokens::SPACE_2)")),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn row_with_icon_slot_and_text_gap_satisfies_spacing_policy() {
+        let icon_slot = crate::stack([crate::icon("settings").icon_size(crate::tokens::ICON_XS)])
+            .align(Align::Center)
+            .justify(Justify::Center)
+            .fill(crate::tokens::BG_MUTED)
+            .width(Size::Fixed(26.0))
+            .height(Size::Fixed(26.0));
+        let root = crate::row([icon_slot, crate::text("Settings").width(Size::Fill(1.0))])
+            .height(Size::Fixed(32.0))
+            .align(Align::Center)
+            .gap(crate::tokens::SPACE_2);
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::Spacing),
             "{}",
             report.text()
         );

@@ -21,7 +21,7 @@ use crate::shader::{ShaderHandle, UniformBlock};
 use crate::svg_icon::IconSource;
 use crate::text::atlas::RunStyle;
 use crate::text::metrics::TextLayout;
-use crate::tree::{Color, FontWeight, Rect, TextWrap};
+use crate::tree::{Color, FontFamily, FontWeight, Rect, TextWrap};
 
 /// One paint operation in the laid-out frame.
 #[derive(Clone, Debug)]
@@ -48,6 +48,7 @@ pub enum DrawOp {
         text: String,
         size: f32,
         line_height: f32,
+        family: FontFamily,
         weight: FontWeight,
         mono: bool,
         wrap: TextWrap,

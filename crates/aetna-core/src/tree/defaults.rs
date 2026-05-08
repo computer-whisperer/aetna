@@ -10,7 +10,7 @@ use super::geometry::Sides;
 use super::layout_types::{Align, Axis, Justify, Size};
 use super::node::El;
 use super::semantics::{Kind, Source, SurfaceRole};
-use super::text_types::{FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
+use super::text_types::{FontFamily, FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
 
 impl Default for El {
     fn default() -> Self {
@@ -41,6 +41,7 @@ impl Default for El {
             explicit_padding: false,
             explicit_gap: false,
             explicit_radius: false,
+            explicit_font_family: false,
             fill: None,
             dim_fill: None,
             stroke: None,
@@ -68,6 +69,7 @@ impl Default for El {
             text_max_lines: None,
             font_size: crate::tokens::TEXT_SM.size,
             line_height: crate::tokens::TEXT_SM.line_height,
+            font_family: FontFamily::default(),
             font_weight: FontWeight::Regular,
             font_mono: false,
             text_italic: false,

@@ -960,6 +960,7 @@ impl RunnerCore {
                     text: glyph_text,
                     size,
                     line_height,
+                    family,
                     weight,
                     wrap,
                     anchor,
@@ -982,7 +983,8 @@ impl RunnerCore {
                     if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
                         continue;
                     }
-                    let mut style = crate::text::atlas::RunStyle::new(*weight, *color);
+                    let mut style =
+                        crate::text::atlas::RunStyle::new(*weight, *color).family(*family);
                     if *underline {
                         style = style.underline();
                     }

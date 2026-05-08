@@ -325,9 +325,10 @@ fn push_node(
             None => text.clone(),
         };
         let display = match (n.text_wrap, n.text_max_lines) {
-            (TextWrap::Wrap, Some(max_lines)) => text_metrics::clamp_text_to_lines(
+            (TextWrap::Wrap, Some(max_lines)) => text_metrics::clamp_text_to_lines_with_family(
                 &display,
                 painted_font_size,
+                n.font_family,
                 weight,
                 n.font_mono,
                 glyph_rect.w,
@@ -336,9 +337,10 @@ fn push_node(
             _ => display,
         };
         let display = match (n.text_wrap, n.text_overflow) {
-            (TextWrap::NoWrap, TextOverflow::Ellipsis) => text_metrics::ellipsize_text(
+            (TextWrap::NoWrap, TextOverflow::Ellipsis) => text_metrics::ellipsize_text_with_family(
                 &display,
                 painted_font_size,
+                n.font_family,
                 weight,
                 n.font_mono,
                 glyph_rect.w,
@@ -351,10 +353,11 @@ fn push_node(
             TextAlign::End => TextAnchor::End,
         };
         let text_color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
-        let layout = text_metrics::layout_text_with_line_height(
+        let layout = text_metrics::layout_text_with_line_height_and_family(
             &display,
             painted_font_size,
             n.line_height * n.scale,
+            n.font_family,
             weight,
             n.font_mono,
             n.text_wrap,
@@ -422,6 +425,7 @@ fn push_node(
             text: display,
             size: painted_font_size,
             line_height: n.line_height * n.scale,
+            family: n.font_family,
             weight,
             mono: n.font_mono,
             wrap: n.text_wrap,
@@ -492,10 +496,11 @@ fn push_node(
             TextAlign::Center => TextAnchor::Middle,
             TextAlign::End => TextAnchor::End,
         };
-        let layout = text_metrics::layout_text_with_line_height(
+        let layout = text_metrics::layout_text_with_line_height_and_family(
             &concat,
             inline_size,
             inline_line_height,
+            n.font_family,
             FontWeight::Regular,
             false,
             n.text_wrap,
@@ -610,7 +615,7 @@ fn collect_inline_runs(node: &El, opacity: f32) -> Vec<(String, RunStyle)> {
             Kind::Text => {
                 if let Some(text) = &c.text {
                     let color = opaque(c.text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
-                    let mut style = RunStyle::new(c.font_weight, color);
+                    let mut style = RunStyle::new(c.font_weight, color).family(c.font_family);
                     if c.text_italic {
                         style = style.italic();
                     }

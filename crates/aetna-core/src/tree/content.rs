@@ -5,7 +5,7 @@ use crate::image::{Image, ImageFit};
 use super::color::Color;
 use super::layout_types::Size;
 use super::node::El;
-use super::text_types::{FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
+use super::text_types::{FontFamily, FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
 
 impl El {
     // ---- Text-bearing ----
@@ -73,6 +73,20 @@ impl El {
     pub fn font_weight(mut self, w: FontWeight) -> Self {
         self.font_weight = w;
         self
+    }
+
+    pub fn font_family(mut self, family: FontFamily) -> Self {
+        self.font_family = family;
+        self.explicit_font_family = true;
+        self
+    }
+
+    pub fn inter(self) -> Self {
+        self.font_family(FontFamily::Inter)
+    }
+
+    pub fn roboto(self) -> Self {
+        self.font_family(FontFamily::Roboto)
     }
 
     /// Set the icon for this element to either a built-in [`crate::IconName`],

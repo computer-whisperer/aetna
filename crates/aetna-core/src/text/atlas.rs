@@ -60,7 +60,7 @@ use swash::scale::{Render, ScaleContext, Source as SwashSource, StrikeWith};
 
 use crate::ir::TextAnchor;
 use crate::text::metrics::{TextLayout, TextLine, line_height};
-use crate::tree::{Color, FontWeight, TextWrap};
+use crate::tree::{Color, FontFamily, FontWeight, TextWrap};
 
 /// Default page size. Picked so a typical fixture's glyphs fit on a
 /// single page; larger UIs allocate a second page on demand.
@@ -71,7 +71,7 @@ const PAGE_SIZE: u32 = 512;
 /// weight + italic flags through fontdb. cosmic-text falls back to
 /// other families in the database (e.g. Noto Sans Symbols 2) when this
 /// one lacks the requested codepoint.
-const DEFAULT_SANS_FAMILY: &str = "Roboto";
+const DEFAULT_SANS_FAMILY: &str = "Inter Variable";
 
 /// One shaped glyph carrying its atlas key, pen position, paint color,
 /// and the index of the run that produced it. Positions are in
@@ -161,6 +161,7 @@ pub struct DecorationRect {
 /// one cosmic-text buffer with rich attributes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunStyle {
+    pub family: FontFamily,
     pub weight: FontWeight,
     pub italic: bool,
     pub mono: bool,
@@ -185,6 +186,7 @@ pub struct RunStyle {
 impl RunStyle {
     pub fn new(weight: FontWeight, color: Color) -> Self {
         Self {
+            family: FontFamily::default(),
             weight,
             italic: false,
             mono: false,
@@ -201,6 +203,10 @@ impl RunStyle {
     }
     pub fn mono(mut self) -> Self {
         self.mono = true;
+        self
+    }
+    pub fn family(mut self, family: FontFamily) -> Self {
+        self.family = family;
         self
     }
     /// Set the inline-run background colour. Backends paint a solid
@@ -412,8 +418,8 @@ impl GlyphAtlas {
 
     /// Replace the default font-family stack used when shaping text.
     /// The first entry is the primary family name passed to cosmic-text.
-    /// Pass `["MyBrand", "Roboto"]` to make `MyBrand` the primary face
-    /// and treat Roboto as documentation of the expected fallback —
+    /// Pass `["MyBrand", "Inter Variable"]` to make `MyBrand` the primary face
+    /// and treat Inter as documentation of the expected fallback —
     /// cosmic-text's own fallback walks the full font database, so
     /// every registered font remains available regardless of order.
     pub fn set_default_family_stack(&mut self, stack: Vec<String>) {
@@ -423,7 +429,7 @@ impl GlyphAtlas {
     }
 
     /// The primary font family used when shaping, i.e. the first entry
-    /// of the family stack. Defaults to `"Roboto"`.
+    /// of the family stack. Defaults to `"Inter Variable"`.
     pub fn default_family(&self) -> &str {
         self.default_family_stack
             .first()
@@ -582,14 +588,23 @@ impl GlyphAtlas {
 
         // Clone to a local so the immutable borrow on self.default_family
         // doesn't conflict with the mutable font_system borrow below.
-        let primary_family = self.default_family().to_string();
+        let primary_family = runs
+            .iter()
+            .find(|(_, style)| !style.mono)
+            .map(|(_, style)| style.family.family_name().to_string())
+            .unwrap_or_else(|| self.default_family().to_string());
         let default_attrs = Attrs::new().family(Family::Name(&primary_family));
         // `style.mono` is preserved on RunStyle but doesn't yet route
         // to a different family — that arrives with the monospace
         // bundle slice.
         let spans = runs.iter().enumerate().map(|(i, (text, style))| {
+            let family = if style.mono {
+                primary_family.as_str()
+            } else {
+                style.family.family_name()
+            };
             let attrs = Attrs::new()
-                .family(Family::Name(&primary_family))
+                .family(Family::Name(family))
                 .weight(cosmic_weight(style.weight))
                 .style(if style.italic {
                     Style::Italic
@@ -622,7 +637,7 @@ impl GlyphAtlas {
         let mut decorations: Vec<DecorationRect> = Vec::new();
         let mut height: f32 = 0.0;
         let mut max_width: f32 = 0.0;
-        // Proportional metrics — close enough for Roboto and most
+        // Proportional metrics — close enough for Inter, Roboto, and most
         // system fonts without a per-font swash lookup. See the design
         // notes in `RunStyle::underline` / `with_link`.
         let decoration_thickness = (size * 0.06).max(1.0);
@@ -1252,12 +1267,14 @@ mod tests {
         assert_eq!(shaped.glyphs[2].color, green);
         assert_eq!(shaped.glyphs[4].run_index, 2);
         assert_eq!(shaped.glyphs[4].color, blue);
-        // Different weights → different glyph keys (font ID differs).
-        assert_ne!(shaped.glyphs[0].key.font, shaped.glyphs[2].key.font);
-        // Italic resolves to the Roboto-Italic face — distinct from
-        // both Regular (run 0) and Bold (run 1). Before Roboto-Italic
-        // was bundled, asking cosmic-text for Style::Italic panicked
-        // its font fallback chain; this assertion guards the regression.
+        // Different weights remain baked into the glyph key. Variable
+        // fonts such as Inter can share a font ID across weights, so the
+        // contract is the resolved weight rather than face identity.
+        assert_ne!(shaped.glyphs[0].key.weight, shaped.glyphs[2].key.weight);
+        // Italic resolves to an italic face distinct from both Regular
+        // (run 0) and Bold (run 1). Before an italic face was bundled,
+        // asking cosmic-text for Style::Italic panicked its font
+        // fallback chain; this assertion guards the regression.
         assert_ne!(shaped.glyphs[4].key.font, shaped.glyphs[0].key.font);
         assert_ne!(shaped.glyphs[4].key.font, shaped.glyphs[2].key.font);
     }
@@ -1522,8 +1539,8 @@ mod tests {
     #[test]
     fn set_default_family_stack_changes_primary_family() {
         let mut atlas = GlyphAtlas::new();
-        assert_eq!(atlas.default_family(), "Roboto");
-        atlas.set_default_family_stack(vec!["MyBrand".into(), "Roboto".into()]);
+        assert_eq!(atlas.default_family(), "Inter Variable");
+        atlas.set_default_family_stack(vec!["MyBrand".into(), "Inter Variable".into()]);
         assert_eq!(atlas.default_family(), "MyBrand");
         // Empty stack is rejected — primary family stays put.
         atlas.set_default_family_stack(vec![]);

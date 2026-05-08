@@ -65,12 +65,17 @@ name = "aetna-fonts"
 version = "0.2.0"
 dependencies = [
  "aetna-fonts-emoji",
+ "aetna-fonts-inter",
  "aetna-fonts-roboto",
  "aetna-fonts-symbols",
 ]
 
 [[package]]
 name = "aetna-fonts-emoji"
+version = "0.1.0"
+
+[[package]]
+name = "aetna-fonts-inter"
 version = "0.1.0"
 
 [[package]]

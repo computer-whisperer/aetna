@@ -138,6 +138,25 @@ control-like surfaces, `Card` / `CardHeader` / `CardContent` /
 `ChoiceItem` for checkbox/radio-style widgets, and `Slider` /
 `Progress` for range indicators.
 
+### 1.3 Typography family
+
+Aetna treats the proportional UI font as a theme default, not a random
+renderer detail. The default is Inter, with Roboto bundled as a
+Material-style/compatibility alternate:
+
+```rust
+Theme::aetna_dark().with_font_family(FontFamily::Inter)
+Theme::aetna_dark().with_font_family(FontFamily::Roboto)
+```
+
+Text nodes inherit the theme family before layout, so intrinsic sizes,
+wrapping, ellipsis, SVG artifacts, and backend glyph shaping agree.
+Local text can still opt out with `.font_family(...)`, or use the
+convenience shorthands `.inter()` and `.roboto()`.
+
+Run `cargo run -p aetna-core --example font_family_comparison` to
+regenerate the current Roboto/Inter comparison fixture.
+
 Theme metrics can tune broad app defaults or a stock family:
 
 ```rust

@@ -79,3 +79,9 @@ Out of scope; flagged so they don't get rediscovered:
   before polishing lints get stricter: suppress by `FindingKind`, require
   a reason string, keep suppressed findings auditable, and avoid
   suppressing `DuplicateId` until attribution is stronger.
+- **Themed editable-text geometry.** Plain text nodes now carry
+  `FontFamily` through theme application, layout, SVG, and backend
+  shaping. `text_input` / `text_area` editing helpers still construct
+  `TextGeometry` before runtime theme application, so caret and
+  selection math use the default family unless those widgets grow an
+  explicit family parameter or a theme-aware editing context.

@@ -35,12 +35,13 @@ web-time = "1"
 
 [features]
 default = ["default_fonts"]
-# Bundle aetna-fonts' default font set (Roboto + NotoColorEmoji +
+# Bundle aetna-fonts' default font set (Inter + Roboto + NotoColorEmoji +
 # Symbols2 + Math) into the binary. Disable to ship your own fonts via
 # `register_font`. The per-format features below are activated by
 # `default_fonts` and can also be toggled individually:
 # `aetna-core = { default-features = false, features = ["roboto"] }`.
-default_fonts = ["roboto", "emoji", "symbols"]
+default_fonts = ["inter", "roboto", "emoji", "symbols"]
+inter = ["aetna-fonts/inter"]
 roboto = ["aetna-fonts/roboto"]
 emoji = ["aetna-fonts/emoji"]
 symbols = ["aetna-fonts/symbols"]

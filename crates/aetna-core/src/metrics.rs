@@ -590,28 +590,28 @@ fn card_header_metrics(density: Density) -> CardSectionMetrics {
     match density {
         Density::Compact => CardSectionMetrics {
             padding: Sides {
-                left: 12.0,
-                right: 12.0,
-                top: 12.0,
-                bottom: 6.0,
-            },
-            gap: 4.0,
-        },
-        Density::Comfortable => CardSectionMetrics {
-            padding: Sides {
                 left: 16.0,
                 right: 16.0,
                 top: 16.0,
                 bottom: 8.0,
             },
-            gap: 4.0,
+            gap: 6.0,
         },
-        Density::Spacious => CardSectionMetrics {
+        Density::Comfortable => CardSectionMetrics {
             padding: Sides {
                 left: 20.0,
                 right: 20.0,
                 top: 20.0,
-                bottom: 10.0,
+                bottom: 12.0,
+            },
+            gap: 6.0,
+        },
+        Density::Spacious => CardSectionMetrics {
+            padding: Sides {
+                left: 24.0,
+                right: 24.0,
+                top: 24.0,
+                bottom: 16.0,
             },
             gap: 6.0,
         },
@@ -622,28 +622,28 @@ fn card_content_metrics(density: Density) -> CardSectionMetrics {
     match density {
         Density::Compact => CardSectionMetrics {
             padding: Sides {
-                left: 12.0,
-                right: 12.0,
-                top: 6.0,
-                bottom: 12.0,
+                left: 16.0,
+                right: 16.0,
+                top: 4.0,
+                bottom: 16.0,
             },
             gap: 8.0,
         },
         Density::Comfortable => CardSectionMetrics {
             padding: Sides {
-                left: 16.0,
-                right: 16.0,
+                left: 20.0,
+                right: 20.0,
                 top: 8.0,
-                bottom: 16.0,
+                bottom: 20.0,
             },
             gap: 12.0,
         },
         Density::Spacious => CardSectionMetrics {
             padding: Sides {
-                left: 20.0,
-                right: 20.0,
-                top: 10.0,
-                bottom: 20.0,
+                left: 24.0,
+                right: 24.0,
+                top: 8.0,
+                bottom: 24.0,
             },
             gap: 16.0,
         },
@@ -936,6 +936,7 @@ fn apply_single_axis_height(el: &mut El, height: f32) {
 struct MenuItemMetrics {
     height: f32,
     padding_x: f32,
+    gap: f32,
 }
 
 fn menu_item_metrics(density: Density) -> MenuItemMetrics {
@@ -943,14 +944,17 @@ fn menu_item_metrics(density: Density) -> MenuItemMetrics {
         Density::Compact => MenuItemMetrics {
             height: 30.0,
             padding_x: 8.0,
+            gap: 12.0,
         },
         Density::Comfortable => MenuItemMetrics {
             height: 32.0,
             padding_x: 10.0,
+            gap: 12.0,
         },
         Density::Spacious => MenuItemMetrics {
             height: 34.0,
             padding_x: 12.0,
+            gap: 12.0,
         },
     }
 }
@@ -961,6 +965,9 @@ fn apply_menu_item(el: &mut El, metrics: MenuItemMetrics) {
     }
     if !el.explicit_padding {
         el.padding = Sides::xy(metrics.padding_x, 0.0);
+    }
+    if !el.explicit_gap {
+        el.gap = metrics.gap;
     }
 }
 
@@ -1152,8 +1159,11 @@ mod tests {
 
         assert_eq!(el.padding, Sides::zero());
         assert_eq!(el.gap, 0.0);
-        assert_eq!(el.children[0].padding.top, 12.0);
-        assert_eq!(el.children[1].padding.bottom, 12.0);
+        assert_eq!(el.children[0].padding.top, 16.0);
+        assert_eq!(el.children[0].padding.bottom, 8.0);
+        assert_eq!(el.children[1].padding.left, 16.0);
+        assert_eq!(el.children[1].padding.top, 4.0);
+        assert_eq!(el.children[1].padding.bottom, 16.0);
     }
 
     #[test]
@@ -1226,6 +1236,19 @@ mod tests {
         assert_eq!(el.height, Size::Fixed(32.0));
         assert_eq!(el.padding, Sides::xy(8.0, 0.0));
         assert_eq!(el.gap, 6.0);
+    }
+
+    #[test]
+    fn menu_density_applies_to_icon_text_row_gap() {
+        let mut el = El::new(crate::Kind::Custom("menu-item")).metrics_role(MetricsRole::MenuItem);
+
+        ThemeMetrics::default()
+            .with_menu_density(Density::Compact)
+            .apply_to_tree(&mut el);
+
+        assert_eq!(el.height, Size::Fixed(30.0));
+        assert_eq!(el.padding, Sides::xy(8.0, 0.0));
+        assert_eq!(el.gap, 12.0);
     }
 
     #[test]

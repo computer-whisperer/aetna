@@ -47,4 +47,4 @@ pub use icon_name::IconName;
 pub use layout_types::{Align, Axis, Justify, Size};
 pub use node::El;
 pub use semantics::{InteractionState, Kind, Source, SurfaceRole};
-pub use text_types::{FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
+pub use text_types::{FontFamily, FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};

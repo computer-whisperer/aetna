@@ -177,7 +177,8 @@ fn kpi_card(label: &'static str, value: &'static str, delta: &'static str, posit
                 "Needs visual attention"
             })
             .muted(),
-        ]),
+        ])
+        .gap(tokens::SPACE_6),
     ])
     .key(if label == "Latency" {
         "metric:kpi.card"

@@ -11,7 +11,7 @@ use super::color::Color;
 use super::geometry::Sides;
 use super::layout_types::{Align, Axis, Justify, Size};
 use super::semantics::{Kind, Source, SurfaceRole};
-use super::text_types::{FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
+use super::text_types::{FontFamily, FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
 
 /// The core tree node.
 ///
@@ -112,6 +112,7 @@ pub struct El {
     pub explicit_padding: bool,
     pub explicit_gap: bool,
     pub explicit_radius: bool,
+    pub explicit_font_family: bool,
 
     // Visual style — these still live on `El` because the modifier API
     // (`.fill(c)`, `.radius(r)`, `.shadow(s)`) is what users type. The
@@ -219,6 +220,7 @@ pub struct El {
     pub text_max_lines: Option<usize>,
     pub font_size: f32,
     pub line_height: f32,
+    pub font_family: FontFamily,
     pub font_weight: FontWeight,
     pub font_mono: bool,
     /// Italic styling. Author-set via [`Self::italic`]; honoured when

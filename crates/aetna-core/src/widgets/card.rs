@@ -63,7 +63,9 @@ where
 
 #[track_caller]
 pub fn card_title(title: impl Into<String>) -> El {
-    h3(title).at_loc(Location::caller())
+    h3(title)
+        .at_loc(Location::caller())
+        .line_height(tokens::TEXT_BASE.size)
 }
 
 #[track_caller]
@@ -100,4 +102,19 @@ where
         .width(Size::Fill(1.0))
         .height(Size::Hug)
         .align(Align::Center)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn card_title_uses_tight_heading_rhythm() {
+        let title = card_title("Latency");
+
+        assert_eq!(title.text_role, TextRole::Title);
+        assert_eq!(title.font_size, tokens::TEXT_BASE.size);
+        assert_eq!(title.line_height, tokens::TEXT_BASE.size);
+        assert_eq!(title.font_weight, FontWeight::Semibold);
+    }
 }

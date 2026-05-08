@@ -192,7 +192,7 @@ fn dashboard_main(layout: LayoutMetrics) -> El {
             .gap(layout.page_gap),
             row([chart_card(), sales_card()])
                 .gap(layout.page_gap)
-                .height(Size::Fixed(305.0))
+                .height(Size::Fixed(306.0))
                 .align(Align::Stretch),
             documents_card(),
         ])

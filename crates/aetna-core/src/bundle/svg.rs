@@ -76,6 +76,7 @@ fn emit_op(s: &mut String, op: &DrawOp) {
             rect,
             color,
             size,
+            family,
             weight,
             mono,
             wrap,
@@ -100,6 +101,7 @@ fn emit_op(s: &mut String, op: &DrawOp) {
                 *rect,
                 eff_color,
                 *size,
+                *family,
                 *weight,
                 *mono,
                 *wrap,
@@ -299,6 +301,7 @@ fn emit_glyph_run(
     rect: Rect,
     color: Color,
     size: f32,
+    family: crate::tree::FontFamily,
     weight: FontWeight,
     mono: bool,
     wrap: TextWrap,
@@ -319,7 +322,7 @@ fn emit_glyph_run(
     let family = if mono {
         "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
     } else {
-        "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+        family.css_stack()
     };
     let weight_str = match weight {
         FontWeight::Regular => "400",
@@ -440,7 +443,7 @@ fn emit_attributed_text(
         let family = if style.mono {
             "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
         } else {
-            "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+            style.family.css_stack()
         };
         let weight_str = match style.weight {
             FontWeight::Regular => "400",

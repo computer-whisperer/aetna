@@ -724,9 +724,10 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
         return apply_min(c, w, h);
     }
     if let Some(text) = &c.text {
-        let unwrapped = text_metrics::layout_text(
+        let unwrapped = text_metrics::layout_text_with_family(
             text,
             c.font_size,
+            c.font_family,
             c.font_weight,
             c.font_mono,
             TextWrap::NoWrap,
@@ -742,10 +743,11 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
                 .map(|w| (w - c.padding.left - c.padding.right).max(1.0)),
         };
         let display = display_text_for_measure(c, text, content_available);
-        let layout = text_metrics::layout_text_with_line_height(
+        let layout = text_metrics::layout_text_with_line_height_and_family(
             &display,
             c.font_size,
             c.line_height,
+            c.font_family,
             c.font_weight,
             c.font_mono,
             c.text_wrap,
@@ -822,10 +824,11 @@ pub(crate) fn text_layout(
             .map(|w| (w - c.padding.left - c.padding.right).max(1.0)),
     };
     let display = display_text_for_measure(c, text, content_available);
-    Some(text_metrics::layout_text_with_line_height(
+    Some(text_metrics::layout_text_with_line_height_and_family(
         &display,
         c.font_size,
         c.line_height,
+        c.font_family,
         c.font_weight,
         c.font_mono,
         c.text_wrap,
@@ -837,9 +840,10 @@ fn display_text_for_measure(c: &El, text: &str, available_width: Option<f32>) ->
     if let (TextWrap::Wrap, Some(max_lines), Some(width)) =
         (c.text_wrap, c.text_max_lines, available_width)
     {
-        text_metrics::clamp_text_to_lines(
+        text_metrics::clamp_text_to_lines_with_family(
             text,
             c.font_size,
+            c.font_family,
             c.font_weight,
             c.font_mono,
             width,
@@ -876,10 +880,11 @@ fn inline_paragraph_intrinsic(node: &El, available_width: Option<f32>) -> (f32, 
     let concat = concat_inline_text(&node.children);
     let size = inline_paragraph_size(node);
     let line_height = inline_paragraph_line_height(node);
-    let unwrapped = text_metrics::layout_text_with_line_height(
+    let unwrapped = text_metrics::layout_text_with_line_height_and_family(
         &concat,
         size,
         line_height,
+        node.font_family,
         FontWeight::Regular,
         false,
         TextWrap::NoWrap,
@@ -894,10 +899,11 @@ fn inline_paragraph_intrinsic(node: &El, available_width: Option<f32>) -> (f32, 
             })
             .map(|w| (w - node.padding.left - node.padding.right).max(1.0)),
     };
-    let layout = text_metrics::layout_text_with_line_height(
+    let layout = text_metrics::layout_text_with_line_height_and_family(
         &concat,
         size,
         line_height,
+        node.font_family,
         FontWeight::Regular,
         false,
         node.text_wrap,

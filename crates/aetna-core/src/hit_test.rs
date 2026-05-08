@@ -128,9 +128,10 @@ pub fn selection_point_at(
     let value = node.text.as_deref()?;
     let local_x = (point.0 - painted.x).max(0.0);
     let local_y = (point.1 - painted.y).clamp(0.0, painted.h.max(1.0) - 1.0);
-    let geometry = metrics::TextGeometry::new(
+    let geometry = metrics::TextGeometry::new_with_family(
         value,
         node.font_size,
+        node.font_family,
         node.font_weight,
         node.font_mono,
         node.text_wrap,

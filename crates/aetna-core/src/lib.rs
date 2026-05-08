@@ -175,14 +175,16 @@ pub use text::atlas::{
     AtlasPage, AtlasRect, GlyphAtlas, GlyphKey, GlyphSlot, RunStyle, ShapedGlyph, ShapedRun,
 };
 pub use text::metrics::{
-    MeasuredText, TextGeometry, TextHit, TextLayout, TextLine, caret_xy, hit_text, layout_text,
-    line_height, line_width, measure_text, selection_rects, wrap_lines,
+    MeasuredText, TextGeometry, TextHit, TextLayout, TextLine, caret_xy, caret_xy_with_family,
+    hit_text, hit_text_with_family, layout_text, layout_text_with_family,
+    layout_text_with_line_height_and_family, line_height, line_width, line_width_with_family,
+    measure_text, selection_rects, selection_rects_with_family, wrap_lines, wrap_lines_with_family,
 };
 pub use theme::Theme;
 pub use tree::{
-    Align, Axis, Color, El, FontWeight, IconName, InteractionState, Justify, Kind, Rect, Sides,
-    Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column, divider,
-    hard_break, row, scroll, spacer, stack, text_runs, virtual_list,
+    Align, Axis, Color, El, FontFamily, FontWeight, IconName, InteractionState, Justify, Kind,
+    Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column,
+    divider, hard_break, row, scroll, spacer, stack, text_runs, virtual_list,
 };
 pub use vector::IconMaterial;
 // Vector path / mesh tessellation types are internal-tooling surface.
