@@ -876,13 +876,13 @@ function Switch({ checked }: { checked: boolean }) {
     <div
       className={cn(
         "flex h-5 w-9 items-center rounded-full border p-0.5 transition-colors",
-        checked ? "border-primary bg-primary" : "border-border bg-muted",
+        checked ? "border-primary bg-primary" : "border-input bg-input dark:bg-input/80",
       )}
     >
       <div
         className={cn(
-          "h-3.5 w-3.5 rounded-full bg-foreground transition-transform",
-          checked && "translate-x-4",
+          "h-3.5 w-3.5 rounded-full bg-background transition-transform dark:bg-foreground",
+          checked && "translate-x-4 dark:bg-primary-foreground",
         )}
       />
     </div>

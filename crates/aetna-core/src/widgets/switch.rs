@@ -63,7 +63,11 @@ pub const THUMB_SLIDE: f32 = TRACK_WIDTH - THUMB_SIZE - 2.0 * PAD;
 /// State changes are animated. The thumb's position is laid out at
 /// the off side and shifted via an animatable [`El::translate`] when
 /// `value == true`; the track's fill animates between
-/// [`tokens::MUTED`] (off) and [`tokens::PRIMARY`] (on). The
+/// [`tokens::INPUT`] (off) and [`tokens::PRIMARY`] (on). The thumb
+/// uses [`tokens::FOREGROUND`] when off and
+/// [`tokens::PRIMARY_FOREGROUND`] when on, matching shadcn's
+/// `primary` / `primary-foreground` checked-state pairing so the knob
+/// remains visible when the dark theme's active track is white. The
 /// underlying timing is [`Timing::SPRING_QUICK`] — calibrated to read
 /// as a snappy switch with no overshoot.
 ///
@@ -91,7 +95,12 @@ pub fn switch(value: bool) -> El {
     let track_fill = if value {
         tokens::PRIMARY
     } else {
-        tokens::MUTED
+        tokens::INPUT
+    };
+    let thumb_fill = if value {
+        tokens::PRIMARY_FOREGROUND
+    } else {
+        tokens::FOREGROUND
     };
     let thumb_translate_x = if value { THUMB_SLIDE } else { 0.0 };
 
@@ -106,7 +115,7 @@ pub fn switch(value: bool) -> El {
             // / press on the switch.
             .state_follows_interactive_ancestor(),
         El::new(Kind::Custom("switch-thumb"))
-            .fill(tokens::FOREGROUND)
+            .fill(thumb_fill)
             .radius(tokens::RADIUS_PILL)
             .translate(thumb_translate_x, 0.0)
             .animate(Timing::SPRING_QUICK)
@@ -142,21 +151,28 @@ mod tests {
     use crate::event::UiEvent;
 
     #[test]
-    fn off_switch_paints_muted_track_and_left_thumb() {
+    fn off_switch_paints_input_track_and_foreground_thumb() {
         // The track's fill is the visual signal of state, so an off
-        // switch must paint with MUTED rather than PRIMARY.
+        // switch uses the shadcn unchecked input token rather than
+        // PRIMARY.
         let s = switch(false);
         let track = &s.children[0];
-        assert_eq!(track.fill, Some(tokens::MUTED));
+        let thumb = &s.children[1];
+        assert_eq!(track.fill, Some(tokens::INPUT));
+        assert_eq!(thumb.fill, Some(tokens::FOREGROUND));
         // Track stays a pill regardless of state.
         assert_eq!(track.radius, tokens::RADIUS_PILL);
     }
 
     #[test]
-    fn on_switch_paints_primary_track() {
+    fn on_switch_paints_primary_track_and_primary_foreground_thumb() {
+        // In shadcn's dark checked state, `primary` is a light track
+        // and `primary-foreground` is the dark contrasting thumb.
         let s = switch(true);
         let track = &s.children[0];
+        let thumb = &s.children[1];
         assert_eq!(track.fill, Some(tokens::PRIMARY));
+        assert_eq!(thumb.fill, Some(tokens::PRIMARY_FOREGROUND));
     }
 
     #[test]
