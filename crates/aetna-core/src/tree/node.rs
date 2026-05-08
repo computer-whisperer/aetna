@@ -31,6 +31,14 @@ pub struct El {
     pub key: Option<String>,
     pub block_pointer: bool,
     pub focusable: bool,
+    /// Show the focus ring on this node even when focus arrived via
+    /// pointer (i.e. the runtime's `focus_visible` is `false`). Default
+    /// behavior matches the web platform's `:focus-visible` heuristic
+    /// — ring on Tab, no ring on click. Widgets like text inputs and
+    /// text areas opt in here because the ring is a meaningful
+    /// "this surface is now the active editing target" affordance even
+    /// when activated by mouse, beyond what the caret alone shows.
+    pub always_show_focus_ring: bool,
     /// When true, this node is a pointer target for the library's
     /// text-selection manager: pointer-down inside its rect starts (or
     /// extends) the global [`crate::selection::Selection`] anchored at

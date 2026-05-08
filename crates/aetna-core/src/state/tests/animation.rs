@@ -99,11 +99,12 @@ fn focus_ring_alpha_eases_in_and_out() {
         Some(0.0)
     );
 
-    // Focus on inc → alpha settles at 1.0.
+    // Focus on inc + focus_visible (Tab semantics) → alpha settles at 1.0.
     let (mut tree, _) = lay_out_counter();
     // Re-layout against the existing state so the rect map is fresh.
     layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
     state.focused = Some(target(&tree, &state, "inc"));
+    state.set_focus_visible(true);
     state.apply_to_state();
     state.tick_visual_animations(&mut tree, Instant::now());
     assert_eq!(
@@ -120,6 +121,51 @@ fn focus_ring_alpha_eases_in_and_out() {
     assert_eq!(
         envelope_for(&tree, &state, "inc", EnvelopeKind::FocusRing),
         Some(0.0)
+    );
+}
+
+#[test]
+fn focus_ring_stays_dim_when_focus_is_not_visible() {
+    // Pointer-driven focus (`focus_visible == false`) keeps the ring
+    // off — clicking a button shouldn't paint the keyboard
+    // affordance. Mirrors the web `:focus-visible` heuristic.
+    let (mut tree, mut state) = lay_out_counter();
+    state.set_animation_mode(AnimationMode::Settled);
+    state.focused = Some(target(&tree, &state, "inc"));
+    // Default focus_visible is false (the runtime sets it explicitly
+    // on Tab / pointer-down). Don't raise it here.
+    assert!(!state.focus_visible);
+    state.apply_to_state();
+    state.tick_visual_animations(&mut tree, Instant::now());
+    assert_eq!(
+        envelope_for(&tree, &state, "inc", EnvelopeKind::FocusRing),
+        Some(0.0),
+        "ring must stay off until focus_visible is raised",
+    );
+}
+
+#[test]
+fn focus_ring_lights_up_on_always_show_focus_ring_widgets_even_without_focus_visible() {
+    // Text inputs / text areas opt in via `.always_show_focus_ring()`
+    // because the ring on click is a meaningful "now editable"
+    // affordance. Verify the per-element flag overrides the global
+    // `focus_visible == false`.
+    let selection = crate::selection::Selection::default();
+    let mut tree = column([row([crate::widgets::text_input::text_input(
+        "", &selection, "field",
+    )])])
+    .padding(20.0);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+    state.set_animation_mode(AnimationMode::Settled);
+    state.focused = Some(target(&tree, &state, "field"));
+    assert!(!state.focus_visible);
+    state.apply_to_state();
+    state.tick_visual_animations(&mut tree, Instant::now());
+    assert_eq!(
+        envelope_for(&tree, &state, "field", EnvelopeKind::FocusRing),
+        Some(1.0),
+        "always_show_focus_ring widgets ring on click too",
     );
 }
 

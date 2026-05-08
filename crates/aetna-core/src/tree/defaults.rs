@@ -20,6 +20,7 @@ impl Default for El {
             key: None,
             block_pointer: false,
             focusable: false,
+            always_show_focus_ring: false,
             selectable: false,
             capture_keys: false,
             alpha_follows_focused_ancestor: false,

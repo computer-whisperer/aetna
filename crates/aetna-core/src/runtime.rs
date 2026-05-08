@@ -400,6 +400,10 @@ impl RunnerCore {
         }
 
         self.ui_state.set_focus(hit.clone());
+        // `:focus-visible` rule: pointer-driven focus suppresses the
+        // ring; widgets that want it on click opt in via
+        // `always_show_focus_ring`.
+        self.ui_state.set_focus_visible(false);
         self.ui_state.pressed = hit.clone();
         // A press on the hovered node dismisses any tooltip for
         // the rest of this hover session — matches native UIs.
@@ -655,6 +659,7 @@ impl RunnerCore {
             // `App::selection()`. Without this, hammering arrow keys
             // produces no visible blink reset.
             self.ui_state.bump_caret_activity(Instant::now());
+            self.ui_state.set_focus_visible(true);
             return self
                 .ui_state
                 .key_down_raw(key, modifiers, repeat)
@@ -741,6 +746,7 @@ impl RunnerCore {
         };
         if Some(next_idx) != idx {
             self.ui_state.set_focus(Some(siblings[next_idx].clone()));
+            self.ui_state.set_focus_visible(true);
         }
     }
 
@@ -2554,6 +2560,91 @@ mod tests {
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("ti"),
             "Tab inside capture_keys must NOT move focus"
+        );
+    }
+
+    #[test]
+    fn pointer_down_focus_does_not_raise_focus_visible() {
+        // `:focus-visible` semantics: clicking a widget focuses it but
+        // does NOT light up the focus ring. Verify the runtime flag.
+        let mut core = lay_out_input_tree(false);
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("btn"),
+            "primary click focuses the button",
+        );
+        assert!(
+            !core.ui_state.focus_visible,
+            "click focus must not raise focus_visible — ring stays off",
+        );
+    }
+
+    #[test]
+    fn tab_key_raises_focus_visible_so_ring_appears() {
+        let mut core = lay_out_input_tree(false);
+        // Pre-focus via click so focus_visible starts low.
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        assert!(!core.ui_state.focus_visible);
+        // Tab moves focus and should raise the ring.
+        let _ = core.key_down(UiKey::Tab, KeyModifiers::default(), false);
+        assert!(
+            core.ui_state.focus_visible,
+            "Tab must raise focus_visible so the ring paints on the new target",
+        );
+    }
+
+    #[test]
+    fn click_after_tab_clears_focus_visible_again() {
+        // Tab raises the ring; a subsequent click on a focusable widget
+        // suppresses it again — the user is back on the pointer.
+        let mut core = lay_out_input_tree(false);
+        let _ = core.key_down(UiKey::Tab, KeyModifiers::default(), false);
+        assert!(core.ui_state.focus_visible, "Tab raises ring");
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        assert!(
+            !core.ui_state.focus_visible,
+            "pointer-down clears focus_visible — ring fades back out",
+        );
+    }
+
+    #[test]
+    fn keypress_on_focused_widget_raises_focus_visible_after_click() {
+        // Click a focused-but-non-text widget, then nudge with a key
+        // (e.g. arrow on a slider). The keypress is keyboard
+        // interaction → ring lights up even though focus didn't move.
+        let mut core = lay_out_input_tree(false);
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        assert!(!core.ui_state.focus_visible);
+        let _ = core.key_down(UiKey::ArrowRight, KeyModifiers::default(), false);
+        assert!(
+            core.ui_state.focus_visible,
+            "non-Tab key on focused widget raises focus_visible",
+        );
+    }
+
+    #[test]
+    fn arrow_nav_in_sibling_group_raises_focus_visible() {
+        let mut core = lay_out_arrow_nav_tree();
+        // The fixture pre-sets focus directly without going through
+        // the runtime; ensure the flag starts low.
+        core.ui_state.set_focus_visible(false);
+        let _ = core.key_down(UiKey::ArrowDown, KeyModifiers::default(), false);
+        assert!(
+            core.ui_state.focus_visible,
+            "arrow-nav within an arrow_nav_siblings group is keyboard navigation",
         );
     }
 

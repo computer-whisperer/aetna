@@ -29,6 +29,18 @@ impl El {
         self
     }
 
+    /// Show the focus ring on this node even when focus arrived via
+    /// pointer click. Default focus-ring behavior follows the web
+    /// platform's `:focus-visible` rule — ring on Tab, no ring on
+    /// click. Widgets where the ring is meaningful regardless of
+    /// source — text input, text area — opt in here so clicking into
+    /// the field still raises the "now active" affordance. Implies
+    /// nothing about focusability; pair with `.focusable()`.
+    pub fn always_show_focus_ring(mut self) -> Self {
+        self.always_show_focus_ring = true;
+        self
+    }
+
     /// Opt this node into the library's text-selection system. The
     /// node must also carry an explicit `.key(...)`; selection requires
     /// stable identity across rebuilds the same way focus does.

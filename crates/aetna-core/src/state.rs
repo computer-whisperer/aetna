@@ -63,6 +63,14 @@ pub struct UiState {
     /// same button.
     pub(crate) pressed_secondary: Option<(UiTarget, PointerButton)>,
     pub focused: Option<UiTarget>,
+    /// Whether the focused element should display its focus ring.
+    /// Tracks the web platform's `:focus-visible` heuristic: keyboard
+    /// focus (Tab, arrow-nav) raises the flag; pointer-down clears it.
+    /// Widgets where the ring belongs even on click — text inputs and
+    /// text areas, where the ring communicates "this surface is now
+    /// active" beyond the caret alone — opt back in via
+    /// [`crate::tree::El::always_show_focus_ring`].
+    pub focus_visible: bool,
     pub(crate) focus: FocusState,
     /// Mirror of the application's current
     /// [`crate::selection::Selection`]. Set by the host runner once
@@ -117,6 +125,7 @@ impl Debug for UiState {
             .field("hovered", &self.hovered)
             .field("pressed", &self.pressed)
             .field("focused", &self.focused)
+            .field("focus_visible", &self.focus_visible)
             .field("focus", &self.focus)
             .field("popover_focus", &self.popover_focus)
             .field("click", &self.click)

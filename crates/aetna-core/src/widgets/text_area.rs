@@ -155,6 +155,8 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
         .metrics_role(MetricsRole::TextArea)
         .surface_role(SurfaceRole::Input)
         .focusable()
+        // Same as text_input: ring stays on click too.
+        .always_show_focus_ring()
         .capture_keys()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(Cursor::Text)

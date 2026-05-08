@@ -304,6 +304,9 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
         .metrics_role(MetricsRole::Input)
         .surface_role(SurfaceRole::Input)
         .focusable()
+        // The "now editable" affordance on a text input is the ring
+        // around the box, not just the caret — keep it on click too.
+        .always_show_focus_ring()
         .capture_keys()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(Cursor::Text)

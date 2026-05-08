@@ -94,6 +94,7 @@ impl UiState {
             } else {
                 self.focus_next();
             }
+            self.set_focus_visible(true);
             return None;
         }
 
@@ -106,6 +107,13 @@ impl UiState {
         }
 
         let target = self.focused.clone();
+        // Non-hotkey keypress on a focused element (Space, Escape,
+        // arrow-nudge a slider, …) is keyboard activity — `:focus-
+        // visible` rule: raise the ring even if a prior click had
+        // suppressed it.
+        if target.is_some() {
+            self.set_focus_visible(true);
+        }
         let kind = match (&key, target.is_some()) {
             (UiKey::Enter | UiKey::Space, true) => UiEventKind::Activate,
             (UiKey::Escape, _) => UiEventKind::Escape,

@@ -51,6 +51,7 @@ impl UiState {
             &mut self.animation.animations,
             &mut self.animation.envelopes,
             &self.node_states.nodes,
+            self.focus_visible,
             &mut visited,
             now,
             mode,

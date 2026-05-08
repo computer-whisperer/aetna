@@ -38,6 +38,16 @@ impl UiState {
         }
     }
 
+    /// Set whether the current focus should display its focus ring.
+    /// The runtime calls this from input-handling paths: pointer-down
+    /// clears it (`false`), Tab and arrow-nav raise it (`true`). Apps
+    /// that move focus programmatically can also flip it explicitly,
+    /// e.g. force the ring on after restoring focus from an off-screen
+    /// menu close. See [`UiState::focus_visible`].
+    pub fn set_focus_visible(&mut self, visible: bool) {
+        self.focus_visible = visible;
+    }
+
     pub fn focus_next(&mut self) -> Option<&UiTarget> {
         self.move_focus(1)
     }

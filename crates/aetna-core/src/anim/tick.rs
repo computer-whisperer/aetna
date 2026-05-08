@@ -47,6 +47,7 @@ pub(crate) fn tick_node(
     anims: &mut HashMap<(String, AnimProp), Animation>,
     envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
     node_states: &HashMap<String, InteractionState>,
+    focus_visible: bool,
     visited: &mut HashSet<(String, AnimProp)>,
     now: Instant,
     mode: AnimationMode,
@@ -63,6 +64,7 @@ pub(crate) fn tick_node(
                     anims,
                     envelopes,
                     node_states,
+                    focus_visible,
                     visited,
                     now,
                     mode,
@@ -82,6 +84,7 @@ pub(crate) fn tick_node(
                     anims,
                     envelopes,
                     node_states,
+                    focus_visible,
                     visited,
                     now,
                     mode,
@@ -96,6 +99,7 @@ pub(crate) fn tick_node(
             anims,
             envelopes,
             node_states,
+            focus_visible,
             visited,
             now,
             mode,
@@ -112,6 +116,7 @@ fn process_prop(
     anims: &mut HashMap<(String, AnimProp), Animation>,
     envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
     node_states: &HashMap<String, InteractionState>,
+    focus_visible: bool,
     visited: &mut HashSet<(String, AnimProp)>,
     now: Instant,
     mode: AnimationMode,
@@ -121,7 +126,7 @@ fn process_prop(
         .get(&node.computed_id)
         .copied()
         .unwrap_or_default();
-    let Some(target) = compute_target(node, prop, state) else {
+    let Some(target) = compute_target(node, prop, state, focus_visible) else {
         return;
     };
     let key = (node.computed_id.clone(), prop);
@@ -147,7 +152,18 @@ fn process_prop(
 /// interaction state and its build-closure-supplied original value.
 /// Returns `None` if the prop doesn't apply (e.g., a node with no fill
 /// has no `AppFill` to animate).
-fn compute_target(n: &El, prop: AnimProp, state: InteractionState) -> Option<AnimValue> {
+///
+/// `focus_visible` is the runtime-level `:focus-visible` flag (raised
+/// by Tab / arrow nav, cleared by pointer-down). The focus-ring target
+/// only goes to 1.0 when the node is focused *and* the ring is allowed
+/// — either the runtime says so, or the node opts in via
+/// `always_show_focus_ring`.
+fn compute_target(
+    n: &El,
+    prop: AnimProp,
+    state: InteractionState,
+    focus_visible: bool,
+) -> Option<AnimValue> {
     match prop {
         AnimProp::HoverAmount => Some(AnimValue::Float(
             if matches!(state, InteractionState::Hover) {
@@ -164,7 +180,9 @@ fn compute_target(n: &El, prop: AnimProp, state: InteractionState) -> Option<Ani
             },
         )),
         AnimProp::FocusRingAlpha => Some(AnimValue::Float(
-            if matches!(state, InteractionState::Focus) {
+            if matches!(state, InteractionState::Focus)
+                && (focus_visible || n.always_show_focus_ring)
+            {
                 1.0
             } else {
                 0.0
