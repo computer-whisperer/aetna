@@ -9,7 +9,10 @@
 //! [`run`] mirrors the simple native host contract method-for-method so
 //! an [`App`] written for the wgpu demo path runs unchanged here.
 
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use aetna_core::{App, BuildCx, KeyModifiers, PointerButton, Rect, UiKey};
 use aetna_vulkano::Runner;
@@ -95,6 +98,12 @@ pub fn run_with_init<A: App + 'static, F: FnOnce(&mut Runner) + 'static>(
 /// generic parameter doesn't leak into the closure type.
 type InitRunner = Box<dyn FnOnce(&mut Runner)>;
 
+/// Wait this long after the last `Resized` before recreating the
+/// swapchain. Wayland compositors fire `Resized` every frame during
+/// animated geometry changes (KDE tile/snap, etc.); recreating on each
+/// one stalls the surface.
+const RESIZE_DEBOUNCE: Duration = Duration::from_millis(100);
+
 struct Host<A: App> {
     title: &'static str,
     viewport: Rect,
@@ -116,6 +125,9 @@ struct RenderContext {
     runner: Runner,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swapchain: bool,
+    /// Timestamp of the most recent `Resized`, cleared when the
+    /// debounce expires and the recreate is promoted.
+    resize_debounce: Option<Instant>,
 }
 
 impl<A: App> ApplicationHandler for Host<A> {
@@ -213,6 +225,7 @@ impl<A: App> ApplicationHandler for Host<A> {
             runner,
             previous_frame_end,
             recreate_swapchain: false,
+            resize_debounce: None,
         });
         self.rcx.as_ref().unwrap().window.request_redraw();
     }
@@ -227,7 +240,7 @@ impl<A: App> ApplicationHandler for Host<A> {
             WindowEvent::CloseRequested => event_loop.exit(),
 
             WindowEvent::Resized(_) => {
-                rcx.recreate_swapchain = true;
+                rcx.resize_debounce = Some(Instant::now());
                 rcx.window.request_redraw();
             }
 
@@ -320,7 +333,21 @@ impl<A: App> ApplicationHandler for Host<A> {
             }
 
             WindowEvent::RedrawRequested => {
-                let extent: [u32; 2] = rcx.window.inner_size().into();
+                // Promote the pending debounce to a real recreate once
+                // it expires; otherwise render at the existing
+                // swapchain size and let the compositor scale.
+                if let Some(last_resize) = rcx.resize_debounce
+                    && last_resize.elapsed() >= RESIZE_DEBOUNCE
+                {
+                    rcx.recreate_swapchain = true;
+                    rcx.resize_debounce = None;
+                }
+
+                let extent: [u32; 2] = if rcx.resize_debounce.is_some() {
+                    rcx.swapchain.create_info().image_extent
+                } else {
+                    rcx.window.inner_size().into()
+                };
                 if extent[0] == 0 || extent[1] == 0 {
                     return;
                 }
@@ -368,7 +395,11 @@ impl<A: App> ApplicationHandler for Host<A> {
                             return;
                         }
                     };
-                if suboptimal {
+                // `suboptimal` fires every frame during animated
+                // resizes; gating on the debounce keeps the deferral
+                // intact (real staleness still surfaces via acquire
+                // errors above).
+                if suboptimal && rcx.resize_debounce.is_none() {
                     rcx.recreate_swapchain = true;
                 }
 
@@ -437,6 +468,26 @@ impl<A: App> ApplicationHandler for Host<A> {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Wake at the debounce deadline so the deferred recreate fires
+        // even with no further input.
+        let Some(rcx) = self.rcx.as_ref() else {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            return;
+        };
+        if let Some(last_resize) = rcx.resize_debounce {
+            let deadline = last_resize + RESIZE_DEBOUNCE;
+            if Instant::now() >= deadline {
+                rcx.window.request_redraw();
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            } else {
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+            }
+        } else {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         }
     }
 }

@@ -45,6 +45,11 @@ use aetna_core::{App, Cursor, KeyModifiers, PointerButton, Rect, UiKey};
 use aetna_wgpu::{MsaaTarget, Runner};
 
 const DEFAULT_SAMPLE_COUNT: u32 = 4;
+/// Wait this long after the last `Resized` before reconfiguring the
+/// surface and rebuilding the MSAA target. Wayland compositors fire
+/// `Resized` every frame during animated geometry changes (KDE
+/// tile/snap, etc.); reconfiguring on each one stalls the surface.
+const RESIZE_DEBOUNCE: Duration = Duration::from_millis(100);
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -205,6 +210,7 @@ fn run_host<A: WinitWgpuApp + 'static>(
         modifiers: KeyModifiers::default(),
         next_periodic_redraw: None,
         last_cursor: Cursor::Default,
+        pending_resize: None,
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -226,6 +232,9 @@ struct Host<A: WinitWgpuApp> {
     /// `set_cursor` is cheap but goes through a syscall on most
     /// platforms.
     last_cursor: Cursor,
+    /// Latest pending resize size and the timestamp it arrived at.
+    /// Cleared when the debounce expires and the reconfigure fires.
+    pending_resize: Option<(PhysicalSize<u32>, Instant)>,
 }
 
 struct Gfx {
@@ -249,6 +258,23 @@ fn surface_extent(config: &wgpu::SurfaceConfiguration) -> wgpu::Extent3d {
         width: config.width,
         height: config.height,
         depth_or_array_layers: 1,
+    }
+}
+
+/// Apply a deferred resize: update the surface config, reconfigure the
+/// surface, propagate the new size to the runner, and rebuild the MSAA
+/// target if the sample count is > 1.
+fn apply_resize(gfx: &mut Gfx, size: PhysicalSize<u32>) {
+    gfx.config.width = size.width.max(1);
+    gfx.config.height = size.height.max(1);
+    gfx.surface.configure(&gfx.device, &gfx.config);
+    gfx.renderer
+        .set_surface_size(gfx.config.width, gfx.config.height);
+    let extent = surface_extent(&gfx.config);
+    if let Some(msaa) = gfx.msaa.as_mut()
+        && !msaa.matches(extent)
+    {
+        *msaa = MsaaTarget::new(&gfx.device, gfx.config.format, extent, msaa.sample_count);
     }
 }
 
@@ -369,22 +395,9 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
 
                 match event {
                     WindowEvent::Resized(size) => {
-                        gfx.config.width = size.width.max(1);
-                        gfx.config.height = size.height.max(1);
-                        gfx.surface.configure(&gfx.device, &gfx.config);
-                        gfx.renderer
-                            .set_surface_size(gfx.config.width, gfx.config.height);
-                        let extent = surface_extent(&gfx.config);
-                        if let Some(msaa) = gfx.msaa.as_mut()
-                            && !msaa.matches(extent)
-                        {
-                            *msaa = MsaaTarget::new(
-                                &gfx.device,
-                                gfx.config.format,
-                                extent,
-                                msaa.sample_count,
-                            );
-                        }
+                        // Defer the reconfigure to the next redraw —
+                        // see `RESIZE_DEBOUNCE`.
+                        self.pending_resize = Some((size, Instant::now()));
                         gfx.window.request_redraw();
                     }
 
@@ -492,12 +505,30 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                     }
 
                     WindowEvent::RedrawRequested => {
+                        // Promote the pending debounce to a real
+                        // reconfigure once it expires; otherwise the
+                        // surface keeps its old config and the
+                        // compositor scales.
+                        if let Some((size, last_resize)) = self.pending_resize
+                            && last_resize.elapsed() >= RESIZE_DEBOUNCE
+                        {
+                            apply_resize(gfx, size);
+                            self.pending_resize = None;
+                        }
+
                         let frame = match gfx.surface.get_current_texture() {
                             wgpu::CurrentSurfaceTexture::Success(t)
                             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
                             wgpu::CurrentSurfaceTexture::Lost
                             | wgpu::CurrentSurfaceTexture::Outdated => {
-                                gfx.surface.configure(&gfx.device, &gfx.config);
+                                // Genuinely invalid surface — flush any
+                                // pending resize early so the
+                                // reconfigure happens in one step.
+                                if let Some((size, _)) = self.pending_resize.take() {
+                                    apply_resize(gfx, size);
+                                } else {
+                                    gfx.surface.configure(&gfx.device, &gfx.config);
+                                }
                                 return;
                             }
                             other => {
@@ -593,20 +624,36 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             return;
         };
 
-        let Some(interval) = self.config.redraw_interval else {
-            event_loop.set_control_flow(ControlFlow::Wait);
-            return;
-        };
-
         let now = Instant::now();
-        let next = self
-            .next_periodic_redraw
-            .get_or_insert_with(|| now + interval);
-        if now >= *next {
-            gfx.window.request_redraw();
-            *next = now + interval;
+        let mut earliest: Option<Instant> = None;
+
+        // Wake at the debounce deadline so the deferred reconfigure
+        // fires even with no further input.
+        if let Some((_, last_resize)) = self.pending_resize {
+            let deadline = last_resize + RESIZE_DEBOUNCE;
+            if now >= deadline {
+                gfx.window.request_redraw();
+            } else {
+                earliest = Some(deadline);
+            }
         }
-        event_loop.set_control_flow(ControlFlow::WaitUntil(*next));
+
+        if let Some(interval) = self.config.redraw_interval {
+            let next = self
+                .next_periodic_redraw
+                .get_or_insert_with(|| now + interval);
+            if now >= *next {
+                gfx.window.request_redraw();
+                *next = now + interval;
+            }
+            let next_v = *next;
+            earliest = Some(earliest.map_or(next_v, |e| e.min(next_v)));
+        }
+
+        match earliest {
+            Some(t) => event_loop.set_control_flow(ControlFlow::WaitUntil(t)),
+            None => event_loop.set_control_flow(ControlFlow::Wait),
+        }
     }
 }
 
