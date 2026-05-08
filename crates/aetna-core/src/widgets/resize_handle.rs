@@ -170,8 +170,16 @@ pub fn resize_handle(axis: Axis) -> El {
     // Arrow / PageUp / PageDown / Home / End still arrive as `KeyDown`
     // events on the focused handle by default, which `apply_event_*`
     // folds into the size value.
+    //
+    // Center the hairline within the wider hit-area so the focus ring
+    // (drawn on the outer container's `paint_overflow` band) wraps the
+    // visible hairline symmetrically. Without this the overlay default
+    // (`Align::Stretch`) pins the Fixed-thickness hairline to one edge
+    // and the ring looks visibly offset from the line it surrounds.
     stack([hairline])
         .at_loc(Location::caller())
+        .align(Align::Center)
+        .justify(Justify::Center)
         .focusable()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(cursor)
