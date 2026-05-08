@@ -172,7 +172,23 @@ fn push_node(
     } else {
         1.0
     };
-    let opacity = inherited_opacity * n.opacity * focus_alpha_mul * blink_alpha_mul;
+    // `reveal_on_hover` modulates the node's drawn alpha based on the
+    // *combined* hover envelope: max of the nearest focusable
+    // ancestor's hover and this node's own hover. The nearest-ancestor
+    // half is what `inherited_hover_envelope` already carries (the
+    // recursion below sets it to the focusable ancestor's envelope and
+    // passes through non-focusable wrappers); the self half lets a
+    // hover-revealed child stay visible when the cursor is on the
+    // child itself, even if the ancestor has lost hover.
+    let reveal_alpha_mul = match n.reveal_on_hover {
+        Some(rest) => {
+            let combined = inherited_hover_envelope.max(hover_amount);
+            rest + (1.0 - rest) * combined
+        }
+        None => 1.0,
+    };
+    let opacity =
+        inherited_opacity * n.opacity * focus_alpha_mul * blink_alpha_mul * reveal_alpha_mul;
     // Children inherit the *immediate* focusable ancestor's envelope.
     // When this node is itself focusable, its envelope replaces the
     // inherited one; otherwise the inherited value passes through.
@@ -911,6 +927,188 @@ mod tests {
             Some(tokens::ACCENT.with_alpha(press_alpha)),
             "press while hovered sums the two envelope contributions",
         );
+    }
+
+    #[test]
+    fn reveal_on_hover_fades_child_with_focusable_ancestor_envelope() {
+        // A non-interactive child flagged with `reveal_on_hover` sits
+        // below a focusable container. With no hover anywhere, the
+        // child paints at `rest_opacity` * its declared alpha. When
+        // the container picks up hover, the child's effective alpha
+        // animates to full.
+        use crate::layout::layout;
+
+        let make_tree = || {
+            column([row([crate::stack([El::new(Kind::Custom("badge"))
+                .width(Size::Fixed(14.0))
+                .height(Size::Fixed(14.0))
+                .fill(tokens::FOREGROUND)
+                .reveal_on_hover(0.25)])
+            .key("container")
+            .focusable()
+            .width(Size::Fixed(120.0))
+            .height(Size::Fixed(18.0))])])
+            .padding(20.0)
+        };
+
+        // No hover: the child paints with alpha ≈ 0.25 * 255.
+        {
+            let mut tree = make_tree();
+            let mut state = UiState::new();
+            layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+            state.set_animation_mode(crate::state::AnimationMode::Settled);
+            state.tick_visual_animations(&mut tree, web_time::Instant::now());
+
+            let ops = draw_ops(&tree, &state);
+            let badge = find_quad(&ops, "badge").expect("badge quad");
+            let DrawOp::Quad { uniforms, .. } = badge else {
+                unreachable!()
+            };
+            let UniformValue::Color(fill) = uniforms.get("fill").expect("badge fill") else {
+                panic!("expected color uniform");
+            };
+            // FOREGROUND is fully opaque in source; alpha after
+            // composition should be ~0.25 (rest_opacity).
+            let expected = (255.0_f32 * 0.25).round() as u8;
+            assert!(
+                (fill.a as i32 - expected as i32).abs() <= 2,
+                "rest opacity should hold the child near 0.25 alpha; got {}",
+                fill.a,
+            );
+        }
+
+        // Container hovered: the child's effective alpha rises to full.
+        {
+            let mut tree = make_tree();
+            let mut state = UiState::new();
+            layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+            let container_target = state
+                .target_of_key(&tree, "container")
+                .expect("container target");
+            state.hovered = Some(container_target);
+            state.apply_to_state();
+            state.set_animation_mode(crate::state::AnimationMode::Settled);
+            state.tick_visual_animations(&mut tree, web_time::Instant::now());
+
+            let ops = draw_ops(&tree, &state);
+            let badge = find_quad(&ops, "badge").expect("badge quad");
+            let DrawOp::Quad { uniforms, .. } = badge else {
+                unreachable!()
+            };
+            let UniformValue::Color(fill) = uniforms.get("fill").expect("badge fill") else {
+                panic!("expected color uniform");
+            };
+            assert_eq!(
+                fill.a, 255,
+                "ancestor hover should pull the child's alpha to full",
+            );
+        }
+    }
+
+    #[test]
+    fn reveal_on_hover_keeps_child_visible_while_self_hovered() {
+        // Even with no ancestor hover, a keyed child carrying
+        // `reveal_on_hover` stays visible while the cursor is directly
+        // on it — `max(inherited, self)` keeps the envelope at 1 when
+        // either side fires.
+        use crate::layout::layout;
+
+        let mut tree = column([row([crate::stack([El::new(Kind::Custom("close"))
+            .key("close")
+            .focusable()
+            .width(Size::Fixed(14.0))
+            .height(Size::Fixed(14.0))
+            .fill(tokens::FOREGROUND)
+            .reveal_on_hover(0.0)])
+        .key("container")
+        .focusable()
+        .width(Size::Fixed(120.0))
+        .height(Size::Fixed(18.0))])])
+        .padding(20.0);
+
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        // Hit-test only resolves to the deepest interactive target,
+        // so cursor-on-close hovers the close, not the container.
+        let close_target = state
+            .target_of_key(&tree, "close")
+            .expect("close target");
+        state.hovered = Some(close_target);
+        state.apply_to_state();
+        state.set_animation_mode(crate::state::AnimationMode::Settled);
+        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+
+        let ops = draw_ops(&tree, &state);
+        let close = find_quad(&ops, "close").expect("close quad");
+        let DrawOp::Quad { uniforms, .. } = close else {
+            unreachable!()
+        };
+        let UniformValue::Color(fill) = uniforms.get("fill").expect("close fill") else {
+            panic!("expected color uniform");
+        };
+        assert_eq!(
+            fill.a, 255,
+            "self-hover should keep a reveal_on_hover element fully visible \
+             even when no ancestor is hovered",
+        );
+    }
+
+    #[test]
+    fn reveal_on_hover_does_not_affect_unmarked_descendants() {
+        // Sibling control: a sibling without `reveal_on_hover` paints
+        // at its declared alpha regardless of ancestor hover, so the
+        // modifier is opt-in and doesn't bleed.
+        use crate::layout::layout;
+
+        let mut tree = column([row([crate::stack([
+            El::new(Kind::Custom("tagged"))
+                .width(Size::Fixed(8.0))
+                .height(Size::Fixed(8.0))
+                .fill(tokens::FOREGROUND)
+                .reveal_on_hover(0.0),
+            El::new(Kind::Custom("plain"))
+                .width(Size::Fixed(8.0))
+                .height(Size::Fixed(8.0))
+                .fill(tokens::FOREGROUND),
+        ])
+        .key("container")
+        .focusable()
+        .width(Size::Fixed(120.0))
+        .height(Size::Fixed(18.0))])])
+        .padding(20.0);
+
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        state.set_animation_mode(crate::state::AnimationMode::Settled);
+        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+
+        let ops = draw_ops(&tree, &state);
+        let tagged = find_quad(&ops, "tagged").expect("tagged quad");
+        let plain = find_quad(&ops, "plain").expect("plain quad");
+        let DrawOp::Quad {
+            uniforms: tagged_u, ..
+        } = tagged
+        else {
+            unreachable!()
+        };
+        let DrawOp::Quad {
+            uniforms: plain_u, ..
+        } = plain
+        else {
+            unreachable!()
+        };
+        let UniformValue::Color(t) = tagged_u.get("fill").unwrap() else {
+            panic!()
+        };
+        let UniformValue::Color(p) = plain_u.get("fill").unwrap() else {
+            panic!()
+        };
+        assert_eq!(t.a, 0, "tagged child invisible at rest with rest=0");
+        assert_eq!(p.a, 255, "unmarked sibling unaffected");
+    }
+
+    fn find_quad<'a>(ops: &'a [DrawOp], id_substr: &str) -> Option<&'a DrawOp> {
+        ops.iter().find(|op| op.id().contains(id_substr))
     }
 
     #[test]

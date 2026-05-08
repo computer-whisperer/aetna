@@ -80,6 +80,25 @@ impl El {
         self
     }
 
+    /// Reveal this element on hover of a focusable ancestor (or the
+    /// element itself).
+    ///
+    /// `rest_opacity` is the drawn alpha when no hover signal is
+    /// present (clamped to `[0, 1]`); the element fades up to full
+    /// opacity as the ancestor's hover envelope animates toward `1.0`.
+    /// Self-hover composes via `max`, so mousing directly onto the
+    /// element keeps it visible after the ancestor loses hover.
+    ///
+    /// Layout-neutral — the element keeps its computed rect at all
+    /// times. Use this for hover-revealed close buttons, secondary
+    /// actions on list rows, hover-only validation icons, and other
+    /// "show on hover" patterns where the surrounding layout
+    /// shouldn't shift on hover.
+    pub fn reveal_on_hover(mut self, rest_opacity: f32) -> Self {
+        self.reveal_on_hover = Some(rest_opacity.clamp(0.0, 1.0));
+        self
+    }
+
     pub fn at(mut self, file: &'static str, line: u32) -> Self {
         self.source = Source { file, line };
         self

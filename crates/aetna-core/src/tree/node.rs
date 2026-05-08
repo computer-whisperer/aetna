@@ -90,6 +90,20 @@ pub struct El {
     /// reacts on the thumb itself, mirroring shadcn's
     /// `hover:ring-4 hover:ring-ring/50`.
     pub state_follows_interactive_ancestor: bool,
+    /// When `Some(rest_opacity)`, this node's paint opacity is
+    /// modulated by the nearest focusable ancestor's hover envelope
+    /// — combined with the node's own hover envelope via `max`, so
+    /// hovering the child directly also reveals it. The drawn alpha
+    /// interpolates from `rest_opacity` (no hover) up to `1.0` (full
+    /// hover), then composes multiplicatively with the existing
+    /// [`Self::opacity`] / inherited opacity stack.
+    ///
+    /// Layout-neutral — the element's geometry stays fixed regardless
+    /// of hover. Use this for hover-revealed close buttons, secondary
+    /// actions on list rows, hover-only validation icons, and other
+    /// "show on hover" patterns whose visibility shouldn't shift the
+    /// surrounding layout.
+    pub reveal_on_hover: Option<f32>,
     pub source: Source,
 
     // Layout
