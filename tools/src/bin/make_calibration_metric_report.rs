@@ -257,7 +257,7 @@ fn parse_rect(text: &str) -> Option<Rect> {
     })
 }
 
-fn parse_named_f64<'a>(text: &'a str, name: &str) -> Option<f64> {
+fn parse_named_f64(text: &str, name: &str) -> Option<f64> {
     let start = text.find(name)? + name.len();
     let end = text[start..]
         .find(char::is_whitespace)

@@ -346,6 +346,15 @@ pub struct GlyphAtlas {
     default_family_stack: Vec<String>,
 }
 
+#[derive(Copy, Clone)]
+struct ShapeRunOptions {
+    line_h: f32,
+    wrap: TextWrap,
+    anchor: TextAnchor,
+    available_width: Option<f32>,
+    rasterize_into_color_atlas: bool,
+}
+
 impl Default for GlyphAtlas {
     fn default() -> Self {
         Self::new()
@@ -519,11 +528,13 @@ impl GlyphAtlas {
         self.shape_runs_inner(
             runs,
             size,
-            line_height,
-            wrap,
-            anchor,
-            available_width,
-            false,
+            ShapeRunOptions {
+                line_h: line_height,
+                wrap,
+                anchor,
+                available_width,
+                rasterize_into_color_atlas: false,
+            },
         )
     }
 
@@ -555,11 +566,13 @@ impl GlyphAtlas {
         self.shape_runs_inner(
             runs,
             size,
-            line_height(size),
-            wrap,
-            anchor,
-            available_width,
-            true,
+            ShapeRunOptions {
+                line_h: line_height(size),
+                wrap,
+                anchor,
+                available_width,
+                rasterize_into_color_atlas: true,
+            },
         )
     }
 
@@ -567,12 +580,15 @@ impl GlyphAtlas {
         &mut self,
         runs: &[(&str, RunStyle)],
         size: f32,
-        line_h: f32,
-        wrap: TextWrap,
-        anchor: TextAnchor,
-        available_width: Option<f32>,
-        rasterize_into_color_atlas: bool,
+        options: ShapeRunOptions,
     ) -> ShapedRun {
+        let ShapeRunOptions {
+            line_h,
+            wrap,
+            anchor,
+            available_width,
+            rasterize_into_color_atlas,
+        } = options;
         let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_h));
         buffer.set_wrap(match wrap {
             TextWrap::NoWrap => Wrap::None,

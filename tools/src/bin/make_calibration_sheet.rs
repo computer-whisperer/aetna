@@ -110,7 +110,7 @@ fn downsample_2x(image: Image) -> Image {
 }
 
 fn normalize_for_sheet(image: Image) -> Image {
-    if image.width >= 1400 && image.width % 2 == 0 && image.height % 2 == 0 {
+    if image.width >= 1400 && image.width.is_multiple_of(2) && image.height.is_multiple_of(2) {
         downsample_2x(image)
     } else {
         image

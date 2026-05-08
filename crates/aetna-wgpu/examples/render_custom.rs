@@ -42,7 +42,7 @@ fn fixture() -> El {
              paint order.",
         )
         .muted(),
-        card(
+        titled_card(
             "gradient.wgsl — vertical linear gradient",
             [
                 row([

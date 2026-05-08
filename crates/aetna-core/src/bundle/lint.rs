@@ -353,9 +353,8 @@ fn lint_row_alignment(
                 kind: FindingKind::Alignment,
                 node_id: n.computed_id.clone(),
                 source: blame,
-                message: format!(
-                    "row has a fixed-size visual child pinned to the top beside text; add .align(Align::Center) to vertically center row content"
-                ),
+                message: "row has a fixed-size visual child pinned to the top beside text; add .align(Align::Center) to vertically center row content"
+                    .to_string(),
             });
             return;
         }

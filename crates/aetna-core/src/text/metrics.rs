@@ -793,6 +793,13 @@ fn wrap_lines_by_width(
         return vec![String::new()];
     }
 
+    let ctx = WrapMeasure {
+        max_width,
+        size,
+        family,
+        weight,
+        mono,
+    };
     let mut out = Vec::new();
     for paragraph in text.split('\n') {
         if paragraph.is_empty() {
@@ -803,9 +810,7 @@ fn wrap_lines_by_width(
         let mut line = String::new();
         for word in paragraph.split_whitespace() {
             if line.is_empty() {
-                push_word_wrapped(
-                    &mut out, &mut line, word, max_width, size, family, weight, mono,
-                );
+                push_word_wrapped(&mut out, &mut line, word, ctx);
                 continue;
             }
 
@@ -814,9 +819,7 @@ fn wrap_lines_by_width(
                 line = candidate;
             } else {
                 out.push(std::mem::take(&mut line));
-                push_word_wrapped(
-                    &mut out, &mut line, word, max_width, size, family, weight, mono,
-                );
+                push_word_wrapped(&mut out, &mut line, word, ctx);
             }
         }
 
@@ -964,30 +967,40 @@ fn layout_text_cosmic(
     wrap: TextWrap,
     available_width: Option<f32>,
 ) -> Option<TextLayout> {
-    FONT_SYSTEM.with_borrow_mut(|font_system| {
-        layout_text_cosmic_with(
-            font_system,
-            text,
-            size,
-            line_height,
-            family,
-            weight,
-            wrap,
-            available_width,
-        )
-    })
+    let options = CosmicLayoutOptions {
+        size,
+        line_height,
+        family,
+        weight,
+        wrap,
+        available_width,
+    };
+    FONT_SYSTEM.with_borrow_mut(|font_system| layout_text_cosmic_with(font_system, text, options))
 }
 
-fn layout_text_cosmic_with(
-    font_system: &mut FontSystem,
-    text: &str,
+#[derive(Copy, Clone)]
+struct CosmicLayoutOptions {
     size: f32,
     line_height: f32,
     family: FontFamily,
     weight: FontWeight,
     wrap: TextWrap,
     available_width: Option<f32>,
+}
+
+fn layout_text_cosmic_with(
+    font_system: &mut FontSystem,
+    text: &str,
+    options: CosmicLayoutOptions,
 ) -> Option<TextLayout> {
+    let CosmicLayoutOptions {
+        size,
+        line_height,
+        family,
+        weight,
+        wrap,
+        available_width,
+    } = options;
     let mut buffer = Buffer::new(font_system, Metrics::new(size, line_height));
     buffer.set_wrap(match wrap {
         TextWrap::NoWrap => Wrap::None,
@@ -1076,16 +1089,23 @@ fn layout_run_text(run: &cosmic_text::LayoutRun<'_>) -> String {
         .to_string()
 }
 
-fn push_word_wrapped(
-    out: &mut Vec<String>,
-    line: &mut String,
-    word: &str,
+#[derive(Copy, Clone)]
+struct WrapMeasure {
     max_width: f32,
     size: f32,
     family: FontFamily,
     weight: FontWeight,
     mono: bool,
-) {
+}
+
+fn push_word_wrapped(out: &mut Vec<String>, line: &mut String, word: &str, ctx: WrapMeasure) {
+    let WrapMeasure {
+        max_width,
+        size,
+        family,
+        weight,
+        mono,
+    } = ctx;
     if line_width_with_family(word, size, family, weight, mono) <= max_width {
         line.push_str(word);
         return;
