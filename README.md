@@ -35,6 +35,7 @@ The architectural decision: `El` is the author's description of the scene; every
 | Capability | What it covers and how to see it |
 |---|---|
 | Grammar | `column`/`row`/`card`/`button`/`badge`/`text`/`spacer`, intrinsic + `Fill`/`Hug`/`Fixed` sizing, `pub const` tokens. |
+| Theme palettes | shadcn-shaped color tokens with copied `zinc` and `neutral` dark/light palettes plus a Radix Colors `slate` + `blue` dark/light pair. `Theme::aetna_dark()` and `Theme::aetna_light()` default to shadcn zinc; explicit constructors are `Theme::shadcn_zinc_dark()`, `Theme::shadcn_zinc_light()`, `Theme::shadcn_neutral_dark()`, `Theme::shadcn_neutral_light()`, `Theme::radix_slate_blue_dark()`, and `Theme::radix_slate_blue_light()`. `cargo run -p aetna-core --example palette_demo` renders every stock palette. |
 | Wgpu rendering | `cargo run -p aetna-examples --bin settings`; `cargo run -p aetna-wgpu --example render_png` writes `crates/aetna-wgpu/out/settings.wgpu.png` |
 | Stock shaders | `rounded_rect` + `text_sdf` + `focus_ring` |
 | Custom-shader escape hatch | `crates/aetna-wgpu/out/custom_shader.wgpu.png` — gradient buttons rendered by user-authored `shaders/gradient.wgsl` |
@@ -255,6 +256,7 @@ cargo run -p aetna-examples --bin hotkey_picker       # interactive — keyboard
 cargo run -p aetna-examples --bin animated_palette    # interactive — .animate()
 cargo run -p aetna-core --example scroll_list         # headless → crates/aetna-core/out/scroll_list.svg
 cargo run -p aetna-core --example circular_layout     # headless → crates/aetna-core/out/circular_layout.svg
+cargo run -p aetna-core --example palette_demo        # headless → shadcn zinc/neutral and Radix slate+blue palette sheets
 cargo run -p aetna-examples --bin circular_layout     # interactive compass rose, custom LayoutFn
 cargo run -p aetna-core --example virtual_list        # headless → crates/aetna-core/out/virtual_list.svg (10k rows; tree dump shows only the realized window)
 cargo run -p aetna-examples --bin virtual_list        # interactive 100k-row list, wheel scroll + click

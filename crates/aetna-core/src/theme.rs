@@ -33,16 +33,50 @@ pub struct Theme {
 
 impl Theme {
     /// Current default: stock rounded-rect surfaces with the Aetna Dark
-    /// palette and compact desktop metrics.
+    /// palette, copied from shadcn/ui zinc dark, and compact desktop
+    /// metrics.
     pub fn aetna_dark() -> Self {
-        Self::default()
+        Self::shadcn_zinc_dark()
     }
 
-    /// Stock rounded-rect surfaces with the Aetna Light palette. Drop-in
-    /// alternative to [`Self::aetna_dark`] — token references swap rgba
-    /// at paint time without rebuilding the widget tree.
+    /// Stock rounded-rect surfaces with the Aetna Light palette, copied
+    /// from shadcn/ui zinc light. Drop-in alternative to
+    /// [`Self::aetna_dark`] — token references swap rgba at paint time
+    /// without rebuilding the widget tree.
     pub fn aetna_light() -> Self {
-        Self::default().with_palette(Palette::aetna_light())
+        Self::shadcn_zinc_light()
+    }
+
+    /// Stock rounded-rect surfaces with the shadcn/ui zinc dark palette.
+    pub fn shadcn_zinc_dark() -> Self {
+        Self::default().with_palette(Palette::shadcn_zinc_dark())
+    }
+
+    /// Stock rounded-rect surfaces with the shadcn/ui zinc light palette.
+    pub fn shadcn_zinc_light() -> Self {
+        Self::default().with_palette(Palette::shadcn_zinc_light())
+    }
+
+    /// Stock rounded-rect surfaces with the shadcn/ui neutral dark palette.
+    pub fn shadcn_neutral_dark() -> Self {
+        Self::default().with_palette(Palette::shadcn_neutral_dark())
+    }
+
+    /// Stock rounded-rect surfaces with the shadcn/ui neutral light palette.
+    pub fn shadcn_neutral_light() -> Self {
+        Self::default().with_palette(Palette::shadcn_neutral_light())
+    }
+
+    /// Stock rounded-rect surfaces with a Radix Colors slate + blue
+    /// dark palette.
+    pub fn radix_slate_blue_dark() -> Self {
+        Self::default().with_palette(Palette::radix_slate_blue_dark())
+    }
+
+    /// Stock rounded-rect surfaces with a Radix Colors slate + blue
+    /// light palette.
+    pub fn radix_slate_blue_light() -> Self {
+        Self::default().with_palette(Palette::radix_slate_blue_light())
     }
 
     /// Replace the runtime color palette. Token references resolve

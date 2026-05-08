@@ -45,6 +45,9 @@ Several important pieces are already in place:
   handling.
 - stock icon helpers and icon-bearing buttons exist.
 - backend runners can receive themes through the shared core path.
+- the default dark/light palettes copy shadcn/ui zinc, with shadcn neutral
+  and Radix slate+blue dark/light variants available for side-by-side
+  inspection.
 
 That means the next polish work should tune global defaults first. Local
 fixture tweaks should be treated as evidence of a missing default or missing
@@ -194,6 +197,17 @@ The Aetna calibration examples also emit themed density variants:
 `*.compact`, `*.comfortable`, and `*.spacious`. The default unqualified output
 remains the normal Aetna dark theme for compatibility with older sheets.
 
+Palette calibration is separate from density calibration:
+
+```bash
+cargo run -p aetna-core --example palette_demo
+```
+
+It writes zinc dark/light, neutral dark/light, and Radix slate+blue dark/light
+sheets into `crates/aetna-core/out/`, using the same stock widgets plus token
+swatches so the semantic palette and Aetna extension tokens can be inspected
+together.
+
 The shadcn reference app marks major surfaces with
 `data-calibration-boundary`; the capture script fails if visible descendants
 overflow those marked boxes. Reference screenshots are inputs to calibration,
@@ -237,8 +251,8 @@ The next cleanup/polish milestones should be:
    to regenerate.
 3. Tune stock role uniforms for border strength, shadow, inset highlight, and
    selected/current/danger surfaces.
-4. Add a light theme and at least one accent variant to prove the role system
-   is not dark-theme-specific.
+4. Tune non-core status and extension tokens against the palette sheets so
+   links, selection, scrollbars, and status badges feel intentional.
 5. Tighten menu, table, list, and icon-button helpers where fixtures still need
    repeated local composition.
 6. Expand lints for raw visual constants, weak focus, overflow, and target
