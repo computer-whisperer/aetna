@@ -123,6 +123,12 @@ pub struct Runner {
     /// run's pipeline expects it.
     backdrop_shaders: HashSet<&'static str>,
 
+    /// Custom shader names registered with `samples_time=true`. Mirrors
+    /// `backdrop_shaders`: feeds `prepare_layout`'s continuous-redraw
+    /// scan instead of the paint scheduler so any node bound to such a
+    /// shader keeps the host loop ticking.
+    time_shaders: HashSet<&'static str>,
+
     /// Linear-filtering sampler bound at `@group(1) @binding(1)` for
     /// every backdrop-sampling pipeline.
     backdrop_sampler: Arc<Sampler>,
@@ -304,11 +310,38 @@ impl Runner {
         let mut pipelines = HashMap::new();
         let rr = build_quad_pipeline(
             device.clone(),
-            subpass,
+            subpass.clone(),
             "stock::rounded_rect",
             stock_wgsl::ROUNDED_RECT,
         );
         pipelines.insert(ShaderHandle::Stock(StockShader::RoundedRect), rr.clone());
+
+        let spinner = build_quad_pipeline(
+            device.clone(),
+            subpass.clone(),
+            "stock::spinner",
+            stock_wgsl::SPINNER,
+        );
+        pipelines.insert(ShaderHandle::Stock(StockShader::Spinner), spinner);
+
+        let skeleton = build_quad_pipeline(
+            device.clone(),
+            subpass.clone(),
+            "stock::skeleton",
+            stock_wgsl::SKELETON,
+        );
+        pipelines.insert(ShaderHandle::Stock(StockShader::Skeleton), skeleton);
+
+        let progress_indeterminate = build_quad_pipeline(
+            device.clone(),
+            subpass,
+            "stock::progress_indeterminate",
+            stock_wgsl::PROGRESS_INDETERMINATE,
+        );
+        pipelines.insert(
+            ShaderHandle::Stock(StockShader::ProgressIndeterminate),
+            progress_indeterminate,
+        );
 
         // Persistent quad VBO — 4 corners of the unit quad as a triangle
         // strip, written once.
@@ -424,6 +457,7 @@ impl Runner {
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             registered_shaders: HashMap::new(),
             backdrop_shaders: HashSet::new(),
+            time_shaders: HashSet::new(),
             backdrop_sampler,
             backdrop_set_layout: None,
             snapshot: None,
@@ -474,15 +508,28 @@ impl Runner {
     /// eagerly so a shader registered for a `key` is ready to draw
     /// immediately.
     pub fn register_shader(&mut self, name: &'static str, wgsl: &str) {
-        self.register_shader_with(name, wgsl, false);
+        self.register_shader_with(name, wgsl, false, false);
     }
 
-    /// Register a custom shader with an opt-in backdrop-sampling flag.
-    /// When `samples_backdrop` is true, the paint scheduler inserts a
-    /// pass boundary before the first draw bound to this shader, and
-    /// `Runner::render` arranges Pass A → snapshot copy → Pass B so the
-    /// shader can sample the post-Pass-A target through `@group(1)`.
-    pub fn register_shader_with(&mut self, name: &'static str, wgsl: &str, samples_backdrop: bool) {
+    /// Register a custom shader with opt-in flags for backdrop
+    /// sampling and time-driven motion.
+    ///
+    /// `samples_backdrop=true` inserts a pass boundary before the
+    /// first draw bound to this shader, so `Runner::render` arranges
+    /// Pass A → snapshot copy → Pass B and the shader can sample the
+    /// post-Pass-A target through `@group(1)`.
+    ///
+    /// `samples_time=true` declares the shader's output depends on
+    /// `frame.time`; the runtime ORs this into
+    /// [`PrepareResult::needs_redraw`] so the host loop keeps ticking
+    /// while any node is bound to the shader.
+    pub fn register_shader_with(
+        &mut self,
+        name: &'static str,
+        wgsl: &str,
+        samples_backdrop: bool,
+        samples_time: bool,
+    ) {
         // Cache the SPIR-V words too — useful for diagnostics + future
         // re-registration without re-running naga.
         let spirv = wgsl_to_spirv(name, wgsl)
@@ -513,6 +560,11 @@ impl Runner {
         } else {
             self.backdrop_shaders.remove(name);
         }
+        if samples_time {
+            self.time_shaders.insert(name);
+        } else {
+            self.time_shaders.remove(name);
+        }
         self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
     }
 
@@ -535,9 +587,21 @@ impl Runner {
     pub fn prepare(&mut self, root: &mut El, viewport: Rect, scale_factor: f32) -> PrepareResult {
         let mut timings = PrepareTimings::default();
 
-        let (ops, needs_redraw) =
-            self.core
-                .prepare_layout(root, viewport, scale_factor, &mut timings);
+        // Closure feeds `prepare_layout`'s continuous-redraw scan.
+        // Any node bound to a shader registered with
+        // `samples_time=true` keeps the host loop ticking even when
+        // no animation is settling.
+        let time_shaders = &self.time_shaders;
+        let (ops, needs_redraw) = self.core.prepare_layout(
+            root,
+            viewport,
+            scale_factor,
+            &mut timings,
+            |handle| match handle {
+                ShaderHandle::Custom(name) => time_shaders.contains(name),
+                ShaderHandle::Stock(_) => false,
+            },
+        );
 
         self.text_paint.frame_begin();
         self.icon_paint.frame_begin();
@@ -595,7 +659,15 @@ impl Runner {
                 .frame_uniform_buf
                 .write()
                 .expect("aetna-vulkano: frame uniform write");
-            let time = (Instant::now() - self.start_time).as_secs_f32();
+            // Pin time to 0 in Settled mode so headless fixtures
+            // rendering a time-driven shader (e.g. stock::spinner)
+            // stay byte-identical run-to-run.
+            let time = match self.core.ui_state().animation_mode() {
+                aetna_core::AnimationMode::Settled => 0.0,
+                aetna_core::AnimationMode::Live => {
+                    (Instant::now() - self.start_time).as_secs_f32()
+                }
+            };
             *write = FrameUniforms {
                 viewport: [viewport.w, viewport.h],
                 time,

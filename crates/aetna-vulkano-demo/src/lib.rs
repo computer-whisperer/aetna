@@ -200,7 +200,7 @@ impl<A: App> ApplicationHandler for Host<A> {
         // sampling ones — `Runner::render` owns the multi-pass /
         // snapshot dance internally.
         for s in self.app.shaders() {
-            runner.register_shader_with(s.name, s.wgsl, s.samples_backdrop);
+            runner.register_shader_with(s.name, s.wgsl, s.samples_backdrop, s.samples_time);
         }
         if let Some(init) = self.init_runner.take() {
             init(&mut runner);

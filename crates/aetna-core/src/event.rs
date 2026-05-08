@@ -518,14 +518,18 @@ pub trait App {
         Vec::new()
     }
 
-    /// Custom shaders this app needs registered. Each tuple is
-    /// `(name, wgsl_source, samples_backdrop)`. The host runner
+    /// Custom shaders this app needs registered. Each entry carries
+    /// the shader name, its WGSL source, and per-flag opt-ins
+    /// (backdrop sampling, time-driven motion). The host runner
     /// registers them once at startup via
-    /// `Runner::register_shader_with(name, wgsl, samples_backdrop)`.
+    /// `Runner::register_shader_with(name, wgsl, samples_backdrop, samples_time)`.
     ///
     /// Backends that don't support backdrop sampling skip entries with
     /// `samples_backdrop=true`; any node bound to such a shader will
     /// draw nothing on those backends rather than mis-render.
+    /// `samples_time=true` declares that the shader's output depends
+    /// on `frame.time`, which keeps the host idle loop ticking while
+    /// any node is bound to it.
     ///
     /// Default: no shaders.
     fn shaders(&self) -> Vec<AppShader> {
@@ -545,5 +549,11 @@ pub trait App {
 pub struct AppShader {
     pub name: &'static str,
     pub wgsl: &'static str,
+    /// Reads the prior pass's color target (`@group(2) backdrop_tex`).
+    /// Backends without backdrop support skip these.
     pub samples_backdrop: bool,
+    /// Reads `frame.time` and so requires continuous redraw whenever
+    /// any node is bound to it. The runtime ORs this into
+    /// `PrepareResult::needs_redraw` per frame.
+    pub samples_time: bool,
 }

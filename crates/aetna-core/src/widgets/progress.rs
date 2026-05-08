@@ -33,6 +33,7 @@ use std::panic::Location;
 
 use crate::layout::LayoutCtx;
 use crate::metrics::MetricsRole;
+use crate::shader::{ShaderBinding, StockShader, UniformValue};
 use crate::tokens;
 use crate::tree::*;
 
@@ -74,6 +75,46 @@ pub fn progress(value: f32, fill_color: Color) -> El {
     .layout(layout)
     .width(Size::Fill(1.0))
     .default_height(Size::Fixed(DEFAULT_HEIGHT))
+}
+
+/// Indeterminate horizontal loader — same dimensions as
+/// [`progress`], but with a small bar of `bar_color` sliding back
+/// and forth across a muted track on a continuous loop. Use this in
+/// progress slots where no completion ratio is available (uploading
+/// to a server that doesn't report bytes-sent, parsing a stream of
+/// unknown length, etc.). The runtime keeps the host loop ticking
+/// automatically while one is in the tree.
+///
+/// ```ignore
+/// use aetna_core::prelude::*;
+///
+/// row([
+///     text("Uploading…").label(),
+///     spacer(),
+///     progress_indeterminate(tokens::PRIMARY)
+///         .width(Size::Fixed(120.0)),
+/// ])
+/// ```
+#[track_caller]
+pub fn progress_indeterminate(bar_color: Color) -> El {
+    let binding = ShaderBinding::stock(StockShader::ProgressIndeterminate)
+        .with("vec_a", UniformValue::Color(bar_color))
+        .with("vec_b", UniformValue::Color(tokens::MUTED))
+        // vec_c.x = radius (0 = default 4px; for a pill at 8px height we want PILL)
+        // vec_c.y = period seconds (0 = default 1.6)
+        // vec_c.z = bar width as fraction of track (0 = default 0.35)
+        // vec_c.w unused
+        .with(
+            "vec_c",
+            UniformValue::Vec4([tokens::RADIUS_PILL, 0.0, 0.0, 0.0]),
+        );
+
+    El::new(Kind::Custom("progress-indeterminate"))
+        .at_loc(Location::caller())
+        .shader(binding)
+        .metrics_role(MetricsRole::Progress)
+        .width(Size::Fill(1.0))
+        .default_height(Size::Fixed(DEFAULT_HEIGHT))
 }
 
 #[cfg(test)]
@@ -121,6 +162,29 @@ mod tests {
         layout(&mut tree, &mut state, viewport);
         let fill_rect = state.rect(&tree.children[1].computed_id);
         assert_eq!(fill_rect.w, 200.0, "values above 1.0 clamp to full track");
+    }
+
+    #[test]
+    fn indeterminate_binds_stock_shader() {
+        use crate::shader::ShaderHandle;
+        let p = progress_indeterminate(tokens::PRIMARY);
+        let binding = p.shader_override.as_ref().expect("shader binding");
+        assert_eq!(
+            binding.handle,
+            ShaderHandle::Stock(StockShader::ProgressIndeterminate),
+            "progress_indeterminate must paint through stock::progress_indeterminate",
+        );
+        match binding.uniforms.get("vec_a") {
+            Some(UniformValue::Color(c)) => assert_eq!(*c, tokens::PRIMARY),
+            other => panic!("expected vec_a=PRIMARY, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn indeterminate_inherits_progress_dimensions() {
+        let p = progress_indeterminate(tokens::PRIMARY);
+        assert_eq!(p.width, Size::Fill(1.0));
+        assert_eq!(p.height, Size::Fixed(DEFAULT_HEIGHT));
     }
 
     #[test]

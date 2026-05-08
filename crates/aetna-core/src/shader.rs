@@ -80,6 +80,19 @@ pub enum StockShader {
     /// group 1 and the fragment shader composes `sampled * tint` with
     /// rounded-corner AA. See `crate::image::Image` for the data side.
     Image,
+    /// Indeterminate loading spinner — circular SDF arc swept around a
+    /// dim track, animated by `frame.time`. Continuous: any node bound
+    /// to this shader keeps `needs_redraw` set so the host idle loop
+    /// keeps ticking.
+    Spinner,
+    /// Pulsing loading placeholder — a rounded rect with a cosine
+    /// alpha breathe (0.5 → 1.0 → 0.5 over 2 s by default) matching
+    /// shadcn's `animate-pulse`. Continuous.
+    Skeleton,
+    /// Indeterminate linear progress — a track with a small bar
+    /// sliding left-to-right on loop, for in-line "still working…"
+    /// feedback when no completion ratio is known. Continuous.
+    ProgressIndeterminate,
 }
 
 impl StockShader {
@@ -90,7 +103,21 @@ impl StockShader {
             StockShader::Text => "stock::text",
             StockShader::DividerLine => "stock::divider_line",
             StockShader::Image => "stock::image",
+            StockShader::Spinner => "stock::spinner",
+            StockShader::Skeleton => "stock::skeleton",
+            StockShader::ProgressIndeterminate => "stock::progress_indeterminate",
         }
+    }
+
+    /// Whether this shader's output depends on `frame.time`, i.e. the
+    /// host must keep redrawing for it to animate. Read by
+    /// [`crate::runtime::RunnerCore::prepare_layout`] when computing
+    /// `needs_redraw`.
+    pub fn is_continuous(self) -> bool {
+        matches!(
+            self,
+            StockShader::Spinner | StockShader::Skeleton | StockShader::ProgressIndeterminate
+        )
     }
 }
 
@@ -179,4 +206,8 @@ pub mod stock_wgsl {
     pub const VECTOR_RELIEF: &str = include_str!("../shaders/vector_relief.wgsl");
     pub const VECTOR_GLASS: &str = include_str!("../shaders/vector_glass.wgsl");
     pub const IMAGE: &str = include_str!("../shaders/image.wgsl");
+    pub const SPINNER: &str = include_str!("../shaders/spinner.wgsl");
+    pub const SKELETON: &str = include_str!("../shaders/skeleton.wgsl");
+    pub const PROGRESS_INDETERMINATE: &str =
+        include_str!("../shaders/progress_indeterminate.wgsl");
 }

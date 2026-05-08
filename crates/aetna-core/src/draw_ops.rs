@@ -1041,7 +1041,13 @@ mod tests {
         let viewport = Rect::new(0.0, 0.0, 400.0, 200.0);
         // First prepare_layout populates the selection_order, etc.
         let mut t = PrepareTimings::default();
-        let _ = core.prepare_layout(&mut tree, viewport, 1.0, &mut t);
+        let _ = core.prepare_layout(
+            &mut tree,
+            viewport,
+            1.0,
+            &mut t,
+            RunnerCore::no_time_shaders,
+        );
         // Snapshot so pointer events can hit-test against this frame.
         core.snapshot(&tree, &mut t);
 
@@ -1064,7 +1070,13 @@ mod tests {
         // Re-run prepare_layout (the per-frame loop). The painter
         // should emit a selection band Quad on this frame.
         let mut t2 = PrepareTimings::default();
-        let (ops, _) = core.prepare_layout(&mut tree, viewport, 1.0, &mut t2);
+        let (ops, _) = core.prepare_layout(
+            &mut tree,
+            viewport,
+            1.0,
+            &mut t2,
+            RunnerCore::no_time_shaders,
+        );
         let bands: Vec<&DrawOp> = ops
             .iter()
             .filter(|op| matches!(op, DrawOp::Quad { id, .. } if id.contains("selection-band")))

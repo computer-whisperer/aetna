@@ -134,6 +134,10 @@ pub struct Runner {
     // paint scheduler queries this to insert pass boundaries before the
     // first backdrop-sampling draw.
     backdrop_shaders: HashSet<&'static str>,
+    // Custom shader names registered with `samples_time=true`. Mirrors
+    // `backdrop_shaders` but feeds `prepare_layout`'s continuous-redraw
+    // scan instead of the paint scheduler.
+    time_shaders: HashSet<&'static str>,
 
     // stock::text resources — atlas, page textures, glyph instances.
     text_paint: TextPaint,
@@ -385,6 +389,42 @@ impl Runner {
         );
         pipelines.insert(ShaderHandle::Stock(StockShader::RoundedRect), rr_pipeline);
 
+        let spinner_pipeline = build_quad_pipeline(
+            device,
+            &pipeline_layout,
+            target_format,
+            sample_count,
+            "stock::spinner",
+            stock_wgsl::SPINNER,
+        );
+        pipelines.insert(ShaderHandle::Stock(StockShader::Spinner), spinner_pipeline);
+
+        let skeleton_pipeline = build_quad_pipeline(
+            device,
+            &pipeline_layout,
+            target_format,
+            sample_count,
+            "stock::skeleton",
+            stock_wgsl::SKELETON,
+        );
+        pipelines.insert(
+            ShaderHandle::Stock(StockShader::Skeleton),
+            skeleton_pipeline,
+        );
+
+        let progress_indeterminate_pipeline = build_quad_pipeline(
+            device,
+            &pipeline_layout,
+            target_format,
+            sample_count,
+            "stock::progress_indeterminate",
+            stock_wgsl::PROGRESS_INDETERMINATE,
+        );
+        pipelines.insert(
+            ShaderHandle::Stock(StockShader::ProgressIndeterminate),
+            progress_indeterminate_pipeline,
+        );
+
         // Text pipeline + atlas (replaces glyphon).
         let text_paint = TextPaint::new(device, target_format, sample_count, &frame_bind_layout);
         let icon_paint = IconPaint::new(device, target_format, sample_count, &frame_bind_layout);
@@ -407,6 +447,7 @@ impl Runner {
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             pipelines,
             backdrop_shaders: HashSet::new(),
+            time_shaders: HashSet::new(),
             text_paint,
             icon_paint,
             image_paint,
@@ -462,26 +503,33 @@ impl Runner {
     /// Re-registering the same name replaces the previous pipeline
     /// (useful for hot-reload during development).
     pub fn register_shader(&mut self, device: &wgpu::Device, name: &'static str, wgsl: &str) {
-        self.register_shader_with(device, name, wgsl, false);
+        self.register_shader_with(device, name, wgsl, false, false);
     }
 
-    /// Register a custom shader, with an opt-in flag for backdrop
-    /// sampling. When `samples_backdrop` is true, the renderer schedules
-    /// the shader's draws into Pass B (after a snapshot of Pass A's
-    /// rendered content) and binds the snapshot texture as
-    /// `@group(2) binding=0` (`backdrop_tex`) plus a sampler at
-    /// `binding=1` (`backdrop_smp`). See `docs/SHADER_VISION.md`
-    /// §"Backdrop sampling architecture".
+    /// Register a custom shader, with opt-in flags for backdrop
+    /// sampling and time-driven motion.
     ///
-    /// Backdrop depth is capped at 1: glass-on-glass shows the same
-    /// underlying content, not a second snapshot of the first glass
-    /// composited.
+    /// `samples_backdrop=true` schedules the shader's draws into
+    /// Pass B (after a snapshot of Pass A's rendered content) and
+    /// binds the snapshot texture as `@group(2) binding=0`
+    /// (`backdrop_tex`) plus a sampler at `binding=1`
+    /// (`backdrop_smp`). See `docs/SHADER_VISION.md` §"Backdrop
+    /// sampling architecture". Backdrop depth is capped at 1.
+    ///
+    /// `samples_time=true` declares that the shader's output depends
+    /// on `frame.time`. The runtime ORs this into
+    /// [`PrepareResult::needs_redraw`] for any frame that has at
+    /// least one node bound to the shader, so the host idle loop
+    /// keeps ticking without a per-El opt-in. Stock shaders self-
+    /// report through [`aetna_core::shader::StockShader::is_continuous`];
+    /// this flag is the same signal for app-registered WGSL.
     pub fn register_shader_with(
         &mut self,
         device: &wgpu::Device,
         name: &'static str,
         wgsl: &str,
         samples_backdrop: bool,
+        samples_time: bool,
     ) {
         let label = format!("custom::{name}");
         let layout = if samples_backdrop {
@@ -502,6 +550,11 @@ impl Runner {
             self.backdrop_shaders.insert(name);
         } else {
             self.backdrop_shaders.remove(name);
+        }
+        if samples_time {
+            self.time_shaders.insert(name);
+        } else {
+            self.time_shaders.remove(name);
         }
     }
 
@@ -551,10 +604,21 @@ impl Runner {
         let mut timings = PrepareTimings::default();
 
         // Layout + state apply + animation tick + draw_ops resolution.
-        // Writes timings.layout + timings.draw_ops.
-        let (ops, needs_redraw) =
-            self.core
-                .prepare_layout(root, viewport, scale_factor, &mut timings);
+        // Writes timings.layout + timings.draw_ops. The closure feeds
+        // the runtime's continuous-redraw scan: any node bound to a
+        // shader registered with `samples_time=true` keeps the host
+        // loop ticking even when no animation is settling.
+        let time_shaders = &self.time_shaders;
+        let (ops, needs_redraw) = self.core.prepare_layout(
+            root,
+            viewport,
+            scale_factor,
+            &mut timings,
+            |handle| match handle {
+                ShaderHandle::Custom(name) => time_shaders.contains(name),
+                ShaderHandle::Stock(_) => false,
+            },
+        );
 
         // Paint stream: pack quads, record text, preserve z-order. The
         // closure is the wgpu-specific "is this shader registered?"
@@ -608,7 +672,14 @@ impl Runner {
         self.text_paint.flush(device, queue);
         self.icon_paint.flush(device, queue);
         self.image_paint.flush(device, queue);
-        let time = (Instant::now() - self.start_time).as_secs_f32();
+        // Pin time to 0 in Settled mode so headless fixtures rendering
+        // a time-driven shader (e.g. stock::spinner) stay byte-identical
+        // run-to-run, the same way `Animation::settle()` makes the
+        // spring/tween path deterministic for SVG/PNG snapshots.
+        let time = match self.core.ui_state().animation_mode() {
+            aetna_core::AnimationMode::Settled => 0.0,
+            aetna_core::AnimationMode::Live => (Instant::now() - self.start_time).as_secs_f32(),
+        };
         let frame = FrameUniforms {
             viewport: [viewport.w, viewport.h],
             time,

@@ -384,6 +384,7 @@ impl App for Demo {
             name: "commit_node",
             wgsl: COMMIT_NODE_WGSL,
             samples_backdrop: false,
+            samples_time: false,
         }]
     }
 }

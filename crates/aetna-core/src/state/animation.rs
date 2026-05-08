@@ -113,6 +113,13 @@ impl UiState {
         self.animation.mode = mode;
     }
 
+    /// Current animation pacing. Backends read this to gate
+    /// time-driven shader uniforms (e.g. `frame.time`) so headless
+    /// fixtures stay byte-identical regardless of when they ran.
+    pub fn animation_mode(&self) -> AnimationMode {
+        self.animation.mode
+    }
+
     /// Whether any visual animation is still moving. The host's runner
     /// uses this (via the renderer's `PrepareResult`) to keep the redraw
     /// loop ticking only while there's motion.

@@ -92,7 +92,7 @@ pub use crate::widgets::pagination::{
 pub use crate::widgets::popover::{
     Anchor, Side, anchor_rect, context_menu, dropdown, menu_item, popover, popover_panel,
 };
-pub use crate::widgets::progress::{self, progress};
+pub use crate::widgets::progress::{self, progress, progress_indeterminate};
 pub use crate::widgets::radio::{self, RadioAction, radio_group, radio_item, radio_option_key};
 pub use crate::widgets::resize_handle::{self, ResizeDrag, ResizeWeightsDrag, resize_handle};
 pub use crate::widgets::select::{
@@ -109,6 +109,7 @@ pub use crate::widgets::sidebar::{
 };
 pub use crate::widgets::skeleton::{self, skeleton, skeleton_circle};
 pub use crate::widgets::slider::{self, SliderAction, slider};
+pub use crate::widgets::spinner::{self, spinner, spinner_with_color, spinner_with_track};
 pub use crate::widgets::switch::{self, switch};
 pub use crate::widgets::table::{
     self, table, table_body, table_cell, table_head, table_header, table_row,

@@ -395,6 +395,7 @@ impl App for Showcase {
             name: "liquid_glass",
             wgsl: LIQUID_GLASS_WGSL,
             samples_backdrop: true,
+            samples_time: false,
         }]
     }
 }
@@ -1577,8 +1578,84 @@ fn glass_on_event(state: &mut GlassState, e: UiEvent) {
 // through unchanged.
 
 fn surfaces_view() -> El {
-    column([
+    scroll([column([
         h1("Surfaces"),
+        h2("Time-driven shaders"),
+        paragraph(
+            "These three primitives all paint through stock WGSL \
+             shaders that read frame.time, so the runtime keeps \
+             redrawing while any of them is in the tree — no \
+             app-side timer. Settled mode pins time to 0 for \
+             byte-identical fixtures.",
+        )
+        .muted(),
+        row([
+            spinner_demo("Spinner", spinner()),
+            spinner_demo(
+                "Spinner (primary)",
+                spinner_with_color(tokens::PRIMARY)
+                    .width(Size::Fixed(24.0))
+                    .height(Size::Fixed(24.0)),
+            ),
+            spinner_demo(
+                "Spinner (destructive)",
+                spinner_with_color(tokens::DESTRUCTIVE)
+                    .width(Size::Fixed(32.0))
+                    .height(Size::Fixed(32.0)),
+            ),
+            spinner_demo(
+                "Inline label",
+                row([spinner(), text("Loading…").muted()])
+                    .gap(tokens::SPACE_SM)
+                    .align(Align::Center),
+            ),
+        ])
+        .gap(tokens::SPACE_LG)
+        .align(Align::Stretch)
+        .padding(tokens::SPACE_XL)
+        .fill(tokens::ACCENT)
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_LG),
+        row([
+            time_shader_tile(
+                "Skeleton",
+                column([
+                    skeleton().width(Size::Fixed(180.0)),
+                    skeleton().width(Size::Fixed(140.0)),
+                    skeleton().width(Size::Fixed(110.0)),
+                ])
+                .gap(tokens::SPACE_SM)
+                .align(Align::Start),
+            ),
+            time_shader_tile(
+                "Avatar placeholder",
+                row([
+                    skeleton_circle(40.0),
+                    skeleton_circle(32.0),
+                    skeleton_circle(24.0),
+                ])
+                .gap(tokens::SPACE_SM)
+                .align(Align::Center),
+            ),
+            time_shader_tile(
+                "Indeterminate progress",
+                column([
+                    progress_indeterminate(tokens::PRIMARY).large(),
+                    progress_indeterminate(tokens::SUCCESS).large(),
+                    progress_indeterminate(tokens::DESTRUCTIVE).large(),
+                ])
+                .gap(tokens::SPACE_SM)
+                .width(Size::Fill(1.0)),
+            ),
+        ])
+        .gap(tokens::SPACE_LG)
+        .align(Align::Stretch)
+        .padding(tokens::SPACE_XL)
+        .fill(tokens::ACCENT)
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_LG)
+        .width(Size::Fill(1.0)),
+        h2("Drop shadows"),
         paragraph(
             "Drop shadows on the dark theme are subtle by design — \
              30% black on a near-black background only darkens it by \
@@ -1624,7 +1701,39 @@ fn surfaces_view() -> El {
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG),
     ])
+    .gap(tokens::SPACE_LG)])
+    .height(Size::Fill(1.0))
+}
+
+fn spinner_demo(label: &str, content: El) -> El {
+    column([
+        stack([content])
+            .align(Align::Center)
+            .justify(Justify::Center)
+            .height(Size::Fixed(48.0)),
+        text(label).muted().small(),
+    ])
+    .fill(tokens::CARD)
+    .stroke(tokens::BORDER)
+    .radius(tokens::RADIUS_LG)
+    .padding(tokens::SPACE_LG)
+    .gap(tokens::SPACE_SM)
+    .align(Align::Center)
+    .width(Size::Fill(1.0))
+}
+
+fn time_shader_tile(label: &str, content: El) -> El {
+    column([
+        content,
+        text(label).muted().small(),
+    ])
+    .fill(tokens::CARD)
+    .stroke(tokens::BORDER)
+    .radius(tokens::RADIUS_LG)
+    .padding(tokens::SPACE_LG)
     .gap(tokens::SPACE_LG)
+    .align(Align::Stretch)
+    .width(Size::Fill(1.0))
 }
 
 fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {

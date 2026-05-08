@@ -835,13 +835,27 @@ impl RunnerCore {
     /// `DrawOp` resolution. Returns the resolved op list and whether
     /// visual animations need another frame; writes per-stage timings
     /// into `timings` (`layout` + `draw_ops`).
-    pub fn prepare_layout(
+    ///
+    /// `samples_time` answers "does this shader's output depend on
+    /// `frame.time`?" The runtime calls it once per draw op when no
+    /// other in-flight motion has already requested a redraw; any
+    /// `true` answer keeps `needs_redraw` set so the host idle loop
+    /// keeps ticking. Stock shaders self-report through
+    /// [`crate::shader::StockShader::is_continuous`]; backends layer
+    /// on the registered set of `samples_time=true` custom shaders.
+    /// Callers that have no time-driven shaders pass
+    /// [`Self::no_time_shaders`].
+    pub fn prepare_layout<F>(
         &mut self,
         root: &mut El,
         viewport: Rect,
         scale_factor: f32,
         timings: &mut PrepareTimings,
-    ) -> (Vec<DrawOp>, bool) {
+        samples_time: F,
+    ) -> (Vec<DrawOp>, bool)
+    where
+        F: Fn(&ShaderHandle) -> bool,
+    {
         let t0 = Instant::now();
         // Tooltip + toast synthesis run before the real layout: assign
         // ids first so the tooltip pass can resolve the hover anchor
@@ -858,7 +872,7 @@ impl RunnerCore {
         self.ui_state.sync_selection_order(root);
         focus::sync_popover_focus(root, &mut self.ui_state);
         self.ui_state.apply_to_state();
-        let needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now())
+        let mut needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now())
             || tooltip_pending
             || toast_pending;
         self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
@@ -872,7 +886,23 @@ impl RunnerCore {
         let t_after_draw_ops = Instant::now();
         timings.layout = t_after_layout - t0;
         timings.draw_ops = t_after_draw_ops - t_after_layout;
+        // Time-driven shaders (e.g. stock::spinner, custom shaders
+        // registered with `samples_time=true`) keep the host loop
+        // ticking even when no animation is settling. Scanning the
+        // resolved op list once per frame is cheap and keeps the
+        // signal local to the shader: no per-El opt-in required.
+        if !needs_redraw && ops.iter().any(|op| op_is_continuous(op, &samples_time)) {
+            needs_redraw = true;
+        }
         (ops, needs_redraw)
+    }
+
+    /// Standard "no custom time-driven shaders" closure for
+    /// [`Self::prepare_layout`]. Backends that haven't wired up the
+    /// custom-shader registry yet pass this; only stock shaders that
+    /// self-report via `is_continuous()` participate in the scan.
+    pub fn no_time_shaders(_shader: &ShaderHandle) -> bool {
+        false
     }
 
     /// Walk the resolved `DrawOp` list, packing quads into
@@ -1158,6 +1188,23 @@ impl RunnerCore {
         let t0 = Instant::now();
         self.last_tree = Some(root.clone());
         timings.snapshot = Instant::now() - t0;
+    }
+}
+
+/// Whether this op binds a shader whose output depends on `frame.time`.
+/// Stock shaders self-report through
+/// [`crate::shader::StockShader::is_continuous`]; custom shaders
+/// answer through the host-supplied closure (which the backend wires
+/// to its `samples_time=true` registration set). See
+/// [`RunnerCore::prepare_layout`].
+fn op_is_continuous<F>(op: &DrawOp, samples_time: &F) -> bool
+where
+    F: Fn(&ShaderHandle) -> bool,
+{
+    match op.shader() {
+        Some(handle @ ShaderHandle::Stock(s)) => s.is_continuous() || samples_time(handle),
+        Some(handle @ ShaderHandle::Custom(_)) => samples_time(handle),
+        None => false,
     }
 }
 
@@ -1531,6 +1578,85 @@ mod tests {
     fn pointer_moved_without_press_emits_no_drag() {
         let mut core = lay_out_input_tree(false);
         assert!(core.pointer_moved(50.0, 50.0).events.is_empty());
+    }
+
+    #[test]
+    fn spinner_in_tree_keeps_needs_redraw_set() {
+        // stock::spinner reads frame.time, so the host must keep
+        // calling prepare() even when no animation is in flight. Pin
+        // the contract: a tree with no other motion still reports
+        // needs_redraw=true when a spinner is present.
+        use crate::widgets::spinner::spinner;
+        let mut tree = crate::column([spinner()]);
+        let mut core = RunnerCore::new();
+        let mut t = PrepareTimings::default();
+        let (_ops, needs_redraw) = core.prepare_layout(
+            &mut tree,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+            1.0,
+            &mut t,
+            RunnerCore::no_time_shaders,
+        );
+        assert!(
+            needs_redraw,
+            "tree with a spinner must request continuous redraw",
+        );
+
+        // Same shape without a spinner — needs_redraw stays false once
+        // any state envelopes settle, demonstrating the signal is
+        // spinner-driven rather than always-on.
+        let mut bare = crate::column([crate::widgets::text::text("idle")]);
+        let mut core2 = RunnerCore::new();
+        let mut t2 = PrepareTimings::default();
+        let (_ops2, needs_redraw2) = core2.prepare_layout(
+            &mut bare,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+            1.0,
+            &mut t2,
+            RunnerCore::no_time_shaders,
+        );
+        assert!(
+            !needs_redraw2,
+            "tree without time-driven shaders should idle: got needs_redraw={needs_redraw2}",
+        );
+    }
+
+    #[test]
+    fn custom_samples_time_shader_keeps_needs_redraw_set() {
+        // Pin the generalization: a tree binding a *custom* shader
+        // whose name appears in the host's `samples_time` set must
+        // request continuous redraw the same way stock::spinner does.
+        let mut tree = crate::column([crate::tree::El::new(crate::tree::Kind::Custom("anim"))
+            .shader(crate::shader::ShaderBinding::custom("my_animated_glow"))
+            .width(crate::tree::Size::Fixed(32.0))
+            .height(crate::tree::Size::Fixed(32.0))]);
+        let mut core = RunnerCore::new();
+        let mut t = PrepareTimings::default();
+
+        let (_ops, idle) = core.prepare_layout(
+            &mut tree,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+            1.0,
+            &mut t,
+            RunnerCore::no_time_shaders,
+        );
+        assert!(
+            !idle,
+            "without a samples_time registration the host should idle",
+        );
+
+        let mut t2 = PrepareTimings::default();
+        let (_ops, animated) = core.prepare_layout(
+            &mut tree,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+            1.0,
+            &mut t2,
+            |handle| matches!(handle, ShaderHandle::Custom("my_animated_glow")),
+        );
+        assert!(
+            animated,
+            "custom shader registered as samples_time=true must request continuous redraw",
+        );
     }
 
     #[test]
@@ -2574,7 +2700,13 @@ mod tests {
     /// fire just like a real frame.
     fn run_frame(core: &mut RunnerCore, tree: &mut El) {
         let mut t = PrepareTimings::default();
-        core.prepare_layout(tree, Rect::new(0.0, 0.0, 400.0, 300.0), 1.0, &mut t);
+        core.prepare_layout(
+            tree,
+            Rect::new(0.0, 0.0, 400.0, 300.0),
+            1.0,
+            &mut t,
+            RunnerCore::no_time_shaders,
+        );
         core.snapshot(tree, &mut t);
     }
 

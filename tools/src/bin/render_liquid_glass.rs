@@ -167,7 +167,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Register the glass shader with backdrop-sampling enabled. This
     // is the load-bearing one-line opt-in that wires the multi-pass
     // schedule + snapshot binding behind the scenes.
-    renderer.register_shader_with(&device, "liquid_glass", LIQUID_GLASS_WGSL, true);
+    renderer.register_shader_with(&device, "liquid_glass", LIQUID_GLASS_WGSL, true, false);
 
     let mut tree = fixture();
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);

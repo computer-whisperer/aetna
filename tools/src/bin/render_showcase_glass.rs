@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // uses (`App::shaders()` → `register_shader_with`).
     let mut app = Showcase::with_section(Section::Glass);
     for s in app.shaders() {
-        renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
+        renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop, s.samples_time);
     }
 
     app.before_build();

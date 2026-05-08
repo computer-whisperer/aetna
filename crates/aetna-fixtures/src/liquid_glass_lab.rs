@@ -18,11 +18,13 @@ impl App for LiquidGlassLab {
                 name: "liquid_backdrop_lab",
                 wgsl: LIQUID_BACKDROP_LAB_WGSL,
                 samples_backdrop: false,
+                samples_time: false,
             },
             AppShader {
                 name: "liquid_glass_lab",
                 wgsl: LIQUID_GLASS_LAB_WGSL,
                 samples_backdrop: true,
+                samples_time: false,
             },
         ]
     }

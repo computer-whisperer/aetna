@@ -90,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut app = Showcase::with_section(section);
         for s in app.shaders() {
-            renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop);
+            renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop, s.samples_time);
         }
 
         // Toasts: simulate a click on each level button so the

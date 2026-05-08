@@ -272,6 +272,161 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
             // dispatches through `emit_image_placeholder`. Skip
             // silently in case a custom op binds to this shader name.
         }
+        ShaderHandle::Stock(StockShader::Skeleton) => {
+            // Time-driven; pin to the t=0 (max-alpha) frame so SVG
+            // fixtures stay deterministic and show the skeleton at
+            // its brightest, most-readable phase.
+            let inner = uniforms
+                .get("inner_rect")
+                .and_then(as_vec4)
+                .map(|v| Rect::new(v[0], v[1], v[2], v[3]))
+                .unwrap_or(rect);
+            let base = uniforms
+                .get("vec_a")
+                .and_then(as_color)
+                .unwrap_or(tokens::MUTED);
+            let params = uniforms.get("vec_c").and_then(as_vec4).unwrap_or([0.0; 4]);
+            let radius = if params[0] > 0.0 {
+                params[0].min(inner.w * 0.5).min(inner.h * 0.5)
+            } else {
+                tokens::RADIUS_MD.min(inner.w * 0.5).min(inner.h * 0.5)
+            };
+            let _ = writeln!(
+                s,
+                r#"<rect data-node="{}" data-shader="stock::skeleton" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="{}" />"#,
+                esc(id),
+                inner.x,
+                inner.y,
+                inner.w,
+                inner.h,
+                radius,
+                color_svg(base),
+            );
+        }
+        ShaderHandle::Stock(StockShader::ProgressIndeterminate) => {
+            // Time-driven; pin to the t=0 frame, where the bias puts
+            // the bar's center at the middle of the track.
+            let inner = uniforms
+                .get("inner_rect")
+                .and_then(as_vec4)
+                .map(|v| Rect::new(v[0], v[1], v[2], v[3]))
+                .unwrap_or(rect);
+            let bar_color = uniforms
+                .get("vec_a")
+                .and_then(as_color)
+                .unwrap_or(tokens::PRIMARY);
+            let track_color = uniforms
+                .get("vec_b")
+                .and_then(as_color)
+                .unwrap_or(tokens::MUTED);
+            let params = uniforms.get("vec_c").and_then(as_vec4).unwrap_or([0.0; 4]);
+            let radius = if params[0] > 0.0 {
+                params[0].min(inner.w * 0.5).min(inner.h * 0.5)
+            } else {
+                tokens::RADIUS_PILL.min(inner.w * 0.5).min(inner.h * 0.5)
+            };
+            let bar_w_frac = if params[2] > 0.0 { params[2] } else { 0.35 };
+            let bar_w_px = inner.w * bar_w_frac;
+            // At t=0 the phase bias places the bar's center at x_norm=0.5.
+            let bar_left = inner.x + (inner.w - bar_w_px) * 0.5;
+            // Track first, bar over.
+            let _ = writeln!(
+                s,
+                r#"<rect data-node="{}.track" data-shader="stock::progress_indeterminate" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="{}" />"#,
+                esc(id),
+                inner.x,
+                inner.y,
+                inner.w,
+                inner.h,
+                radius,
+                color_svg(track_color),
+            );
+            let _ = writeln!(
+                s,
+                r#"<rect data-node="{}" data-shader="stock::progress_indeterminate" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="{}" />"#,
+                esc(id),
+                bar_left,
+                inner.y,
+                bar_w_px,
+                inner.h,
+                radius,
+                color_svg(bar_color),
+            );
+        }
+        ShaderHandle::Stock(StockShader::Spinner) => {
+            // Time-driven shader; SVG bundles need a deterministic
+            // snapshot. The shader's cosine envelope makes t=0 the
+            // max-sweep frame (start anchor at 12 o'clock, end anchor
+            // 240° clockwise around it), so we mirror that exact
+            // geometry here — SVG fallback and Settled-mode PNG agree
+            // on what "this is a loader" looks like.
+            let inner = uniforms
+                .get("inner_rect")
+                .and_then(as_vec4)
+                .map(|v| Rect::new(v[0], v[1], v[2], v[3]))
+                .unwrap_or(rect);
+            let arc_color = uniforms
+                .get("vec_a")
+                .and_then(as_color)
+                .unwrap_or(tokens::FOREGROUND);
+            let track_color = uniforms.get("vec_b").and_then(as_color);
+            let params = uniforms.get("vec_c").and_then(as_vec4).unwrap_or([0.0; 4]);
+            let thickness = if params[0] > 0.0 {
+                params[0]
+            } else {
+                (inner.w.min(inner.h) * 0.12).max(1.5)
+            };
+            let max_sweep = if params[1] > 0.0 {
+                params[1]
+            } else {
+                std::f32::consts::PI * 4.0 / 3.0 // 240°
+            };
+            let cx = inner.x + inner.w * 0.5;
+            let cy = inner.y + inner.h * 0.5;
+            let outer_r = inner.w.min(inner.h) * 0.5;
+            let center_r = (outer_r - thickness * 0.5).max(0.0);
+
+            // Track only renders when the caller asked for one. Skip
+            // the <circle> entirely when fully transparent so the SVG
+            // matches the shader's "off region is invisible" default.
+            if let Some(track) = track_color
+                && track.a > 0
+            {
+                let _ = writeln!(
+                    s,
+                    r#"<circle data-node="{}.track" data-shader="stock::spinner" cx="{:.2}" cy="{:.2}" r="{:.2}" fill="none" stroke="{}" stroke-width="{:.2}" />"#,
+                    esc(id),
+                    cx,
+                    cy,
+                    center_r,
+                    color_svg(track),
+                    thickness,
+                );
+            }
+
+            // Arc: starting at 12 o'clock, sweeping clockwise by
+            // `max_sweep` radians. SVG arc large-arc flag is 1 when
+            // sweep > 180°, sweep flag is 1 for clockwise.
+            let large_arc = if max_sweep > std::f32::consts::PI { 1 } else { 0 };
+            let start_x = cx;
+            let start_y = cy - center_r;
+            let end_x = cx + (max_sweep.sin()) * center_r;
+            let end_y = cy - (max_sweep.cos()) * center_r;
+            let _ = writeln!(
+                s,
+                r#"<path data-node="{}" data-shader="stock::spinner" d="M {:.2} {:.2} A {:.2} {:.2} 0 {} 1 {:.2} {:.2}" fill="none" stroke="{}" stroke-width="{:.2}" stroke-linecap="round" />"#,
+                esc(id),
+                start_x,
+                start_y,
+                center_r,
+                center_r,
+                large_arc,
+                end_x,
+                end_y,
+                color_svg(arc_color),
+                thickness,
+            );
+        }
         ShaderHandle::Custom(name) => {
             // Placeholder rect so layout is visible. Real paint requires
             // wgpu + the registered shader.
@@ -684,6 +839,45 @@ mod tests {
         assert!(
             svg.contains(r#"data-icon="check""#),
             "expected built-in `data-icon=\"check\"`, got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn spinner_renders_static_arc_only_by_default() {
+        // Bundle output must be deterministic; the live shader is
+        // time-driven, so the SVG fallback emits a frozen 240° arc
+        // matching the t=0 frame of the cosine envelope. The default
+        // spinner has no track, so only the arc <path> appears.
+        let svg = render(crate::widgets::spinner::spinner());
+        assert!(
+            svg.contains(r#"data-shader="stock::spinner""#),
+            "spinner must mark its draws with the stock shader name, got:\n{svg}"
+        );
+        assert!(
+            svg.contains(r#"<path"#),
+            "spinner SVG fallback should emit the arc as a <path>, got:\n{svg}"
+        );
+        assert!(
+            !svg.contains(r#"<circle"#),
+            "default spinner has no track, so no <circle> should appear:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn spinner_with_track_emits_both_circle_and_arc() {
+        // Opt-in track via spinner_with_track adds a full-ring
+        // <circle> behind the arc <path>. Pin both markers.
+        let svg = render(crate::widgets::spinner::spinner_with_track(
+            crate::tokens::PRIMARY,
+            crate::tokens::MUTED,
+        ));
+        assert!(
+            svg.contains(r#"<circle"#),
+            "spinner_with_track should emit a track <circle>, got:\n{svg}"
+        );
+        assert!(
+            svg.contains(r#"<path"#),
+            "spinner_with_track should emit an arc <path>, got:\n{svg}"
         );
     }
 
