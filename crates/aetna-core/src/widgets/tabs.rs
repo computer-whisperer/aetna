@@ -206,9 +206,12 @@ pub fn tab_trigger(
 /// against each option's `value` to pick the active trigger.
 /// `options` is an iterable of `(value, label)` pairs.
 ///
-/// The row's own key is `key`; per-trigger routed keys are
-/// `{key}:tab:{value}`. Apps fold those back into their value field
-/// with [`apply_event`].
+/// `key` is the routing namespace; per-trigger routed keys are
+/// `{key}:tab:{value}`. The row itself is deliberately not keyed:
+/// the space between triggers is visual chrome, not an interactive
+/// target, so mousing through the gaps does not hover the whole pill.
+/// Apps fold trigger events back into their value field with
+/// [`apply_event`].
 #[track_caller]
 pub fn tabs_list<I, V, L>(
     key: impl Into<String>,
@@ -241,7 +244,6 @@ where
     El::new(Kind::Custom("tabs_list"))
         .at_loc(caller)
         .metrics_role(MetricsRole::TabList)
-        .key(key)
         .axis(Axis::Row)
         .default_gap(tokens::SPACE_XS)
         .align(Align::Stretch)
@@ -258,6 +260,9 @@ where
 mod tests {
     use super::*;
     use crate::event::{KeyModifiers, UiTarget};
+    use crate::hit_test::hit_test_target;
+    use crate::layout::layout;
+    use crate::state::UiState;
 
     fn click_event(key: &str) -> UiEvent {
         UiEvent {
@@ -315,7 +320,10 @@ mod tests {
                 ("advanced", "Advanced"),
             ],
         );
-        assert_eq!(list.key.as_deref(), Some("settings"));
+        assert_eq!(
+            list.key, None,
+            "the visual pill is not an interactive target; triggers carry the routed keys"
+        );
         assert_eq!(list.children.len(), 3);
 
         let [account, appearance, advanced] =
@@ -470,9 +478,46 @@ mod tests {
         assert_eq!(list.radius, tokens::RADIUS_MD);
         // Row axis with a small gap so triggers are visually distinct.
         assert_eq!(list.axis, Axis::Row);
-        // The list itself is not focusable — only its triggers are.
-        // (Otherwise Tab would land on the row before the first tab.)
+        // The list itself is not focusable or keyed — only its
+        // triggers are. Otherwise Tab would land on the row before
+        // the first tab, and pointer hover in the gaps would brighten
+        // the whole pill.
         assert!(!list.focusable);
+        assert!(list.key.is_none());
+    }
+
+    #[test]
+    fn tabs_list_gap_is_not_a_hover_target() {
+        let mut list = tabs_list(
+            "settings",
+            &"account",
+            [("account", "Account"), ("advanced", "Advanced")],
+        );
+        let mut state = UiState::new();
+        layout(&mut list, &mut state, Rect::new(0.0, 0.0, 240.0, 60.0));
+
+        let first = state.rect(&list.children[0].computed_id);
+        let second = state.rect(&list.children[1].computed_id);
+        assert!(
+            second.x > first.x + first.w,
+            "test requires the tab list's configured gap to be present"
+        );
+
+        let trigger_target = hit_test_target(
+            &list,
+            &state,
+            (first.x + first.w / 2.0, first.y + first.h / 2.0),
+        )
+        .expect("tab trigger should still be interactive");
+        assert_eq!(trigger_target.key, "settings:tab:account");
+
+        let gap_x = (first.x + first.w + second.x) / 2.0;
+        let gap_y = first.y + first.h / 2.0;
+        assert_eq!(
+            hit_test_target(&list, &state, (gap_x, gap_y)),
+            None,
+            "the gap between triggers should not hover the tab-list shell"
+        );
     }
 
     #[test]
