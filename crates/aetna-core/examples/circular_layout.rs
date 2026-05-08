@@ -77,8 +77,8 @@ fn fixture() -> El {
             .width(Size::Fill(1.0))
             .height(Size::Fixed(360.0)),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
 }
 
 fn main() -> std::io::Result<()> {

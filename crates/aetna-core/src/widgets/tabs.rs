@@ -184,7 +184,7 @@ pub fn tab_trigger(
         .default_radius(tokens::RADIUS_SM)
         .width(Size::Fill(1.0))
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
-        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0));
+        .default_padding(Sides::xy(tokens::SPACE_3, 0.0));
     // `.current()` / `.ghost()` set fill, stroke, and text_color —
     // adding `.animate(SPRING_QUICK)` after them eases all three
     // between rebuilds, so switching tabs cross-fades the active
@@ -245,13 +245,13 @@ where
         .at_loc(caller)
         .metrics_role(MetricsRole::TabList)
         .axis(Axis::Row)
-        .default_gap(tokens::SPACE_XS)
+        .default_gap(tokens::SPACE_1)
         .align(Align::Stretch)
         .children(triggers)
         .fill(tokens::MUTED)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_MD)
-        .default_padding(Sides::all(tokens::SPACE_XS))
+        .default_padding(Sides::all(tokens::SPACE_1))
         .width(Size::Fill(1.0))
         .height(Size::Hug)
 }

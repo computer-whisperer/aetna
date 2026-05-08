@@ -14,10 +14,10 @@
 //!         column([
 //!             h1(format!("{}", self.value)),
 //!             row([button("-").key("dec"), button("+").key("inc").primary()])
-//!                 .gap(tokens::SPACE_SM),
+//!                 .gap(tokens::SPACE_2),
 //!         ])
-//!         .gap(tokens::SPACE_MD)
-//!         .padding(tokens::SPACE_LG)
+//!         .gap(tokens::SPACE_3)
+//!         .padding(tokens::SPACE_4)
 //!     }
 //! }
 //!

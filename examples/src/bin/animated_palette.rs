@@ -88,7 +88,7 @@ impl App for Palette {
         column([
             h2("Animated palette"),
             text("Cards spring up on tap; status fades on change.").muted(),
-            row(swatches).gap(tokens::SPACE_MD),
+            row(swatches).gap(tokens::SPACE_3),
             // The status line cross-fades by easing its opacity to 1
             // each rebuild — when `self.selected` changes, the build
             // produces a different text node; opacity 0 → 1 eases in.
@@ -98,8 +98,8 @@ impl App for Palette {
                 .opacity(1.0)
                 .animate(Timing::SPRING_GENTLE),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
         .align(Align::Center)
         .justify(Justify::Center)
     }

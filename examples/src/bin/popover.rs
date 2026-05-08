@@ -51,7 +51,7 @@ impl App for Demo {
         let main = column([
             h2("Popover demo"),
             text(self.summary()).muted(),
-            spacer().height(Size::Fixed(tokens::SPACE_LG)),
+            spacer().height(Size::Fixed(tokens::SPACE_4)),
             row([
                 column([
                     text("Top dropdown").caption(),
@@ -59,24 +59,24 @@ impl App for Demo {
                         .key("color-trigger")
                         .secondary(),
                 ])
-                .gap(tokens::SPACE_XS)
+                .gap(tokens::SPACE_1)
                 .height(Size::Hug),
                 spacer(),
                 column([
                     text("Tooltip on press").caption(),
                     button("?").key("help").ghost(),
                 ])
-                .gap(tokens::SPACE_XS)
+                .gap(tokens::SPACE_1)
                 .height(Size::Hug),
             ]),
-            spacer().height(Size::Fixed(tokens::SPACE_MD)),
+            spacer().height(Size::Fixed(tokens::SPACE_3)),
             context_region(),
             spacer(),
             // Bottom-anchored trigger — its dropdown will need to flip above.
             row([spacer(), button("Edit ▾").key("edit-trigger").secondary()]),
         ])
-        .padding(tokens::SPACE_XL)
-        .gap(tokens::SPACE_MD);
+        .padding(tokens::SPACE_7)
+        .gap(tokens::SPACE_3);
 
         overlays(
             main,
@@ -224,7 +224,7 @@ fn context_region() -> El {
         .fill(tokens::MUTED)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_MD)
-        .padding(tokens::SPACE_LG)
+        .padding(tokens::SPACE_4)
         .height(Size::Fixed(80.0))
         .width(Size::Fill(1.0))
         .axis(Axis::Overlay)
@@ -236,7 +236,7 @@ fn tooltip_layer() -> El {
     // The tooltip uses popover_panel directly (no scrim). Wrap it in
     // a layer that fills the viewport and anchors to the help button.
     let panel =
-        popover_panel([text("Show tooltip while pressed").caption()]).padding(tokens::SPACE_SM);
+        popover_panel([text("Show tooltip while pressed").caption()]).padding(tokens::SPACE_2);
     El::new(Kind::Custom("tooltip_layer"))
         .child(panel)
         .fill_size()

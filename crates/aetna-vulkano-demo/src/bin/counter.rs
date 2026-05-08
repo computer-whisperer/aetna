@@ -23,7 +23,7 @@ impl App for Counter {
                 button("Reset").key("reset").ghost(),
                 button("+").key("inc").primary(),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(tokens::SPACE_3),
             text(if self.value == 0 {
                 "Click + or − to change the count.".to_string()
             } else {
@@ -32,8 +32,8 @@ impl App for Counter {
             .center_text()
             .muted(),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
         .align(Align::Center)
     }
 

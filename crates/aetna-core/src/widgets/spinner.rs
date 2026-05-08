@@ -19,7 +19,7 @@
 //!     spinner(),
 //!     text("Loading…").muted(),
 //! ])
-//! .gap(tokens::SPACE_SM)
+//! .gap(tokens::SPACE_2)
 //! .align(Align::Center)
 //! ```
 //!

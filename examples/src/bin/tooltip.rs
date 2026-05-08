@@ -33,7 +33,7 @@ impl App for Demo {
                 None => "Hover any button — tooltip appears after 500ms.".to_string(),
             })
             .muted(),
-            spacer().height(Size::Fixed(tokens::SPACE_LG)),
+            spacer().height(Size::Fixed(tokens::SPACE_4)),
             row([
                 button("Save")
                     .key("save")
@@ -48,10 +48,10 @@ impl App for Demo {
                     .ghost()
                     .tooltip("Application preferences"),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(tokens::SPACE_3),
         ])
-        .gap(tokens::SPACE_MD)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_3)
+        .padding(tokens::SPACE_7)
         .align(Align::Center)
         .justify(Justify::Center)
     }

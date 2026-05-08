@@ -27,5 +27,5 @@ pub fn badge(label: impl Into<String>) -> El {
         .default_radius(tokens::RADIUS_PILL)
         .width(Size::Hug)
         .default_height(Size::Fixed(20.0))
-        .default_padding(Sides::xy(tokens::SPACE_SM, 0.0))
+        .default_padding(Sides::xy(tokens::SPACE_2, 0.0))
 }

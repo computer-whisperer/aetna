@@ -58,10 +58,10 @@ impl App for Custom {
                 spacer(),
                 button("Stock").secondary(),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(tokens::SPACE_3),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
     }
 
     fn on_event(&mut self, _event: UiEvent) {}

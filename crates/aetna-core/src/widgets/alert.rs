@@ -41,8 +41,8 @@ where
         .fill(tokens::CARD)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_MD)
-        .default_padding(Sides::all(tokens::SPACE_MD))
-        .default_gap(tokens::SPACE_XS)
+        .default_padding(Sides::all(tokens::SPACE_3))
+        .default_gap(tokens::SPACE_1)
 }
 
 #[track_caller]

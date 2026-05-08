@@ -132,7 +132,7 @@ pub fn form_message(message: impl Into<String>) -> El {
 pub fn field_row(label: impl Into<String>, control: impl Into<El>) -> El {
     crate::row([text(label).label(), crate::spacer(), control.into()])
         .at_loc(Location::caller())
-        .gap(tokens::SPACE_MD)
+        .gap(tokens::SPACE_3)
         .align(Align::Center)
         .width(Size::Fill(1.0))
 }

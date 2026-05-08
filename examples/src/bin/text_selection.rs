@@ -57,7 +57,7 @@ impl App for Demo {
             paragraph(PARA_A).key("para-a").selectable(),
             paragraph(PARA_B).key("para-b").selectable(),
             paragraph(PARA_C).key("para-c").selectable(),
-            spacer().height(Size::Fixed(tokens::SPACE_LG)),
+            spacer().height(Size::Fixed(tokens::SPACE_4)),
             titled_card(
                 "Selection state",
                 [
@@ -66,8 +66,8 @@ impl App for Demo {
                 ],
             ),
         ])
-        .padding(tokens::SPACE_XL)
-        .gap(tokens::SPACE_MD)
+        .padding(tokens::SPACE_7)
+        .gap(tokens::SPACE_3)
     }
 
     fn selection(&self) -> Selection {

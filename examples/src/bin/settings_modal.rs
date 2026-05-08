@@ -66,8 +66,8 @@ impl App for SettingsModalApp {
             .muted(),
             button("Open settings").primary().key("open"),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
         .align(Align::Start);
 
         overlays(main, [self.open.then(|| self.settings_modal())])
@@ -129,7 +129,7 @@ impl SettingsModalApp {
                     button("Cancel").ghost().key("cancel"),
                     button("Save").primary().key("save"),
                 ])
-                .gap(tokens::SPACE_SM),
+                .gap(tokens::SPACE_2),
             ],
         )
         .width(Size::Fixed(720.0))
@@ -150,8 +150,8 @@ impl SettingsModalApp {
                 switch(self.notifications).key("notifications"),
             ),
         ])
-        .gap(tokens::SPACE_MD)
-        .padding(Sides::xy(0.0, tokens::SPACE_MD))
+        .gap(tokens::SPACE_3)
+        .padding(Sides::xy(0.0, tokens::SPACE_3))
     }
 
     fn audio_tab(&self) -> El {
@@ -164,8 +164,8 @@ impl SettingsModalApp {
             ),
             field_row("Mute output", switch(self.mute).key("mute")),
         ])
-        .gap(tokens::SPACE_MD)
-        .padding(Sides::xy(0.0, tokens::SPACE_MD))
+        .gap(tokens::SPACE_3)
+        .padding(Sides::xy(0.0, tokens::SPACE_3))
     }
 
     fn voice_tab(&self) -> El {
@@ -181,8 +181,8 @@ impl SettingsModalApp {
                     .width(Size::Fixed(220.0)),
             ),
         ])
-        .gap(tokens::SPACE_MD)
-        .padding(Sides::xy(0.0, tokens::SPACE_MD))
+        .gap(tokens::SPACE_3)
+        .padding(Sides::xy(0.0, tokens::SPACE_3))
     }
 
     fn advanced_tab(&self) -> El {
@@ -193,8 +193,8 @@ impl SettingsModalApp {
             ),
             field_row("Beta features", switch(self.beta).key("beta")),
         ])
-        .gap(tokens::SPACE_MD)
-        .padding(Sides::xy(0.0, tokens::SPACE_MD))
+        .gap(tokens::SPACE_3)
+        .padding(Sides::xy(0.0, tokens::SPACE_3))
     }
 }
 

@@ -40,14 +40,14 @@ On the **main axis**, Fill siblings split leftover space proportional to weight.
 // Sidebar + content, both filling viewport height. The row's
 // `Center` align is fine — Fill children fill regardless.
 row([sidebar(), content()])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
     .height(Size::Fill(1.0))
 
 // Card row of icon + text + button. `align(Center)` is the
 // Tailwind `items-center` equivalent for everyday content rows.
 row([icon("settings"), label, button("Edit")])
-    .gap(tokens::SPACE_SM)
-    .padding(tokens::SPACE_MD)
+    .gap(tokens::SPACE_2)
+    .padding(tokens::SPACE_3)
     .align(Align::Center)
 
 // Two-pane fill: left pane gets 1/3, right gets 2/3.

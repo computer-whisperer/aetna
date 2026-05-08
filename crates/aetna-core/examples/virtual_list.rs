@@ -31,8 +31,8 @@ fn build_row(i: usize) -> El {
         badge_el,
     ])
     .key(format!("row-{i}"))
-    .gap(tokens::SPACE_MD)
-    .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+    .gap(tokens::SPACE_3)
+    .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
     .height(Size::Fixed(ROW_HEIGHT))
 }
 
@@ -49,8 +49,8 @@ fn fixture() -> El {
             .key("entries")
             .height(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
 }
 
 fn find_id(node: &El, key: &str) -> Option<String> {

@@ -42,8 +42,8 @@ fn fixture() -> El {
         )
         .muted(),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
     .width(Size::Fixed(640.0))
 }
 

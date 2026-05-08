@@ -67,7 +67,7 @@ fn fixture() -> El {
                     spacer(),
                     button("Stock").secondary(),
                 ])
-                .gap(tokens::SPACE_MD),
+                .gap(tokens::SPACE_3),
                 paragraph(
                     "Same shader, three uniform sets. The fourth button \
                   (stock::rounded_rect) is unrelated and demonstrates that \
@@ -78,8 +78,8 @@ fn fixture() -> El {
             ],
         ),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

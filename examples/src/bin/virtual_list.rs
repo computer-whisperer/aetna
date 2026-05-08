@@ -33,8 +33,8 @@ fn build_row(i: usize) -> El {
     ])
     .key(format!("row-{i}"))
     .focusable()
-    .gap(tokens::SPACE_MD)
-    .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+    .gap(tokens::SPACE_3)
+    .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
     .height(Size::Fixed(ROW_HEIGHT))
 }
 
@@ -51,8 +51,8 @@ impl App for VirtualListApp {
                 .key("entries")
                 .height(Size::Fill(1.0)),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
     }
 
     fn on_event(&mut self, event: UiEvent) {

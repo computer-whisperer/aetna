@@ -427,12 +427,12 @@ fn sidebar(active: Section, theme_choice: ThemeChoice) -> El {
             text("Light theme").label().width(Size::Fill(1.0)),
             switch(theme_choice.is_light()).key("theme-toggle"),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .align(Align::Center),
     );
     column(entries)
-        .gap(tokens::SPACE_SM)
-        .padding(tokens::SPACE_LG)
+        .gap(tokens::SPACE_2)
+        .padding(tokens::SPACE_4)
         .width(Size::Fixed(180.0))
         .height(Size::Fill(1.0))
         .fill(tokens::CARD)
@@ -465,7 +465,7 @@ fn content(app: &Showcase) -> El {
         Section::Images => images_view(),
     };
     column([body])
-        .padding(tokens::SPACE_XL)
+        .padding(tokens::SPACE_7)
         .width(Size::Fill(1.0))
         .height(Size::Fill(1.0))
 }
@@ -492,7 +492,7 @@ fn counter_view(state: &CounterState) -> El {
                 .primary()
                 .tooltip("Increment"),
         ])
-        .gap(tokens::SPACE_MD),
+        .gap(tokens::SPACE_3),
         text(if state.value == 0 {
             "Click + or −, or hover for a tooltip.".to_string()
         } else {
@@ -501,7 +501,7 @@ fn counter_view(state: &CounterState) -> El {
         .center_text()
         .muted(),
     ])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
     .align(Align::Center)
     // Claim the full content area and center the small demo
     // vertically, so the counter sits in the middle of the panel
@@ -536,10 +536,10 @@ fn list_view(state: &ListState) -> El {
                 })
                 .muted(),
             ])
-            .gap(tokens::SPACE_SM)
+            .gap(tokens::SPACE_2)
             .align(Align::Center)
             .height(Size::Fixed(44.0))
-            .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+            .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
             .key(key)
             .stroke(tokens::BORDER)
             .radius(tokens::RADIUS_SM);
@@ -560,9 +560,9 @@ fn list_view(state: &ListState) -> El {
         scroll(rows)
             .key("list-items")
             .height(Size::Fill(1.0))
-            .padding(tokens::SPACE_SM),
+            .padding(tokens::SPACE_2),
     ])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
     .height(Size::Fill(1.0))
 }
 
@@ -636,14 +636,14 @@ fn palette_view(state: &PaletteState) -> El {
     column([
         h2("Animated palette"),
         text("Cards spring up on tap; status fades on change.").muted(),
-        row(swatches).gap(tokens::SPACE_MD),
+        row(swatches).gap(tokens::SPACE_3),
         text(status)
             .key("palette-status")
             .center_text()
             .opacity(1.0)
             .animate(Timing::SPRING_GENTLE),
     ])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
     .align(Align::Center)
     .height(Size::Fill(1.0))
     .justify(Justify::Center)
@@ -692,7 +692,7 @@ fn picker_view(state: &PickerState) -> El {
         spacer(),
         text(format!("{}/{}", state.selected + 1, PICKER_ITEMS.len())).muted(),
     ])
-    .gap(tokens::SPACE_SM)
+    .gap(tokens::SPACE_2)
     .align(Align::Center);
 
     let rows: Vec<El> = PICKER_ITEMS
@@ -710,9 +710,9 @@ fn picker_view(state: &PickerState) -> El {
                 })
                 .muted(),
             ])
-            .gap(tokens::SPACE_SM)
+            .gap(tokens::SPACE_2)
             .align(Align::Center)
-            .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+            .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
             .height(Size::Fixed(40.0))
             .key(format!("picker-row-{i}"))
             .stroke(tokens::BORDER)
@@ -733,7 +733,7 @@ fn picker_view(state: &PickerState) -> El {
         header,
         scroll(rows).key("picker-items").height(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
     .height(Size::Fill(1.0))
 }
 
@@ -858,7 +858,7 @@ fn settings_view() -> El {
                         .muted()
                         .small(),
                 ])
-                .gap(tokens::SPACE_XS)
+                .gap(tokens::SPACE_1)
                 .align(Align::Start),
                 button("Delete").destructive().key("settings-delete"),
             ])
@@ -869,10 +869,10 @@ fn settings_view() -> El {
             button("Cancel").ghost().key("settings-cancel"),
             button("Save").primary().key("settings-save"),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .justify(Justify::End),
     ])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
 }
 
 // ---- Forms section ----
@@ -935,7 +935,7 @@ fn forms_view(state: &FormsState) -> El {
         .align(Align::Center),
         progress(completion, progress_color),
     ])
-    .gap(tokens::SPACE_XS);
+    .gap(tokens::SPACE_1);
 
     let notifications = titled_card(
         "Notifications",
@@ -1000,10 +1000,10 @@ fn forms_view(state: &FormsState) -> El {
         scroll([notifications, theme, privacy])
             .key("forms-scroll")
             .height(Size::Fill(1.0))
-            .padding(Sides::xy(0.0, tokens::SPACE_SM))
-            .gap(tokens::SPACE_LG),
+            .padding(Sides::xy(0.0, tokens::SPACE_2))
+            .gap(tokens::SPACE_4),
     ])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
     .height(Size::Fill(1.0))
 }
 
@@ -1014,10 +1014,10 @@ fn checkbox_row(key: &str, value: bool, label: &str, description: &str) -> El {
     row([
         checkbox(value).key(key.to_string()),
         column([text(label).label(), text(description).muted().small()])
-            .gap(tokens::SPACE_XS)
+            .gap(tokens::SPACE_1)
             .width(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_MD)
+    .gap(tokens::SPACE_3)
     .align(Align::Center)
 }
 
@@ -1027,11 +1027,11 @@ fn checkbox_row(key: &str, value: bool, label: &str, description: &str) -> El {
 fn switch_row(key: &str, value: bool, label: &str, description: &str) -> El {
     row([
         column([text(label).label(), text(description).muted().small()])
-            .gap(tokens::SPACE_XS)
+            .gap(tokens::SPACE_1)
             .width(Size::Fill(1.0)),
         switch(value).key(key.to_string()),
     ])
-    .gap(tokens::SPACE_MD)
+    .gap(tokens::SPACE_3)
     .align(Align::Center)
 }
 
@@ -1127,10 +1127,10 @@ fn inputs_view(state: &InputsState) -> El {
         scroll([volume, profile, bio, region])
             .key("inputs-scroll")
             .height(Size::Fill(1.0))
-            .gap(tokens::SPACE_LG)
-            .padding(Sides::xy(0.0, tokens::SPACE_SM)),
+            .gap(tokens::SPACE_4)
+            .padding(Sides::xy(0.0, tokens::SPACE_2)),
     ])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
     .height(Size::Fill(1.0))
 }
 
@@ -1142,7 +1142,7 @@ fn input_row(label: &str, input: El) -> El {
         text(label).width(Size::Fixed(110.0)).muted(),
         input.width(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_SM)
+    .gap(tokens::SPACE_2)
     .align(Align::Center)
 }
 
@@ -1227,7 +1227,7 @@ fn tabs_view(state: &TabsState) -> El {
         ),
         body,
     ])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
     .height(Size::Fill(1.0))
 }
 
@@ -1329,8 +1329,8 @@ fn split_view(state: &SplitState) -> El {
         text("examples/").muted(),
         text("tests/").muted(),
     ])
-    .gap(tokens::SPACE_SM)
-    .padding(tokens::SPACE_MD)
+    .gap(tokens::SPACE_2)
+    .padding(tokens::SPACE_3)
     .width(Size::Fixed(state.sidebar_w))
     .height(Size::Fill(1.0))
     .fill(tokens::CARD)
@@ -1355,10 +1355,10 @@ fn split_view(state: &SplitState) -> El {
             text("Sidebar width:").muted(),
             text(format!("{:.0} px", state.sidebar_w)).bold(),
         ])
-        .gap(tokens::SPACE_SM),
+        .gap(tokens::SPACE_2),
     ])
-    .gap(tokens::SPACE_MD)
-    .padding(tokens::SPACE_MD)
+    .gap(tokens::SPACE_3)
+    .padding(tokens::SPACE_3)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0));
 
@@ -1374,7 +1374,7 @@ fn split_view(state: &SplitState) -> El {
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_SM),
     ])
-    .gap(tokens::SPACE_LG)
+    .gap(tokens::SPACE_4)
     .height(Size::Fill(1.0))
 }
 
@@ -1524,10 +1524,10 @@ fn glass_card(preset: &GlassPreset, drift_x: f32) -> El {
             button("Next preset").key("glass-next").secondary(),
             button("Drift →").key("glass-drift").primary(),
         ])
-        .gap(tokens::SPACE_SM),
+        .gap(tokens::SPACE_2),
     ])
-    .gap(tokens::SPACE_SM)
-    .padding(tokens::SPACE_LG)
+    .gap(tokens::SPACE_2)
+    .padding(tokens::SPACE_4)
     .shader(
         ShaderBinding::custom("liquid_glass")
             .color("vec_a", preset.tint)
@@ -1607,13 +1607,13 @@ fn surfaces_view() -> El {
             spinner_demo(
                 "Inline label",
                 row([spinner(), text("Loading…").muted()])
-                    .gap(tokens::SPACE_SM)
+                    .gap(tokens::SPACE_2)
                     .align(Align::Center),
             ),
         ])
-        .gap(tokens::SPACE_LG)
+        .gap(tokens::SPACE_4)
         .align(Align::Stretch)
-        .padding(tokens::SPACE_XL)
+        .padding(tokens::SPACE_7)
         .fill(tokens::ACCENT)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG),
@@ -1625,7 +1625,7 @@ fn surfaces_view() -> El {
                     skeleton().width(Size::Fixed(140.0)),
                     skeleton().width(Size::Fixed(110.0)),
                 ])
-                .gap(tokens::SPACE_SM)
+                .gap(tokens::SPACE_2)
                 .align(Align::Start),
             ),
             time_shader_tile(
@@ -1635,7 +1635,7 @@ fn surfaces_view() -> El {
                     skeleton_circle(32.0),
                     skeleton_circle(24.0),
                 ])
-                .gap(tokens::SPACE_SM)
+                .gap(tokens::SPACE_2)
                 .align(Align::Center),
             ),
             time_shader_tile(
@@ -1645,13 +1645,13 @@ fn surfaces_view() -> El {
                     progress_indeterminate(tokens::SUCCESS).large(),
                     progress_indeterminate(tokens::DESTRUCTIVE).large(),
                 ])
-                .gap(tokens::SPACE_SM)
+                .gap(tokens::SPACE_2)
                 .width(Size::Fill(1.0)),
             ),
         ])
-        .gap(tokens::SPACE_LG)
+        .gap(tokens::SPACE_4)
         .align(Align::Stretch)
-        .padding(tokens::SPACE_XL)
+        .padding(tokens::SPACE_7)
         .fill(tokens::ACCENT)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG)
@@ -1670,9 +1670,9 @@ fn surfaces_view() -> El {
             elevation_tile("shadow_md", "12 px", tokens::SHADOW_MD),
             elevation_tile("shadow_lg", "24 px", tokens::SHADOW_LG),
         ])
-        .gap(tokens::SPACE_LG)
+        .gap(tokens::SPACE_4)
         .align(Align::Stretch)
-        .padding(tokens::SPACE_XL)
+        .padding(tokens::SPACE_7)
         .fill(tokens::ACCENT)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG),
@@ -1697,12 +1697,12 @@ fn surfaces_view() -> El {
             text("color").italic(),
             text(" automatically."),
         ])
-        .padding(tokens::SPACE_LG)
+        .padding(tokens::SPACE_4)
         .fill(tokens::ACCENT)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG),
     ])
-    .gap(tokens::SPACE_LG)])
+    .gap(tokens::SPACE_4)])
     .height(Size::Fill(1.0))
 }
 
@@ -1717,8 +1717,8 @@ fn spinner_demo(label: &str, content: El) -> El {
     .fill(tokens::CARD)
     .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_LG)
-    .padding(tokens::SPACE_LG)
-    .gap(tokens::SPACE_SM)
+    .padding(tokens::SPACE_4)
+    .gap(tokens::SPACE_2)
     .align(Align::Center)
     .width(Size::Fill(1.0))
 }
@@ -1731,8 +1731,8 @@ fn time_shader_tile(label: &str, content: El) -> El {
     .fill(tokens::CARD)
     .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_LG)
-    .padding(tokens::SPACE_LG)
-    .gap(tokens::SPACE_LG)
+    .padding(tokens::SPACE_4)
+    .gap(tokens::SPACE_4)
     .align(Align::Stretch)
     .width(Size::Fill(1.0))
 }
@@ -1743,8 +1743,8 @@ fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG)
         .shadow(shadow)
-        .padding(tokens::SPACE_LG)
-        .gap(tokens::SPACE_XS)
+        .padding(tokens::SPACE_4)
+        .gap(tokens::SPACE_1)
         .width(Size::Fill(1.0))
         .height(Size::Fixed(140.0))
 }
@@ -1773,7 +1773,7 @@ fn toasts_view(state: &ToastsState) -> El {
             button("Error").key("toast-error").destructive(),
             button("Info").key("toast-info").ghost(),
         ])
-        .gap(tokens::SPACE_SM),
+        .gap(tokens::SPACE_2),
         text(format!(
             "fired {} toast{} this session",
             state.fires,
@@ -1782,8 +1782,8 @@ fn toasts_view(state: &ToastsState) -> El {
         .small()
         .muted(),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
     .align(Align::Start)
 }
 
@@ -1895,7 +1895,7 @@ fn images_view() -> El {
             tile(&GRID_CHECKER, "checker"),
             tile(&GRID_RING, "ring"),
         ])
-        .gap(tokens::SPACE_MD),
+        .gap(tokens::SPACE_3),
         // Avatar row: four references to the same Image with different
         // tints — exercises the tint multiply + content-hash sharing.
         h3("Tints share one texture (content-hashed)"),
@@ -1905,7 +1905,7 @@ fn images_view() -> El {
             avatar(Color::rgb(248, 113, 113)),
             avatar(Color::rgb(132, 204, 22)),
         ])
-        .gap(tokens::SPACE_SM),
+        .gap(tokens::SPACE_2),
         // Fit modes side-by-side: same image, four projections into
         // identically-sized boxes so the differences are visible.
         h3("ImageFit modes"),
@@ -1915,10 +1915,10 @@ fn images_view() -> El {
             fit_demo("Fill", ImageFit::Fill),
             fit_demo("None", ImageFit::None),
         ])
-        .gap(tokens::SPACE_MD),
+        .gap(tokens::SPACE_3),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
     .align(Align::Start)
 }
 
@@ -1931,7 +1931,7 @@ fn tile(img: &LazyLock<Image>, label: &str) -> El {
             .radius(tokens::RADIUS_MD),
         text(label.to_string()).small().muted(),
     ])
-    .gap(tokens::SPACE_XS)
+    .gap(tokens::SPACE_1)
     .align(Align::Center)
 }
 
@@ -1956,7 +1956,7 @@ fn fit_demo(label: &str, fit: ImageFit) -> El {
             .stroke(tokens::BORDER),
         text(label.to_string()).small().muted(),
     ])
-    .gap(tokens::SPACE_XS)
+    .gap(tokens::SPACE_1)
     .align(Align::Center)
 }
 

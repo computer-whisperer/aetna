@@ -49,8 +49,8 @@ where
         .justify(Justify::Start)
         .fill(tokens::CARD)
         .default_radius(tokens::RADIUS_SM)
-        .default_padding(Sides::xy(tokens::SPACE_SM, 0.0))
-        .default_gap(tokens::SPACE_SM)
+        .default_padding(Sides::xy(tokens::SPACE_2, 0.0))
+        .default_gap(tokens::SPACE_2)
         .width(Size::Fill(1.0))
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
 }
@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(item.metrics_role, Some(MetricsRole::MenuItem));
         assert_eq!(item.axis, Axis::Row);
         assert_eq!(item.align, Align::Center);
-        assert_eq!(item.gap, tokens::SPACE_SM);
+        assert_eq!(item.gap, tokens::SPACE_2);
         assert_eq!(item.width, Size::Fill(1.0));
         assert!(item.focusable);
     }

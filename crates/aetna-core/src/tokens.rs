@@ -10,7 +10,7 @@
 //!   at runtime — there's no `OnceLock` to initialize.
 //!
 //! Naming intentionally shadows shadcn/Tailwind so LLM training transfers:
-//! `CARD`, `MUTED_FOREGROUND`, `RADIUS_LG`, `SPACE_MD`, etc.
+//! `CARD`, `MUTED_FOREGROUND`, `RADIUS_LG`, `SPACE_3`, etc.
 //!
 //! ## Palette resolution
 //!
@@ -84,10 +84,9 @@ pub const LINK_FOREGROUND: Color = Color::token("link-foreground", 96, 165, 250,
 
 // ---- Spacing ----
 //
-// Canonical spacing follows Tailwind's numeric scale so layout code
-// reads like the UI examples LLMs have seen most often: `gap-3` is
-// 12 px, `p-4` is 16 px, `mt-2` is 8 px, etc. The named aliases below
-// are kept as transitional vocabulary for existing examples.
+// Spacing follows Tailwind's numeric scale so layout code reads like
+// the UI examples LLMs have seen most often: `gap-3` is 12 px, `p-4`
+// is 16 px, `mt-2` is 8 px, etc.
 pub const SPACE_0: f32 = 0.0;
 pub const SPACE_1: f32 = 4.0;
 pub const SPACE_2: f32 = 8.0;
@@ -99,12 +98,6 @@ pub const SPACE_7: f32 = 28.0;
 pub const SPACE_8: f32 = 32.0;
 pub const SPACE_10: f32 = 40.0;
 pub const SPACE_12: f32 = 48.0;
-
-pub const SPACE_XS: f32 = SPACE_1;
-pub const SPACE_SM: f32 = SPACE_2;
-pub const SPACE_MD: f32 = SPACE_3;
-pub const SPACE_LG: f32 = SPACE_4;
-pub const SPACE_XL: f32 = SPACE_7;
 
 // ---- Pinned-pane sizing ----
 //

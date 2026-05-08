@@ -39,8 +39,8 @@ impl App for VolumeDemo {
                 .center_text()
                 .caption(),
         ])
-        .gap(tokens::SPACE_MD)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_3)
+        .padding(tokens::SPACE_7)
         .align(Align::Center)
         .justify(Justify::Center)
     }

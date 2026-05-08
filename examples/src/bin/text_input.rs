@@ -174,17 +174,17 @@ impl App for Form {
                     form_description("Required before exporting private data."),
                 ]),
             ]),
-            spacer().height(Size::Fixed(tokens::SPACE_LG)),
+            spacer().height(Size::Fixed(tokens::SPACE_4)),
             preview_block(self),
-            spacer().height(Size::Fixed(tokens::SPACE_LG)),
+            spacer().height(Size::Fixed(tokens::SPACE_4)),
             row([
                 button("Clear").key("clear").ghost(),
                 spacer(),
                 button("Submit").key("submit").primary(),
             ]),
         ])
-        .padding(tokens::SPACE_XL)
-        .gap(tokens::SPACE_MD)
+        .padding(tokens::SPACE_7)
+        .gap(tokens::SPACE_3)
     }
 
     fn selection(&self) -> Selection {

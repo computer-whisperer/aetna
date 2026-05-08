@@ -46,8 +46,8 @@ impl App for Demo {
             ),
             body,
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
     }
 
     fn on_event(&mut self, event: UiEvent) {
@@ -109,7 +109,7 @@ fn advanced_panel() -> El {
                         .muted()
                         .small(),
                 ])
-                .gap(tokens::SPACE_XS)
+                .gap(tokens::SPACE_1)
                 .align(Align::Start),
                 button("Reset").destructive(),
             ])

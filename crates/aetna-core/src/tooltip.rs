@@ -155,7 +155,7 @@ fn tooltip_panel(text: &str) -> El {
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_SM)
         .shadow(tokens::SHADOW_MD)
-        .padding(Sides::xy(tokens::SPACE_SM, tokens::SPACE_XS))
+        .padding(Sides::xy(tokens::SPACE_2, tokens::SPACE_1))
         .gap(0.0)
         .width(Size::Hug)
         .height(Size::Hug)

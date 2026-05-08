@@ -47,7 +47,7 @@ fn comparison_screen(family: FontFamily, layout: LayoutMetrics) -> El {
                 text("Same Aetna tree, same density metrics, different proportional UI face.")
                     .muted(),
             ])
-            .gap(tokens::SPACE_XS)
+            .gap(tokens::SPACE_1)
             .height(Size::Hug),
             spacer(),
             badge(format!("{family:?}")).info(),
@@ -82,7 +82,7 @@ fn kpi_row() -> El {
         ),
         kpi_card("Revenue", "$1,250.00", "+12.5%", "Trending up this month"),
     ])
-    .gap(tokens::SPACE_MD)
+    .gap(tokens::SPACE_3)
     .height(Size::Hug)
 }
 
@@ -95,7 +95,7 @@ fn kpi_card(
     card([
         card_header([row([card_title(title), spacer(), badge(delta).success()])
             .align(Align::Center)
-            .gap(tokens::SPACE_SM)]),
+            .gap(tokens::SPACE_2)]),
         card_content([
             text(value)
                 .key(format!("metric:kpi.value.{title}"))
@@ -123,7 +123,7 @@ fn command_surface(layout: LayoutMetrics) -> El {
             .fill(tokens::CARD)
             .stroke(tokens::BORDER)
             .radius(tokens::RADIUS_MD)
-            .padding(tokens::SPACE_XS)
+            .padding(tokens::SPACE_1)
             .gap(0.0),
         ],
     )
@@ -164,7 +164,7 @@ fn copy_card() -> El {
                 button("Cancel").secondary(),
                 button("Save changes").primary(),
             ])
-            .gap(tokens::SPACE_SM)
+            .gap(tokens::SPACE_2)
             .align(Align::Center),
         ],
     )

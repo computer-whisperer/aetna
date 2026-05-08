@@ -90,17 +90,17 @@ impl App for Notes {
                 ),
                 form_description("Saved with the incident timeline."),
             ])]),
-            spacer().height(Size::Fixed(tokens::SPACE_LG)),
+            spacer().height(Size::Fixed(tokens::SPACE_4)),
             preview_block(self),
-            spacer().height(Size::Fixed(tokens::SPACE_LG)),
+            spacer().height(Size::Fixed(tokens::SPACE_4)),
             row([
                 button("Clear").key("clear").ghost(),
                 spacer(),
                 button("Reset").key("reset").secondary(),
             ]),
         ])
-        .padding(tokens::SPACE_XL)
-        .gap(tokens::SPACE_MD)
+        .padding(tokens::SPACE_7)
+        .gap(tokens::SPACE_3)
     }
 
     fn selection(&self) -> Selection {

@@ -43,7 +43,7 @@ pub fn icon_gallery() -> El {
                 .iter()
                 .map(|name| icon_tile(*name))
                 .collect::<Vec<_>>())
-            .gap(tokens::SPACE_MD)
+            .gap(tokens::SPACE_3)
             .width(Size::Fill(1.0)),
         );
     }
@@ -56,13 +56,13 @@ pub fn icon_gallery() -> El {
                     .muted()
                     .max_lines(2),
             ])
-            .gap(tokens::SPACE_XS)
+            .gap(tokens::SPACE_1)
             .width(Size::Fill(1.0)),
             row([
                 button_with_icon("upload", "Action").secondary(),
                 icon_button("bell").ghost(),
             ])
-            .gap(tokens::SPACE_SM),
+            .gap(tokens::SPACE_2),
         ])
         .align(Align::Center)
         .width(Size::Fill(1.0)),
@@ -76,12 +76,12 @@ pub fn icon_gallery() -> El {
                 .icon_size(22.0)
                 .text_color(tokens::MUTED_FOREGROUND),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .align(Align::Center)
         .width(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
     .width(Size::Fill(1.0))
     .height(Size::Hug)
 }
@@ -99,10 +99,10 @@ fn icon_tile(name: IconName) -> El {
             .ellipsis()
             .width(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_SM)
+    .gap(tokens::SPACE_2)
     .align(Align::Center)
     .justify(Justify::Center)
-    .padding(tokens::SPACE_MD)
+    .padding(tokens::SPACE_3)
     .width(Size::Fixed(118.0))
     .height(Size::Fixed(92.0))
     .fill(tokens::CARD)

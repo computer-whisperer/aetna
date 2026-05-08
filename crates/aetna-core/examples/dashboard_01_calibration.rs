@@ -72,7 +72,7 @@ fn dashboard_sidebar(layout: LayoutMetrics) -> El {
             .width(Size::Fill(1.0))
             .height(Size::Hug),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .height(Size::Fixed(44.0))
         .align(Align::Center),
         section_label("Platform"),
@@ -80,7 +80,7 @@ fn dashboard_sidebar(layout: LayoutMetrics) -> El {
         side_item("activity", "Lifecycle", false),
         side_item("bar-chart", "Analytics", false),
         side_item("folder", "Projects", false),
-        spacer().height(Size::Fixed(tokens::SPACE_LG)),
+        spacer().height(Size::Fixed(tokens::SPACE_4)),
         section_label("Documents"),
         side_item("file-text", "Data library", false),
         side_item("download", "Reports", false),
@@ -102,7 +102,7 @@ fn dashboard_sidebar(layout: LayoutMetrics) -> El {
             .width(Size::Fill(1.0))
             .height(Size::Hug),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .height(Size::Fixed(50.0))
         .align(Align::Center),
     ])
@@ -119,7 +119,7 @@ fn section_label(label: &'static str) -> El {
     text(label)
         .caption()
         .height(Size::Fixed(22.0))
-        .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+        .padding(Sides::xy(tokens::SPACE_2, 0.0))
 }
 
 fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El {
@@ -255,12 +255,12 @@ fn metric_card(
                     .icon_size(tokens::ICON_XS),
                 text(title).muted().ellipsis().width(Size::Fill(1.0)),
             ])
-            .gap(tokens::SPACE_XS)
+            .gap(tokens::SPACE_1)
             .width(Size::Fill(1.0))
             .align(Align::Center),
             badge,
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .align(Align::Center),
         value,
         text(note).caption().ellipsis().width(Size::Fill(1.0)),
@@ -323,7 +323,7 @@ fn sales_card() -> El {
             sale_row("IN", "Isabella Nguyen", "isabella@example.com", "+$299.00"),
             sale_row("WK", "William Kim", "will@example.com", "+$99.00"),
         ])
-        .gap(tokens::SPACE_SM),
+        .gap(tokens::SPACE_2),
     ])
     .key("metric:sales.card")
     .width(Size::Fixed(330.0))
@@ -347,7 +347,7 @@ fn sale_row(
         .width(Size::Fill(1.0)),
         text(amount).label().small(),
     ])
-    .gap(tokens::SPACE_SM)
+    .gap(tokens::SPACE_2)
     .height(Size::Fixed(42.0))
     .align(Align::Center)
 }

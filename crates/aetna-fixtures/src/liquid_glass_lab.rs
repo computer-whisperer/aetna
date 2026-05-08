@@ -42,17 +42,17 @@ pub fn liquid_glass_lab() -> El {
             row([
                 control_panel(),
                 column([now_panel(), flow_panel()])
-                    .gap(tokens::SPACE_MD)
+                    .gap(tokens::SPACE_3)
                     .width(Size::Fixed(340.0)),
             ])
-            .gap(tokens::SPACE_LG)
+            .gap(tokens::SPACE_4)
             .align(Align::Stretch)
             .width(Size::Fill(1.0))
             .height(Size::Fill(1.0)),
             bottom_dock(),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
         .width(Size::Fill(1.0))
         .height(Size::Fill(1.0)),
     ])
@@ -69,14 +69,14 @@ fn ambient_backdrop() -> El {
                 backdrop_chip("mesh", tokens::SUCCESS.with_alpha(90)),
                 backdrop_chip("relay", tokens::WARNING.with_alpha(95)),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(tokens::SPACE_3),
             spacer(),
             row([
                 backdrop_chip("alpha", Color::rgba(255, 255, 255, 42)),
                 spacer(),
                 backdrop_chip("delta", Color::rgba(255, 255, 255, 32)),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(tokens::SPACE_3),
         ])
         .padding(Sides::all(46.0))
         .width(Size::Fill(1.0))
@@ -100,7 +100,7 @@ fn backdrop_field() -> El {
 
 fn backdrop_chip(label: &'static str, color: Color) -> El {
     row([text(label).caption().text_color(tokens::PRIMARY_FOREGROUND)])
-        .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_XS))
+        .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_1))
         .fill(color)
         .stroke(Color::rgba(255, 255, 255, 42))
         .radius(tokens::RADIUS_PILL)
@@ -115,7 +115,7 @@ fn top_bar() -> El {
                 icon("layout-dashboard").icon_size(19.0),
                 text("Control Deck").title().bold(),
             ])
-            .gap(tokens::SPACE_SM)
+            .gap(tokens::SPACE_2)
             .align(Align::Center),
             spacer(),
             badge("live").success(),
@@ -123,7 +123,7 @@ fn top_bar() -> El {
             icon_button("bell").ghost(),
             icon_button("settings").ghost(),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .align(Align::Center),
         GlassSpec::bar(),
     )
@@ -138,7 +138,7 @@ fn control_panel() -> El {
                     text("Operations").heading().bold(),
                     text("Northwest mesh").text_color(glass_muted_text()),
                 ])
-                .gap(tokens::SPACE_XS),
+                .gap(tokens::SPACE_1),
                 spacer(),
                 icon("activity").icon_size(34.0),
             ])
@@ -148,7 +148,7 @@ fn control_panel() -> El {
                 metric("latency", "12.4", "ms", IconName::RefreshCw),
                 metric("health", "99.9", "%", IconName::Check),
             ])
-            .gap(tokens::SPACE_MD)
+            .gap(tokens::SPACE_3)
             .align(Align::Stretch),
             glass_table(),
             sparkline_panel(),
@@ -158,10 +158,10 @@ fn control_panel() -> El {
                 spacer(),
                 badge("stable").info(),
             ])
-            .gap(tokens::SPACE_SM)
+            .gap(tokens::SPACE_2)
             .align(Align::Center),
         ])
-        .gap(tokens::SPACE_LG),
+        .gap(tokens::SPACE_4),
         GlassSpec::hero(),
     )
     .width(Size::Fill(1.0))
@@ -181,7 +181,7 @@ fn now_panel() -> El {
             signal_row("cache-east", "warming", tokens::WARNING, "alert-circle"),
             signal_row("agents", "32 active", tokens::PRIMARY, "users"),
         ])
-        .gap(tokens::SPACE_MD),
+        .gap(tokens::SPACE_3),
         GlassSpec::panel(),
     )
     .height(Size::Fixed(236.0))
@@ -200,7 +200,7 @@ fn flow_panel() -> El {
                 icon_stat("download", "In", "18.2"),
                 icon_stat("upload", "Out", "16.7"),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(tokens::SPACE_3),
             El::new(Kind::Custom("signal_bar"))
                 .fill(Color::rgba(255, 255, 255, 56))
                 .stroke(Color::rgba(255, 255, 255, 80))
@@ -211,7 +211,7 @@ fn flow_panel() -> El {
                 .text_color(glass_muted_text())
                 .max_lines(2),
         ])
-        .gap(tokens::SPACE_MD),
+        .gap(tokens::SPACE_3),
         GlassSpec::panel(),
     )
     .height(Size::Fill(1.0))
@@ -226,7 +226,7 @@ fn bottom_dock() -> El {
             dock_button("command", "Run"),
             dock_button("more-horizontal", "More"),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .align(Align::Center)
         .justify(Justify::Center),
         GlassSpec::dock(),
@@ -241,7 +241,7 @@ fn glass_table() -> El {
         table_row("beacon", "64%", "ready", false),
         table_row("cursor", "82%", "busy", false),
     ])
-    .gap(tokens::SPACE_XS)
+    .gap(tokens::SPACE_1)
     .width(Size::Fill(1.0))
 }
 
@@ -259,8 +259,8 @@ fn table_row(a: &'static str, b: &'static str, c: &'static str, header: bool) ->
             .text_align(TextAlign::End)
             .width(Size::Fixed(86.0)),
     ])
-    .gap(tokens::SPACE_SM)
-    .padding(Sides::xy(tokens::SPACE_SM, tokens::SPACE_XS))
+    .gap(tokens::SPACE_2)
+    .padding(Sides::xy(tokens::SPACE_2, tokens::SPACE_1))
     .fill(if header {
         Color::rgba(255, 255, 255, 24)
     } else {
@@ -298,10 +298,10 @@ fn sparkline_panel() -> El {
             text("last 12m").caption().text_color(glass_muted_text()),
         ])
         .align(Align::Center),
-        row(bars).gap(tokens::SPACE_SM).align(Align::End),
+        row(bars).gap(tokens::SPACE_2).align(Align::End),
     ])
-    .gap(tokens::SPACE_SM)
-    .padding(tokens::SPACE_MD)
+    .gap(tokens::SPACE_2)
+    .padding(tokens::SPACE_3)
     .fill(Color::rgba(255, 255, 255, 14))
     .stroke(Color::rgba(255, 255, 255, 38))
     .radius(tokens::RADIUS_MD)
@@ -319,8 +319,8 @@ fn metric(label: &'static str, value: &'static str, unit: &'static str, icon_nam
         text(value).heading().bold(),
         text(label).caption().text_color(glass_muted_text()),
     ])
-    .gap(tokens::SPACE_XS)
-    .padding(tokens::SPACE_MD)
+    .gap(tokens::SPACE_1)
+    .padding(tokens::SPACE_3)
     .fill(Color::rgba(255, 255, 255, 22))
     .stroke(Color::rgba(255, 255, 255, 46))
     .radius(tokens::RADIUS_MD)
@@ -348,9 +348,9 @@ fn signal_row(
             .width(Size::Fixed(9.0))
             .height(Size::Fixed(9.0)),
     ])
-    .gap(tokens::SPACE_SM)
+    .gap(tokens::SPACE_2)
     .align(Align::Center)
-    .padding(tokens::SPACE_SM)
+    .padding(tokens::SPACE_2)
     .fill(Color::rgba(255, 255, 255, 16))
     .radius(tokens::RADIUS_MD)
     .width(Size::Fill(1.0))
@@ -362,7 +362,7 @@ fn icon_stat(icon_name: &'static str, label: &'static str, value: &'static str) 
         text(value).title().bold(),
         text(label).caption().text_color(glass_muted_text()),
     ])
-    .gap(tokens::SPACE_XS)
+    .gap(tokens::SPACE_1)
     .align(Align::Center)
     .justify(Justify::Center)
     .fill(Color::rgba(255, 255, 255, 18))
@@ -377,7 +377,7 @@ fn dock_button(icon_name: &'static str, label: &'static str) -> El {
         icon(icon_name).icon_size(21.0),
         text(label).caption().center_text(),
     ])
-    .gap(tokens::SPACE_XS)
+    .gap(tokens::SPACE_1)
     .align(Align::Center)
     .justify(Justify::Center)
     .width(Size::Fixed(84.0))
@@ -460,7 +460,7 @@ impl GlassSpec {
 fn glass_surface(content: El, spec: GlassSpec) -> El {
     El::new(Kind::Custom("liquid_glass_surface"))
         .child(content)
-        .padding(tokens::SPACE_LG)
+        .padding(tokens::SPACE_4)
         .shader(
             ShaderBinding::custom("liquid_glass_lab")
                 .color("vec_a", spec.tint)

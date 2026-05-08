@@ -51,7 +51,7 @@ pub fn button(label: impl Into<String>) -> El {
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Hug)
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
-        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
 }
 
 #[track_caller]
@@ -86,7 +86,7 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(Cursor::Pointer)
         .axis(Axis::Row)
-        .default_gap(tokens::SPACE_SM)
+        .default_gap(tokens::SPACE_2)
         .align(Align::Center)
         .justify(Justify::Center)
         .child(
@@ -101,5 +101,5 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Hug)
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
-        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
 }

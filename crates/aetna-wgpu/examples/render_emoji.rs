@@ -28,8 +28,8 @@ fn fixture() -> El {
             text("🚀 ready").muted(),
         ]),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

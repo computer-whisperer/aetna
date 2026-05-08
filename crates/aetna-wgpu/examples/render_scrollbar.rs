@@ -19,8 +19,8 @@ fn list_rows() -> Vec<El> {
                 text(format!("{i:02}.")).mono().muted(),
                 text(format!("scrollable list item {i}")),
             ])
-            .gap(tokens::SPACE_SM)
-            .padding(Sides::xy(tokens::SPACE_SM, tokens::SPACE_XS))
+            .gap(tokens::SPACE_2)
+            .padding(Sides::xy(tokens::SPACE_2, tokens::SPACE_1))
             .height(Size::Fixed(28.0))
             .align(Align::Center)
         })
@@ -36,12 +36,12 @@ fn fixture() -> El {
                 text("scroll()").bold(),
                 scroll(list_rows())
                     .height(Size::Fixed(240.0))
-                    .padding(tokens::SPACE_SM)
+                    .padding(tokens::SPACE_2)
                     .stroke(tokens::BORDER)
                     .stroke_width(1.0)
                     .radius(tokens::RADIUS_MD),
             ])
-            .gap(tokens::SPACE_SM)
+            .gap(tokens::SPACE_2)
             .width(Size::Fill(1.0))
             .height(Size::Hug),
             column([
@@ -51,26 +51,26 @@ fn fixture() -> El {
                         text(format!("{i:03}")).mono().muted(),
                         text(format!("row {i}")),
                     ])
-                    .gap(tokens::SPACE_SM)
-                    .padding(Sides::xy(tokens::SPACE_SM, tokens::SPACE_XS))
+                    .gap(tokens::SPACE_2)
+                    .padding(Sides::xy(tokens::SPACE_2, tokens::SPACE_1))
                     .height(Size::Fixed(28.0))
                     .align(Align::Center)
                 })
                 .height(Size::Fixed(240.0))
-                .padding(tokens::SPACE_SM)
+                .padding(tokens::SPACE_2)
                 .stroke(tokens::BORDER)
                 .stroke_width(1.0)
                 .radius(tokens::RADIUS_MD),
             ])
-            .gap(tokens::SPACE_SM)
+            .gap(tokens::SPACE_2)
             .width(Size::Fill(1.0))
             .height(Size::Hug),
         ])
-        .gap(tokens::SPACE_LG)
+        .gap(tokens::SPACE_4)
         .width(Size::Fill(1.0)),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }

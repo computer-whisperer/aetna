@@ -166,7 +166,7 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
         .justify(Justify::Start)
         .width(Size::Fill(1.0))
         .height(Size::Hug)
-        .default_padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+        .default_padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
         .children(children)
 }
 
@@ -390,8 +390,8 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
             let (Some((px, py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
                 return false;
             };
-            let local_x = px - target.rect.x - tokens::SPACE_MD;
-            let local_y = py - target.rect.y - tokens::SPACE_SM;
+            let local_x = px - target.rect.x - tokens::SPACE_3;
+            let local_y = py - target.rect.y - tokens::SPACE_2;
             let pos = caret_from_xy(value, local_x, local_y);
             // Multi-click: 2 = word at caret, ≥3 = line containing
             // caret (delimited by '\n'). Shift+multi-click falls
@@ -423,8 +423,8 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
             let (Some((px, py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
                 return false;
             };
-            let local_x = px - target.rect.x - tokens::SPACE_MD;
-            let local_y = py - target.rect.y - tokens::SPACE_SM;
+            let local_x = px - target.rect.x - tokens::SPACE_3;
+            let local_y = py - target.rect.y - tokens::SPACE_2;
             selection.head = caret_from_xy(value, local_x, local_y);
             true
         }
@@ -464,8 +464,8 @@ fn move_caret_vertically(value: &str, byte_index: usize, direction: i32) -> usiz
 pub fn caret_byte_at(value: &str, event: &UiEvent) -> Option<usize> {
     let (px, py) = event.pointer?;
     let target = event.target.as_ref()?;
-    let local_x = px - target.rect.x - tokens::SPACE_MD;
-    let local_y = py - target.rect.y - tokens::SPACE_SM;
+    let local_x = px - target.rect.x - tokens::SPACE_3;
+    let local_y = py - target.rect.y - tokens::SPACE_2;
     Some(caret_from_xy(value, local_x, local_y))
 }
 
@@ -589,8 +589,8 @@ mod tests {
     ) -> UiEvent {
         let target = ta_target();
         let pointer = (
-            target.rect.x + tokens::SPACE_MD + local.0,
-            target.rect.y + tokens::SPACE_SM + local.1,
+            target.rect.x + tokens::SPACE_3 + local.0,
+            target.rect.y + tokens::SPACE_2 + local.1,
         );
         UiEvent {
             key: Some(target.key.clone()),

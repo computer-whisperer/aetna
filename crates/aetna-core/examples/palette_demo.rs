@@ -76,7 +76,7 @@ fn palette_demo(label: &'static str, palette: &Palette) -> El {
                 h1("Palette demo"),
                 text("Copied shadcn and Radix palettes rendered through Aetna tokens.").muted(),
             ])
-            .gap(tokens::SPACE_SM)
+            .gap(tokens::SPACE_2)
             .height(Size::Hug),
             spacer(),
             badge(label).muted(),

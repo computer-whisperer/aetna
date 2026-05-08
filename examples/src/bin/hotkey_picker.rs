@@ -51,7 +51,7 @@ impl App for Picker {
             spacer(),
             text(format!("{}/{}", self.selected + 1, ITEMS.len())).muted(),
         ])
-        .gap(tokens::SPACE_SM);
+        .gap(tokens::SPACE_2);
 
         let rows: Vec<El> = ITEMS
             .iter()
@@ -63,8 +63,8 @@ impl App for Picker {
                     spacer(),
                     text(if Some(i) == self.opened { "opened" } else { "" }).muted(),
                 ])
-                .gap(tokens::SPACE_SM)
-                .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+                .gap(tokens::SPACE_2)
+                .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
                 .height(Size::Fixed(40.0))
                 .key(format!("row-{i}"))
                 .stroke(tokens::BORDER)
@@ -82,8 +82,8 @@ impl App for Picker {
             header,
             scroll(rows).key("items").height(Size::Fill(1.0)),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
     }
 
     fn hotkeys(&self) -> Vec<(KeyChord, String)> {

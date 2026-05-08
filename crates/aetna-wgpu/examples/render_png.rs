@@ -47,7 +47,7 @@ fn settings() -> El {
                         .muted()
                         .small(),
                 ])
-                .gap(tokens::SPACE_XS)
+                .gap(tokens::SPACE_1)
                 .align(Align::Start)
                 .width(Size::Hug),
                 spacer(),
@@ -56,8 +56,8 @@ fn settings() -> El {
         ),
         row([spacer(), button("Cancel").ghost(), button("Save").primary()]),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

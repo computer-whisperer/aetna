@@ -245,8 +245,8 @@ fn build_row(commit: &FakeCommit, idx: usize, selected: bool) -> El {
     ])
     .key(format!("commit-{idx}"))
     .focusable()
-    .gap(tokens::SPACE_MD)
-    .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .gap(tokens::SPACE_3)
+    .padding(Sides::xy(tokens::SPACE_2, 0.0))
     .height(Size::Fixed(ROW_HEIGHT))
     .align(Align::Center)
     .fill(row_bg)
@@ -305,8 +305,8 @@ impl App for Demo {
             .key("commits")
             .height(Size::Fill(1.0)),
         ])
-        .padding(tokens::SPACE_LG)
-        .gap(tokens::SPACE_SM);
+        .padding(tokens::SPACE_4)
+        .gap(tokens::SPACE_2);
 
         overlays(
             main,

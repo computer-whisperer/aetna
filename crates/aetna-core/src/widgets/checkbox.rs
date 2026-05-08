@@ -17,7 +17,7 @@
 //!         row([
 //!             checkbox(self.agree).key("agree"),
 //!             text("I agree to the terms").label(),
-//!         ]).gap(tokens::SPACE_SM).align(Align::Center)
+//!         ]).gap(tokens::SPACE_2).align(Align::Center)
 //!     }
 //!
 //!     fn on_event(&mut self, event: UiEvent) {

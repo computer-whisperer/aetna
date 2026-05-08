@@ -217,7 +217,7 @@ pub fn select_trigger(key: impl Into<String>, current_label: impl Into<String>) 
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .key(key)
         .axis(Axis::Row)
-        .default_gap(tokens::SPACE_SM)
+        .default_gap(tokens::SPACE_2)
         .align(Align::Center)
         .child(label)
         .child(chevron)
@@ -227,7 +227,7 @@ pub fn select_trigger(key: impl Into<String>, current_label: impl Into<String>) 
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Fill(1.0))
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
-        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
 }
 
 /// The dropdown popover for a `select`. Render this only while the

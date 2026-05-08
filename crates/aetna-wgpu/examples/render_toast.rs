@@ -31,10 +31,10 @@ fn fixture() -> El {
             button("Trigger error").key("err"),
             button("Show info").key("info"),
         ])
-        .gap(tokens::SPACE_SM),
+        .gap(tokens::SPACE_2),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }

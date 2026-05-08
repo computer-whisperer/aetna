@@ -58,9 +58,9 @@ fn sidebar(layout: LayoutMetrics) -> El {
     column([
         column([h2("Aetna"), text("calibration").muted()])
             .key("metric:sidebar.brand")
-            .gap(tokens::SPACE_XS)
+            .gap(tokens::SPACE_1)
             .height(Size::Hug),
-        spacer().height(Size::Fixed(tokens::SPACE_LG)),
+        spacer().height(Size::Fixed(tokens::SPACE_4)),
         nav_item("01", "Overview", true),
         nav_item("02", "Commands", false),
         nav_item("03", "Tables", false),
@@ -68,7 +68,7 @@ fn sidebar(layout: LayoutMetrics) -> El {
         spacer(),
         badge("dark theme").muted(),
     ])
-    .gap(tokens::SPACE_SM)
+    .gap(tokens::SPACE_2)
     .padding(layout.pane_padding)
     .key("metric:sidebar")
     .width(Size::Fixed(220.0))
@@ -134,7 +134,7 @@ fn toolbar() -> El {
                 .muted()
                 .key("metric:page.subtitle"),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .height(Size::Hug),
         spacer(),
         button_with_icon("search", "Preview")
@@ -145,7 +145,7 @@ fn toolbar() -> El {
             .key("metric:action.primary"),
     ])
     .key("metric:header")
-    .gap(tokens::SPACE_SM)
+    .gap(tokens::SPACE_2)
     .height(Size::Hug)
     .align(Align::Start)
 }
@@ -235,7 +235,7 @@ fn table_card() -> El {
                     "success",
                 ),
             ])
-            .gap(tokens::SPACE_XS)
+            .gap(tokens::SPACE_1)
             .width(Size::Fill(1.0)),
         ])]),
     ])
@@ -356,7 +356,7 @@ fn form_probe() -> El {
             spacer(),
         ]),
     ])
-    .padding(tokens::SPACE_MD)
+    .padding(tokens::SPACE_3)
     .fill(tokens::MUTED)
     .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_MD)

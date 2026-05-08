@@ -75,8 +75,8 @@ impl App for Compass {
                 .width(Size::Fill(1.0))
                 .height(Size::Fill(1.0)),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
     }
 
     fn on_event(&mut self, event: UiEvent) {

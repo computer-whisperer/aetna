@@ -132,8 +132,8 @@ fn toast_stack(cards: Vec<El>) -> El {
         .fill_size()
         .layout(|ctx| {
             let viewport = (ctx.rect_of_id)("root").unwrap_or(ctx.container);
-            let pad = tokens::SPACE_LG;
-            let gap = tokens::SPACE_SM;
+            let pad = tokens::SPACE_4;
+            let gap = tokens::SPACE_2;
             let mut rects = Vec::with_capacity(ctx.children.len());
             // Newest toast (last in `children`) renders at the bottom;
             // earlier toasts pile upward above it.
@@ -175,8 +175,8 @@ fn toast_card(t: &Toast) -> El {
         .surface_role(SurfaceRole::Popover)
         .axis(Axis::Row)
         .align(Align::Stretch)
-        .gap(tokens::SPACE_SM)
-        .padding(tokens::SPACE_MD)
+        .gap(tokens::SPACE_2)
+        .padding(tokens::SPACE_3)
         .fill(tokens::POPOVER)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_MD)

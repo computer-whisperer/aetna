@@ -30,9 +30,9 @@ impl App for Picker {
                     })
                     .muted(),
                 ])
-                .gap(tokens::SPACE_SM)
+                .gap(tokens::SPACE_2)
                 .height(Size::Fixed(44.0))
-                .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+                .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
                 .key(key)
                 .stroke(tokens::BORDER)
                 .radius(tokens::RADIUS_SM);
@@ -49,10 +49,10 @@ impl App for Picker {
             scroll(rows)
                 .key("items")
                 .height(Size::Fill(1.0))
-                .padding(tokens::SPACE_SM),
+                .padding(tokens::SPACE_2),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
     }
 
     fn on_event(&mut self, event: UiEvent) {

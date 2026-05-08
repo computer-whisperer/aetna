@@ -315,7 +315,7 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
         .justify(Justify::Center) // children center vertically
         .default_width(Size::Fill(1.0))
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
-        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
         .children(children)
 }
 
@@ -555,7 +555,7 @@ fn fold_event_local(
             let (Some((px, _py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
                 return false;
             };
-            let local_x = px - target.rect.x - tokens::SPACE_MD;
+            let local_x = px - target.rect.x - tokens::SPACE_3;
             let pos = caret_from_x(value, local_x, opts.mask);
             // Multi-click: 2 = select word at hit; ≥3 = select all.
             // Modifier-shift extend still wins over multi-click — it
@@ -589,7 +589,7 @@ fn fold_event_local(
             let (Some((px, _py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
                 return false;
             };
-            let local_x = px - target.rect.x - tokens::SPACE_MD;
+            let local_x = px - target.rect.x - tokens::SPACE_3;
             selection.head = caret_from_x(value, local_x, opts.mask);
             true
         }
@@ -732,7 +732,7 @@ pub fn clipboard_request_for(event: &UiEvent, opts: &TextInputOpts<'_>) -> Optio
 pub fn caret_byte_at(value: &str, event: &UiEvent, opts: &TextInputOpts<'_>) -> Option<usize> {
     let (px, _py) = event.pointer?;
     let target = event.target.as_ref()?;
-    let local_x = px - target.rect.x - tokens::SPACE_MD;
+    let local_x = px - target.rect.x - tokens::SPACE_3;
     Some(caret_from_x(value, local_x, opts.mask))
 }
 
@@ -1529,7 +1529,7 @@ mod tests {
         // Click somewhere inside "world" with click_count = 2.
         let target = ti_target();
         let click_x = target.rect.x
-            + tokens::SPACE_MD
+            + tokens::SPACE_3
             + crate::text::metrics::line_width(
                 "hello w",
                 tokens::TEXT_SM.size,
@@ -1572,7 +1572,7 @@ mod tests {
         let mut sel = TextSelection::caret(0);
         let target = ti_target();
         let click_x = target.rect.x
-            + tokens::SPACE_MD
+            + tokens::SPACE_3
             + crate::text::metrics::line_width(
                 "hello w",
                 tokens::TEXT_SM.size,
@@ -1909,7 +1909,7 @@ mod tests {
         let target = ti_target();
         // Click at a position that should land between the two bullets.
         let bullet_w = metrics::line_width("•", tokens::TEXT_SM.size, FontWeight::Regular, false);
-        let click_x = target.rect.x + tokens::SPACE_MD + bullet_w * 1.4;
+        let click_x = target.rect.x + tokens::SPACE_3 + bullet_w * 1.4;
         let down = ev_pointer_down(
             target,
             (click_x, ti_target().rect.y + 18.0),

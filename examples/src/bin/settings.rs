@@ -54,7 +54,7 @@ impl App for Settings {
                             .muted()
                             .small(),
                     ])
-                    .gap(tokens::SPACE_XS)
+                    .gap(tokens::SPACE_1)
                     .align(Align::Start),
                     button("Delete").destructive(),
                 ])
@@ -62,11 +62,11 @@ impl App for Settings {
                 .justify(Justify::SpaceBetween)],
             ),
             row([button("Cancel").ghost(), button("Save").primary()])
-                .gap(tokens::SPACE_SM)
+                .gap(tokens::SPACE_2)
                 .justify(Justify::End),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL)
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7)
     }
 }
 

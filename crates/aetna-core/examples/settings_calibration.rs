@@ -69,7 +69,7 @@ fn settings_sidebar(layout: LayoutMetrics) -> El {
             .width(Size::Fill(1.0))
             .height(Size::Hug),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .height(Size::Fixed(44.0))
         .align(Align::Center),
         section_label("Personal"),
@@ -77,14 +77,14 @@ fn settings_sidebar(layout: LayoutMetrics) -> El {
         side_item("settings", "Account", true),
         side_item("alert-circle", "Security", false),
         side_item("bell", "Notifications", false),
-        spacer().height(Size::Fixed(tokens::SPACE_LG)),
+        spacer().height(Size::Fixed(tokens::SPACE_4)),
         section_label("Workspace"),
         side_item("file-text", "Billing", false),
         side_item("bar-chart", "Appearance", false),
         side_item("activity", "Integrations", false),
         spacer(),
         column([text("Changes sync after save.").caption().wrap_text()])
-            .padding(tokens::SPACE_SM)
+            .padding(tokens::SPACE_2)
             .fill(tokens::MUTED)
             .radius(tokens::RADIUS_MD),
     ])
@@ -139,8 +139,8 @@ fn settings_nav_card() -> El {
         settings_nav_item("Appearance", false),
         settings_nav_item("Billing", false),
     ])
-    .gap(tokens::SPACE_XS)
-    .padding(tokens::SPACE_XS)
+    .gap(tokens::SPACE_1)
+    .padding(tokens::SPACE_1)
     .width(Size::Fixed(220.0))
     .height(Size::Fill(1.0))
     .style_profile(StyleProfile::Surface)
@@ -190,7 +190,7 @@ fn settings_body(layout: LayoutMetrics) -> El {
                 .wrap_text()
                 .key("metric:page.subtitle"),
         ])
-        .gap(tokens::SPACE_XS)
+        .gap(tokens::SPACE_1)
         .height(Size::Hug),
         scroll([profile_card(), preferences_card()])
             .key("settings-body-scroll")
@@ -214,12 +214,12 @@ fn profile_card() -> El {
                 setting_field("Display name", "Alicia Koch", "display-name"),
                 setting_field("Email", "alicia@acme.co", "email"),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(tokens::SPACE_3),
             row([
                 setting_select("Role", "Workspace admin", "role"),
                 setting_select("Region", "US East", "region"),
             ])
-            .gap(tokens::SPACE_MD),
+            .gap(tokens::SPACE_3),
         ])]),
     ])
     .key("metric:profile.card")
@@ -347,7 +347,7 @@ fn compact_stat(title: &'static str, detail: &'static str, control: El) -> El {
         .height(Size::Hug),
         control,
     ])
-    .gap(tokens::SPACE_SM)
+    .gap(tokens::SPACE_2)
     .height(Size::Fixed(44.0))
     .align(Align::Center)
 }
@@ -356,7 +356,7 @@ fn section_label(label: &'static str) -> El {
     text(label)
         .caption()
         .height(Size::Fixed(22.0))
-        .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+        .padding(Sides::xy(tokens::SPACE_2, 0.0))
 }
 
 fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El {

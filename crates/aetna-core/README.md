@@ -27,10 +27,10 @@ impl App for Counter {
                 button("-").key("dec"),
                 button("+").key("inc").primary(),
             ])
-            .gap(tokens::SPACE_SM),
+            .gap(tokens::SPACE_2),
         ])
-        .gap(tokens::SPACE_MD)
-        .padding(tokens::SPACE_LG)
+        .gap(tokens::SPACE_3)
+        .padding(tokens::SPACE_4)
     }
 
     fn on_event(&mut self, event: UiEvent) {

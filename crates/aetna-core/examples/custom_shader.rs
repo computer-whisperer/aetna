@@ -61,11 +61,11 @@ fn fixture() -> El {
                 spacer(),
                 button("Stock").secondary(),
             ])
-            .gap(tokens::SPACE_MD)],
+            .gap(tokens::SPACE_3)],
         ),
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
 }
 
 fn main() -> std::io::Result<()> {

@@ -32,7 +32,7 @@ fn density_calibration() -> El {
                 text("Compact, comfortable, and spacious surfaces using theme metrics roles.")
                     .caption(),
             ])
-            .gap(tokens::SPACE_XS)
+            .gap(tokens::SPACE_1)
             .height(Size::Hug),
             spacer(),
             button("Default").secondary(),
@@ -40,18 +40,18 @@ fn density_calibration() -> El {
         ])
         .height(Size::Fixed(56.0))
         .align(Align::Center)
-        .gap(tokens::SPACE_SM),
+        .gap(tokens::SPACE_2),
         row([
             density_column("Compact", Density::Compact, ComponentSize::Sm),
             density_column("Comfortable", Density::Comfortable, ComponentSize::Md),
             density_column("Spacious", Density::Spacious, ComponentSize::Lg),
         ])
-        .gap(tokens::SPACE_MD)
+        .gap(tokens::SPACE_3)
         .height(Size::Fill(1.0))
         .align(Align::Stretch),
     ])
-    .padding(tokens::SPACE_XL)
-    .gap(tokens::SPACE_LG)
+    .padding(tokens::SPACE_7)
+    .gap(tokens::SPACE_4)
     .fill_size()
     .fill(tokens::BACKGROUND)
 }
@@ -66,7 +66,7 @@ fn density_column(title: &'static str, density: Density, size: ComponentSize) ->
                     button("Ghost").ghost().size(size),
                     icon_button("settings").secondary().size(size),
                 ])
-                .gap(tokens::SPACE_SM)
+                .gap(tokens::SPACE_2)
                 .align(Align::Center),
                 text_input(
                     "Search documents...",
@@ -115,7 +115,7 @@ fn density_column(title: &'static str, density: Density, size: ComponentSize) ->
         )
         .density(density),
     ])
-    .gap(tokens::SPACE_MD)
+    .gap(tokens::SPACE_3)
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
 }

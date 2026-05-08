@@ -21,16 +21,16 @@ fn scroll_list_fixture() -> El {
                 spacer(),
                 text(format!("{}m ago", i + 1)).muted(),
             ])
-            .gap(tokens::SPACE_SM)
+            .gap(tokens::SPACE_2)
             .height(Size::Fixed(44.0))
-            .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_SM))
+            .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
         })
         .collect();
 
     let list = scroll(rows)
         .key("notifications")
         .height(Size::Fixed(420.0))
-        .padding(tokens::SPACE_SM);
+        .padding(tokens::SPACE_2);
 
     column([
         h2("Notifications"),
@@ -38,8 +38,8 @@ fn scroll_list_fixture() -> El {
             .muted(),
         list,
     ])
-    .gap(tokens::SPACE_LG)
-    .padding(tokens::SPACE_XL)
+    .gap(tokens::SPACE_4)
+    .padding(tokens::SPACE_7)
 }
 
 fn main() -> std::io::Result<()> {

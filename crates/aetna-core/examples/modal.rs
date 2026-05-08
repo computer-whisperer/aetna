@@ -26,7 +26,7 @@ fn modal_fixture() -> El {
                             .muted()
                             .small(),
                     ])
-                    .gap(tokens::SPACE_XS)
+                    .gap(tokens::SPACE_1)
                     .align(Align::Start)
                     .width(Size::Hug),
                     spacer(),
@@ -34,8 +34,8 @@ fn modal_fixture() -> El {
                 ])],
             ),
         ])
-        .gap(tokens::SPACE_LG)
-        .padding(tokens::SPACE_XL),
+        .gap(tokens::SPACE_4)
+        .padding(tokens::SPACE_7),
         modal(
             "delete-account",
             "Delete account?",
@@ -46,7 +46,7 @@ fn modal_fixture() -> El {
                     button("Cancel").ghost().key("cancel-delete"),
                     button("Delete").destructive().key("confirm-delete"),
                 ])
-                .gap(tokens::SPACE_SM),
+                .gap(tokens::SPACE_2),
             ],
         ),
     ])

@@ -56,7 +56,7 @@ use crate::tree::*;
 use crate::widgets::overlay::overlay;
 
 /// Default spacing between a popover panel and its anchor.
-const ANCHOR_GAP: f32 = tokens::SPACE_XS;
+const ANCHOR_GAP: f32 = tokens::SPACE_1;
 
 /// Where a popover sits relative to its anchor.
 ///
@@ -302,7 +302,7 @@ where
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_SM)
         .shadow(tokens::SHADOW_MD)
-        .default_padding(tokens::SPACE_XS)
+        .default_padding(tokens::SPACE_1)
         .default_gap(0.0)
         .width(Size::Hug)
         .height(Size::Hug)
@@ -345,7 +345,7 @@ pub fn menu_item(label: impl Into<String>) -> El {
         .child(label)
         .fill(tokens::POPOVER)
         .default_radius(tokens::RADIUS_SM)
-        .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
+        .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
         .default_gap(0.0)
         .width(Size::Fill(1.0))
         .default_height(Size::Fixed(28.0))

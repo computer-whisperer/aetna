@@ -31,7 +31,7 @@ fn size_row(size: f32) -> El {
                 .font_size(size)
                 .font_weight(FontWeight::Regular),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .align(Align::End),
         row([
             text("medium")
@@ -40,7 +40,7 @@ fn size_row(size: f32) -> El {
                 .width(Size::Fixed(56.0)),
             text(SAMPLE).font_size(size).font_weight(FontWeight::Medium),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .align(Align::End),
         row([
             text("bold")
@@ -49,7 +49,7 @@ fn size_row(size: f32) -> El {
                 .width(Size::Fixed(56.0)),
             text(SAMPLE).font_size(size).font_weight(FontWeight::Bold),
         ])
-        .gap(tokens::SPACE_SM)
+        .gap(tokens::SPACE_2)
         .align(Align::End),
     ])
     .gap(2.0)
@@ -64,8 +64,8 @@ fn dark_panel() -> El {
         text(SAMPLE).font_size(14.0).font_weight(FontWeight::Bold),
         text(UNICODE_SAMPLE).font_size(16.0),
     ])
-    .gap(tokens::SPACE_SM)
-    .padding(tokens::SPACE_MD)
+    .gap(tokens::SPACE_2)
+    .padding(tokens::SPACE_3)
     .fill(Color::rgb(20, 20, 24))
     .width(Size::Fill(1.0))
     .height(Size::Hug)
@@ -87,8 +87,8 @@ fn light_panel() -> El {
             .font_size(16.0)
             .text_color(Color::rgb(20, 20, 20)),
     ])
-    .gap(tokens::SPACE_SM)
-    .padding(tokens::SPACE_MD)
+    .gap(tokens::SPACE_2)
+    .padding(tokens::SPACE_3)
     .fill(Color::rgb(245, 245, 248))
     .width(Size::Fill(1.0))
     .height(Size::Hug)
@@ -105,8 +105,8 @@ pub fn fixture() -> El {
         .flatten()
         .collect::<Vec<_>>(),
     )
-    .gap(tokens::SPACE_MD)
-    .padding(tokens::SPACE_LG)
+    .gap(tokens::SPACE_3)
+    .padding(tokens::SPACE_4)
     .fill(tokens::BACKGROUND)
     .width(Size::Fill(1.0))
     .height(Size::Hug)

@@ -74,8 +74,8 @@ fn build_row(c: &FakeCommit, idx: usize, selected: bool) -> El {
         text(format!("{} · {}", c.author, c.when)).muted(),
     ])
     .key(format!("commit-{idx}"))
-    .gap(tokens::SPACE_MD)
-    .padding(Sides::xy(tokens::SPACE_SM, 0.0))
+    .gap(tokens::SPACE_3)
+    .padding(Sides::xy(tokens::SPACE_2, 0.0))
     .height(Size::Fixed(ROW_HEIGHT))
     .align(Align::Center)
 }
@@ -104,8 +104,8 @@ fn fixture() -> El {
         text("8 commits · custom shader paints lane line + circle node").muted(),
         column(rows).gap(0.0),
     ])
-    .padding(tokens::SPACE_LG)
-    .gap(tokens::SPACE_SM)
+    .padding(tokens::SPACE_4)
+    .gap(tokens::SPACE_2)
 }
 
 fn main() -> std::io::Result<()> {
