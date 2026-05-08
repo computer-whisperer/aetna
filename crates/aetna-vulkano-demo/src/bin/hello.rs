@@ -2,7 +2,7 @@
 //!
 //! No `aetna-vulkano::Runner` involvement; the only goal is to confirm
 //! vulkano + winit + the host's Vulkan loader bring up a window that
-//! paints `tokens::BG_APP` every frame. Useful as a platform-compat
+//! paints `tokens::BACKGROUND` every frame. Useful as a platform-compat
 //! smoke test independent of the rest of the backend.
 //!
 //! Structure mirrors the native winit host shape — same
@@ -149,7 +149,7 @@ impl ApplicationHandler for Host {
             // Match the wgpu host path: prefer an sRGB swapchain format
             // so the `clear_color()` linear-space values land correctly.
             // Without this, the first available format is often a UNORM
-            // one and `srgb_to_linear` double-darkens BG_APP to near-zero.
+            // one and `srgb_to_linear` double-darkens BACKGROUND to near-zero.
             let image_format = formats
                 .iter()
                 .copied()
@@ -347,9 +347,9 @@ fn build_framebuffers(
 
 /// Same logic as the wgpu host clear color — the swapchain format we
 /// pick is sRGB, but vulkano's `ClearValue::Float` is taken as linear.
-/// Convert so the cleared pixel matches `tokens::BG_APP`.
+/// Convert so the cleared pixel matches `tokens::BACKGROUND`.
 fn clear_color() -> [f32; 4] {
-    let c = aetna_core::tokens::BG_APP;
+    let c = aetna_core::tokens::BACKGROUND;
     [
         srgb_to_linear(c.r as f32 / 255.0),
         srgb_to_linear(c.g as f32 / 255.0),

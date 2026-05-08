@@ -97,7 +97,7 @@ mod tests {
         let link = breadcrumb_link("Projects");
         let page = breadcrumb_page("Aetna");
 
-        assert_eq!(link.text_color, Some(tokens::TEXT_MUTED_FOREGROUND));
+        assert_eq!(link.text_color, Some(tokens::MUTED_FOREGROUND));
         assert_eq!(link.cursor, Some(Cursor::Pointer));
         assert_eq!(page.font_weight, FontWeight::Semibold);
     }

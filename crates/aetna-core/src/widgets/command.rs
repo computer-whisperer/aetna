@@ -47,7 +47,7 @@ where
         .axis(Axis::Row)
         .align(Align::Center)
         .justify(Justify::Start)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::CARD)
         .default_radius(tokens::RADIUS_SM)
         .default_padding(Sides::xy(tokens::SPACE_SM, 0.0))
         .default_gap(tokens::SPACE_SM)
@@ -63,11 +63,11 @@ pub fn command_icon(source: impl IntoIconSource) -> El {
         .child(
             icon(source)
                 .icon_size(tokens::ICON_XS)
-                .color(tokens::TEXT_FOREGROUND),
+                .color(tokens::FOREGROUND),
         )
         .align(Align::Center)
         .justify(Justify::Center)
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::MUTED)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_SM)
         .width(Size::Fixed(24.0))
@@ -89,7 +89,7 @@ pub fn command_shortcut(shortcut: impl Into<String>) -> El {
     mono(shortcut)
         .at_loc(Location::caller())
         .caption()
-        .color(tokens::TEXT_MUTED_FOREGROUND)
+        .color(tokens::MUTED_FOREGROUND)
         .width(Size::Hug)
 }
 

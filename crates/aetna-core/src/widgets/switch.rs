@@ -63,7 +63,7 @@ pub const THUMB_SLIDE: f32 = TRACK_WIDTH - THUMB_SIZE - 2.0 * PAD;
 /// State changes are animated. The thumb's position is laid out at
 /// the off side and shifted via an animatable [`El::translate`] when
 /// `value == true`; the track's fill animates between
-/// [`tokens::BG_MUTED`] (off) and [`tokens::PRIMARY`] (on). The
+/// [`tokens::MUTED`] (off) and [`tokens::PRIMARY`] (on). The
 /// underlying timing is [`Timing::SPRING_QUICK`] — calibrated to read
 /// as a snappy switch with no overshoot.
 ///
@@ -91,7 +91,7 @@ pub fn switch(value: bool) -> El {
     let track_fill = if value {
         tokens::PRIMARY
     } else {
-        tokens::BG_MUTED
+        tokens::MUTED
     };
     let thumb_translate_x = if value { THUMB_SLIDE } else { 0.0 };
 
@@ -106,7 +106,7 @@ pub fn switch(value: bool) -> El {
             // / press on the switch.
             .state_follows_interactive_ancestor(),
         El::new(Kind::Custom("switch-thumb"))
-            .fill(tokens::TEXT_FOREGROUND)
+            .fill(tokens::FOREGROUND)
             .radius(tokens::RADIUS_PILL)
             .translate(thumb_translate_x, 0.0)
             .animate(Timing::SPRING_QUICK)
@@ -114,7 +114,7 @@ pub fn switch(value: bool) -> El {
     ])
     .at_loc(Location::caller())
     .focusable()
-    .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+    .paint_overflow(Sides::all(tokens::RING_WIDTH))
     .cursor(Cursor::Pointer)
     .layout(layout)
     .width(Size::Fixed(TRACK_WIDTH))
@@ -144,10 +144,10 @@ mod tests {
     #[test]
     fn off_switch_paints_muted_track_and_left_thumb() {
         // The track's fill is the visual signal of state, so an off
-        // switch must paint with BG_MUTED rather than PRIMARY.
+        // switch must paint with MUTED rather than PRIMARY.
         let s = switch(false);
         let track = &s.children[0];
-        assert_eq!(track.fill, Some(tokens::BG_MUTED));
+        assert_eq!(track.fill, Some(tokens::MUTED));
         // Track stays a pill regardless of state.
         assert_eq!(track.radius, tokens::RADIUS_PILL);
     }

@@ -58,7 +58,7 @@ fn graph_cell(lane: u8, selected: bool) -> El {
         .height(Size::Fixed(ROW_HEIGHT))
         .shader(
             ShaderBinding::custom("commit_node")
-                .color("vec_a", tokens::BG_APP)
+                .color("vec_a", tokens::BACKGROUND)
                 .color("vec_b", ring_color)
                 .vec4("vec_c", [radius, ring_w, line_w, lane_frac]),
         )

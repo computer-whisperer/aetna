@@ -68,10 +68,10 @@ impl El {
     /// Default-styled secondary surface. This is the default look for
     /// `button(...)`; calling `.secondary()` makes intent explicit.
     pub fn secondary(mut self) -> Self {
-        self.fill = Some(tokens::BG_MUTED);
+        self.fill = Some(tokens::SECONDARY);
         self.stroke = Some(tokens::BORDER);
         self.stroke_width = 1.0;
-        set_content_color(&mut self, tokens::TEXT_FOREGROUND);
+        set_content_color(&mut self, tokens::SECONDARY_FOREGROUND);
         self.font_weight = FontWeight::Medium;
         self
     }
@@ -82,16 +82,16 @@ impl El {
         self.fill = None;
         self.stroke = None;
         self.stroke_width = 0.0;
-        set_content_color(&mut self, tokens::TEXT_MUTED_FOREGROUND);
+        set_content_color(&mut self, tokens::MUTED_FOREGROUND);
         self
     }
 
     /// Outline-only style: no fill, prominent border.
     pub fn outline(mut self) -> Self {
         self.fill = None;
-        self.stroke = Some(tokens::BORDER_STRONG);
+        self.stroke = Some(tokens::INPUT);
         self.stroke_width = 1.0;
-        set_content_color(&mut self, tokens::TEXT_FOREGROUND);
+        set_content_color(&mut self, tokens::FOREGROUND);
         self
     }
 
@@ -101,13 +101,13 @@ impl El {
     pub fn muted(mut self) -> Self {
         match self.style_profile {
             StyleProfile::Solid | StyleProfile::Tinted | StyleProfile::Surface => {
-                self.fill = Some(tokens::BG_MUTED);
+                self.fill = Some(tokens::MUTED);
                 self.stroke = Some(tokens::BORDER);
                 self.stroke_width = 1.0;
-                set_content_color(&mut self, tokens::TEXT_MUTED_FOREGROUND);
+                set_content_color(&mut self, tokens::MUTED_FOREGROUND);
             }
             StyleProfile::TextOnly => {
-                set_content_color(&mut self, tokens::TEXT_MUTED_FOREGROUND);
+                set_content_color(&mut self, tokens::MUTED_FOREGROUND);
             }
         }
         self
@@ -131,7 +131,7 @@ impl El {
                 self.fill = Some(tokens::PRIMARY.with_alpha(28));
                 self.stroke = Some(tokens::PRIMARY.with_alpha(90));
                 self.stroke_width = 1.0;
-                set_content_color(&mut self, tokens::TEXT_FOREGROUND);
+                set_content_color(&mut self, tokens::FOREGROUND);
             }
         }
         self
@@ -141,15 +141,15 @@ impl El {
     /// [`Self::selected`] so nav chrome does not compete with content.
     pub fn current(mut self) -> Self {
         if text_only_leaf(&self) {
-            self.text_color = Some(tokens::TEXT_FOREGROUND);
+            self.text_color = Some(tokens::FOREGROUND);
             self.font_weight = FontWeight::Semibold;
         } else {
             self.style_profile = StyleProfile::Surface;
             self.surface_role = SurfaceRole::Current;
-            self.fill = Some(tokens::BG_RAISED);
+            self.fill = Some(tokens::ACCENT);
             self.stroke = Some(tokens::BORDER);
             self.stroke_width = 1.0;
-            set_content_color(&mut self, tokens::TEXT_FOREGROUND);
+            set_content_color(&mut self, tokens::ACCENT_FOREGROUND);
             self.font_weight = FontWeight::Semibold;
         }
         self
@@ -162,7 +162,7 @@ impl El {
         self.focusable = false;
         self.block_pointer = true;
         if text_only_leaf(&self) {
-            self.text_color = Some(tokens::TEXT_MUTED_FOREGROUND);
+            self.text_color = Some(tokens::MUTED_FOREGROUND);
         }
         self
     }
@@ -272,43 +272,43 @@ fn apply_text_role(el: &mut El) {
             apply_type_token(el, tokens::TEXT_SM);
             el.font_weight = FontWeight::Regular;
             el.font_mono = false;
-            el.text_color = Some(tokens::TEXT_FOREGROUND);
+            el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Caption => {
             apply_type_token(el, tokens::TEXT_XS);
             el.font_weight = FontWeight::Regular;
             el.font_mono = false;
-            el.text_color = Some(tokens::TEXT_MUTED_FOREGROUND);
+            el.text_color = Some(tokens::MUTED_FOREGROUND);
         }
         TextRole::Label => {
             apply_type_token(el, tokens::TEXT_SM);
             el.font_weight = FontWeight::Medium;
             el.font_mono = false;
-            el.text_color = Some(tokens::TEXT_FOREGROUND);
+            el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Title => {
             apply_type_token(el, tokens::TEXT_BASE);
             el.font_weight = FontWeight::Semibold;
             el.font_mono = false;
-            el.text_color = Some(tokens::TEXT_FOREGROUND);
+            el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Heading => {
             apply_type_token(el, tokens::TEXT_2XL);
             el.font_weight = FontWeight::Semibold;
             el.font_mono = false;
-            el.text_color = Some(tokens::TEXT_FOREGROUND);
+            el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Display => {
             apply_type_token(el, tokens::TEXT_3XL);
             el.font_weight = FontWeight::Bold;
             el.font_mono = false;
-            el.text_color = Some(tokens::TEXT_FOREGROUND);
+            el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Code => {
             apply_type_token(el, tokens::TEXT_XS);
             el.font_weight = FontWeight::Regular;
             el.font_mono = true;
-            el.text_color = Some(tokens::TEXT_FOREGROUND);
+            el.text_color = Some(tokens::FOREGROUND);
         }
     }
 }
@@ -356,11 +356,22 @@ fn set_content_color(el: &mut El, color: Color) {
 /// blue, success green, warning yellow) get dark text, and darker
 /// saturated fills (destructive red) get light text.
 fn text_on_solid(c: Color) -> Color {
+    match c.token {
+        Some("primary") => return tokens::PRIMARY_FOREGROUND,
+        Some("secondary") => return tokens::SECONDARY_FOREGROUND,
+        Some("accent") => return tokens::ACCENT_FOREGROUND,
+        Some("destructive") => return tokens::DESTRUCTIVE_FOREGROUND,
+        Some("success") => return tokens::SUCCESS_FOREGROUND,
+        Some("warning") => return tokens::WARNING_FOREGROUND,
+        Some("info") => return tokens::INFO_FOREGROUND,
+        _ => {}
+    }
+
     let lum = 0.299 * c.r as f32 + 0.587 * c.g as f32 + 0.114 * c.b as f32;
     if lum > 150.0 {
-        tokens::TEXT_ON_SOLID_DARK
+        Color::rgba(8, 16, 25, 255)
     } else {
-        tokens::TEXT_ON_SOLID_LIGHT
+        Color::rgba(250, 250, 252, 255)
     }
 }
 
@@ -381,7 +392,7 @@ mod tests {
     #[test]
     fn current_marks_container_as_selected_surface_role() {
         let el = row([text("Current")]).current();
-        assert_eq!(el.fill, Some(tokens::BG_RAISED));
+        assert_eq!(el.fill, Some(tokens::ACCENT));
         assert_eq!(el.stroke, Some(tokens::BORDER));
         assert_eq!(el.surface_role, SurfaceRole::Current);
         assert_eq!(el.style_profile, StyleProfile::Surface);
@@ -431,7 +442,7 @@ mod tests {
         assert_eq!(caption.text_role, TextRole::Caption);
         assert_eq!(caption.font_size, tokens::TEXT_XS.size);
         assert_eq!(caption.line_height, tokens::TEXT_XS.line_height);
-        assert_eq!(caption.text_color, Some(tokens::TEXT_MUTED_FOREGROUND));
+        assert_eq!(caption.text_color, Some(tokens::MUTED_FOREGROUND));
 
         let label = text("Label").label();
         assert_eq!(label.text_role, TextRole::Label);
@@ -444,7 +455,7 @@ mod tests {
         assert_eq!(code.font_size, tokens::TEXT_XS.size);
         assert_eq!(code.line_height, tokens::TEXT_XS.line_height);
         assert_eq!(code.font_weight, FontWeight::Regular);
-        assert_eq!(code.text_color, Some(tokens::TEXT_FOREGROUND));
+        assert_eq!(code.text_color, Some(tokens::FOREGROUND));
         assert!(code.font_mono);
     }
 }

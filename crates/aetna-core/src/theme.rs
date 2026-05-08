@@ -330,7 +330,7 @@ fn add_rounded_rect_slots(uniforms: &mut UniformBlock) {
 }
 
 fn apply_role_material(role: SurfaceRole, uniforms: &mut UniformBlock, palette: &Palette) {
-    // Sunken/Input fill is derived from `bg-muted` by darken, so the
+    // Sunken/Input fill is derived from `muted` by darken, so the
     // base must be palette-resolved *before* the op — otherwise the
     // op runs on the compile-time dark fallback and the surface stays
     // dark even with a light palette active. Same shape for any future
@@ -351,14 +351,14 @@ fn apply_role_material(role: SurfaceRole, uniforms: &mut UniformBlock, palette: 
             set_color(
                 uniforms,
                 "fill",
-                palette.resolve(tokens::BG_MUTED).darken(0.08),
+                palette.resolve(tokens::MUTED).darken(0.08),
             );
-            set_color(uniforms, "stroke", tokens::BORDER_STRONG.with_alpha(190));
+            set_color(uniforms, "stroke", tokens::INPUT.with_alpha(190));
             set_f32(uniforms, "stroke_width", 1.0);
             set_f32(uniforms, "shadow", 0.0);
         }
         SurfaceRole::Popover => {
-            set_color(uniforms, "stroke", tokens::BORDER_STRONG);
+            set_color(uniforms, "stroke", tokens::INPUT);
             set_f32(uniforms, "stroke_width", 1.0);
             set_f32(uniforms, "shadow", tokens::SHADOW_LG);
         }
@@ -369,7 +369,7 @@ fn apply_role_material(role: SurfaceRole, uniforms: &mut UniformBlock, palette: 
             set_f32(uniforms, "shadow", 0.0);
         }
         SurfaceRole::Current => {
-            default_color(uniforms, "fill", tokens::BG_RAISED);
+            default_color(uniforms, "fill", tokens::ACCENT);
             set_color(uniforms, "stroke", tokens::BORDER.with_alpha(180));
             set_f32(uniforms, "stroke_width", 1.0);
             set_f32(uniforms, "shadow", 0.0);

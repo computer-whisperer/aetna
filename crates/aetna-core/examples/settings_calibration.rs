@@ -51,7 +51,7 @@ fn settings_calibration(layout: LayoutMetrics) -> El {
         .gap(0.0)
         .fill_size()
         .align(Align::Stretch)
-        .fill(tokens::BG_APP)
+        .fill(tokens::BACKGROUND)
 }
 
 fn settings_sidebar(layout: LayoutMetrics) -> El {
@@ -85,7 +85,7 @@ fn settings_sidebar(layout: LayoutMetrics) -> El {
         spacer(),
         column([text("Changes sync after save.").caption().wrap_text()])
             .padding(tokens::SPACE_SM)
-            .fill(tokens::BG_MUTED)
+            .fill(tokens::MUTED)
             .radius(tokens::RADIUS_MD),
     ])
     .gap(layout.cluster_gap)
@@ -93,7 +93,7 @@ fn settings_sidebar(layout: LayoutMetrics) -> El {
     .key("metric:sidebar")
     .width(Size::Fixed(244.0))
     .height(Size::Fill(1.0))
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .stroke(tokens::BORDER)
 }
 
@@ -145,7 +145,7 @@ fn settings_nav_card() -> El {
     .height(Size::Fill(1.0))
     .style_profile(StyleProfile::Surface)
     .surface_role(SurfaceRole::Panel)
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_MD)
     .shadow(tokens::SHADOW_MD)
@@ -154,7 +154,7 @@ fn settings_nav_card() -> El {
 fn settings_nav_item(label: &'static str, selected: bool) -> El {
     let mut item = row([
         El::new(Kind::Custom("nav-dot"))
-            .fill(tokens::TEXT_MUTED_FOREGROUND)
+            .fill(tokens::MUTED_FOREGROUND)
             .radius(tokens::RADIUS_PILL)
             .width(Size::Fixed(6.0))
             .height(Size::Fixed(6.0)),
@@ -175,7 +175,7 @@ fn settings_nav_item(label: &'static str, selected: bool) -> El {
     if selected {
         item = item.current();
     } else {
-        item = item.color(tokens::TEXT_MUTED_FOREGROUND);
+        item = item.color(tokens::MUTED_FOREGROUND);
     }
 
     item
@@ -362,7 +362,7 @@ fn section_label(label: &'static str) -> El {
 fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El {
     let mut item = row([
         icon(icon_name)
-            .color(tokens::TEXT_MUTED_FOREGROUND)
+            .color(tokens::MUTED_FOREGROUND)
             .icon_size(tokens::ICON_SM)
             .width(Size::Fixed(tokens::ICON_SM)),
         text(label)
@@ -382,7 +382,7 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     if selected {
         item = item.current();
     } else {
-        item = item.color(tokens::TEXT_MUTED_FOREGROUND);
+        item = item.color(tokens::MUTED_FOREGROUND);
     }
 
     item
@@ -393,12 +393,12 @@ fn icon_slot(icon_name: &'static str) -> El {
         .style_profile(StyleProfile::Surface)
         .child(
             icon(icon_name)
-                .color(tokens::TEXT_FOREGROUND)
+                .color(tokens::FOREGROUND)
                 .icon_size(tokens::ICON_XS),
         )
         .align(Align::Center)
         .justify(Justify::Center)
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::MUTED)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_SM)
         .width(Size::Fixed(30.0))

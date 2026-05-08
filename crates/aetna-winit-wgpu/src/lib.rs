@@ -678,7 +678,7 @@ fn key_modifiers(mods: winit::keyboard::ModifiersState) -> KeyModifiers {
 }
 
 fn bg_color(palette: &aetna_core::Palette) -> wgpu::Color {
-    let c = palette.bg_app;
+    let c = palette.background;
     wgpu::Color {
         r: srgb_to_linear(c.r as f64 / 255.0),
         g: srgb_to_linear(c.g as f64 / 255.0),

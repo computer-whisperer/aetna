@@ -220,7 +220,7 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
                 let ring_r = (r + focus_width * 0.5).max(0.0);
                 let _ = writeln!(
                     s,
-                    r#"<rect data-node="{}.focus-ring" data-shader="stock::rounded_rect" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="none" stroke="{}" stroke-width="{:.2}" />"#,
+                    r#"<rect data-node="{}.ring" data-shader="stock::rounded_rect" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="none" stroke="{}" stroke-width="{:.2}" />"#,
                     esc(id),
                     inner.x - focus_width * 0.5,
                     inner.y - focus_width * 0.5,
@@ -236,7 +236,7 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
             let fill = uniforms
                 .get("fill")
                 .and_then(as_color)
-                .unwrap_or(tokens::BG_MUTED);
+                .unwrap_or(tokens::MUTED);
             let _ = writeln!(
                 s,
                 r#"<rect data-node="{}" data-shader="stock::solid_quad" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="{}" />"#,
@@ -605,7 +605,7 @@ fn as_vec4(v: &UniformValue) -> Option<[f32; 4]> {
 // render the same shadow visually, but rsvg-convert's feDropShadow
 // silently round-trips SourceGraphic through linearRGB even with
 // color-interpolation-filters="sRGB" on the filter, drifting the
-// shape's own interior by 1-2 channel codes (BG_CARD #171a21 → #161c22).
+// shape's own interior by 1-2 channel codes (CARD #171a21 → #161c22).
 // Routing SourceGraphic through feMergeNode untouched keeps the card
 // color exact while the shadow path (SourceAlpha → blur → offset →
 // alpha-scale) produces the same dark falloff.

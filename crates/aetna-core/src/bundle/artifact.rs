@@ -155,7 +155,7 @@ pub fn render_bundle_with_theme(
     theme.apply_metrics(root);
     layout::layout(root, ui_state, viewport);
     let draw_ops = draw_ops::draw_ops_with_theme(root, ui_state, theme);
-    let svg = svg_from_ops(viewport.w, viewport.h, &draw_ops, tokens::BG_APP);
+    let svg = svg_from_ops(viewport.w, viewport.h, &draw_ops, tokens::BACKGROUND);
     let tree_dump = inspect::dump_tree(root, ui_state);
     let shader_manifest = manifest::shader_manifest(&draw_ops);
     let lint = lint(root, ui_state, app_path_marker);

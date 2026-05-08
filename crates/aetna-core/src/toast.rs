@@ -163,7 +163,7 @@ fn toast_card(t: &Toast) -> El {
     let body = El::new(Kind::Text)
         .text(t.message.clone())
         .text_role(TextRole::Body)
-        .text_color(tokens::TEXT_FOREGROUND)
+        .text_color(tokens::FOREGROUND)
         .text_wrap(TextWrap::Wrap)
         .width(Size::Fill(1.0));
     let dismiss = button("×")
@@ -177,7 +177,7 @@ fn toast_card(t: &Toast) -> El {
         .align(Align::Stretch)
         .gap(tokens::SPACE_SM)
         .padding(tokens::SPACE_MD)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::POPOVER)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_MD)
         .shadow(tokens::SHADOW_MD)
@@ -188,7 +188,7 @@ fn toast_card(t: &Toast) -> El {
 
 fn level_accent(level: ToastLevel) -> Color {
     match level {
-        ToastLevel::Default => tokens::BORDER_STRONG,
+        ToastLevel::Default => tokens::INPUT,
         ToastLevel::Success => tokens::SUCCESS,
         ToastLevel::Warning => tokens::WARNING,
         ToastLevel::Error => tokens::DESTRUCTIVE,

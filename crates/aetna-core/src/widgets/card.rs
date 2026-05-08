@@ -25,7 +25,7 @@ where
         .metrics_role(MetricsRole::Card)
         .surface_role(SurfaceRole::Panel)
         .children(children)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::CARD)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_MD)
         .shadow(tokens::SHADOW_MD)

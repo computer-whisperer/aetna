@@ -204,7 +204,7 @@ fn make_commits(n: usize) -> Vec<FakeCommit> {
 
 fn graph_cell(commit: &FakeCommit, selected: bool) -> El {
     let lane_color = lane_palette(commit.lane);
-    let bg = tokens::BG_APP;
+    let bg = tokens::BACKGROUND;
     // Selection: thicken the ring and tint it bright.
     let ring_color = if selected {
         Color::rgb(245, 245, 250)
@@ -232,7 +232,7 @@ fn graph_cell(commit: &FakeCommit, selected: bool) -> El {
 
 fn build_row(commit: &FakeCommit, idx: usize, selected: bool) -> El {
     let row_bg = if selected {
-        tokens::BG_RAISED
+        tokens::ACCENT
     } else {
         Color::rgba(0, 0, 0, 0)
     };

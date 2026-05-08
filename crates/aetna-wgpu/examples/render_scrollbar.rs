@@ -225,7 +225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Probe: count thumb-tinted pixels. The token is roughly
     // (148, 160, 176, 130) — neutral grey-blue at low alpha. After
-    // premultiplied composite over BG_APP (~14, 16, 22) we expect
+    // premultiplied composite over BACKGROUND (~14, 16, 22) we expect
     // values around ~80 / ~85 / ~95.
     let mut thumb_pixels = 0usize;
     let mut chunks = unpadded.chunks_exact(4);
@@ -259,7 +259,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn bg_color() -> wgpu::Color {
-    let c = aetna_core::tokens::BG_APP;
+    let c = aetna_core::tokens::BACKGROUND;
     wgpu::Color {
         r: srgb_to_linear(c.r as f64 / 255.0),
         g: srgb_to_linear(c.g as f64 / 255.0),

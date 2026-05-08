@@ -51,7 +51,7 @@ fn polish_calibration(layout: LayoutMetrics) -> El {
         .gap(0.0)
         .fill_size()
         .align(Align::Stretch)
-        .fill(tokens::BG_APP)
+        .fill(tokens::BACKGROUND)
 }
 
 fn sidebar(layout: LayoutMetrics) -> El {
@@ -73,7 +73,7 @@ fn sidebar(layout: LayoutMetrics) -> El {
     .key("metric:sidebar")
     .width(Size::Fixed(220.0))
     .height(Size::Fill(1.0))
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .stroke(tokens::BORDER)
 }
 
@@ -357,7 +357,7 @@ fn form_probe() -> El {
         ]),
     ])
     .padding(tokens::SPACE_MD)
-    .fill(tokens::BG_MUTED)
+    .fill(tokens::MUTED)
     .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_MD)
 }
@@ -369,7 +369,7 @@ fn icon_cell(label: &'static str) -> El {
         .text_align(TextAlign::Center)
         .caption()
         .font_weight(FontWeight::Semibold)
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::MUTED)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_SM)
         .width(Size::Fixed(26.0))

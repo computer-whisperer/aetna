@@ -298,7 +298,7 @@ where
         .surface_role(SurfaceRole::Popover)
         .arrow_nav_siblings()
         .children(children)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::POPOVER)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_SM)
         .shadow(tokens::SHADOW_MD)
@@ -318,7 +318,7 @@ where
 /// `text_align == Start`; using a child node positions the label via
 /// layout instead.
 ///
-/// The rest `fill` matches the panel surface (`BG_CARD`) — visually
+/// The rest `fill` matches the panel surface (`CARD`) — visually
 /// invisible at rest but required so the hover-lighten / press-darken
 /// envelopes (`apply_state` in `draw_ops`) have a colour to mix
 /// against. Without a rest fill, `fill.map(...)` is a no-op and the
@@ -333,7 +333,7 @@ pub fn menu_item(label: impl Into<String>) -> El {
         .style_profile(StyleProfile::TextOnly)
         .text(label)
         .text_role(TextRole::Label)
-        .text_color(tokens::TEXT_FOREGROUND)
+        .text_color(tokens::FOREGROUND)
         .font_weight(FontWeight::Regular)
         .hug();
     El::new(Kind::Custom("menu_item"))
@@ -343,7 +343,7 @@ pub fn menu_item(label: impl Into<String>) -> El {
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .child(label)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::POPOVER)
         .default_radius(tokens::RADIUS_SM)
         .default_padding(Sides::xy(tokens::SPACE_MD, 0.0))
         .default_gap(0.0)

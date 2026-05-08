@@ -23,7 +23,7 @@ pub fn avatar_initials(initials: impl Into<String>) -> El {
         .text_align(TextAlign::Center)
         .caption()
         .font_weight(FontWeight::Semibold)
-        .fill(tokens::BG_RAISED)
+        .fill(tokens::ACCENT)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_PILL)
         .width(Size::Fixed(DEFAULT_AVATAR_SIZE))
@@ -43,7 +43,7 @@ pub fn avatar_image(img: impl Into<Image>) -> El {
         .style_profile(StyleProfile::Surface)
         .surface_role(SurfaceRole::Raised)
         .axis(Axis::Overlay)
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::MUTED)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_PILL)
         .width(Size::Fixed(DEFAULT_AVATAR_SIZE))
@@ -91,7 +91,7 @@ mod tests {
         assert_eq!(a.width, Size::Fixed(DEFAULT_AVATAR_SIZE));
         assert_eq!(a.height, Size::Fixed(DEFAULT_AVATAR_SIZE));
         assert_eq!(a.radius, tokens::RADIUS_PILL);
-        assert_eq!(a.fill, Some(tokens::BG_RAISED));
+        assert_eq!(a.fill, Some(tokens::ACCENT));
     }
 
     #[test]

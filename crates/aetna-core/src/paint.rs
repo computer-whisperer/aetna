@@ -59,7 +59,7 @@ pub struct QuadInstance {
     /// custom shaders that only consume locations 1..=4 keep working
     /// unchanged.
     pub inner_rect: [f32; 4],
-    /// `vec_d` slot — for stock::rounded_rect, this is the focus-ring
+    /// `vec_d` slot — for stock::rounded_rect, this is the ring
     /// color (rgba) with eased alpha already multiplied in. Zero when
     /// the node isn't focused or isn't focusable. Vertex shader reads
     /// at `@location(6)`.
@@ -321,8 +321,8 @@ mod tests {
         let mut uniforms = UniformBlock::new();
         uniforms.insert("fill", UniformValue::Color(Color::rgba(40, 40, 40, 255)));
         uniforms.insert("radius", UniformValue::F32(8.0));
-        uniforms.insert("focus_color", UniformValue::Color(tokens::FOCUS_RING));
-        uniforms.insert("focus_width", UniformValue::F32(tokens::FOCUS_RING_WIDTH));
+        uniforms.insert("focus_color", UniformValue::Color(tokens::RING));
+        uniforms.insert("focus_width", UniformValue::F32(tokens::RING_WIDTH));
 
         let inst = pack_instance(
             Rect::new(1.0, 2.0, 30.0, 40.0),
@@ -338,7 +338,7 @@ mod tests {
         assert_eq!(inst.slot_c[1], 8.0, "radius in slot_c.y");
         assert_eq!(
             inst.slot_c[3],
-            tokens::FOCUS_RING_WIDTH,
+            tokens::RING_WIDTH,
             "focus_width in slot_c.w"
         );
         assert!(inst.slot_d[3] > 0.0, "focus_color alpha should be visible");

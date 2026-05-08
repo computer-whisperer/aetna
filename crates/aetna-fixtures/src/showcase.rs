@@ -434,7 +434,7 @@ fn sidebar(active: Section, theme_choice: ThemeChoice) -> El {
         .padding(tokens::SPACE_LG)
         .width(Size::Fixed(180.0))
         .height(Size::Fill(1.0))
-        .fill(tokens::BG_CARD)
+        .fill(tokens::CARD)
         .stroke(tokens::BORDER)
 }
 
@@ -543,7 +543,7 @@ fn list_view(state: &ListState) -> El {
             .stroke(tokens::BORDER)
             .radius(tokens::RADIUS_SM);
             if Some(i) == state.selected {
-                r = r.fill(tokens::BG_CARD);
+                r = r.fill(tokens::CARD);
             }
             r
         })
@@ -717,7 +717,7 @@ fn picker_view(state: &PickerState) -> El {
             .stroke(tokens::BORDER)
             .radius(tokens::RADIUS_SM);
             if i == state.selected {
-                r = r.fill(tokens::BG_CARD);
+                r = r.fill(tokens::CARD);
             }
             r
         })
@@ -1332,7 +1332,7 @@ fn split_view(state: &SplitState) -> El {
     .padding(tokens::SPACE_MD)
     .width(Size::Fixed(state.sidebar_w))
     .height(Size::Fill(1.0))
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_SM);
 
@@ -1497,7 +1497,7 @@ fn glass_card(preset: &GlassPreset, drift_x: f32) -> El {
     // Custom-shaded container. The shader binding maps preset values
     // into the generic vec_a/vec_b/vec_c slots that
     // `liquid_glass.wgsl` reads. Inner text uses
-    // `text_color(TEXT_ON_SOLID_DARK)` rather than the default
+    // `text_color(PRIMARY_FOREGROUND)` rather than the default
     // foreground/muted tokens because the latter assume a stable
     // background; over a refractive glass surface they wash out.
     //
@@ -1511,13 +1511,13 @@ fn glass_card(preset: &GlassPreset, drift_x: f32) -> El {
         text("Liquid glass")
             .bold()
             .font_size(22.0)
-            .text_color(tokens::TEXT_ON_SOLID_DARK),
-        text(preset.blurb).text_color(tokens::TEXT_ON_SOLID_DARK),
+            .text_color(tokens::PRIMARY_FOREGROUND),
+        text(preset.blurb).text_color(tokens::PRIMARY_FOREGROUND),
         spacer(),
         row([
             text(format!("preset: {}", preset.label))
                 .bold()
-                .text_color(tokens::TEXT_ON_SOLID_DARK),
+                .text_color(tokens::PRIMARY_FOREGROUND),
             spacer(),
             button("Next preset").key("glass-next").secondary(),
             button("Drift →").key("glass-drift").primary(),
@@ -1563,11 +1563,11 @@ fn glass_on_event(state: &mut GlassState, e: UiEvent) {
 // ---- Surfaces section ----
 //
 // Three tiles cast SHADOW_SM / SHADOW_MD / SHADOW_LG against a
-// BG_RAISED backdrop. The dark theme pairs `BG_APP` (14, 16, 22)
+// ACCENT backdrop. The dark theme pairs `BACKGROUND` (14, 16, 22)
 // with a 0.30-alpha black drop shadow; on near-black ground the
 // shadow only darkens by ~4 channel codes, which is mathematically
 // painted but perceptually washed out. Putting the tiles on the
-// lighter BG_RAISED panel gives the shadow somewhere it can read.
+// lighter ACCENT panel gives the shadow somewhere it can read.
 //
 // Note that stock widgets (`card`, `popover_panel`, `modal_panel`)
 // route through `SurfaceRole`, which the theme resolves to a
@@ -1584,7 +1584,7 @@ fn surfaces_view() -> El {
              30% black on a near-black background only darkens it by \
              a few channel codes. The tiles below cast \
              SHADOW_SM / SHADOW_MD / SHADOW_LG against a lighter \
-             BG_RAISED panel so the falloff stands out.",
+             ACCENT panel so the falloff stands out.",
         )
         .muted(),
         row([
@@ -1595,7 +1595,7 @@ fn surfaces_view() -> El {
         .gap(tokens::SPACE_LG)
         .align(Align::Stretch)
         .padding(tokens::SPACE_XL)
-        .fill(tokens::BG_RAISED)
+        .fill(tokens::ACCENT)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG),
         paragraph(
@@ -1620,7 +1620,7 @@ fn surfaces_view() -> El {
             text(" automatically."),
         ])
         .padding(tokens::SPACE_LG)
-        .fill(tokens::BG_RAISED)
+        .fill(tokens::ACCENT)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG),
     ])
@@ -1629,7 +1629,7 @@ fn surfaces_view() -> El {
 
 fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {
     column([text(label).title(), text(sub).muted().small()])
-        .fill(tokens::BG_CARD)
+        .fill(tokens::CARD)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG)
         .shadow(shadow)

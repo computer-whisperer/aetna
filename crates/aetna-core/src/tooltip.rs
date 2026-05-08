@@ -149,9 +149,9 @@ fn tooltip_panel(text: &str) -> El {
                 .style_profile(StyleProfile::TextOnly)
                 .text(text.to_string())
                 .text_role(TextRole::Caption)
-                .text_color(tokens::TEXT_FOREGROUND),
+                .text_color(tokens::FOREGROUND),
         )
-        .fill(tokens::BG_CARD)
+        .fill(tokens::POPOVER)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_SM)
         .shadow(tokens::SHADOW_MD)

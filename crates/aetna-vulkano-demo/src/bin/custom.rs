@@ -16,7 +16,7 @@ use aetna_core::*;
 const GRADIENT_WGSL: &str = include_str!("../../../aetna-core/shaders/gradient.wgsl");
 
 fn gradient_button(label: &str, top: Color, bottom: Color, radius: f32) -> El {
-    button(label).text_color(tokens::TEXT_ON_SOLID_DARK).shader(
+    button(label).text_color(tokens::PRIMARY_FOREGROUND).shader(
         ShaderBinding::custom("gradient")
             .color("vec_a", top)
             .color("vec_b", bottom)

@@ -38,7 +38,7 @@ where
         .align(Align::Stretch)
         .width(Size::Fill(1.0))
         .height(Size::Hug)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::CARD)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_MD)
         .default_padding(Sides::all(tokens::SPACE_MD))
@@ -78,7 +78,7 @@ mod tests {
         assert_eq!(a.surface_role, SurfaceRole::Panel);
         assert_eq!(a.axis, Axis::Column);
         assert_eq!(a.width, Size::Fill(1.0));
-        assert_eq!(a.fill, Some(tokens::BG_CARD));
+        assert_eq!(a.fill, Some(tokens::CARD));
         assert_eq!(a.stroke, Some(tokens::BORDER));
         assert_eq!(a.children.len(), 2);
     }
@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(title.text_role, TextRole::Label);
         assert_eq!(title.font_weight, FontWeight::Semibold);
         assert_eq!(description.text_role, TextRole::Body);
-        assert_eq!(description.text_color, Some(tokens::TEXT_MUTED_FOREGROUND));
+        assert_eq!(description.text_color, Some(tokens::MUTED_FOREGROUND));
         assert_eq!(description.text_wrap, TextWrap::Wrap);
     }
 

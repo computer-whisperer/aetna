@@ -617,7 +617,7 @@ mod tests {
         let icon_slot = crate::stack([crate::icon("settings").icon_size(crate::tokens::ICON_XS)])
             .align(Align::Center)
             .justify(Justify::Center)
-            .fill(crate::tokens::BG_MUTED)
+            .fill(crate::tokens::MUTED)
             .width(Size::Fixed(26.0))
             .height(Size::Fixed(26.0));
         let root = crate::row([icon_slot, crate::text("Settings").width(Size::Fill(1.0))])
@@ -642,7 +642,7 @@ mod tests {
         let icon_slot = crate::stack([crate::icon("settings").icon_size(crate::tokens::ICON_XS)])
             .align(Align::Center)
             .justify(Justify::Center)
-            .fill(crate::tokens::BG_MUTED)
+            .fill(crate::tokens::MUTED)
             .width(Size::Fixed(26.0))
             .height(Size::Fixed(26.0));
         let root = crate::row([icon_slot, crate::text("Settings").width(Size::Fill(1.0))])
@@ -665,7 +665,7 @@ mod tests {
     #[test]
     fn overlay_with_top_left_pinned_icon_suggests_center_alignment() {
         let icon_slot = crate::stack([crate::icon("settings").icon_size(crate::tokens::ICON_XS)])
-            .fill(crate::tokens::BG_MUTED)
+            .fill(crate::tokens::MUTED)
             .width(Size::Fixed(26.0))
             .height(Size::Fixed(26.0));
         let root = crate::column([icon_slot]);
@@ -688,7 +688,7 @@ mod tests {
         let icon_slot = crate::stack([crate::icon("settings").icon_size(crate::tokens::ICON_XS)])
             .align(Align::Center)
             .justify(Justify::Center)
-            .fill(crate::tokens::BG_MUTED)
+            .fill(crate::tokens::MUTED)
             .width(Size::Fixed(26.0))
             .height(Size::Fixed(26.0));
         let root = crate::column([icon_slot]);

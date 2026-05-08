@@ -231,7 +231,7 @@ fn token_tagged_fill_eases_through_draw_ops_without_snapping() {
 
     let mut tree_b = column([row([button("X")
         .key("x")
-        .fill(tokens::BG_CARD)
+        .fill(tokens::CARD)
         .animate(Timing::SPRING_STANDARD)])])
     .padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
@@ -255,9 +255,9 @@ fn token_tagged_fill_eases_through_draw_ops_without_snapping() {
         .expect("button quad fill");
 
     // Mid-flight: rgb should be strictly between the source PRIMARY
-    // and target BG_CARD, not snapped to either.
+    // and target CARD, not snapped to either.
     let p = tokens::PRIMARY;
-    let c = tokens::BG_CARD;
+    let c = tokens::CARD;
     assert_ne!(
         (quad_fill.r, quad_fill.g, quad_fill.b),
         (p.r, p.g, p.b),

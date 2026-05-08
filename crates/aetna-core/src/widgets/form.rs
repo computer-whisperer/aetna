@@ -159,10 +159,7 @@ mod tests {
         assert_eq!(item.children[2].text_role, TextRole::Body);
         assert_eq!(item.children[2].font_size, tokens::TEXT_SM.size);
         assert_eq!(item.children[2].line_height, tokens::TEXT_SM.line_height);
-        assert_eq!(
-            item.children[2].text_color,
-            Some(tokens::TEXT_MUTED_FOREGROUND)
-        );
+        assert_eq!(item.children[2].text_color, Some(tokens::MUTED_FOREGROUND));
     }
 
     #[test]

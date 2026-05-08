@@ -166,7 +166,7 @@ pub fn resize_handle(axis: Axis) -> El {
     stack([hairline])
         .at_loc(Location::caller())
         .focusable()
-        .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(cursor)
         .width(width)
         .height(height)

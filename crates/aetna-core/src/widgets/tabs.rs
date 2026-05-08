@@ -176,7 +176,7 @@ pub fn tab_trigger(
         .style_profile(StyleProfile::Surface)
         .metrics_role(MetricsRole::TabTrigger)
         .focusable()
-        .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .key(routed_key)
         .text(label)
         .text_align(TextAlign::Center)
@@ -246,7 +246,7 @@ where
         .default_gap(tokens::SPACE_XS)
         .align(Align::Stretch)
         .children(triggers)
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::MUTED)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_MD)
         .default_padding(Sides::all(tokens::SPACE_XS))
@@ -297,10 +297,10 @@ mod tests {
         assert!(inactive.stroke.is_none());
 
         let active = tab_trigger("settings", "account", "Account", true);
-        // Active triggers carry the .current() treatment: BG_RAISED
+        // Active triggers carry the .current() treatment: ACCENT
         // fill, BORDER stroke, and Selected/Current surface role for
         // theme dispatch.
-        assert_eq!(active.fill, Some(tokens::BG_RAISED));
+        assert_eq!(active.fill, Some(tokens::ACCENT));
         assert_eq!(active.surface_role, SurfaceRole::Current);
     }
 
@@ -466,7 +466,7 @@ mod tests {
             &"account",
             [("account", "Account"), ("settings", "Settings")],
         );
-        assert_eq!(list.fill, Some(tokens::BG_MUTED));
+        assert_eq!(list.fill, Some(tokens::MUTED));
         assert_eq!(list.radius, tokens::RADIUS_MD);
         // Row axis with a small gap so triggers are visually distinct.
         assert_eq!(list.axis, Axis::Row);

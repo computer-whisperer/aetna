@@ -43,7 +43,7 @@ where
         .metrics_role(MetricsRole::Panel)
         .surface_role(SurfaceRole::Popover)
         .children(children)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::POPOVER)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_LG)
         .shadow(tokens::SHADOW_LG)

@@ -5,7 +5,7 @@
 //! or custom shader, with uniforms packed) or a `GlyphRun`.
 //!
 //! State styling lands here on the CPU side. Hover lightens / press
-//! darkens / focus-ring fade come from the eased envelopes in
+//! darkens / ring fade come from the eased envelopes in
 //! `UiState`'s eased envelope side map, written by
 //! [`UiState::tick_visual_animations`] in the prior pass. What this
 //! module computes are the deltas: lerp the build-time colours toward
@@ -53,7 +53,7 @@ pub fn draw_ops_with_theme(root: &El, ui_state: &UiState, theme: &Theme) -> Vec<
 /// (preserving the `token: Some(name)` metadata), then this pass walks
 /// every emitted [`DrawOp`] and rewrites each color through
 /// [`Palette::resolve`]. Token names survive resolution, so shader
-/// manifest / tree-dump / lint output still see `fill=bg-card` rather
+/// manifest / tree-dump / lint output still see `fill=card` rather
 /// than rgba bytes.
 pub fn resolve_palette(ops: &mut [DrawOp], palette: &Palette) {
     for op in ops {
@@ -272,7 +272,7 @@ fn push_node(
         // Custom shaders read the same uniforms and decide for
         // themselves what to paint — the symmetry rule.
         if n.focusable && focus_ring_alpha > 0.0 {
-            let base = tokens::FOCUS_RING;
+            let base = tokens::RING;
             let eased_alpha = (base.a as f32 * focus_ring_alpha * opacity)
                 .round()
                 .clamp(0.0, 255.0) as u8;
@@ -280,7 +280,7 @@ fn push_node(
                 "focus_color",
                 UniformValue::Color(base.with_alpha(eased_alpha)),
             );
-            uniforms.insert("focus_width", UniformValue::F32(tokens::FOCUS_RING_WIDTH));
+            uniforms.insert("focus_width", UniformValue::F32(tokens::RING_WIDTH));
         }
         theme.apply_surface_uniforms(n.surface_role, &mut uniforms);
         // Read shadow + stroke *after* theme has had its say — surface
@@ -352,7 +352,7 @@ fn push_node(
             TextAlign::Center => TextAnchor::Middle,
             TextAlign::End => TextAnchor::End,
         };
-        let text_color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
+        let text_color = opaque(text_color.unwrap_or(tokens::FOREGROUND), opacity);
         let layout = text_metrics::layout_text_with_line_height_and_family(
             &display,
             painted_font_size,
@@ -438,7 +438,7 @@ fn push_node(
     }
 
     if let Some(source) = &n.icon {
-        let color = opaque(text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
+        let color = opaque(text_color.unwrap_or(tokens::FOREGROUND), opacity);
         let inner = inner_painted_rect.inset(n.padding);
         let icon_size = painted_font_size.min(inner.w).min(inner.h).max(1.0);
         let icon_rect = Rect::new(
@@ -614,7 +614,7 @@ fn collect_inline_runs(node: &El, opacity: f32) -> Vec<(String, RunStyle)> {
         match c.kind {
             Kind::Text => {
                 if let Some(text) = &c.text {
-                    let color = opaque(c.text_color.unwrap_or(tokens::TEXT_FOREGROUND), opacity);
+                    let color = opaque(c.text_color.unwrap_or(tokens::FOREGROUND), opacity);
                     let mut style = RunStyle::new(c.font_weight, color).family(c.font_family);
                     if c.text_italic {
                         style = style.italic();
@@ -644,7 +644,7 @@ fn collect_inline_runs(node: &El, opacity: f32) -> Vec<(String, RunStyle)> {
             Kind::HardBreak => {
                 runs.push((
                     "\n".to_string(),
-                    RunStyle::new(FontWeight::Regular, tokens::TEXT_FOREGROUND),
+                    RunStyle::new(FontWeight::Regular, tokens::FOREGROUND),
                 ));
             }
             _ => {}
@@ -698,7 +698,7 @@ fn translated(r: Rect, offset: (f32, f32)) -> Rect {
 /// or the cardinal pixels of curved boundaries (the radio indicator's
 /// circle, switch thumb, …) get clipped and the shape looks flattened
 /// at top / bottom / left / right. Per-side max with the user's
-/// `paint_overflow` so a focus-ring outset + shadow + stroke on the
+/// `paint_overflow` so a ring outset + shadow + stroke on the
 /// same node all fit.
 fn combined_overflow(paint_overflow: Sides, shadow: f32, stroke_width: f32) -> Sides {
     let stroke_halo = if stroke_width > 0.0 {
@@ -761,7 +761,7 @@ fn opaque(c: Color, opacity: f32) -> Color {
 ///
 /// Surfaces with no resting fill (`.ghost()`, `.outline()`, inactive tab
 /// triggers) get a **synthesized state-only fill** instead — a faint
-/// `BG_RAISED` whose alpha rises with hover and press. Mirrors the
+/// `ACCENT` whose alpha rises with hover and press. Mirrors the
 /// shadcn idiom `hover:bg-accent active:bg-accent/80`: transparent at
 /// rest, a soft surface fades in on interaction. Without this, the
 /// envelope mix above has nothing to land on (`None.map(...)` is
@@ -814,9 +814,9 @@ fn apply_state(
         let alpha = (hover * tokens::STATE_FILL_HOVER_ALPHA
             + press * tokens::STATE_FILL_PRESS_ALPHA)
             .clamp(0.0, 1.0);
-        // BG_RAISED.with_alpha keeps the token name, so the final
+        // ACCENT.with_alpha keeps the token name, so the final
         // resolve_palette walk swaps the rgb to the active palette.
-        fill = Some(tokens::BG_RAISED.with_alpha((alpha * 255.0).round() as u8));
+        fill = Some(tokens::ACCENT.with_alpha((alpha * 255.0).round() as u8));
     }
 
     match state {
@@ -863,7 +863,7 @@ mod tests {
         // triggers, `.outline()`) must still show interaction feedback.
         // The hover/press envelope mix is `fill.map(...)` which
         // collapses to `None` when there's nothing to lerp from, so
-        // `apply_state` synthesizes a translucent BG_RAISED fill whose
+        // `apply_state` synthesizes a translucent ACCENT fill whose
         // alpha rises with hover and press.
         // `.ghost()` clears fill / stroke; a real tab trigger or
         // ghost button also carries a radius (the visual affordance
@@ -892,8 +892,8 @@ mod tests {
         let hover_alpha = (tokens::STATE_FILL_HOVER_ALPHA * 255.0).round() as u8;
         assert_eq!(
             hover_fill,
-            Some(tokens::BG_RAISED.with_alpha(hover_alpha)),
-            "hover at peak fades a faint BG_RAISED in",
+            Some(tokens::ACCENT.with_alpha(hover_alpha)),
+            "hover at peak fades a faint ACCENT in",
         );
 
         let (press_fill, ..) = apply_state(
@@ -908,7 +908,7 @@ mod tests {
             .round() as u8;
         assert_eq!(
             press_fill,
-            Some(tokens::BG_RAISED.with_alpha(press_alpha)),
+            Some(tokens::ACCENT.with_alpha(press_alpha)),
             "press while hovered sums the two envelope contributions",
         );
     }
@@ -925,7 +925,7 @@ mod tests {
             .key("thumb")
             .width(Size::Fixed(14.0))
             .height(Size::Fixed(14.0))
-            .fill(tokens::TEXT_FOREGROUND)
+            .fill(tokens::FOREGROUND)
             .radius(tokens::RADIUS_PILL)
             .state_follows_interactive_ancestor()])
         .key("container")
@@ -962,10 +962,9 @@ mod tests {
         let UniformValue::Color(thumb_fill) = uniforms.get("fill").expect("thumb fill") else {
             panic!("expected color uniform");
         };
-        // Press darkens TEXT_FOREGROUND by PRESS_DARKEN. Without the
-        // cascade, the thumb would paint at TEXT_FOREGROUND unchanged.
-        let expected =
-            tokens::TEXT_FOREGROUND.mix(tokens::TEXT_FOREGROUND.darken(tokens::PRESS_DARKEN), 1.0);
+        // Press darkens FOREGROUND by PRESS_DARKEN. Without the
+        // cascade, the thumb would paint at FOREGROUND unchanged.
+        let expected = tokens::FOREGROUND.mix(tokens::FOREGROUND.darken(tokens::PRESS_DARKEN), 1.0);
         assert_eq!(
             (thumb_fill.r, thumb_fill.g, thumb_fill.b),
             (expected.r, expected.g, expected.b),
@@ -1169,7 +1168,7 @@ mod tests {
         // Surfaces with a resting fill still go through the existing
         // lighten/darken envelope mix — the synthesized state fill only
         // kicks in when the resting fill is None.
-        let solid = El::new(Kind::Custom("button")).fill(tokens::BG_MUTED);
+        let solid = El::new(Kind::Custom("button")).fill(tokens::MUTED);
         let (rest_fill, ..) = apply_state(
             &solid,
             InteractionState::Default,
@@ -1177,7 +1176,7 @@ mod tests {
             0.0,
             &Palette::aetna_dark(),
         );
-        assert_eq!(rest_fill, Some(tokens::BG_MUTED));
+        assert_eq!(rest_fill, Some(tokens::MUTED));
 
         let (hover_fill, ..) = apply_state(
             &solid,
@@ -1188,7 +1187,7 @@ mod tests {
         );
         assert_eq!(
             hover_fill,
-            Some(tokens::BG_MUTED.mix(tokens::BG_MUTED.lighten(tokens::HOVER_LIGHTEN), 1.0)),
+            Some(tokens::MUTED.mix(tokens::MUTED.lighten(tokens::HOVER_LIGHTEN), 1.0)),
             "solid surfaces lighten existing fill, not synthesize a new one",
         );
     }
@@ -1198,12 +1197,12 @@ mod tests {
         // Hover/press lighten/darken must compose against the active
         // palette's rgb, not the token's compile-time dark fallback —
         // otherwise hover visuals are dark-derived even in light mode.
-        let solid = El::new(Kind::Custom("button")).fill(tokens::BG_MUTED);
+        let solid = El::new(Kind::Custom("button")).fill(tokens::MUTED);
         let light = Palette::aetna_light();
         let (hover_fill, ..) = apply_state(&solid, InteractionState::Hover, 1.0, 0.0, &light);
         let expected = light
-            .bg_muted
-            .mix(light.bg_muted.lighten(tokens::HOVER_LIGHTEN), 1.0);
+            .muted
+            .mix(light.muted.lighten(tokens::HOVER_LIGHTEN), 1.0);
         assert_eq!(
             hover_fill,
             Some(expected),
@@ -1571,7 +1570,7 @@ mod tests {
         // shader unchanged and we can assert the exact halo geometry.
         let mut root = column([El::new(Kind::Group)
             .key("c")
-            .fill(tokens::BG_CARD)
+            .fill(tokens::CARD)
             .radius(tokens::RADIUS_LG)
             .shadow(tokens::SHADOW_MD)
             .width(Size::Fixed(80.0))
@@ -1683,8 +1682,8 @@ mod tests {
             .width(Size::Fixed(16.0))
             .height(Size::Fixed(16.0))
             .radius(tokens::RADIUS_PILL)
-            .fill(tokens::BG_CARD)
-            .stroke(tokens::BORDER_STRONG)]);
+            .fill(tokens::CARD)
+            .stroke(tokens::INPUT)]);
         let mut state = UiState::new();
         crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 100.0));
 
@@ -1731,7 +1730,7 @@ mod tests {
     fn shadow_uniform_is_set_when_n_shadow_is_nonzero() {
         let mut root = column([El::new(Kind::Group)
             .key("c")
-            .fill(tokens::BG_CARD)
+            .fill(tokens::CARD)
             .radius(tokens::RADIUS_LG)
             .shadow(tokens::SHADOW_MD)
             .width(Size::Fixed(80.0))

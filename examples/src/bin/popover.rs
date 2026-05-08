@@ -221,7 +221,7 @@ fn context_region() -> El {
                 .muted()
                 .center_text(),
         )
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::MUTED)
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_MD)
         .padding(tokens::SPACE_LG)

@@ -4,13 +4,13 @@
 //! Tokens are public `const` values, not a runtime struct. That means:
 //!
 //! - Reading the file once gives you the entire vocabulary.
-//! - Components reference tokens by name (`tokens::BG_CARD`) directly,
+//! - Components reference tokens by name (`tokens::CARD`) directly,
 //!   no theme handle threaded through every call.
 //! - Constants are inlined and indistinguishable from any other f32/Color
 //!   at runtime — there's no `OnceLock` to initialize.
 //!
 //! Naming intentionally shadows shadcn/Tailwind so LLM training transfers:
-//! `BG_CARD`, `TEXT_MUTED_FOREGROUND`, `RADIUS_LG`, `SPACE_MD`, etc.
+//! `CARD`, `MUTED_FOREGROUND`, `RADIUS_LG`, `SPACE_MD`, etc.
 //!
 //! ## Palette resolution
 //!
@@ -19,8 +19,7 @@
 //! paint time, so the rgba seen on screen tracks
 //! [`crate::Theme`]`::palette()` rather than the constants in this file.
 //! The constants here serve as the **fallback rgba** — used when a token
-//! has no palette entry (theme-invariant tokens like
-//! [`TEXT_ON_SOLID_DARK`]) or when the host renders without a theme
+//! has no palette entry or when the host renders without a theme
 //! (`draw_ops` with the default `Theme`, whose default palette mirrors
 //! these constants exactly). The fallback values match the Aetna Dark
 //! palette; pick a different palette at runtime via
@@ -35,43 +34,51 @@ use crate::tree::Color;
 // `Theme::aetna_light()` (see `crate::Palette` for the full token →
 // rgba mapping for each palette).
 
-// Backgrounds
-pub const BG_APP: Color = Color::token("bg-app", 14, 16, 22, 255);
-pub const BG_CARD: Color = Color::token("bg-card", 23, 26, 33, 255);
-pub const BG_MUTED: Color = Color::token("bg-muted", 32, 36, 45, 255);
-pub const BG_RAISED: Color = Color::token("bg-raised", 41, 47, 58, 255);
-pub const OVERLAY_SCRIM: Color = Color::token("overlay-scrim", 3, 6, 12, 178);
+// Core shadcn-shaped semantic colors.
+pub const BACKGROUND: Color = Color::token("background", 14, 16, 22, 255);
+pub const FOREGROUND: Color = Color::token("foreground", 232, 238, 246, 255);
 
-// Text
-pub const TEXT_FOREGROUND: Color = Color::token("text-foreground", 232, 238, 246, 255);
-pub const TEXT_MUTED_FOREGROUND: Color = Color::token("text-muted-foreground", 148, 160, 176, 255);
+pub const CARD: Color = Color::token("card", 23, 26, 33, 255);
+pub const CARD_FOREGROUND: Color = Color::token("card-foreground", 232, 238, 246, 255);
+
+pub const POPOVER: Color = Color::token("popover", 23, 26, 33, 255);
+pub const POPOVER_FOREGROUND: Color = Color::token("popover-foreground", 232, 238, 246, 255);
+
+pub const PRIMARY: Color = Color::token("primary", 92, 170, 255, 255);
+pub const PRIMARY_FOREGROUND: Color = Color::token("primary-foreground", 8, 16, 25, 255);
+
+pub const SECONDARY: Color = Color::token("secondary", 32, 36, 45, 255);
+pub const SECONDARY_FOREGROUND: Color = Color::token("secondary-foreground", 232, 238, 246, 255);
+
+pub const MUTED: Color = Color::token("muted", 32, 36, 45, 255);
+pub const MUTED_FOREGROUND: Color = Color::token("muted-foreground", 148, 160, 176, 255);
+
+pub const ACCENT: Color = Color::token("accent", 41, 47, 58, 255);
+pub const ACCENT_FOREGROUND: Color = Color::token("accent-foreground", 232, 238, 246, 255);
+
+pub const DESTRUCTIVE: Color = Color::token("destructive", 245, 95, 110, 255);
+pub const DESTRUCTIVE_FOREGROUND: Color = Color::token("destructive-foreground", 8, 16, 25, 255);
+
+pub const BORDER: Color = Color::token("border", 50, 58, 72, 255);
+pub const INPUT: Color = Color::token("input", 50, 58, 72, 255);
+pub const RING: Color = Color::token("ring", 92, 170, 255, 200);
+
+pub const SUCCESS: Color = Color::token("success", 80, 210, 140, 255);
+pub const SUCCESS_FOREGROUND: Color = Color::token("success-foreground", 8, 16, 25, 255);
+pub const WARNING: Color = Color::token("warning", 245, 190, 85, 255);
+pub const WARNING_FOREGROUND: Color = Color::token("warning-foreground", 8, 16, 25, 255);
+pub const INFO: Color = Color::token("info", 92, 170, 255, 255);
+pub const INFO_FOREGROUND: Color = Color::token("info-foreground", 8, 16, 25, 255);
+
+// Extension colors. These remain semantic, but they describe a specific
+// component/domain rather than the reusable shadcn core palette.
+pub const OVERLAY_SCRIM: Color = Color::token("overlay-scrim", 3, 6, 12, 178);
 
 /// Themed link color. Picked up automatically by `.link(url)` runs
 /// (and any `RunStyle.link.is_some()` run, regardless of how it was
 /// constructed). Distinct from `PRIMARY` so an underlined link reads
 /// as a link, not an action accent — brighter on dark, darker on light.
 pub const LINK_FOREGROUND: Color = Color::token("link-foreground", 96, 165, 250, 255);
-
-// Borders
-pub const BORDER: Color = Color::token("border", 50, 58, 72, 255);
-pub const BORDER_STRONG: Color = Color::token("border-strong", 80, 96, 118, 255);
-
-// Status
-pub const SUCCESS: Color = Color::token("success", 80, 210, 140, 255);
-pub const WARNING: Color = Color::token("warning", 245, 190, 85, 255);
-pub const DESTRUCTIVE: Color = Color::token("destructive", 245, 95, 110, 255);
-pub const INFO: Color = Color::token("info", 92, 170, 255, 255);
-
-// Accents
-pub const PRIMARY: Color = Color::token("primary", 92, 170, 255, 255);
-pub const PRIMARY_HOVER: Color = Color::token("primary-hover", 110, 184, 255, 255);
-
-// ---- Solid-foreground (text-on-solid-fill colors) ----
-//
-// Theme-invariant: not members of `Palette`. Renderer falls back to
-// these baked rgba in either palette.
-pub const TEXT_ON_SOLID_DARK: Color = Color::token("text-on-solid-dark", 8, 16, 25, 255);
-pub const TEXT_ON_SOLID_LIGHT: Color = Color::token("text-on-solid-light", 250, 250, 252, 255);
 
 // ---- Spacing ----
 //
@@ -133,7 +140,7 @@ pub const SCROLLBAR_THUMB_WIDTH_ACTIVE: f32 = 10.0;
 pub const SCROLLBAR_HITBOX_WIDTH: f32 = 14.0;
 pub const SCROLLBAR_TRACK_INSET: f32 = 2.0;
 pub const SCROLLBAR_THUMB_MIN_H: f32 = 24.0;
-/// Idle thumb fill — subtle on bg-app/bg-card.
+/// Idle thumb fill — subtle on background/card.
 pub const SCROLLBAR_THUMB_FILL: Color = Color::token("scrollbar-thumb", 148, 160, 176, 130);
 /// Active (hovered or dragged) thumb fill — fully opaque accent.
 pub const SCROLLBAR_THUMB_FILL_ACTIVE: Color =
@@ -232,10 +239,8 @@ pub const STATE_FILL_HOVER_ALPHA: f32 = 0.40;
 pub const STATE_FILL_PRESS_ALPHA: f32 = 0.25;
 /// Opacity multiplier when an element is disabled.
 pub const DISABLED_ALPHA: f32 = 0.5;
-/// Focus ring color (typically a tinted accent).
-pub const FOCUS_RING: Color = Color::token("focus-ring", 92, 170, 255, 200);
-/// Focus ring outset (additional stroke beyond the element bounds).
-pub const FOCUS_RING_WIDTH: f32 = 2.0;
+/// Ring outset (additional focus stroke beyond the element bounds).
+pub const RING_WIDTH: f32 = 2.0;
 /// Background tint for selected text in `text_input` / `text_area`.
 /// Tinted accent at low alpha so glyphs stay readable through the
 /// selection rectangle.

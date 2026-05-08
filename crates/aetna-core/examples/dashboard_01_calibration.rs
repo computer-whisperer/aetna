@@ -51,7 +51,7 @@ fn dashboard_01_calibration(layout: LayoutMetrics) -> El {
         .gap(0.0)
         .fill_size()
         .align(Align::Stretch)
-        .fill(tokens::BG_APP)
+        .fill(tokens::BACKGROUND)
 }
 
 fn dashboard_sidebar(layout: LayoutMetrics) -> El {
@@ -111,7 +111,7 @@ fn dashboard_sidebar(layout: LayoutMetrics) -> El {
     .key("metric:sidebar")
     .width(Size::Fixed(244.0))
     .height(Size::Fill(1.0))
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .stroke(tokens::BORDER)
 }
 
@@ -125,7 +125,7 @@ fn section_label(label: &'static str) -> El {
 fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El {
     let mut item = row([
         icon(icon_name)
-            .color(tokens::TEXT_MUTED_FOREGROUND)
+            .color(tokens::MUTED_FOREGROUND)
             .icon_size(tokens::ICON_SM)
             .width(Size::Fixed(tokens::ICON_SM)),
         text(label)
@@ -145,7 +145,7 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     if selected {
         item = item.current();
     } else {
-        item = item.color(tokens::TEXT_MUTED_FOREGROUND);
+        item = item.color(tokens::MUTED_FOREGROUND);
     }
 
     item
@@ -251,7 +251,7 @@ fn metric_card(
         row([
             row([
                 icon(icon_name)
-                    .color(tokens::TEXT_MUTED_FOREGROUND)
+                    .color(tokens::MUTED_FOREGROUND)
                     .icon_size(tokens::ICON_XS),
                 text(title).muted().ellipsis().width(Size::Fill(1.0)),
             ])
@@ -296,8 +296,8 @@ fn chart_bars() -> Vec<El> {
     .into_iter()
     .flat_map(|height| {
         [
-            bar(height, tokens::TEXT_MUTED_FOREGROUND),
-            bar((height - 28.0_f32).max(24.0), tokens::BORDER_STRONG),
+            bar(height, tokens::MUTED_FOREGROUND),
+            bar((height - 28.0_f32).max(24.0), tokens::INPUT),
         ]
     })
     .collect()
@@ -435,7 +435,7 @@ fn table_utility_cell(label: &'static str) -> El {
 fn table_action_cell() -> El {
     stack([icon("more-horizontal")
         .icon_size(tokens::ICON_SM)
-        .color(tokens::TEXT_MUTED_FOREGROUND)])
+        .color(tokens::MUTED_FOREGROUND)])
     .align(Align::Center)
     .justify(Justify::Center)
     .width(Size::Fixed(32.0))
@@ -449,7 +449,7 @@ fn icon_cell(label: &'static str) -> El {
         .text_align(TextAlign::Center)
         .caption()
         .font_weight(FontWeight::Semibold)
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::MUTED)
         .radius(tokens::RADIUS_SM)
         .width(Size::Fixed(30.0))
         .height(Size::Fixed(30.0))

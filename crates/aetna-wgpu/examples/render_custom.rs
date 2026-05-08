@@ -24,7 +24,7 @@ const GRADIENT_WGSL: &str = include_str!("../../aetna-core/shaders/gradient.wgsl
 /// `gradient` shader instead of `stock::rounded_rect`. This is what a
 /// user crate would write to ship its own component variant.
 fn gradient_button(label: &str, top: Color, bottom: Color, radius: f32) -> El {
-    button(label).text_color(tokens::TEXT_ON_SOLID_DARK).shader(
+    button(label).text_color(tokens::PRIMARY_FOREGROUND).shader(
         ShaderBinding::custom("gradient")
             .color("vec_a", top)
             .color("vec_b", bottom)
@@ -239,7 +239,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn bg_color() -> wgpu::Color {
-    let c = aetna_core::tokens::BG_APP;
+    let c = aetna_core::tokens::BACKGROUND;
     wgpu::Color {
         r: srgb_to_linear(c.r as f64 / 255.0),
         g: srgb_to_linear(c.g as f64 / 255.0),

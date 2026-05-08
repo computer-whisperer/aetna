@@ -69,7 +69,7 @@ fn comparison_screen(family: FontFamily, layout: LayoutMetrics) -> El {
     .padding(layout.page_padding)
     .gap(layout.section_gap)
     .fill_size()
-    .fill(tokens::BG_APP)
+    .fill(tokens::BACKGROUND)
 }
 
 fn kpi_row() -> El {
@@ -120,7 +120,7 @@ fn command_surface(layout: LayoutMetrics) -> El {
                 menu_row("git-commit", "Commit staged files", "Ctrl+Enter"),
                 menu_row("refresh-cw", "Refresh repository", "Ctrl+R"),
             ])
-            .fill(tokens::BG_CARD)
+            .fill(tokens::CARD)
             .stroke(tokens::BORDER)
             .radius(tokens::RADIUS_MD)
             .padding(tokens::SPACE_XS)

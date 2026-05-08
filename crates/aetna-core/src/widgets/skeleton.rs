@@ -24,7 +24,7 @@ pub fn skeleton() -> El {
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
         .surface_role(SurfaceRole::Sunken)
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::MUTED)
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Fill(1.0))
         .default_height(Size::Fixed(16.0))
@@ -51,7 +51,7 @@ mod tests {
         assert_eq!(s.kind, Kind::Custom("skeleton"));
         assert_eq!(s.style_profile, StyleProfile::Surface);
         assert_eq!(s.surface_role, SurfaceRole::Sunken);
-        assert_eq!(s.fill, Some(tokens::BG_MUTED));
+        assert_eq!(s.fill, Some(tokens::MUTED));
         assert_eq!(s.width, Size::Fill(1.0));
         assert_eq!(s.height, Size::Fixed(16.0));
         assert_eq!(s.radius, tokens::RADIUS_MD);

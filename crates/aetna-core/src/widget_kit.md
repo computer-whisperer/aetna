@@ -157,6 +157,47 @@ convenience shorthands `.inter()` and `.roboto()`.
 Run `cargo run -p aetna-core --example font_family_comparison` to
 regenerate the current Roboto/Inter comparison fixture.
 
+### 1.4 Color vocabulary
+
+Color tokens intentionally mirror the shadcn/Tailwind semantic split.
+Use the role name, not the old implementation name:
+
+```rust
+tokens::BACKGROUND
+tokens::FOREGROUND
+tokens::CARD
+tokens::CARD_FOREGROUND
+tokens::POPOVER
+tokens::POPOVER_FOREGROUND
+tokens::PRIMARY
+tokens::PRIMARY_FOREGROUND
+tokens::SECONDARY
+tokens::SECONDARY_FOREGROUND
+tokens::MUTED
+tokens::MUTED_FOREGROUND
+tokens::ACCENT
+tokens::ACCENT_FOREGROUND
+tokens::DESTRUCTIVE
+tokens::DESTRUCTIVE_FOREGROUND
+tokens::BORDER
+tokens::INPUT
+tokens::RING
+tokens::SUCCESS
+tokens::SUCCESS_FOREGROUND
+tokens::WARNING
+tokens::WARNING_FOREGROUND
+tokens::INFO
+tokens::INFO_FOREGROUND
+```
+
+The paired `*-FOREGROUND` tokens are for solid fills. A primary button
+uses `PRIMARY` plus `PRIMARY_FOREGROUND`; a secondary button uses
+`SECONDARY` plus `SECONDARY_FOREGROUND`. `BORDER` is the normal
+separator/card stroke, `INPUT` is the stronger control stroke, and
+`RING` is the focus outline color. Link, scrollbar, overlay, and
+selection colors are extension tokens because they describe a specific
+component/domain rather than the reusable core palette.
+
 Theme metrics can tune broad app defaults or a stock family:
 
 ```rust
@@ -201,7 +242,7 @@ For bounded wrapped copy, use `.wrap_text().max_lines(n)`. The draw-op pass clam
 
 `TextRole` (`Body`, `Caption`, `Label`, `Title`, `Heading`, `Display`, `Code`) is the semantic typography role for text-bearing nodes. Set it with `.text_role(...)`, or use the role modifiers `.body()`, `.caption()`, `.label()`, `.title()`, `.heading()`, `.display()`, and `.code()`.
 
-Roles apply default size/line-height/weight/color so product code can say what a text run is before overriding a specific detail. Aetna's typography tokens intentionally mirror Tailwind pairs such as `text-sm` = 14/20, `text-2xl` = 24/32, and `text-3xl` = 30/36; use `.line_height(...)` only for deliberate custom typography. For example, table headers and tiny metadata should usually be `.caption()`, button/menu labels should be `.label()`, card titles should be `.title()`, page titles should be `.heading()` or `.display()`, and inline code should use `.code()`. For shadcn-style secondary copy such as page subtitles, card descriptions, and explanatory helper text, prefer `.muted()` on body text; that preserves the normal 14px body rhythm while switching to `TEXT_MUTED_FOREGROUND`. Tree dumps show non-body roles as `text_role=...`, which gives the agent loop a semantic handle when tuning density and hierarchy.
+Roles apply default size/line-height/weight/color so product code can say what a text run is before overriding a specific detail. Aetna's typography tokens intentionally mirror Tailwind pairs such as `text-sm` = 14/20, `text-2xl` = 24/32, and `text-3xl` = 30/36; use `.line_height(...)` only for deliberate custom typography. For example, table headers and tiny metadata should usually be `.caption()`, button/menu labels should be `.label()`, card titles should be `.title()`, page titles should be `.heading()` or `.display()`, and inline code should use `.code()`. For shadcn-style secondary copy such as page subtitles, card descriptions, and explanatory helper text, prefer `.muted()` on body text; that preserves the normal 14px body rhythm while switching to `MUTED_FOREGROUND`. Tree dumps show non-body roles as `text_role=...`, which gives the agent loop a semantic handle when tuning density and hierarchy.
 
 ### 3.3 Icons
 
@@ -377,7 +418,7 @@ These all interact with library-owned bookkeeping (focus tracker, animations, co
 The library has a small, named vocabulary precisely so a widget — or an app `build()` — doesn't need to invent one. The patterns below mean an existing affordance is being missed:
 
 - **`.font_size(...).font_weight(...).text_color(...)` on a single text node.** That's what role modifiers exist for. `.heading()`, `.title()`, `.label()`, `.caption()`, `.code()` set size + weight + theme-aware color in one call. Reaching for the underlying primitives is how typography drifts (one hand-written 16px semibold title looks subtly different from another).
-- **`column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` for grouped content.** That's `card([card_header([card_title("Title")]), card_content([...])])`. Cards route through `SurfaceRole::Panel` so the theme can swap the material later (shader, shadow, inset) without touching the call site.
+- **`column([...]).fill(CARD).stroke(BORDER).radius(...)` for grouped content.** That's `card([card_header([card_title("Title")]), card_content([...])])`. Cards route through `SurfaceRole::Panel` so the theme can swap the material later (shader, shadow, inset) without touching the call site.
 - **`column([text(label).label(), text_input(...)]).gap(...)` for vertical fields.** That's `form_item([form_label(label), form_control(text_input(...)), form_description(...)])` inside `form([...])`. The theme owns the field stack rhythm through form density.
 - **`row([...]).metrics_role(TableRow).align(Center)` for table rows.** That's `table_row([...])` inside `table([table_header([...]), table_body([...])])`. `table_header` promotes direct `table_row` children to header metrics, and table rows center their cells by default.
 - **Status as a unicode bullet or emoji** (`text("● Online")`, `text("⚠ Failed")`). That's `badge("Online").success()` / `badge("Failed").destructive()`. Badges read as proper status pills and pick the theme color through the StyleProfile.
@@ -395,7 +436,7 @@ The library has a small, named vocabulary precisely so a widget — or an app `b
 - **`.gap(0.0)`.** The default *is* `0.0`. Setting it explicitly is noise that signals the author misremembered the default — and usually means actual gap is missing somewhere else where it should be added.
 - **Wrapping a single child in `row([single])` to apply padding.** `.padding(Sides::all(...))` is on every `El`. The wrapper is dead weight.
 - **Tree indent built from `row([spacer().width(Fixed(indent)), ...])`.** Use `.padding(Sides { left: indent, ..Sides::zero() })` on the row — left-only padding does the job without an extra child. `Sides::xy(h, v)` is also there for symmetric horizontal/vertical padding.
-- **Explicit `.fill(tokens::BG_APP)` on the root.** The host paints `BG_APP` behind the tree before draw-ops run; the root fill is redundant.
+- **Explicit `.fill(tokens::BACKGROUND)` on the root.** The host paints `BACKGROUND` behind the tree before draw-ops run; the root fill is redundant.
 - **A built-in `IconName::*` standing in for an app-specific SVG.** Apps ship `SvgIcon::parse_current_color(include_str!("..."))` once (typically as a `LazyLock`) and pass the result to `icon(...)` — same pipeline, same `text_color` tinting as the built-ins.
 
 These aren't style nits — they're load-bearing in keeping LLM-authored UI from drifting into raw-rectangle territory. If you find yourself writing one of them, that's a kit-discoverability problem worth flagging in this doc rather than coding around.

@@ -42,7 +42,7 @@ where
         .surface_role(SurfaceRole::Popover)
         .arrow_nav_siblings()
         .children(children)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::POPOVER)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_SM)
         .shadow(tokens::SHADOW_MD)
@@ -73,7 +73,7 @@ pub fn dropdown_menu_label(label: impl Into<String>) -> El {
         .at_loc(Location::caller())
         .caption()
         .semibold()
-        .color(tokens::TEXT_MUTED_FOREGROUND)
+        .color(tokens::MUTED_FOREGROUND)
         .padding(Sides::xy(tokens::SPACE_2, tokens::SPACE_1))
         .width(Size::Fill(1.0))
 }
@@ -106,7 +106,7 @@ where
         .focusable()
         .cursor(Cursor::Pointer)
         .children(children)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::POPOVER)
         .default_radius(tokens::RADIUS_SM)
         .default_padding(Sides::xy(tokens::SPACE_2, 0.0))
         .default_gap(tokens::SPACE_2)
@@ -132,7 +132,7 @@ pub fn dropdown_menu_icon(source: impl IntoIconSource) -> El {
     icon(source)
         .at_loc(Location::caller())
         .icon_size(tokens::ICON_SM)
-        .color(tokens::TEXT_MUTED_FOREGROUND)
+        .color(tokens::MUTED_FOREGROUND)
 }
 
 #[track_caller]
@@ -140,7 +140,7 @@ pub fn dropdown_menu_shortcut(shortcut: impl Into<String>) -> El {
     mono(shortcut)
         .at_loc(Location::caller())
         .caption()
-        .color(tokens::TEXT_MUTED_FOREGROUND)
+        .color(tokens::MUTED_FOREGROUND)
         .width(Size::Hug)
 }
 

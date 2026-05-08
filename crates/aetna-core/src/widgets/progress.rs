@@ -63,7 +63,7 @@ pub fn progress(value: f32, fill_color: Color) -> El {
 
     stack([
         El::new(Kind::Custom("progress-track"))
-            .fill(tokens::BG_MUTED)
+            .fill(tokens::MUTED)
             .radius(tokens::RADIUS_PILL),
         El::new(Kind::Custom("progress-fill"))
             .fill(fill_color)
@@ -84,7 +84,7 @@ mod tests {
     fn track_and_fill_use_expected_tokens() {
         let p = progress(0.5, tokens::PRIMARY);
         assert_eq!(p.children.len(), 2);
-        assert_eq!(p.children[0].fill, Some(tokens::BG_MUTED), "track is muted");
+        assert_eq!(p.children[0].fill, Some(tokens::MUTED), "track is muted");
         assert_eq!(
             p.children[1].fill,
             Some(tokens::PRIMARY),

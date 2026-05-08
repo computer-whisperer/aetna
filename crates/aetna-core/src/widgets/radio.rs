@@ -139,7 +139,7 @@ pub fn radio_item(
     let stroke = if selected {
         tokens::PRIMARY
     } else {
-        tokens::BORDER_STRONG
+        tokens::INPUT
     };
     let dot_opacity = if selected { 1.0 } else { 0.0 };
     let dot_scale = if selected { 1.0 } else { 0.4 };
@@ -152,7 +152,7 @@ pub fn radio_item(
         .default_width(Size::Fixed(INDICATOR_OUTER))
         .default_height(Size::Fixed(INDICATOR_OUTER))
         .radius(tokens::RADIUS_PILL)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::CARD)
         .stroke(stroke)
         .animate(Timing::SPRING_STANDARD)
         .child(
@@ -171,7 +171,7 @@ pub fn radio_item(
         .style_profile(StyleProfile::Surface)
         .metrics_role(MetricsRole::ChoiceItem)
         .focusable()
-        .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(Cursor::Pointer)
         .key(routed_key)
         .axis(Axis::Row)
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(indicator.children[0].opacity, 0.0);
         // Border strong on unselected items so the unselected radio is
         // visually distinguishable from a checkbox.
-        assert_eq!(indicator.stroke, Some(tokens::BORDER_STRONG));
+        assert_eq!(indicator.stroke, Some(tokens::INPUT));
     }
 
     #[test]

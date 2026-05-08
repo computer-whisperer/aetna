@@ -69,7 +69,7 @@ pub fn checkbox(value: bool) -> El {
     let (fill, stroke) = if value {
         (tokens::PRIMARY, tokens::PRIMARY)
     } else {
-        (tokens::BG_CARD, tokens::BORDER_STRONG)
+        (tokens::CARD, tokens::INPUT)
     };
     let check_opacity = if value { 1.0 } else { 0.0 };
     let check_scale = if value { 1.0 } else { 0.6 };
@@ -79,7 +79,7 @@ pub fn checkbox(value: bool) -> El {
         .style_profile(StyleProfile::Surface)
         .metrics_role(MetricsRole::ChoiceControl)
         .focusable()
-        .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(Cursor::Pointer)
         .axis(Axis::Overlay)
         .align(Align::Center)
@@ -94,7 +94,7 @@ pub fn checkbox(value: bool) -> El {
             icon("check")
                 .icon_size(CHECK_ICON_SIZE)
                 .icon_stroke_width(2.5)
-                .color(tokens::TEXT_ON_SOLID_DARK)
+                .color(tokens::PRIMARY_FOREGROUND)
                 .opacity(check_opacity)
                 .scale(check_scale)
                 .animate(Timing::SPRING_STANDARD),
@@ -124,8 +124,8 @@ mod tests {
         let c = checkbox(false);
         assert_eq!(c.children.len(), 1, "check glyph stays in the tree");
         assert_eq!(c.children[0].opacity, 0.0);
-        assert_eq!(c.fill, Some(tokens::BG_CARD));
-        assert_eq!(c.stroke, Some(tokens::BORDER_STRONG));
+        assert_eq!(c.fill, Some(tokens::CARD));
+        assert_eq!(c.stroke, Some(tokens::INPUT));
     }
 
     #[test]

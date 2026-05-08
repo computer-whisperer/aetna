@@ -114,7 +114,7 @@ When scaffolding a UI, prefer the named affordance over the underlying primitive
 
 | Intent | Idiomatic call | Avoid |
 |---|---|---|
-| Grouped content (settings card, panel of fields) | `card([card_header([card_title("Title")]), card_content([...])])` or `titled_card("Title", [...])` | `column([...]).fill(BG_CARD).stroke(BORDER).radius(...)` |
+| Grouped content (settings card, panel of fields) | `card([card_header([card_title("Title")]), card_content([...])])` or `titled_card("Title", [...])` | `column([...]).fill(CARD).stroke(BORDER).radius(...)` |
 | Callout / validation summary | `alert([alert_title("Heads up"), alert_description("Details")]).warning()` | a manually styled card with status-colored text |
 | Status indicator (Online, Pending, Failed) | `badge("Online").success()` (also `.warning()` / `.destructive()` / `.info()` / `.muted()`) | `text("● Online").text_color(SUCCESS)` |
 | User identity chip | `avatar_fallback("Alicia Koch")` or `avatar_image(img)` | a bare image/text node with custom circle styling |
@@ -131,7 +131,7 @@ When scaffolding a UI, prefer the named affordance over the underlying primitive
 | Pagination | `pagination_content([pagination_previous(), pagination_link("1", true), pagination_next()])` | unaligned text buttons with custom square sizing |
 | Section heading / page title | `.heading()` / `h2(...)` (or `.title()` / `h3(...)`) | `.font_size(16.0).font_weight(Bold).text_color(...)` |
 | Field label | `.label()` | `.font_weight(Semibold).text_color(...)` |
-| Helper / hint text | `.caption()` or `.muted()` | `.font_size(12.0).text_color(TEXT_MUTED_FOREGROUND)` |
+| Helper / hint text | `.caption()` or `.muted()` | `.font_size(12.0).text_color(tokens::MUTED_FOREGROUND)` |
 | Inline code / mono | `.code()` or `mono(...)` | `.font_family("monospace")` (no such API) |
 | Pinned sidebar | `.width(Size::Fixed(tokens::SIDEBAR_WIDTH))` plus `.surface_role(SurfaceRole::Panel)` | a magic-number width |
 | Sectioned tab content | `tabs_list(key, &current, opts)` + `match self.tab { ... }` | a `Vec<El>` with manual show/hide |
@@ -145,7 +145,7 @@ When scaffolding a UI, prefer the named affordance over the underlying primitive
 | Standard tooltip | `.tooltip("...")` on any element | a manually-positioned popover |
 | Layout review without GPU | `render_bundle(&mut tree, viewport, Some(env!("CARGO_PKG_NAME")))` + `write_bundle(...)` per scene — see [Per-app artifact dumps](#per-app-artifact-dumps) | spinning up a wgpu window every time you want to eyeball a layout change |
 
-Smells that mean an affordance is being missed: `.gap(0.0)` (already the default — delete it), `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier), wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly), an explicit `.fill(tokens::BG_APP)` on the root (the host already paints it), and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
+Smells that mean an affordance is being missed: `.gap(0.0)` (already the default — delete it), `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier), wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly), an explicit `.fill(tokens::BACKGROUND)` on the root (the host already paints it), and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
 
 ## Gallery
 

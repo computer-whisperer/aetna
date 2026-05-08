@@ -1,7 +1,7 @@
 //! Runtime color palette — the swappable rgba backing for color tokens.
 //!
-//! Tokens (e.g. [`crate::tokens::BG_CARD`]) are [`Color`] values carrying
-//! both a fallback rgba and a `token: Some("bg-card")` name. The renderer
+//! Tokens (e.g. [`crate::tokens::CARD`]) are [`Color`] values carrying
+//! both a fallback rgba and a `token: Some("card")` name. The renderer
 //! consults the active [`crate::Theme`]'s palette at paint time, looking
 //! up that name to pick the rgba for the currently-active palette. Apps
 //! swap palettes at runtime by returning a different [`crate::Theme`] from
@@ -19,56 +19,66 @@
 //! Consequence: a derived color computed against the dark palette renders
 //! with its dark-derived rgb even when the active palette is light.
 //! `theme.rs:apply_role_material` is the one library site that runs an
-//! rgb op against a token (`BG_MUTED.darken(0.08)` for the Sunken role);
-//! a tighter fix later is to add a `bg-sunken` token to `Palette` so the
+//! rgb op against a token (`MUTED.darken(0.08)` for the Sunken role);
+//! a tighter fix later is to add an input/container token to `Palette` so the
 //! role can reference a resolvable name. State animations don't need this
 //! — they want the per-frame derivation to win, not the palette default.
 //!
-//! Tokens whose rgba is theme-invariant (e.g. `text-on-solid-dark`) are not
-//! members of `Palette` — `lookup` returns `None` for them and the renderer
-//! falls back to the baked rgba, which is correct.
+//! The core vocabulary is intentionally close to shadcn/ui: background /
+//! foreground pairs for surfaces and actions, plus border, input, ring,
+//! and semantic status roles. Link, scrollbar, overlay, and selection
+//! tokens are component/domain extensions.
 
 use crate::tree::Color;
 
 /// Runtime backing for the design-token color vocabulary.
 ///
-/// One field per theme-variant token. Theme-invariant tokens
-/// (`text-on-solid-dark`, `text-on-solid-light`) keep their compile-time
-/// rgba and are not represented here.
+/// One field per theme-variant token.
 #[derive(Clone, Debug)]
 pub struct Palette {
-    // Backgrounds
-    pub bg_app: Color,
-    pub bg_card: Color,
-    pub bg_muted: Color,
-    pub bg_raised: Color,
-    pub overlay_scrim: Color,
+    // Core shadcn-shaped semantic colors.
+    pub background: Color,
+    pub foreground: Color,
 
-    // Text
-    pub text_foreground: Color,
-    pub text_muted_foreground: Color,
+    pub card: Color,
+    pub card_foreground: Color,
+
+    pub popover: Color,
+    pub popover_foreground: Color,
+
+    pub primary: Color,
+    pub primary_foreground: Color,
+
+    pub secondary: Color,
+    pub secondary_foreground: Color,
+
+    pub muted: Color,
+    pub muted_foreground: Color,
+
+    pub accent: Color,
+    pub accent_foreground: Color,
+
+    pub destructive: Color,
+    pub destructive_foreground: Color,
+
+    pub border: Color,
+    pub input: Color,
+    pub ring: Color,
+
+    pub success: Color,
+    pub success_foreground: Color,
+    pub warning: Color,
+    pub warning_foreground: Color,
+    pub info: Color,
+    pub info_foreground: Color,
+
+    // Extensions.
+    pub overlay_scrim: Color,
     pub link_foreground: Color,
 
-    // Borders
-    pub border: Color,
-    pub border_strong: Color,
-
-    // Status
-    pub success: Color,
-    pub warning: Color,
-    pub destructive: Color,
-    pub info: Color,
-
-    // Accents
-    pub primary: Color,
-    pub primary_hover: Color,
-
-    // Scrollbar
     pub scrollbar_thumb_fill: Color,
     pub scrollbar_thumb_fill_active: Color,
 
-    // State
-    pub focus_ring: Color,
     pub selection_bg: Color,
     pub selection_bg_unfocused: Color,
 }
@@ -79,31 +89,47 @@ impl Palette {
     /// in [`crate::tokens`].
     pub const fn aetna_dark() -> Self {
         Self {
-            bg_app: Color::token("bg-app", 14, 16, 22, 255),
-            bg_card: Color::token("bg-card", 23, 26, 33, 255),
-            bg_muted: Color::token("bg-muted", 32, 36, 45, 255),
-            bg_raised: Color::token("bg-raised", 41, 47, 58, 255),
-            overlay_scrim: Color::token("overlay-scrim", 3, 6, 12, 178),
+            background: Color::token("background", 14, 16, 22, 255),
+            foreground: Color::token("foreground", 232, 238, 246, 255),
 
-            text_foreground: Color::token("text-foreground", 232, 238, 246, 255),
-            text_muted_foreground: Color::token("text-muted-foreground", 148, 160, 176, 255),
-            link_foreground: Color::token("link-foreground", 96, 165, 250, 255),
+            card: Color::token("card", 23, 26, 33, 255),
+            card_foreground: Color::token("card-foreground", 232, 238, 246, 255),
 
-            border: Color::token("border", 50, 58, 72, 255),
-            border_strong: Color::token("border-strong", 80, 96, 118, 255),
-
-            success: Color::token("success", 80, 210, 140, 255),
-            warning: Color::token("warning", 245, 190, 85, 255),
-            destructive: Color::token("destructive", 245, 95, 110, 255),
-            info: Color::token("info", 92, 170, 255, 255),
+            popover: Color::token("popover", 23, 26, 33, 255),
+            popover_foreground: Color::token("popover-foreground", 232, 238, 246, 255),
 
             primary: Color::token("primary", 92, 170, 255, 255),
-            primary_hover: Color::token("primary-hover", 110, 184, 255, 255),
+            primary_foreground: Color::token("primary-foreground", 8, 16, 25, 255),
+
+            secondary: Color::token("secondary", 32, 36, 45, 255),
+            secondary_foreground: Color::token("secondary-foreground", 232, 238, 246, 255),
+
+            muted: Color::token("muted", 32, 36, 45, 255),
+            muted_foreground: Color::token("muted-foreground", 148, 160, 176, 255),
+
+            accent: Color::token("accent", 41, 47, 58, 255),
+            accent_foreground: Color::token("accent-foreground", 232, 238, 246, 255),
+
+            destructive: Color::token("destructive", 245, 95, 110, 255),
+            destructive_foreground: Color::token("destructive-foreground", 8, 16, 25, 255),
+
+            border: Color::token("border", 50, 58, 72, 255),
+            input: Color::token("input", 50, 58, 72, 255),
+            ring: Color::token("ring", 92, 170, 255, 200),
+
+            success: Color::token("success", 80, 210, 140, 255),
+            success_foreground: Color::token("success-foreground", 8, 16, 25, 255),
+            warning: Color::token("warning", 245, 190, 85, 255),
+            warning_foreground: Color::token("warning-foreground", 8, 16, 25, 255),
+            info: Color::token("info", 92, 170, 255, 255),
+            info_foreground: Color::token("info-foreground", 8, 16, 25, 255),
+
+            overlay_scrim: Color::token("overlay-scrim", 3, 6, 12, 178),
+            link_foreground: Color::token("link-foreground", 96, 165, 250, 255),
 
             scrollbar_thumb_fill: Color::token("scrollbar-thumb", 148, 160, 176, 130),
             scrollbar_thumb_fill_active: Color::token("scrollbar-thumb-active", 200, 210, 224, 220),
 
-            focus_ring: Color::token("focus-ring", 92, 170, 255, 200),
             selection_bg: Color::token("selection-bg", 92, 170, 255, 96),
             selection_bg_unfocused: Color::token("selection-bg-unfocused", 160, 160, 160, 64),
         }
@@ -114,31 +140,47 @@ impl Palette {
     /// [`Self::aetna_dark`]; only the literal rgb values shift.
     pub const fn aetna_light() -> Self {
         Self {
-            bg_app: Color::token("bg-app", 247, 248, 251, 255),
-            bg_card: Color::token("bg-card", 255, 255, 255, 255),
-            bg_muted: Color::token("bg-muted", 240, 242, 247, 255),
-            bg_raised: Color::token("bg-raised", 255, 255, 255, 255),
-            overlay_scrim: Color::token("overlay-scrim", 12, 18, 32, 110),
+            background: Color::token("background", 247, 248, 251, 255),
+            foreground: Color::token("foreground", 19, 24, 33, 255),
 
-            text_foreground: Color::token("text-foreground", 19, 24, 33, 255),
-            text_muted_foreground: Color::token("text-muted-foreground", 96, 110, 130, 255),
-            link_foreground: Color::token("link-foreground", 37, 99, 235, 255),
+            card: Color::token("card", 255, 255, 255, 255),
+            card_foreground: Color::token("card-foreground", 19, 24, 33, 255),
 
-            border: Color::token("border", 220, 224, 232, 255),
-            border_strong: Color::token("border-strong", 180, 188, 200, 255),
-
-            success: Color::token("success", 22, 163, 74, 255),
-            warning: Color::token("warning", 217, 119, 6, 255),
-            destructive: Color::token("destructive", 220, 38, 38, 255),
-            info: Color::token("info", 37, 99, 235, 255),
+            popover: Color::token("popover", 255, 255, 255, 255),
+            popover_foreground: Color::token("popover-foreground", 19, 24, 33, 255),
 
             primary: Color::token("primary", 37, 99, 235, 255),
-            primary_hover: Color::token("primary-hover", 29, 78, 216, 255),
+            primary_foreground: Color::token("primary-foreground", 250, 250, 252, 255),
+
+            secondary: Color::token("secondary", 240, 242, 247, 255),
+            secondary_foreground: Color::token("secondary-foreground", 19, 24, 33, 255),
+
+            muted: Color::token("muted", 240, 242, 247, 255),
+            muted_foreground: Color::token("muted-foreground", 96, 110, 130, 255),
+
+            accent: Color::token("accent", 255, 255, 255, 255),
+            accent_foreground: Color::token("accent-foreground", 19, 24, 33, 255),
+
+            destructive: Color::token("destructive", 220, 38, 38, 255),
+            destructive_foreground: Color::token("destructive-foreground", 250, 250, 252, 255),
+
+            border: Color::token("border", 220, 224, 232, 255),
+            input: Color::token("input", 220, 224, 232, 255),
+            ring: Color::token("ring", 37, 99, 235, 200),
+
+            success: Color::token("success", 22, 163, 74, 255),
+            success_foreground: Color::token("success-foreground", 250, 250, 252, 255),
+            warning: Color::token("warning", 217, 119, 6, 255),
+            warning_foreground: Color::token("warning-foreground", 250, 250, 252, 255),
+            info: Color::token("info", 37, 99, 235, 255),
+            info_foreground: Color::token("info-foreground", 250, 250, 252, 255),
+
+            overlay_scrim: Color::token("overlay-scrim", 12, 18, 32, 110),
+            link_foreground: Color::token("link-foreground", 37, 99, 235, 255),
 
             scrollbar_thumb_fill: Color::token("scrollbar-thumb", 100, 116, 139, 90),
             scrollbar_thumb_fill_active: Color::token("scrollbar-thumb-active", 71, 85, 105, 220),
 
-            focus_ring: Color::token("focus-ring", 37, 99, 235, 200),
             selection_bg: Color::token("selection-bg", 37, 99, 235, 64),
             selection_bg_unfocused: Color::token("selection-bg-unfocused", 100, 116, 139, 56),
         }
@@ -172,25 +214,35 @@ impl Palette {
     /// `Color`'s baked rgba) and for unknown names.
     pub fn lookup(&self, token: &str) -> Option<Color> {
         Some(match token {
-            "bg-app" => self.bg_app,
-            "bg-card" => self.bg_card,
-            "bg-muted" => self.bg_muted,
-            "bg-raised" => self.bg_raised,
-            "overlay-scrim" => self.overlay_scrim,
-            "text-foreground" => self.text_foreground,
-            "text-muted-foreground" => self.text_muted_foreground,
-            "link-foreground" => self.link_foreground,
-            "border" => self.border,
-            "border-strong" => self.border_strong,
-            "success" => self.success,
-            "warning" => self.warning,
-            "destructive" => self.destructive,
-            "info" => self.info,
+            "background" => self.background,
+            "foreground" => self.foreground,
+            "card" => self.card,
+            "card-foreground" => self.card_foreground,
+            "popover" => self.popover,
+            "popover-foreground" => self.popover_foreground,
             "primary" => self.primary,
-            "primary-hover" => self.primary_hover,
+            "primary-foreground" => self.primary_foreground,
+            "secondary" => self.secondary,
+            "secondary-foreground" => self.secondary_foreground,
+            "muted" => self.muted,
+            "muted-foreground" => self.muted_foreground,
+            "accent" => self.accent,
+            "accent-foreground" => self.accent_foreground,
+            "destructive" => self.destructive,
+            "destructive-foreground" => self.destructive_foreground,
+            "border" => self.border,
+            "input" => self.input,
+            "ring" => self.ring,
+            "success" => self.success,
+            "success-foreground" => self.success_foreground,
+            "warning" => self.warning,
+            "warning-foreground" => self.warning_foreground,
+            "info" => self.info,
+            "info-foreground" => self.info_foreground,
+            "overlay-scrim" => self.overlay_scrim,
+            "link-foreground" => self.link_foreground,
             "scrollbar-thumb" => self.scrollbar_thumb_fill,
             "scrollbar-thumb-active" => self.scrollbar_thumb_fill_active,
-            "focus-ring" => self.focus_ring,
             "selection-bg" => self.selection_bg,
             "selection-bg-unfocused" => self.selection_bg_unfocused,
             _ => return None,
@@ -211,8 +263,8 @@ mod tests {
     #[test]
     fn dark_lookup_round_trips() {
         let p = Palette::aetna_dark();
-        let bg = p.lookup("bg-app").expect("bg-app present");
-        assert_eq!(bg, p.bg_app);
+        let bg = p.lookup("background").expect("background present");
+        assert_eq!(bg, p.background);
     }
 
     #[test]
@@ -222,9 +274,11 @@ mod tests {
     }
 
     #[test]
-    fn theme_invariant_tokens_not_in_palette() {
-        // text-on-solid-* are intentionally not palette members.
+    fn removed_legacy_tokens_not_in_palette() {
         let p = Palette::aetna_dark();
+        assert!(p.lookup("bg-app").is_none());
+        assert!(p.lookup("bg-card").is_none());
+        assert!(p.lookup("bg-muted").is_none());
         assert!(p.lookup("text-on-solid-dark").is_none());
         assert!(p.lookup("text-on-solid-light").is_none());
     }
@@ -241,41 +295,33 @@ mod tests {
     #[test]
     fn resolve_preserves_alpha_override() {
         let p = Palette::aetna_dark();
-        let translucent = p.bg_card.with_alpha(120);
+        let translucent = p.card.with_alpha(120);
         let resolved = p.resolve(translucent);
-        // rgb tracks the palette's bg-card, alpha tracks the override.
+        // rgb tracks the palette's card, alpha tracks the override.
         assert_eq!(
             (resolved.r, resolved.g, resolved.b),
-            (p.bg_card.r, p.bg_card.g, p.bg_card.b)
+            (p.card.r, p.card.g, p.card.b)
         );
         assert_eq!(resolved.a, 120);
-        assert_eq!(resolved.token, Some("bg-card"));
+        assert_eq!(resolved.token, Some("card"));
     }
 
     #[test]
     fn aetna_light_differs_from_aetna_dark() {
         let dark = Palette::aetna_dark();
         let light = Palette::aetna_light();
-        // bg-app is one of the tokens that visibly inverts.
+        // background is one of the tokens that visibly inverts.
         assert_ne!(
-            (dark.bg_app.r, dark.bg_app.g, dark.bg_app.b),
-            (light.bg_app.r, light.bg_app.g, light.bg_app.b),
+            (dark.background.r, dark.background.g, dark.background.b),
+            (light.background.r, light.background.g, light.background.b),
         );
         // Text foreground also inverts.
         assert_ne!(
-            (
-                dark.text_foreground.r,
-                dark.text_foreground.g,
-                dark.text_foreground.b
-            ),
-            (
-                light.text_foreground.r,
-                light.text_foreground.g,
-                light.text_foreground.b
-            ),
+            (dark.foreground.r, dark.foreground.g, dark.foreground.b),
+            (light.foreground.r, light.foreground.g, light.foreground.b),
         );
         // Token names match — same vocabulary, different rgb.
-        assert_eq!(dark.bg_app.token, light.bg_app.token);
+        assert_eq!(dark.background.token, light.background.token);
     }
 
     #[test]
@@ -283,11 +329,11 @@ mod tests {
         let light = Palette::aetna_light();
         // A token-tagged color authored against dark values resolves to
         // the light palette's rgb.
-        let dark_bg_card = Color::token("bg-card", 23, 26, 33, 255);
-        let resolved = light.resolve(dark_bg_card);
+        let dark_card = Color::token("card", 23, 26, 33, 255);
+        let resolved = light.resolve(dark_card);
         assert_eq!(
             (resolved.r, resolved.g, resolved.b),
-            (light.bg_card.r, light.bg_card.g, light.bg_card.b),
+            (light.card.r, light.card.g, light.card.b),
         );
     }
 
@@ -298,7 +344,7 @@ mod tests {
         // ops strip the token, so resolve passes them through unchanged
         // and the per-frame derivation wins — which is what we want.
         let p = Palette::aetna_dark();
-        let darkened = p.bg_muted.darken(0.5);
+        let darkened = p.muted.darken(0.5);
         assert_eq!(darkened.token, None);
         let resolved = p.resolve(darkened);
         assert_eq!(resolved, darkened);

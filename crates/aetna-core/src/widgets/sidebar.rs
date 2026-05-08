@@ -20,7 +20,7 @@ where
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
         .surface_role(SurfaceRole::Panel)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::CARD)
         .stroke(tokens::BORDER)
         .width(Size::Fixed(tokens::SIDEBAR_WIDTH))
         .height(Size::Fill(1.0))
@@ -96,7 +96,7 @@ pub fn sidebar_menu_button(label: impl Into<String>, current: bool) -> El {
         .metrics_role(MetricsRole::ListItem)
         .focusable()
         .cursor(Cursor::Pointer)
-        .fill(tokens::BG_CARD)
+        .fill(tokens::CARD)
         .default_radius(tokens::RADIUS_SM)
         .default_gap(tokens::SPACE_2)
         .width(Size::Fill(1.0))
@@ -117,7 +117,7 @@ pub fn sidebar_menu_button_with_icon(
     let button = row([
         icon(source)
             .icon_size(tokens::ICON_SM)
-            .color(tokens::TEXT_MUTED_FOREGROUND),
+            .color(tokens::MUTED_FOREGROUND),
         sidebar_menu_label(label),
     ])
     .at_loc(Location::caller())
@@ -125,7 +125,7 @@ pub fn sidebar_menu_button_with_icon(
     .metrics_role(MetricsRole::ListItem)
     .focusable()
     .cursor(Cursor::Pointer)
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .default_radius(tokens::RADIUS_SM)
     .default_gap(tokens::SPACE_2)
     .width(Size::Fill(1.0))
@@ -158,7 +158,7 @@ mod tests {
         assert_eq!(s.width, Size::Fixed(tokens::SIDEBAR_WIDTH));
         assert_eq!(s.height, Size::Fill(1.0));
         assert_eq!(s.surface_role, SurfaceRole::Panel);
-        assert_eq!(s.fill, Some(tokens::BG_CARD));
+        assert_eq!(s.fill, Some(tokens::CARD));
     }
 
     #[test]

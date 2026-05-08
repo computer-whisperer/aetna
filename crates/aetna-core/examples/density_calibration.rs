@@ -53,7 +53,7 @@ fn density_calibration() -> El {
     .padding(tokens::SPACE_XL)
     .gap(tokens::SPACE_LG)
     .fill_size()
-    .fill(tokens::BG_APP)
+    .fill(tokens::BACKGROUND)
 }
 
 fn density_column(title: &'static str, density: Density, size: ComponentSize) -> El {
@@ -137,7 +137,7 @@ fn list_item(
     .metrics_role(MetricsRole::ListItem)
     .density(density)
     .align(Align::Center)
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .focusable()
 }
 
@@ -153,17 +153,17 @@ fn density_table_row(
         table_cell(status).width(Size::Fixed(70.0)),
     ])
     .density(density)
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .focusable()
 }
 
 fn icon_slot(icon_name: &'static str) -> El {
     stack([icon(icon_name)
         .icon_size(tokens::ICON_XS)
-        .color(tokens::TEXT_FOREGROUND)])
+        .color(tokens::FOREGROUND)])
     .align(Align::Center)
     .justify(Justify::Center)
-    .fill(tokens::BG_MUTED)
+    .fill(tokens::MUTED)
     .radius(tokens::RADIUS_SM)
     .width(Size::Fixed(26.0))
     .height(Size::Fixed(26.0))

@@ -116,7 +116,7 @@ pub fn accordion_trigger(
             .width(Size::Fill(1.0)),
         icon(chevron)
             .icon_size(tokens::ICON_XS)
-            .color(tokens::TEXT_MUTED_FOREGROUND),
+            .color(tokens::MUTED_FOREGROUND),
     ])
     .at_loc(Location::caller())
     .key(accordion_item_key(key, &value))
@@ -124,7 +124,7 @@ pub fn accordion_trigger(
     .metrics_role(MetricsRole::ListItem)
     .focusable()
     .cursor(Cursor::Pointer)
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .default_radius(tokens::RADIUS_SM)
     .default_gap(tokens::SPACE_2)
     .axis(Axis::Row)
@@ -149,7 +149,7 @@ pub fn accordion_trigger_with_icon(
     row([
         icon(source)
             .icon_size(tokens::ICON_SM)
-            .color(tokens::TEXT_MUTED_FOREGROUND),
+            .color(tokens::MUTED_FOREGROUND),
         text(label)
             .label()
             .font_weight(FontWeight::Medium)
@@ -157,7 +157,7 @@ pub fn accordion_trigger_with_icon(
             .width(Size::Fill(1.0)),
         icon(chevron)
             .icon_size(tokens::ICON_XS)
-            .color(tokens::TEXT_MUTED_FOREGROUND),
+            .color(tokens::MUTED_FOREGROUND),
     ])
     .at_loc(Location::caller())
     .key(accordion_item_key(key, &value))
@@ -165,7 +165,7 @@ pub fn accordion_trigger_with_icon(
     .metrics_role(MetricsRole::ListItem)
     .focusable()
     .cursor(Cursor::Pointer)
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .default_radius(tokens::RADIUS_SM)
     .default_gap(tokens::SPACE_2)
     .axis(Axis::Row)

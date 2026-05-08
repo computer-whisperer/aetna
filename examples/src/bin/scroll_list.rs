@@ -37,7 +37,7 @@ impl App for Picker {
                 .stroke(tokens::BORDER)
                 .radius(tokens::RADIUS_SM);
                 if Some(i) == self.selected {
-                    r = r.fill(tokens::BG_CARD);
+                    r = r.fill(tokens::CARD);
                 }
                 r
             })

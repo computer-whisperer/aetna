@@ -97,7 +97,7 @@ fn backdrop_field() -> El {
 }
 
 fn backdrop_chip(label: &'static str, color: Color) -> El {
-    row([text(label).caption().text_color(tokens::TEXT_ON_SOLID_DARK)])
+    row([text(label).caption().text_color(tokens::PRIMARY_FOREGROUND)])
         .padding(Sides::xy(tokens::SPACE_MD, tokens::SPACE_XS))
         .fill(color)
         .stroke(Color::rgba(255, 255, 255, 42))

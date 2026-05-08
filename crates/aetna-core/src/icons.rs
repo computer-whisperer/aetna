@@ -65,7 +65,7 @@ pub fn icon(source: impl IntoIconSource) -> El {
         .icon_source(source.into_icon_source())
         .icon_size(tokens::ICON_SM)
         .icon_stroke_width(2.0)
-        .text_color(tokens::TEXT_FOREGROUND)
+        .text_color(tokens::FOREGROUND)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -478,7 +478,7 @@ mod tests {
         assert_eq!(el.icon, Some(IconSource::Builtin(IconName::GitBranch)));
         assert_eq!(el.width, Size::Fixed(16.0));
         assert_eq!(el.height, Size::Fixed(16.0));
-        assert_eq!(el.text_color, Some(tokens::TEXT_FOREGROUND));
+        assert_eq!(el.text_color, Some(tokens::FOREGROUND));
     }
 
     /// Unknown string-typed icon names render the AlertCircle fallback

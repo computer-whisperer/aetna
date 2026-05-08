@@ -198,7 +198,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(padded);
     readback_buf.unmap();
 
-    // Highlight blends premultiplied alpha=200 over BG_APP so a few of
+    // Highlight blends premultiplied alpha=200 over BACKGROUND so a few of
     // the rgb channels come out lower than the source token. Probe a
     // looser yellow band and demand a meaningful population.
     let mut yellow_pixels = 0usize;
@@ -252,7 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn bg_color() -> wgpu::Color {
-    let c = aetna_core::tokens::BG_APP;
+    let c = aetna_core::tokens::BACKGROUND;
     wgpu::Color {
         r: srgb_to_linear(c.r as f64 / 255.0),
         g: srgb_to_linear(c.g as f64 / 255.0),

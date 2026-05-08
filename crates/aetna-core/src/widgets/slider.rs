@@ -39,7 +39,7 @@
 //! ```
 //!
 //! Caller passes the fill color so the slider can reflect state
-//! (`tokens::PRIMARY` for normal, `tokens::TEXT_MUTED_FOREGROUND` for
+//! (`tokens::PRIMARY` for normal, `tokens::MUTED_FOREGROUND` for
 //! a disabled/muted look, etc.). Default height is 18 px; override
 //! with `.height(...)` to grow the hit area without distorting the
 //! visuals.
@@ -74,7 +74,7 @@ pub const DEFAULT_HEIGHT: f32 = 18.0;
 /// A horizontal slider rendering `value` (normalized to `0.0..=1.0`)
 /// as a fill from the track's left edge plus a thumb at the value's
 /// position. `fill_color` styles the active portion of the track
-/// (typically `tokens::PRIMARY`; pass `tokens::TEXT_MUTED_FOREGROUND`
+/// (typically `tokens::PRIMARY`; pass `tokens::MUTED_FOREGROUND`
 /// to render a disabled/muted state). Chain `.key(...)` to receive
 /// pointer events.
 #[track_caller]
@@ -98,7 +98,7 @@ pub fn slider(value: f32, fill_color: Color) -> El {
         El::new(Kind::Custom("slider-track"))
             .height(Size::Fixed(TRACK_HEIGHT))
             .width(Size::Fill(1.0))
-            .fill(tokens::BG_MUTED)
+            .fill(tokens::MUTED)
             .radius(tokens::RADIUS_PILL),
         El::new(Kind::Custom("slider-fill"))
             .height(Size::Fixed(TRACK_HEIGHT))
@@ -108,7 +108,7 @@ pub fn slider(value: f32, fill_color: Color) -> El {
         El::new(Kind::Custom("slider-thumb"))
             .width(Size::Fixed(THUMB_SIZE))
             .height(Size::Fixed(THUMB_SIZE))
-            .fill(tokens::TEXT_FOREGROUND)
+            .fill(tokens::FOREGROUND)
             .stroke(tokens::BORDER)
             .radius(tokens::RADIUS_PILL)
             // The hit-test resolves to the focusable container above,

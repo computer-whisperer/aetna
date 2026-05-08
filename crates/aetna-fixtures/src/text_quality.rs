@@ -107,7 +107,7 @@ pub fn fixture() -> El {
     )
     .gap(tokens::SPACE_MD)
     .padding(tokens::SPACE_LG)
-    .fill(tokens::BG_APP)
+    .fill(tokens::BACKGROUND)
     .width(Size::Fill(1.0))
     .height(Size::Hug)
 }

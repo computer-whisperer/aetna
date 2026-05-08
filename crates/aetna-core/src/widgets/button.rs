@@ -4,7 +4,7 @@
 //! [`crate::style`] to opt into others:
 //!
 //! - `.primary()` — filled accent color, semibold text.
-//! - `.secondary()` — muted surface (the default look).
+//! - `.secondary()` — secondary surface (the default look).
 //! - `.ghost()` — no fill, no border, muted text.
 //! - `.outline()` — outline-only.
 //! - `.destructive()` — solid red, contrasting text.
@@ -39,14 +39,14 @@ pub fn button(label: impl Into<String>) -> El {
         .metrics_role(MetricsRole::Button)
         .surface_role(SurfaceRole::Raised)
         .focusable()
-        .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(Cursor::Pointer)
         .text(label)
         .text_align(TextAlign::Center)
         .text_role(TextRole::Label)
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::SECONDARY)
         .stroke(tokens::BORDER)
-        .text_color(tokens::TEXT_FOREGROUND)
+        .text_color(tokens::SECONDARY_FOREGROUND)
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Hug)
         .default_height(Size::Fixed(32.0))
@@ -61,14 +61,14 @@ pub fn icon_button(source: impl IntoIconSource) -> El {
         .metrics_role(MetricsRole::IconButton)
         .surface_role(SurfaceRole::Raised)
         .focusable()
-        .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(Cursor::Pointer)
         .icon_source(source)
         .icon_size(tokens::ICON_SM)
         .icon_stroke_width(2.0)
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::SECONDARY)
         .stroke(tokens::BORDER)
-        .text_color(tokens::TEXT_FOREGROUND)
+        .text_color(tokens::SECONDARY_FOREGROUND)
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Fixed(32.0))
         .default_height(Size::Fixed(32.0))
@@ -82,7 +82,7 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .metrics_role(MetricsRole::Button)
         .surface_role(SurfaceRole::Raised)
         .focusable()
-        .paint_overflow(Sides::all(tokens::FOCUS_RING_WIDTH))
+        .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .cursor(Cursor::Pointer)
         .axis(Axis::Row)
         .default_gap(tokens::SPACE_SM)
@@ -91,12 +91,12 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .child(
             icon(source)
                 .icon_size(tokens::ICON_SM)
-                .color(tokens::TEXT_FOREGROUND),
+                .color(tokens::SECONDARY_FOREGROUND),
         )
         .child(text(label).label())
-        .fill(tokens::BG_MUTED)
+        .fill(tokens::SECONDARY)
         .stroke(tokens::BORDER)
-        .text_color(tokens::TEXT_FOREGROUND)
+        .text_color(tokens::SECONDARY_FOREGROUND)
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Hug)
         .default_height(Size::Fixed(32.0))

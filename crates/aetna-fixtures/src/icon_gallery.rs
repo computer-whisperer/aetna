@@ -74,7 +74,7 @@ pub fn icon_gallery() -> El {
             spacer(),
             icon("settings")
                 .icon_size(22.0)
-                .text_color(tokens::TEXT_MUTED_FOREGROUND),
+                .text_color(tokens::MUTED_FOREGROUND),
         ])
         .gap(tokens::SPACE_SM)
         .align(Align::Center)
@@ -105,7 +105,7 @@ fn icon_tile(name: IconName) -> El {
     .padding(tokens::SPACE_MD)
     .width(Size::Fixed(118.0))
     .height(Size::Fixed(92.0))
-    .fill(tokens::BG_CARD)
+    .fill(tokens::CARD)
     .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_MD)
 }
@@ -116,6 +116,6 @@ fn color_for_icon(name: IconName) -> Color {
         IconName::Check => tokens::SUCCESS,
         IconName::Bell | IconName::Activity => tokens::WARNING,
         IconName::Download | IconName::Upload | IconName::RefreshCw => tokens::PRIMARY,
-        _ => tokens::TEXT_FOREGROUND,
+        _ => tokens::FOREGROUND,
     }
 }
