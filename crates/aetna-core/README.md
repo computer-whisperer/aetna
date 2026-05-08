@@ -124,14 +124,17 @@ for the inspector pane the same way — it gives you the same recipe the
 sidebar uses, just at `Size::Fixed(WIDTH)` instead of `SIDEBAR_WIDTH`.
 Reach into `card_header` for selected-item identity (title, metadata,
 copy / open actions) and `card_content` for the scrollable body. The
-slots pick up density-aware default padding from the metrics pass
-(shadcn's anatomy at Compact / Comfortable / Spacious — see
-[`metrics::card_header_metrics`](crate::metrics::card_header_metrics)),
-so naive use produces the right visual without an explicit
-`.padding(...)`. Override only when the design intentionally deviates:
-pass `.padding(0.0)` on `card_content` when its only child is a
-`scroll(...)` that should reach the card edges, or pass `Sides { ... }`
-when you want a fixed recipe that won't adapt across densities.
+slots bake shadcn's stock recipe directly into their constructors —
+`card_header` is `p-6` with a small `space-y-1.5` between title and
+description; `card_content` and `card_footer` are `p-6 pt-0`. Naive
+use produces the right visual without an explicit `.padding(...)`.
+Override per-call, Tailwind-shaped: `.padding(SPACE_4)` to swap the
+whole recipe (= `p-4`), or the additive shorthands `.pt(...)`,
+`.pb(...)`, `.pl(...)`, `.pr(...)`, `.px(...)`, `.py(...)` to override
+a single side or axis while preserving the constructor's defaults
+elsewhere (= `p-6 pt-0`). The override case below uses `.padding(0.0)`
+on `card_content` because its only child is a `scroll(...)` that
+should reach the card edges.
 
 ```ignore
 row([

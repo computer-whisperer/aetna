@@ -1728,7 +1728,7 @@ mod tests {
             uniforms.get("vec_c"),
             Some(&UniformValue::Vec4([
                 1.0,
-                tokens::RADIUS_MD,
+                tokens::RADIUS_LG,
                 tokens::SHADOW_LG,
                 0.0
             ]))

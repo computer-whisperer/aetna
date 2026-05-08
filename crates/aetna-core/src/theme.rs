@@ -180,11 +180,6 @@ impl Theme {
         self
     }
 
-    pub fn with_card_density(mut self, density: Density) -> Self {
-        self.metrics = self.metrics.with_card_density(density);
-        self
-    }
-
     pub fn with_panel_density(mut self, density: Density) -> Self {
         self.metrics = self.metrics.with_panel_density(density);
         self

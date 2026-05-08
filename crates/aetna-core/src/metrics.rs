@@ -83,7 +83,6 @@ pub struct ThemeMetrics {
     choice_size: Option<ComponentSize>,
     slider_size: Option<ComponentSize>,
     progress_size: Option<ComponentSize>,
-    card_density: Option<Density>,
     form_density: Option<Density>,
     panel_density: Option<Density>,
     menu_density: Option<Density>,
@@ -153,11 +152,6 @@ impl ThemeMetrics {
 
     pub fn with_progress_size(mut self, size: ComponentSize) -> Self {
         self.progress_size = Some(size);
-        self
-    }
-
-    pub fn with_card_density(mut self, density: Density) -> Self {
-        self.card_density = Some(density);
         self
     }
 
@@ -242,34 +236,17 @@ impl ThemeMetrics {
                     .unwrap_or(self.default_component_size);
                 apply_badge(el, badge_metrics(size));
             }
-            Some(MetricsRole::Card) => {
-                let density = el
-                    .density
-                    .or(self.card_density)
-                    .unwrap_or(self.default_density);
-                apply_card_shell(el, card_shell_metrics(density));
-                apply_card_density_to_children(el);
-            }
-            Some(MetricsRole::CardHeader) => {
-                let density = el
-                    .density
-                    .or(self.card_density)
-                    .unwrap_or(self.default_density);
-                apply_card_section(el, card_header_metrics(density));
-            }
-            Some(MetricsRole::CardContent) => {
-                let density = el
-                    .density
-                    .or(self.card_density)
-                    .unwrap_or(self.default_density);
-                apply_card_section(el, card_content_metrics(density));
-            }
-            Some(MetricsRole::CardFooter) => {
-                let density = el
-                    .density
-                    .or(self.card_density)
-                    .unwrap_or(self.default_density);
-                apply_card_section(el, card_footer_metrics(density));
+            Some(
+                MetricsRole::Card
+                | MetricsRole::CardHeader
+                | MetricsRole::CardContent
+                | MetricsRole::CardFooter,
+            ) => {
+                // Card surfaces do not participate in the metrics-driven
+                // density override. Padding, gap, and radius are baked
+                // into the constructors in `widgets/card.rs` (shadcn's
+                // stock recipe). Override per-call with `.padding(...)`,
+                // `.pt(...)` / `.px(...)` / etc.
             }
             Some(MetricsRole::Form) => {
                 let density = el
@@ -425,7 +402,6 @@ impl Default for ThemeMetrics {
             choice_size: None,
             slider_size: None,
             progress_size: None,
-            card_density: None,
             form_density: None,
             panel_density: None,
             menu_density: None,
@@ -563,140 +539,6 @@ fn card_metrics(density: Density) -> CardMetrics {
             gap: 16.0,
             radius: 12.0,
         },
-    }
-}
-
-#[derive(Clone, Copy)]
-struct CardShellMetrics {
-    radius: f32,
-}
-
-fn card_shell_metrics(density: Density) -> CardShellMetrics {
-    let radius = match density {
-        Density::Compact => 7.0,
-        Density::Comfortable => 8.0,
-        Density::Spacious => 12.0,
-    };
-    CardShellMetrics { radius }
-}
-
-#[derive(Clone, Copy)]
-struct CardSectionMetrics {
-    padding: Sides,
-    gap: f32,
-}
-
-fn card_header_metrics(density: Density) -> CardSectionMetrics {
-    match density {
-        Density::Compact => CardSectionMetrics {
-            padding: Sides {
-                left: 16.0,
-                right: 16.0,
-                top: 16.0,
-                bottom: 8.0,
-            },
-            gap: 6.0,
-        },
-        Density::Comfortable => CardSectionMetrics {
-            padding: Sides {
-                left: 20.0,
-                right: 20.0,
-                top: 20.0,
-                bottom: 12.0,
-            },
-            gap: 6.0,
-        },
-        Density::Spacious => CardSectionMetrics {
-            padding: Sides {
-                left: 24.0,
-                right: 24.0,
-                top: 24.0,
-                bottom: 16.0,
-            },
-            gap: 6.0,
-        },
-    }
-}
-
-fn card_content_metrics(density: Density) -> CardSectionMetrics {
-    match density {
-        Density::Compact => CardSectionMetrics {
-            padding: Sides {
-                left: 16.0,
-                right: 16.0,
-                top: 4.0,
-                bottom: 16.0,
-            },
-            gap: 8.0,
-        },
-        Density::Comfortable => CardSectionMetrics {
-            padding: Sides {
-                left: 20.0,
-                right: 20.0,
-                top: 8.0,
-                bottom: 20.0,
-            },
-            gap: 12.0,
-        },
-        Density::Spacious => CardSectionMetrics {
-            padding: Sides {
-                left: 24.0,
-                right: 24.0,
-                top: 8.0,
-                bottom: 24.0,
-            },
-            gap: 16.0,
-        },
-    }
-}
-
-fn card_footer_metrics(density: Density) -> CardSectionMetrics {
-    match density {
-        Density::Compact => CardSectionMetrics {
-            padding: Sides::all(12.0),
-            gap: 8.0,
-        },
-        Density::Comfortable => CardSectionMetrics {
-            padding: Sides::all(16.0),
-            gap: 12.0,
-        },
-        Density::Spacious => CardSectionMetrics {
-            padding: Sides::all(20.0),
-            gap: 16.0,
-        },
-    }
-}
-
-fn apply_card_shell(el: &mut El, metrics: CardShellMetrics) {
-    if !el.explicit_radius {
-        el.radius = metrics.radius;
-    }
-    if !el.explicit_gap {
-        el.gap = 0.0;
-    }
-}
-
-fn apply_card_section(el: &mut El, metrics: CardSectionMetrics) {
-    if !el.explicit_padding {
-        el.padding = metrics.padding;
-    }
-    if !el.explicit_gap {
-        el.gap = metrics.gap;
-    }
-}
-
-fn apply_card_density_to_children(el: &mut El) {
-    let Some(density) = el.density else {
-        return;
-    };
-    for child in &mut el.children {
-        if matches!(
-            child.metrics_role,
-            Some(MetricsRole::CardHeader | MetricsRole::CardContent | MetricsRole::CardFooter)
-        ) && child.density.is_none()
-        {
-            child.density = Some(density);
-        }
     }
 }
 
@@ -1105,7 +947,7 @@ fn apply_row_metrics(el: &mut El, metrics: RowMetrics) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{button, tabs_list, text_input, titled_card};
+    use crate::{button, tabs_list, text_input, titled_card, tokens};
 
     #[test]
     fn theme_default_component_size_applies_to_stock_control() {
@@ -1150,20 +992,38 @@ mod tests {
     }
 
     #[test]
-    fn theme_density_applies_to_card_defaults() {
-        let mut el = titled_card("Settings", [crate::text("Body")]);
+    fn card_slot_defaults_match_shadcn_stock_and_ignore_theme_density() {
+        // After the density removal, card_header / card_content / card_footer
+        // bake shadcn's `p-6` / `p-6 pt-0` recipe directly via
+        // `default_padding(...)` in the constructor. The metrics pass leaves
+        // those slots alone, so changing theme density has no effect on them.
+        let mut spacious = titled_card("Settings", [crate::text("Body")]);
+        let mut compact = titled_card("Settings", [crate::text("Body")]);
 
         ThemeMetrics::default()
+            .with_default_density(Density::Spacious)
+            .apply_to_tree(&mut spacious);
+        ThemeMetrics::default()
             .with_default_density(Density::Compact)
-            .apply_to_tree(&mut el);
+            .apply_to_tree(&mut compact);
 
-        assert_eq!(el.padding, Sides::zero());
-        assert_eq!(el.gap, 0.0);
-        assert_eq!(el.children[0].padding.top, 16.0);
-        assert_eq!(el.children[0].padding.bottom, 8.0);
-        assert_eq!(el.children[1].padding.left, 16.0);
-        assert_eq!(el.children[1].padding.top, 4.0);
-        assert_eq!(el.children[1].padding.bottom, 16.0);
+        // Outer card is unpadded; the slots own all the spacing.
+        assert_eq!(spacious.padding, Sides::zero());
+        // Header: SPACE_6 on all four sides.
+        assert_eq!(spacious.children[0].padding, Sides::all(tokens::SPACE_6));
+        // Content: SPACE_6 on left / right / bottom, 0 on top (`p-6 pt-0`).
+        assert_eq!(
+            spacious.children[1].padding,
+            Sides {
+                left: tokens::SPACE_6,
+                right: tokens::SPACE_6,
+                top: 0.0,
+                bottom: tokens::SPACE_6,
+            }
+        );
+        // Density does not move the values.
+        assert_eq!(compact.children[0].padding, spacious.children[0].padding);
+        assert_eq!(compact.children[1].padding, spacious.children[1].padding);
     }
 
     #[test]

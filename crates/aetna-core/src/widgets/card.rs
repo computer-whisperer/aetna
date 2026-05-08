@@ -7,34 +7,37 @@
 //!
 //! `card()` is also the canonical "panel surface" — the bundle of
 //! [`SurfaceRole::Panel`] + `tokens::CARD` fill + `tokens::BORDER`
-//! stroke + radius + shadow that an LLM might otherwise hand-roll. If
-//! the helpers (`card_header`, `card_content`, `card_footer`) don't fit
-//! your data shape, **wrap your custom composition in `card([...])`
-//! instead of replacing it** — that keeps the surface recipe correct
-//! everywhere. Same applies to right-rail inspector panes and other
-//! "boxed" wrappers that aren't navigation (use `sidebar()` for that).
+//! stroke + `tokens::RADIUS_LG` (= shadcn `rounded-xl`) + shadow that an
+//! LLM might otherwise hand-roll. If the helpers (`card_header`,
+//! `card_content`, `card_footer`) don't fit your data shape, **wrap
+//! your custom composition in `card([...])` instead of replacing it**
+//! — that keeps the surface recipe correct everywhere. Same applies to
+//! right-rail inspector panes and other "boxed" wrappers that aren't
+//! navigation (use `sidebar()` for that).
 //!
-//! Default padding and gap for the slots are density-driven and
-//! supplied by the metrics pass — see [`crate::metrics::card_header_metrics`],
-//! [`card_content_metrics`](crate::metrics::card_content_metrics), and
-//! [`card_footer_metrics`](crate::metrics::card_footer_metrics). The
-//! values mirror shadcn's anatomy at three densities (Compact:
-//! `16/16/16/8` header + `16/16/4/16` content; Comfortable: `20/20/20/12` +
-//! `20/20/8/20`; Spacious: `24/24/24/16` + `24/24/8/24`), so the visual
-//! rhythm comes from `card_header`'s heavier bottom padding rather than
-//! from doubling header + content top paddings. Naive
-//! `card([card_header([...]), card_content([...])])` produces correct
-//! visuals on first try — *do not* add explicit `.padding(...)` to
-//! match shadcn's `p-6` literal, since that takes you off the
-//! density-aware path. Override only when the design intentionally
-//! deviates: pass `.padding(0.0)` when the slot's only child is a
-//! `scroll(...)` that should reach the card edges, or pass
-//! `Sides { ... }` to set a custom recipe (and accept that explicit
-//! padding will not adapt across densities). A header bar with a
-//! tinted strip — common for inspector panes and diff/hunk frames —
-//! is `card_header([...]).fill(tokens::MUTED)`; do not hand-roll the
-//! strip as a `row(...).fill(MUTED).stroke(BORDER)` sibling of the
-//! body.
+//! Slot padding is baked into each constructor as `default_padding(...)`
+//! — shadcn's stock recipe, visible at the call site:
+//!
+//! - `card_header` — `SPACE_6` on all sides, plus `default_gap(SPACE_2)`
+//!   for the title + description rhythm (≈ `space-y-1.5`).
+//! - `card_content` — `SPACE_6` on left / right / bottom, `0` on top
+//!   (= `p-6 pt-0`), so the visual gap below the header comes from the
+//!   header's bottom padding rather than from doubling.
+//! - `card_footer` — same recipe as `card_content`, with
+//!   `Align::Center`.
+//!
+//! Override at the call site, Tailwind-shaped: `.padding(...)` replaces
+//! the whole `Sides` struct (= `p-N`); the additive shorthands
+//! (`.pt(...)`, `.pb(...)`, `.pl(...)`, `.pr(...)`, `.px(...)`,
+//! `.py(...)`) override a single side or axis while preserving the
+//! constructor's defaults for the others (= `p-6 pt-0` is
+//! `card_content([...]).pt(0.0)` here). The metrics pass does not
+//! touch these slots, so any explicit value sticks.
+//!
+//! A header bar with a tinted strip — common for inspector panes and
+//! diff/hunk frames — is `card_header([...]).fill(tokens::MUTED)`; do
+//! not hand-roll the strip as a `row(...).fill(MUTED).stroke(BORDER)`
+//! sibling of the body.
 
 use std::panic::Location;
 
@@ -58,7 +61,7 @@ where
         .children(children)
         .fill(tokens::CARD)
         .stroke(tokens::BORDER)
-        .default_radius(tokens::RADIUS_MD)
+        .default_radius(tokens::RADIUS_LG)
         .shadow(tokens::SHADOW_MD)
         .width(Size::Fill(1.0))
         .default_height(Size::Hug)
@@ -90,6 +93,8 @@ where
         .metrics_role(MetricsRole::CardHeader)
         .width(Size::Fill(1.0))
         .height(Size::Hug)
+        .default_padding(tokens::SPACE_6)
+        .default_gap(tokens::SPACE_2)
 }
 
 #[track_caller]
@@ -119,6 +124,12 @@ where
         .metrics_role(MetricsRole::CardContent)
         .width(Size::Fill(1.0))
         .height(Size::Hug)
+        .default_padding(Sides {
+            left: tokens::SPACE_6,
+            right: tokens::SPACE_6,
+            top: 0.0,
+            bottom: tokens::SPACE_6,
+        })
 }
 
 #[track_caller]
@@ -133,6 +144,12 @@ where
         .width(Size::Fill(1.0))
         .height(Size::Hug)
         .align(Align::Center)
+        .default_padding(Sides {
+            left: tokens::SPACE_6,
+            right: tokens::SPACE_6,
+            top: 0.0,
+            bottom: tokens::SPACE_6,
+        })
 }
 
 #[cfg(test)]
