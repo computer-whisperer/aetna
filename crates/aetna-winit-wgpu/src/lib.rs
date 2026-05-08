@@ -339,8 +339,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
         // `AETNA_PRESENT_MODE=mailbox|immediate|fifo` overrides at
         // runtime — useful for diagnosing without a recompile.
         let mode_override = std::env::var("AETNA_PRESENT_MODE").ok();
-        let prefer_mailbox = self.config.low_latency_present
-            || mode_override.as_deref() == Some("mailbox");
+        let prefer_mailbox =
+            self.config.low_latency_present || mode_override.as_deref() == Some("mailbox");
         let prefer_immediate = mode_override.as_deref() == Some("immediate");
         let prefer_fifo = mode_override.as_deref() == Some("fifo");
         let present_mode = if prefer_immediate
