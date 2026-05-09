@@ -28,11 +28,25 @@
 //! - Inline + block images render as block-level [`aetna_core::image`]
 //!   today. Inline-image-in-Inlines is a Phase 2 follow-up.
 //!
+//! Syntax highlighting (default-on `highlighting` feature): fenced code
+//! blocks with a recognised language tag (`` ```rust ``, `` ```python ``,
+//! …) are tokenized through `syntect` (regex-fancy, no `onig` C
+//! dependency) and emitted as a styled `text_runs([...])` paragraph
+//! inside the same sunken `code_block` chrome. Each token's colour is
+//! an Aetna palette token (`tokens::SUCCESS` for strings,
+//! `tokens::INFO` for keywords / numbers, `tokens::MUTED_FOREGROUND`
+//! for comments, …) so swapping `Theme::aetna_dark()` for
+//! `Theme::aetna_light()` recolours the syntax run automatically.
+//! `default-features = false` opts out of the highlighter and shrinks
+//! the dependency surface.
+//!
 //! Deferred:
 //!
 //! - Tables (need a thin wrapper over `widgets::table`).
 //! - Footnotes, task lists, raw HTML, math (`$…$` / `$$…$$`).
-//! - Syntax highlighting inside code blocks.
+
+#[cfg(feature = "highlighting")]
+mod highlight;
 
 mod transformer;
 

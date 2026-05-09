@@ -8,8 +8,12 @@
 //! `scroll([...])` for horizontal scroll if desired; that integration is
 //! out of scope for this primitive.
 //!
-//! Single-string body for Phase 1. Highlighted runs and a copy
-//! affordance land alongside syntax highlighting later.
+//! Two entry points: [`code_block`] takes a verbatim string and renders
+//! it as one mono text leaf, while [`code_block_chrome`] takes any
+//! pre-built body `El` (typically a styled [`text_runs`] paragraph
+//! produced by a syntax highlighter) and applies the same surface
+//! chrome — used by `aetna-markdown` to render highlighted fenced code
+//! without duplicating the chrome tokens.
 //!
 //! ```ignore
 //! use aetna_core::prelude::*;
@@ -27,22 +31,37 @@ use crate::widgets::text::text;
 #[track_caller]
 pub fn code_block(s: impl Into<String>) -> El {
     let loc = Location::caller();
-    column([text(s)
+    let body = text(s)
         .at_loc(loc)
         .mono()
         .font_size(tokens::TEXT_SM.size)
         .nowrap_text()
         .width(Size::Hug)
-        .height(Size::Hug)])
-    .at_loc(loc)
-    .style_profile(StyleProfile::Surface)
-    .surface_role(SurfaceRole::Sunken)
-    .fill(tokens::MUTED)
-    .stroke(tokens::BORDER)
-    .default_radius(tokens::RADIUS_MD)
-    .default_padding(Sides::all(tokens::SPACE_3))
-    .width(Size::Fill(1.0))
-    .height(Size::Hug)
+        .height(Size::Hug);
+    code_block_chrome_at(body, loc)
+}
+
+/// Wrap an author-supplied body `El` in the standard code-block surface
+/// chrome (sunken muted fill, themed border, rounded corners,
+/// `SPACE_3` padding). Used by syntax-highlighter integrations that
+/// need the same chrome around a styled `text_runs([...])` paragraph
+/// rather than a plain mono text leaf.
+#[track_caller]
+pub fn code_block_chrome(body: El) -> El {
+    code_block_chrome_at(body, Location::caller())
+}
+
+fn code_block_chrome_at(body: El, loc: &'static Location<'static>) -> El {
+    column([body])
+        .at_loc(loc)
+        .style_profile(StyleProfile::Surface)
+        .surface_role(SurfaceRole::Sunken)
+        .fill(tokens::MUTED)
+        .stroke(tokens::BORDER)
+        .default_radius(tokens::RADIUS_MD)
+        .default_padding(Sides::all(tokens::SPACE_3))
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
 }
 
 #[cfg(test)]

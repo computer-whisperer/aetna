@@ -1,7 +1,7 @@
 //! Walk pulldown-cmark events into an Aetna `El` tree.
 
 use aetna_core::prelude::*;
-use pulldown_cmark::{Alignment, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 /// Render a markdown document as an Aetna `El`.
 ///
@@ -43,8 +43,13 @@ enum Frame {
     },
     /// Open `<li>` — accumulates one item's block children.
     Item(Vec<El>),
-    /// Open `<pre><code>` — accumulating verbatim text.
-    CodeBlock(String),
+    /// Open `<pre><code>` — accumulating verbatim text. The optional
+    /// `lang` is the fenced info string (`` ```rust `` → `Some("rust")`,
+    /// indented blocks and bare `` ``` `` fences → `None`); when
+    /// highlighting is enabled and the lang resolves to a known syntax,
+    /// the close handler tokenises the body, otherwise it emits the
+    /// existing plain-mono `code_block(...)`.
+    CodeBlock { lang: Option<String>, text: String },
     /// Open `<a>` — accumulates inline children that share its URL.
     /// The URL is applied to each text run on close (not via inline
     /// style flags) so a link spanning multiple text events groups
@@ -163,7 +168,26 @@ impl Walker {
                 items: Vec::new(),
             }),
             Tag::Item => self.stack.push(Frame::Item(Vec::new())),
-            Tag::CodeBlock(_) => self.stack.push(Frame::CodeBlock(String::new())),
+            Tag::CodeBlock(kind) => {
+                let lang = match kind {
+                    CodeBlockKind::Fenced(info) => {
+                        // The info string can carry attributes after a
+                        // space (`rust ignore`); first token is the
+                        // language tag, anything else we don't speak.
+                        let token = info.split_whitespace().next().unwrap_or("");
+                        if token.is_empty() {
+                            None
+                        } else {
+                            Some(token.to_string())
+                        }
+                    }
+                    CodeBlockKind::Indented => None,
+                };
+                self.stack.push(Frame::CodeBlock {
+                    lang,
+                    text: String::new(),
+                });
+            }
             Tag::Emphasis => self.inline.italic_depth += 1,
             Tag::Strong => self.inline.bold_depth += 1,
             Tag::Strikethrough => self.inline.strike_depth += 1,
@@ -269,8 +293,8 @@ impl Walker {
                 }
             }
             TagEnd::CodeBlock => {
-                if let Some(Frame::CodeBlock(text)) = self.stack.pop() {
-                    self.push_block(code_block(strip_trailing_newline(text)));
+                if let Some(Frame::CodeBlock { lang, text }) = self.stack.pop() {
+                    self.push_block(build_code_block(lang.as_deref(), text));
                 }
             }
             TagEnd::Emphasis => {
@@ -349,7 +373,7 @@ impl Walker {
     fn text(&mut self, s: String) {
         // CodeBlock receives raw text; everything else flows through
         // an inline buffer with the active style applied.
-        if let Some(Frame::CodeBlock(buf)) = self.stack.last_mut() {
+        if let Some(Frame::CodeBlock { text: buf, .. }) = self.stack.last_mut() {
             buf.push_str(&s);
             return;
         }
@@ -367,10 +391,10 @@ impl Walker {
         // theme application maps to mono + foreground. Strikethrough
         // / italic / bold can wrap a code span in CommonMark, so the
         // current InlineState still applies on top of `.code()`.
-        if matches!(self.stack.last(), Some(Frame::CodeBlock(_))) {
+        if matches!(self.stack.last(), Some(Frame::CodeBlock { .. })) {
             // Inside a fenced code block, `Event::Code` shouldn't
             // arrive — but if it does, treat as raw text.
-            if let Some(Frame::CodeBlock(buf)) = self.stack.last_mut() {
+            if let Some(Frame::CodeBlock { text: buf, .. }) = self.stack.last_mut() {
                 buf.push_str(&s);
             }
             return;
@@ -444,7 +468,9 @@ impl Walker {
                 Frame::BlockQuote(blocks) => self.root.push(blockquote(blocks)),
                 Frame::List { start, items } => self.root.push(build_list(start, items)),
                 Frame::Item(blocks) => self.root.push(build_list_item(blocks)),
-                Frame::CodeBlock(text) => self.root.push(code_block(strip_trailing_newline(text))),
+                Frame::CodeBlock { lang, text } => self
+                    .root
+                    .push(build_code_block(lang.as_deref(), text)),
                 Frame::Link(_, runs) => {
                     for run in runs {
                         self.root.push(run);
@@ -463,6 +489,35 @@ impl Walker {
             .width(Size::Fill(1.0))
             .height(Size::Hug)
     }
+}
+
+/// Build a fenced/indented code block. With the `highlighting` feature
+/// and a recognised `lang`, tokenise the body through `syntect` and
+/// wrap the styled `text_runs([...])` paragraph in the standard
+/// [`code_block_chrome`] surface — palette tokens flow through to
+/// paint, so `Theme::aetna_light()` recolours the result without
+/// re-rendering the markdown. Otherwise (feature off, no lang,
+/// unknown lang) fall through to the plain-mono [`code_block`] path.
+fn build_code_block(lang: Option<&str>, text: String) -> El {
+    let body = strip_trailing_newline(text);
+    #[cfg(feature = "highlighting")]
+    if let Some(lang) = lang
+        && let Some(syntax) = crate::highlight::find_syntax(lang)
+    {
+        let runs = crate::highlight::highlight_to_runs(&body, syntax);
+        if !runs.is_empty() {
+            return code_block_chrome(
+                text_runs(runs)
+                    .nowrap_text()
+                    .font_size(tokens::TEXT_SM.size)
+                    .width(Size::Hug)
+                    .height(Size::Hug),
+            );
+        }
+    }
+    #[cfg(not(feature = "highlighting"))]
+    let _ = lang;
+    code_block(body)
 }
 
 /// Build a paragraph block. A single plain `text(...)` run can become
@@ -794,6 +849,54 @@ mod tests {
         assert_eq!(bs.len(), 1);
         let body = &bs[0].children[0];
         assert_eq!(body.text.as_deref(), Some("let x = 1;\nlet y = 2;"));
+    }
+
+    /// Fenced block with an unrecognised language falls back to the
+    /// plain-mono `code_block(...)` path (single text leaf, no inline
+    /// runs) — same behaviour as a fence with no info string.
+    #[test]
+    fn fenced_code_block_unknown_language_falls_back_to_plain_mono() {
+        let bs = blocks("```nothinglikethis\nfn x() {}\n```");
+        assert_eq!(bs.len(), 1);
+        let body = &bs[0].children[0];
+        assert_eq!(body.kind, Kind::Text);
+        assert_eq!(body.text.as_deref(), Some("fn x() {}"));
+        assert!(body.font_mono);
+    }
+
+    /// With the `highlighting` feature enabled (default), a fenced
+    /// block tagged with a recognised language tokenises into a
+    /// `text_runs` paragraph wrapped in the same code-block chrome.
+    /// Tokens carry palette colors (here we just confirm there's more
+    /// than one Text run and at least one carries a non-default color);
+    /// finer mapping assertions live in `highlight::tests`.
+    #[cfg(feature = "highlighting")]
+    #[test]
+    fn fenced_rust_code_block_emits_highlighted_runs() {
+        let bs = blocks("```rust\n// hi\nfn main() {}\n```");
+        assert_eq!(bs.len(), 1);
+        let surface = &bs[0];
+        assert_eq!(surface.surface_role, SurfaceRole::Sunken);
+        let body = &surface.children[0];
+        assert_eq!(body.kind, Kind::Inlines);
+        let text_runs: Vec<&El> = body
+            .children
+            .iter()
+            .filter(|c| c.kind == Kind::Text)
+            .collect();
+        assert!(
+            text_runs.len() > 2,
+            "expected multiple highlighted runs, got {}",
+            text_runs.len()
+        );
+        assert!(
+            text_runs.iter().all(|r| r.font_mono),
+            "every highlighted run should ride the mono path"
+        );
+        assert!(
+            text_runs.iter().any(|r| r.text_color.is_some()),
+            "expected at least one run to carry a syntax color"
+        );
     }
 
     #[test]

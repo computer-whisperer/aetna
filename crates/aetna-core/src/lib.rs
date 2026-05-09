@@ -152,7 +152,7 @@ pub use widgets::card::{
     card, card_content, card_description, card_footer, card_header, card_title, titled_card,
 };
 pub use widgets::checkbox::checkbox;
-pub use widgets::code_block::code_block;
+pub use widgets::code_block::{code_block, code_block_chrome};
 pub use widgets::command::{
     command_group, command_icon, command_item, command_label, command_row, command_shortcut,
 };

@@ -69,7 +69,7 @@ pub use crate::widgets::card::{
     card, card_content, card_description, card_footer, card_header, card_title, titled_card,
 };
 pub use crate::widgets::checkbox::{self, checkbox};
-pub use crate::widgets::code_block::code_block;
+pub use crate::widgets::code_block::{code_block, code_block_chrome};
 pub use crate::widgets::command::{
     self, command_group, command_icon, command_item, command_label, command_row, command_shortcut,
 };

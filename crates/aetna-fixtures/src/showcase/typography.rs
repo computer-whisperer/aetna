@@ -33,7 +33,8 @@ cover **bold**, *italic*, `inline code`, ~~strike~~, and \
 
 ### Fenced code
 
-```
+```rust
+// aetna-markdown highlights fenced code with a recognised lang tag.
 fn render(md: &str) -> El {
     aetna_markdown::md(md)
 }
