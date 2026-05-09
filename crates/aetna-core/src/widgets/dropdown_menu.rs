@@ -3,6 +3,13 @@
 //! The older [`crate::menu_item`] helper stays as a one-label shortcut.
 //! This module exposes the longer names agents see in shadcn examples:
 //! content, group, label, separator, item, icon, and shortcut.
+//!
+//! This is the **action menu** family — items fire side-effects when
+//! activated (open a file, copy, delete). For a value-bound picker
+//! (model, timezone, enum field) reach for [`crate::widgets::select`]
+//! instead: it owns a `(value, open)` state shape with
+//! [`crate::widgets::select::apply_event`], same convention as `tabs`,
+//! `text_input`, and `switch`.
 
 use std::panic::Location;
 

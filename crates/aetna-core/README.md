@@ -28,7 +28,8 @@ primitives. The list is short:
 | Object/action list row (recent repo, file, project, person) | `item([item_media_icon(...), item_content([item_title(...), item_description(...)]), item_actions(...)])` inside `item_group([...])` | `row([column([text, text]), button, button]).key(...)` — every clickable repo/file/project/person row is `item`, not a hand-rolled focusable row |
 | Dialog | `dialog(key, [dialog_header([...]), body, dialog_footer([...])])` | a custom centered overlay card |
 | Edge sheet | `sheet(key, SheetSide::Right, [sheet_header([...]), body])` | a modal manually pinned to the viewport edge |
-| Dropdown / context menu | `dropdown_menu(key, trigger, [dropdown_menu_label(...), dropdown_menu_item_with_shortcut(...)])` | a popover full of hand-rolled rows; per-row `[Edit][Delete]` button pairs that should collapse into one trigger |
+| Dropdown / context menu *(action menu — items perform side-effects; for a value-bound picker see the next row)* | `dropdown_menu(key, trigger, [dropdown_menu_label(...), dropdown_menu_item_with_shortcut(...)])` | a popover full of hand-rolled rows; per-row `[Edit][Delete]` button pairs that should collapse into one trigger |
+| Value picker (model, timezone, status, any enum field) | `select_trigger(key, &current_label)` + `select_menu(key, [(value, label), …])` paired via `select::apply_event(&mut value, &mut open, &event, key, parse)` | `dropdown_menu` with hand-rolled state, an `accordion`-based picker, or a hand-rolled popover full of `menu_item`s |
 | Standard tooltip | `.tooltip("...")` on any element | a manually-positioned popover |
 | Callout / validation summary | `alert([alert_title("Heads up"), alert_description("Details")]).warning()` | a manually styled card with status-colored text |
 | Status indicator (Online, Pending, Failed) | `badge("Online").success()` (also `.warning()` / `.destructive()` / `.info()` / `.muted()`) | `text("● Online").text_color(SUCCESS)` |

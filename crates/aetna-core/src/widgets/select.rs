@@ -4,6 +4,12 @@
 //! the trigger inline in their layout and compose the menu at the root
 //! of the El tree (the popover paradigm — see `widgets/popover.rs`).
 //!
+//! This is the **value picker** sibling of
+//! [`crate::widgets::dropdown_menu`]: items here carry a value the app
+//! binds via [`apply_event`] (`(value, open)` state shape, same as
+//! `tabs` / `text_input` / `switch`). Reach for `dropdown_menu` when
+//! items perform side-effects instead of selecting a value.
+//!
 //! # Shape
 //!
 //! ```ignore
