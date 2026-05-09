@@ -26,5 +26,6 @@ ttf-parser = "0.25.1"
 web-time = "1"
 
 [dev-dependencies]
+aetna-fixtures = { version = "0.3.0", path = "../aetna-fixtures" }
 png = "0.18"
 pollster = "0.4"

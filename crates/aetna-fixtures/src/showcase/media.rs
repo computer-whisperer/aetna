@@ -329,6 +329,11 @@ fn animated_surface_cell(
     tex: AppTexture,
     alpha: SurfaceAlpha,
 ) -> El {
+    // The cell column uses the default `Align::Stretch` so the stack's
+    // `Size::Fill(1.0)` width actually claims the cell's full width —
+    // a `Center`-aligned column collapses Fill children to their
+    // intrinsic, which is zero here since the stack's own children
+    // all Fill recursively.
     column([
         text(label.to_string()).small().muted(),
         stack([
@@ -349,6 +354,5 @@ fn animated_surface_cell(
         .height(Size::Fixed(120.0)),
     ])
     .gap(tokens::SPACE_1)
-    .align(Align::Center)
     .width(Size::Fill(1.0))
 }
