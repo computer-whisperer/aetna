@@ -28,7 +28,8 @@ use aetna_core::shader::stock_wgsl;
 use aetna_core::svg_icon::IconSource;
 use aetna_core::tree::{Color, Rect};
 use aetna_core::vector::{
-    IconMaterial, VectorMeshOptions, VectorMeshVertex, append_vector_asset_mesh,
+    IconMaterial, VectorAsset, VectorColor, VectorMeshOptions, VectorMeshVertex,
+    append_vector_asset_mesh,
 };
 use bytemuck::{Pod, Zeroable};
 use smallvec::smallvec;
@@ -280,6 +281,61 @@ impl IconPaint {
         start..self.runs.len()
     }
 
+    /// Record an app-supplied [`VectorAsset`] for paint. Mirrors the
+    /// wgpu side: routes monochrome non-gradient assets to MSDF and
+    /// everything else to tess. See `aetna-wgpu/src/icon.rs` for the
+    /// rationale.
+    pub(crate) fn record_vector(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        asset: &VectorAsset,
+    ) -> Range<usize> {
+        if rect.w <= 0.0 || rect.h <= 0.0 {
+            let start = self.runs.len();
+            return start..start;
+        }
+        let start = self.runs.len();
+
+        let representative = representative_solid_color(asset);
+        let use_msdf = representative.is_some() && !asset.has_gradient();
+
+        if let Some(color) = representative.filter(|_| use_msdf) {
+            if let Some(slot) = self.msdf_atlas.ensure_vector_asset(asset) {
+                let (page_w, page_h) = self.msdf_page_dims(slot.page);
+                let instance = msdf_instance_for_icon(rect, color, &slot, page_w, page_h);
+                let first = self.msdf_instances.len() as u32;
+                self.msdf_instances.push(instance);
+                self.runs.push(IconRun {
+                    kind: IconRunKind::Msdf,
+                    scissor,
+                    first,
+                    count: 1,
+                    page: slot.page,
+                    material: IconMaterial::Flat,
+                });
+            }
+        } else {
+            let first = self.tess_vertices.len() as u32;
+            let mesh_run = append_vector_asset_mesh(
+                asset,
+                VectorMeshOptions::icon(rect, Color::rgb(255, 255, 255), 1.0),
+                &mut self.tess_vertices,
+            );
+            if mesh_run.count > 0 {
+                self.runs.push(IconRun {
+                    kind: IconRunKind::Tess,
+                    scissor,
+                    first,
+                    count: mesh_run.count,
+                    page: 0,
+                    material: IconMaterial::Flat,
+                });
+            }
+        }
+        start..self.runs.len()
+    }
+
     fn msdf_page_dims(&self, page_idx: u32) -> (u32, u32) {
         let page = self
             .msdf_atlas
@@ -463,6 +519,31 @@ impl IconPaint {
     pub(crate) fn msdf_page_descriptor(&self, page: u32) -> &Arc<DescriptorSet> {
         &self.msdf_pages[page as usize].descriptor_set
     }
+}
+
+/// Mirror of `aetna-wgpu/src/icon.rs::representative_solid_color`.
+fn representative_solid_color(asset: &VectorAsset) -> Option<Color> {
+    let mut chosen: Option<Color> = None;
+    for path in &asset.paths {
+        for color in path
+            .fill
+            .map(|f| f.color)
+            .into_iter()
+            .chain(path.stroke.map(|s| s.color))
+        {
+            match color {
+                VectorColor::Solid(c) => match chosen {
+                    None => chosen = Some(c),
+                    Some(prev)
+                        if prev.r == c.r && prev.g == c.g && prev.b == c.b && prev.a == c.a => {}
+                    Some(_) => return None,
+                },
+                VectorColor::Gradient(_) => return None,
+                VectorColor::CurrentColor => {}
+            }
+        }
+    }
+    chosen
 }
 
 fn msdf_instance_for_icon(

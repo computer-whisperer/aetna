@@ -283,6 +283,16 @@ impl TextRecorder for PaintRecorder<'_> {
     ) -> std::ops::Range<usize> {
         self.surfaces.record(rect, scissor, texture, alpha)
     }
+
+    fn record_vector(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        asset: &aetna_core::vector::VectorAsset,
+        _scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.icons.record_vector(rect, scissor, asset)
+    }
 }
 
 impl Runner {
@@ -1115,7 +1125,10 @@ impl Runner {
                             .expect("draw surface");
                     }
                 }
-                PaintItem::IconRun(idx) => {
+                PaintItem::IconRun(idx) | PaintItem::Vector(idx) => {
+                    // Vector and IconRun both index into IconPaint::runs
+                    // (record_vector appends there); the variant is
+                    // kept for paint-stream provenance only.
                     let run = self.icon_paint.run(idx);
                     match run.kind {
                         IconRunKind::Tess => {
