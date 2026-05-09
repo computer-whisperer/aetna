@@ -33,7 +33,7 @@ fn main() -> std::io::Result<()> {
         // `Some(env!("CARGO_PKG_NAME"))` is the recommended idiom.
         let bundle = render_bundle(&mut tree, viewport, Some("aetna-fixtures"));
 
-        let name = format!("showcase_{}", section_slug(section));
+        let name = format!("showcase_{}", section.slug());
         let written = write_bundle(&bundle, &out_dir, &name)?;
         for p in &written {
             println!("wrote {}", p.display());
@@ -44,32 +44,4 @@ fn main() -> std::io::Result<()> {
         }
     }
     Ok(())
-}
-
-fn section_slug(s: Section) -> &'static str {
-    match s {
-        Section::Counter => "counter",
-        Section::List => "list",
-        Section::Items => "items",
-        Section::Palette => "palette",
-        Section::Picker => "picker",
-        Section::Settings => "settings",
-        Section::Forms => "forms",
-        Section::Inputs => "inputs",
-        Section::Toggles => "toggles",
-        Section::Tabs => "tabs",
-        Section::EditorTabs => "editor-tabs",
-        Section::Accordion => "accordion",
-        Section::Navigation => "navigation",
-        Section::Split => "split",
-        Section::Glass => "glass",
-        Section::Surfaces => "surfaces",
-        Section::Alerts => "alerts",
-        Section::Toasts => "toasts",
-        Section::Overlays => "overlays",
-        Section::Images => "images",
-        Section::Icons => "icons",
-        Section::Prose => "prose",
-        Section::Markdown => "markdown",
-    }
 }

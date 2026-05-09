@@ -1,7 +1,6 @@
-//! Showcase — one app exercising every Aetna primitive.
-//!
-//! Sidebar nav switches between five sections: Counter, List, Palette,
-//! Picker, Settings. Each section's state persists across switches.
+//! Showcase — sixteen pages across six groups, demoing every shadcn-shaped
+//! widget and every system-level capability (theme swap, animation,
+//! hotkeys, custom shaders, overlays, toasts).
 //!
 //! Run: `cargo run -p aetna-examples --bin showcase`
 //!

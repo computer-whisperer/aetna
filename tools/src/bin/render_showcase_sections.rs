@@ -85,12 +85,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        // Toasts: simulate a click on each level button so the
+        // Status page: simulate a click on each toast button so the
         // snapshot captures the floating stack instead of an empty
         // viewport. Each click adds a ToastSpec to pending; the
         // renderer's `push_toasts(app.drain_toasts())` call below
         // hands them off to the runtime.
-        if matches!(section, Section::Toasts) {
+        if matches!(section, Section::Status) {
             for key in [
                 "toast-success",
                 "toast-warning",
@@ -162,7 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         drop(padded);
         readback_buf.unmap();
 
-        let out = out_dir.join(format!("showcase_{}.wgpu.png", section_slug(section)));
+        let out = out_dir.join(format!("showcase_{}.wgpu.png", section.slug()));
         let file = std::fs::File::create(&out)?;
         let writer = std::io::BufWriter::new(file);
         let mut encoder = png::Encoder::new(writer, width, height);
@@ -173,34 +173,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
-}
-
-fn section_slug(s: Section) -> &'static str {
-    match s {
-        Section::Counter => "counter",
-        Section::List => "list",
-        Section::Items => "items",
-        Section::Palette => "palette",
-        Section::Picker => "picker",
-        Section::Settings => "settings",
-        Section::Forms => "forms",
-        Section::Inputs => "inputs",
-        Section::Toggles => "toggles",
-        Section::Tabs => "tabs",
-        Section::EditorTabs => "editor-tabs",
-        Section::Accordion => "accordion",
-        Section::Navigation => "navigation",
-        Section::Split => "split",
-        Section::Glass => "glass",
-        Section::Surfaces => "surfaces",
-        Section::Alerts => "alerts",
-        Section::Toasts => "toasts",
-        Section::Overlays => "overlays",
-        Section::Images => "images",
-        Section::Icons => "icons",
-        Section::Prose => "prose",
-        Section::Markdown => "markdown",
-    }
 }
 
 fn bg_color() -> wgpu::Color {

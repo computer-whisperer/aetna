@@ -1,10 +1,11 @@
-//! Headless render of the showcase's Glass section through the
-//! end-to-end host path: `App::shaders()` → `register_shader_with` →
-//! `Runner::render()` with backdrop sampling.
+//! Headless render of the showcase's Surfaces page (which mounts the
+//! liquid-glass card) through the end-to-end host path:
+//! `App::shaders()` → `register_shader_with` → `Runner::render()` with
+//! backdrop sampling.
 //!
-//! Mirrors what `aetna-examples`'s windowed `showcase` does for one frame,
-//! with `Section::Glass` selected, written to a PNG so we can confirm
-//! the section renders correctly without a display.
+//! Mirrors what `aetna-examples`'s windowed `showcase` does for one
+//! frame, with `Section::Surfaces` selected, written to a PNG so we
+//! can confirm the section renders correctly without a display.
 //!
 //! Usage: `cargo run -p aetna-tools --bin render_showcase_glass`
 
@@ -71,10 +72,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_animation_mode(AnimationMode::Settled);
 
-    // Build a Showcase with the Glass section selected, then drive it
+    // Build a Showcase with the Surfaces page selected, then drive it
     // through the same shader-registration path the windowed harness
-    // uses (`App::shaders()` → `register_shader_with`).
-    let mut app = Showcase::with_section(Section::Glass);
+    // uses (`App::shaders()` → `register_shader_with`). The page mounts
+    // the liquid-glass card alongside the surface-role gallery.
+    let mut app = Showcase::with_section(Section::Surfaces);
     for s in app.shaders() {
         renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop, s.samples_time);
     }

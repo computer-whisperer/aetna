@@ -1,4 +1,4 @@
-//! Headless Vulkano render for the Showcase `Images` section.
+//! Headless Vulkano render for the Showcase `Media` page.
 //!
 //! A focused fixture for the raster-image pipeline: renders the
 //! gradient grid + tinted avatar row + ImageFit modes through
@@ -105,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
 
-    let mut app = Showcase::with_section(Section::Images);
+    let mut app = Showcase::with_section(Section::Media);
     app.before_build();
     let theme = app.theme();
     let cx = BuildCx::new(&theme);

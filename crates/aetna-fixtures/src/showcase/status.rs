@@ -1,0 +1,239 @@
+//! Status & feedback — alert, badge, progress, spinner, skeleton,
+//! toast, tooltip.
+//!
+//! All seven feedback primitives in one panel, scrollable so the long
+//! list reads top-to-bottom without crowding. Toasts are mounted into
+//! the runtime's floating layer via `App::drain_toasts`; tooltips show
+//! up on hover.
+
+use aetna_core::prelude::*;
+
+#[derive(Default)]
+pub struct State {
+    /// Toasts that the runtime should drain at the start of the next
+    /// frame. Push to this Vec; `Showcase::drain_toasts` hands it off.
+    pub pending_toasts: Vec<ToastSpec>,
+    pub toast_fires: u32,
+}
+
+pub fn view(state: &State) -> El {
+    scroll([column([
+        h1("Status & feedback"),
+        paragraph(
+            "Seven primitives apps reach for to communicate state — \
+             alerts, badges, progress bars, spinners, skeletons, toasts, \
+             and tooltips. Each is small alone; together they cover most \
+             of the feedback surface.",
+        )
+        .muted(),
+        section_label("Alert variants"),
+        column([
+            alert([
+                alert_title("Heads up"),
+                alert_description("Default alert: card surface, neutral border."),
+            ]),
+            alert([
+                alert_title("New comment"),
+                alert_description("Info: friendly nudge, non-destructive."),
+            ])
+            .info(),
+            alert([
+                alert_title("Saved"),
+                alert_description("Success: a positive confirmation."),
+            ])
+            .success(),
+            alert([
+                alert_title("Disk almost full"),
+                alert_description("Warning: action recommended but not required."),
+            ])
+            .warning(),
+            alert([
+                alert_title("Could not delete repository"),
+                alert_description("Destructive: a failure or destructive consequence."),
+            ])
+            .destructive(),
+            alert([
+                alert_title("Background task running"),
+                alert_description("Muted: low-emphasis status, deprioritized chrome."),
+            ])
+            .muted(),
+        ])
+        .gap(tokens::SPACE_2),
+        section_label("Badges"),
+        row([
+            badge("default"),
+            badge("info").info(),
+            badge("success").success(),
+            badge("warning").warning(),
+            badge("destructive").destructive(),
+            badge("muted").muted(),
+        ])
+        .gap(tokens::SPACE_2)
+        .align(Align::Center),
+        section_label("Progress"),
+        column([
+            row([
+                text("Determinate (35%)").label().width(Size::Fixed(180.0)),
+                progress(0.35, tokens::PRIMARY).width(Size::Fill(1.0)),
+            ])
+            .gap(tokens::SPACE_3)
+            .align(Align::Center),
+            row([
+                text("Determinate (78%)").label().width(Size::Fixed(180.0)),
+                progress(0.78, tokens::SUCCESS).width(Size::Fill(1.0)),
+            ])
+            .gap(tokens::SPACE_3)
+            .align(Align::Center),
+            row([
+                text("Indeterminate").label().width(Size::Fixed(180.0)),
+                progress_indeterminate(tokens::PRIMARY).width(Size::Fill(1.0)),
+            ])
+            .gap(tokens::SPACE_3)
+            .align(Align::Center),
+        ])
+        .gap(tokens::SPACE_2),
+        section_label("Spinners"),
+        row([
+            spinner_tile("Default", spinner()),
+            spinner_tile(
+                "Primary",
+                spinner_with_color(tokens::PRIMARY)
+                    .width(Size::Fixed(28.0))
+                    .height(Size::Fixed(28.0)),
+            ),
+            spinner_tile(
+                "Destructive",
+                spinner_with_color(tokens::DESTRUCTIVE)
+                    .width(Size::Fixed(36.0))
+                    .height(Size::Fixed(36.0)),
+            ),
+            spinner_tile(
+                "Inline label",
+                row([spinner(), text("Loading…").muted()])
+                    .gap(tokens::SPACE_2)
+                    .align(Align::Center),
+            ),
+        ])
+        .gap(tokens::SPACE_3),
+        section_label("Skeletons"),
+        row([
+            skeleton_tile(
+                "Lines",
+                column([
+                    skeleton().width(Size::Fixed(180.0)),
+                    skeleton().width(Size::Fixed(140.0)),
+                    skeleton().width(Size::Fixed(110.0)),
+                ])
+                .gap(tokens::SPACE_2)
+                .align(Align::Start),
+            ),
+            skeleton_tile(
+                "Avatar placeholder",
+                row([
+                    skeleton_circle(40.0),
+                    skeleton_circle(32.0),
+                    skeleton_circle(24.0),
+                ])
+                .gap(tokens::SPACE_2)
+                .align(Align::Center),
+            ),
+        ])
+        .gap(tokens::SPACE_3),
+        section_label("Toasts"),
+        paragraph(
+            "Each button queues a `ToastSpec`; the runtime drains them \
+             on the next frame and synthesizes the floating stack at \
+             bottom-right. Click the X on any card to dismiss.",
+        )
+        .small()
+        .muted(),
+        row([
+            button("Success").key("toast-success").primary(),
+            button("Warning").key("toast-warning"),
+            button("Error").key("toast-error").destructive(),
+            button("Info").key("toast-info").ghost(),
+        ])
+        .gap(tokens::SPACE_2),
+        text(format!(
+            "fired {} toast{} this session",
+            state.toast_fires,
+            if state.toast_fires == 1 { "" } else { "s" }
+        ))
+        .small()
+        .muted(),
+        section_label("Tooltips"),
+        paragraph(
+            "`.tooltip(text)` on any element shows a runtime-managed \
+             tooltip after a short hover. Hover any of these:",
+        )
+        .small()
+        .muted(),
+        row([
+            button("Save")
+                .primary()
+                .tooltip("Saves your changes (Ctrl+S)")
+                .key("status-save"),
+            button("Discard")
+                .secondary()
+                .tooltip("Discard local edits")
+                .key("status-discard"),
+            icon_button(IconName::Settings)
+                .ghost()
+                .tooltip("Open settings")
+                .key("status-settings"),
+            badge("3").info().tooltip("3 unread notifications"),
+        ])
+        .gap(tokens::SPACE_2)
+        .align(Align::Center),
+    ])
+    .gap(tokens::SPACE_4)
+    .align(Align::Stretch)])
+    .height(Size::Fill(1.0))
+}
+
+pub fn on_event(state: &mut State, e: UiEvent) {
+    if !matches!(e.kind, UiEventKind::Click | UiEventKind::Activate) {
+        return;
+    }
+    let spec = match e.route() {
+        Some("toast-success") => ToastSpec::success("Settings saved"),
+        Some("toast-warning") => ToastSpec::warning("Battery low — connect charger"),
+        Some("toast-error") => ToastSpec::error("Failed to reach update server"),
+        Some("toast-info") => ToastSpec::info("New version available"),
+        _ => return,
+    };
+    state.pending_toasts.push(spec);
+    state.toast_fires += 1;
+}
+
+fn section_label(s: &str) -> El {
+    h3(s).label()
+}
+
+fn spinner_tile(label: &str, content: El) -> El {
+    column([
+        stack([content])
+            .align(Align::Center)
+            .justify(Justify::Center)
+            .height(Size::Fixed(48.0)),
+        text(label).muted().small(),
+    ])
+    .fill(tokens::CARD)
+    .stroke(tokens::BORDER)
+    .radius(tokens::RADIUS_LG)
+    .padding(tokens::SPACE_4)
+    .gap(tokens::SPACE_2)
+    .align(Align::Center)
+    .width(Size::Fill(1.0))
+}
+
+fn skeleton_tile(label: &str, content: El) -> El {
+    column([content, text(label).muted().small()])
+        .fill(tokens::CARD)
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_LG)
+        .padding(tokens::SPACE_4)
+        .gap(tokens::SPACE_4)
+        .align(Align::Stretch)
+        .width(Size::Fill(1.0))
+}
