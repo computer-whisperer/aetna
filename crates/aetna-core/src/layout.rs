@@ -839,7 +839,7 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
             let fill_remaining = inner_available.map(|av| (av - consumed).max(0.0));
             let mut w_total: f32 = c.padding.left + c.padding.right;
             let mut h_max: f32 = 0.0;
-            for (i, (ch, slot)) in c.children.iter().zip(sizes.into_iter()).enumerate() {
+            for (i, (ch, slot)) in c.children.iter().zip(sizes).enumerate() {
                 let (cw, chh) = match slot {
                     Some(rc) => rc,
                     None => match (fill_remaining, fill_weight_total > 0.0) {

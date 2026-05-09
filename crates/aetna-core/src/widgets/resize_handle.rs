@@ -278,6 +278,7 @@ pub fn delta_from_event(drag: &ResizeDrag, event: &UiEvent, axis: Axis) -> Optio
 /// lives on; `Side::Start` for the common left/top-anchored case,
 /// `Side::End` to flip drag and keyboard direction for a right- or
 /// bottom-anchored pane.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_event_fixed(
     value: &mut f32,
     drag: &mut ResizeDrag,

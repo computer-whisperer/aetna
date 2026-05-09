@@ -94,7 +94,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut app = Showcase::with_section(section);
         for s in app.shaders() {
-            renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop, s.samples_time);
+            renderer.register_shader_with(
+                &device,
+                s.name,
+                s.wgsl,
+                s.samples_backdrop,
+                s.samples_time,
+            );
         }
 
         // Toasts: simulate a click on each level button so the
@@ -191,6 +197,7 @@ fn section_slug(s: Section) -> &'static str {
     match s {
         Section::Counter => "counter",
         Section::List => "list",
+        Section::Items => "items",
         Section::Palette => "palette",
         Section::Picker => "picker",
         Section::Settings => "settings",

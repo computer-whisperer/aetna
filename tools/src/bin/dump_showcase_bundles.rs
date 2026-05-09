@@ -68,6 +68,7 @@ fn section_slug(s: Section) -> &'static str {
     match s {
         Section::Counter => "counter",
         Section::List => "list",
+        Section::Items => "items",
         Section::Palette => "palette",
         Section::Picker => "picker",
         Section::Settings => "settings",
