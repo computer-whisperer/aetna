@@ -183,6 +183,22 @@ impl El {
         self
     }
 
+    /// Inside-out redraw deadline. While this El is visible (rect
+    /// intersects the viewport), Aetna asks the host to drive the next
+    /// frame within `deadline`. Aggregated across the tree via `min`,
+    /// so the host gets a single signal regardless of how many widgets
+    /// are asking. Use `Duration::ZERO` for "next frame ASAP";
+    /// non-zero values pace the redraw loop below the display rate.
+    ///
+    /// Apps that pause / resume animation (e.g. GIF playback) just
+    /// stop calling this method on the relevant El — Aetna re-runs
+    /// the aggregation each frame, so the redraw scheduler quiets
+    /// automatically when no visible widget is asking.
+    pub fn redraw_within(mut self, deadline: std::time::Duration) -> Self {
+        self.redraw_within = Some(deadline);
+        self
+    }
+
     /// Opt this node into the monospace face. Setting this flag also
     /// sets [`El::explicit_mono`] so a subsequent role modifier
     /// (`.caption()` / `.label()` / `.body()` / `.title()` /

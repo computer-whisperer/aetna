@@ -639,7 +639,7 @@ impl Runner {
         // shader registered with `samples_time=true` keeps the host
         // loop ticking even when no animation is settling.
         let time_shaders = &self.time_shaders;
-        let (ops, needs_redraw) =
+        let (ops, needs_redraw, next_redraw_in) =
             self.core
                 .prepare_layout(
                     root,
@@ -728,6 +728,7 @@ impl Runner {
 
         PrepareResult {
             needs_redraw,
+            next_redraw_in,
             timings,
         }
     }

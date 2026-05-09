@@ -16,12 +16,12 @@
 
 use std::f32::consts::TAU;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use aetna_core::prelude::*;
 use aetna_core::{App, BuildCx, KeyChord, UiEvent};
 use aetna_fixtures::Showcase;
-use aetna_winit_wgpu::{HostConfig, WinitWgpuApp};
+use aetna_winit_wgpu::WinitWgpuApp;
 
 const TEX_SIZE: u32 = 96;
 
@@ -200,17 +200,15 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let viewport = Rect::new(0.0, 0.0, 900.0, 640.0);
-    // Pump redraws at ~60fps so the Media page's animated surface
-    // actually animates. Aetna's idle redraw policy only fires on
-    // input events or `samples_time` shaders; the surface() widget
-    // doesn't (yet) opt into a redraw tick (see issue #17), so the
-    // host has to drive it. This is the same workaround rumble's
-    // GIF playback uses today, just hoisted to the host config.
-    let config = HostConfig::default().with_redraw_interval(Duration::from_millis(16));
-    aetna_winit_wgpu::run_host_app_with_config(
+    // No HostConfig::with_redraw_interval here — the Media page's
+    // animated surface tile carries `redraw_within(16ms)` directly,
+    // and Aetna folds that into `PrepareResult::next_redraw_in` for
+    // the host loop. The host idles automatically when no visible
+    // widget asks for a future frame (e.g. when the user navigates
+    // to a different Media-page section).
+    aetna_winit_wgpu::run_host_app(
         "Aetna — showcase",
         viewport,
         AnimatedShowcase::new(),
-        config,
     )
 }

@@ -94,6 +94,7 @@ impl Default for El {
             translate: (0.0, 0.0),
             scale: 1.0,
             animate: None,
+            redraw_within: None,
             computed_id: String::new(),
         }
     }

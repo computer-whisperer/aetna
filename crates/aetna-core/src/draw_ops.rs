@@ -1507,7 +1507,7 @@ mod tests {
         // Re-run prepare_layout (the per-frame loop). The painter
         // should emit a selection band Quad on this frame.
         let mut t2 = PrepareTimings::default();
-        let (ops, _) = core.prepare_layout(
+        let (ops, _, _) = core.prepare_layout(
             &mut tree,
             viewport,
             1.0,

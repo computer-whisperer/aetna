@@ -349,6 +349,22 @@ pub struct El {
     /// press / focus ring) keep their own library defaults regardless.
     pub animate: Option<Timing>,
 
+    /// Inside-out redraw deadline: when `Some(d)` and this El is
+    /// visible (rect intersects the viewport), Aetna asks the host to
+    /// schedule the next frame within `d`. Aggregated across the tree
+    /// via `min` and surfaced as
+    /// [`crate::runtime::PrepareResult::next_redraw_in`]; the host
+    /// drives the loop, Aetna mediates by visibility.
+    ///
+    /// Use this for any widget whose paint depends on time (animated
+    /// images, video frames written via `surface()`, custom shaders
+    /// that don't go through the `samples_time` registration path,
+    /// hover-and-fade effects implemented outside the built-in
+    /// animation tracker). `Duration::ZERO` means "next frame ASAP";
+    /// non-zero values let the host pace at lower-than-display
+    /// cadence.
+    pub redraw_within: Option<std::time::Duration>,
+
     /// Stable path-based ID, filled by the layout pass. Used as the
     /// key for every side map that holds per-node bookkeeping in
     /// [`crate::state::UiState`] — computed rects, interaction state,

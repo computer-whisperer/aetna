@@ -423,11 +423,19 @@ fn animated_surface_cell(
                 .radius(tokens::RADIUS_MD)
                 .width(Size::Fill(1.0))
                 .height(Size::Fill(1.0)),
-            // The animated surface.
+            // The animated surface. `redraw_within(16ms)` is the
+            // inside-out signal that drives the host's redraw loop:
+            // while this tile is visible, Aetna asks the host for a
+            // fresh frame within 16 ms, the host wakes up, and
+            // before_paint writes the next animation frame. When the
+            // user navigates to a different Media-page section that
+            // doesn't include this tile, the request goes away and
+            // the host idles automatically.
             surface(tex)
                 .surface_alpha(alpha)
                 .width(Size::Fill(1.0))
-                .height(Size::Fill(1.0)),
+                .height(Size::Fill(1.0))
+                .redraw_within(std::time::Duration::from_millis(16)),
         ])
         .width(Size::Fill(1.0))
         .height(Size::Fixed(120.0)),

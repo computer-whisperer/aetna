@@ -77,14 +77,26 @@ use crate::tree::{Color, El, FontWeight, Rect, TextWrap};
 /// isn't lost.
 const SCROLL_PAGE_OVERLAP: f32 = 24.0;
 
-/// Reported back from each backend's `prepare(...)` per frame. The
-/// host uses `needs_redraw` to keep the redraw loop ticking only
-/// while there is in-flight motion (a hover spring still settling, a
-/// focus ring still fading out), then idles. `timings` is a per-frame
-/// CPU breakdown for diagnostic logging.
+/// Reported back from each backend's `prepare(...)` per frame.
+///
+/// `needs_redraw` keeps the bool surface for the simple "any redraw
+/// needed?" check most hosts have used historically. New callers
+/// should prefer [`Self::next_redraw_in`], which carries the
+/// inside-out deadline aggregated across visible widgets — apps mark
+/// individual Els with [`crate::tree::El::redraw_within`] and Aetna
+/// folds them into a single `Some(min(d))` for the host. `None` means
+/// "no widget is asking for a future frame; idle until the next input
+/// event."
+///
+/// `needs_redraw` is true whenever `next_redraw_in.is_some()` plus the
+/// pre-existing in-flight signals (visual animations still settling,
+/// tooltip / toast fades pending). Hosts that want sub-frame precision
+/// schedule a `WaitUntil(now + d)` from `next_redraw_in`; hosts that
+/// just want "another frame please" can keep reading `needs_redraw`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PrepareResult {
     pub needs_redraw: bool,
+    pub next_redraw_in: Option<std::time::Duration>,
     pub timings: PrepareTimings,
 }
 
@@ -1010,7 +1022,7 @@ impl RunnerCore {
         scale_factor: f32,
         timings: &mut PrepareTimings,
         samples_time: F,
-    ) -> (Vec<DrawOp>, bool)
+    ) -> (Vec<DrawOp>, bool, Option<std::time::Duration>)
     where
         F: Fn(&ShaderHandle) -> bool,
     {
@@ -1049,10 +1061,35 @@ impl RunnerCore {
         // ticking even when no animation is settling. Scanning the
         // resolved op list once per frame is cheap and keeps the
         // signal local to the shader: no per-El opt-in required.
-        if !needs_redraw && ops.iter().any(|op| op_is_continuous(op, &samples_time)) {
+        let shader_needs_redraw = ops.iter().any(|op| op_is_continuous(op, &samples_time));
+
+        // Inside-out redraw deadlines: walk the El tree and aggregate
+        // `redraw_within` across visible widgets (rect ∩ viewport).
+        // Visibility filters off-screen / scrolled-out widgets the
+        // simple way for 0.3.x — full scissor inheritance is a future
+        // refinement.
+        let widget_redraw =
+            aggregate_redraw_within(root, viewport, &self.ui_state.layout.computed_rects);
+
+        // The legacy `needs_redraw` bool ORs every signal that asks
+        // for "another frame." The new `next_redraw_in` carries the
+        // tightest deadline among the inside-out widget requests,
+        // mapping bool-shaped signals (animations settling,
+        // samples_time shaders) to `Duration::ZERO` so the host can
+        // schedule any request through the same path.
+        let immediate = needs_redraw || shader_needs_redraw;
+        if shader_needs_redraw {
             needs_redraw = true;
         }
-        (ops, needs_redraw)
+        let next_redraw_in = match (immediate, widget_redraw) {
+            (true, Some(d)) => Some(d.min(std::time::Duration::ZERO)),
+            (true, None) => Some(std::time::Duration::ZERO),
+            (false, d) => d,
+        };
+        if next_redraw_in.is_some() {
+            needs_redraw = true;
+        }
+        (ops, needs_redraw, next_redraw_in)
     }
 
     /// Standard "no custom time-driven shaders" closure for
@@ -1421,6 +1458,44 @@ where
         Some(handle @ ShaderHandle::Stock(s)) => s.is_continuous() || samples_time(handle),
         Some(handle @ ShaderHandle::Custom(_)) => samples_time(handle),
         None => false,
+    }
+}
+
+/// Walk the El tree and return the tightest [`El::redraw_within`]
+/// deadline among visible widgets (rect intersects the viewport, both
+/// dimensions positive). Used by [`RunnerCore::prepare_layout`] to
+/// surface the inside-out redraw aggregate as
+/// [`PrepareResult::next_redraw_in`].
+fn aggregate_redraw_within(
+    node: &El,
+    viewport: Rect,
+    rects: &std::collections::HashMap<String, Rect>,
+) -> Option<std::time::Duration> {
+    let mut acc: Option<std::time::Duration> = None;
+    visit_redraw_within(node, viewport, rects, &mut acc);
+    acc
+}
+
+fn visit_redraw_within(
+    node: &El,
+    viewport: Rect,
+    rects: &std::collections::HashMap<String, Rect>,
+    acc: &mut Option<std::time::Duration>,
+) {
+    if let Some(d) = node.redraw_within {
+        if let Some(rect) = rects.get(&node.computed_id)
+            && rect.w > 0.0
+            && rect.h > 0.0
+            && rect.intersect(viewport).is_some()
+        {
+            *acc = Some(match *acc {
+                Some(prev) => prev.min(d),
+                None => d,
+            });
+        }
+    }
+    for child in &node.children {
+        visit_redraw_within(child, viewport, rects, acc);
     }
 }
 
@@ -1842,7 +1917,7 @@ mod tests {
         let mut tree = crate::column([spinner()]);
         let mut core = RunnerCore::new();
         let mut t = PrepareTimings::default();
-        let (_ops, needs_redraw) = core.prepare_layout(
+        let (_ops, needs_redraw, _) = core.prepare_layout(
             &mut tree,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             1.0,
@@ -1860,7 +1935,7 @@ mod tests {
         let mut bare = crate::column([crate::widgets::text::text("idle")]);
         let mut core2 = RunnerCore::new();
         let mut t2 = PrepareTimings::default();
-        let (_ops2, needs_redraw2) = core2.prepare_layout(
+        let (_ops2, needs_redraw2, _) = core2.prepare_layout(
             &mut bare,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             1.0,
@@ -1885,7 +1960,7 @@ mod tests {
         let mut core = RunnerCore::new();
         let mut t = PrepareTimings::default();
 
-        let (_ops, idle) = core.prepare_layout(
+        let (_ops, idle, _) = core.prepare_layout(
             &mut tree,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             1.0,
@@ -1898,7 +1973,7 @@ mod tests {
         );
 
         let mut t2 = PrepareTimings::default();
-        let (_ops, animated) = core.prepare_layout(
+        let (_ops, animated, _) = core.prepare_layout(
             &mut tree,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             1.0,
@@ -1908,6 +1983,68 @@ mod tests {
         assert!(
             animated,
             "custom shader registered as samples_time=true must request continuous redraw",
+        );
+    }
+
+    #[test]
+    fn redraw_within_aggregates_to_minimum_visible_deadline() {
+        use std::time::Duration;
+        let mut tree = crate::column([
+            // 16ms
+            crate::widgets::text::text("a")
+                .redraw_within(Duration::from_millis(16))
+                .width(crate::tree::Size::Fixed(20.0))
+                .height(crate::tree::Size::Fixed(20.0)),
+            // 50ms — the slower request should NOT win against 16ms.
+            crate::widgets::text::text("b")
+                .redraw_within(Duration::from_millis(50))
+                .width(crate::tree::Size::Fixed(20.0))
+                .height(crate::tree::Size::Fixed(20.0)),
+        ]);
+        let mut core = RunnerCore::new();
+        let mut t = PrepareTimings::default();
+        let (_ops, needs_redraw, next) = core.prepare_layout(
+            &mut tree,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+            1.0,
+            &mut t,
+            RunnerCore::no_time_shaders,
+        );
+        assert!(needs_redraw, "redraw_within must lift the legacy bool");
+        assert_eq!(
+            next,
+            Some(Duration::from_millis(16)),
+            "tightest visible deadline wins",
+        );
+    }
+
+    #[test]
+    fn redraw_within_off_screen_widget_is_ignored() {
+        use std::time::Duration;
+        // Layout-rect-based visibility: place the animated widget below
+        // the viewport via a tall preceding spacer in a hugging
+        // column. The child's computed rect is at y≈150, which lies
+        // outside a 0..100 viewport, so the visibility filter must
+        // skip it and the host must idle.
+        let mut tree = crate::column([
+            crate::tree::spacer().height(crate::tree::Size::Fixed(150.0)),
+            crate::widgets::text::text("offscreen")
+                .redraw_within(Duration::from_millis(16))
+                .width(crate::tree::Size::Fixed(10.0))
+                .height(crate::tree::Size::Fixed(10.0)),
+        ]);
+        let mut core = RunnerCore::new();
+        let mut t = PrepareTimings::default();
+        let (_ops, _needs, next) = core.prepare_layout(
+            &mut tree,
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            1.0,
+            &mut t,
+            RunnerCore::no_time_shaders,
+        );
+        assert_eq!(
+            next, None,
+            "off-screen redraw_within must not contribute to the aggregate",
         );
     }
 

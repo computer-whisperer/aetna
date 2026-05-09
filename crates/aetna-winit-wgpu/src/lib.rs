@@ -252,6 +252,7 @@ fn run_host<A: WinitWgpuApp + 'static>(
         next_periodic_redraw: None,
         last_cursor: Cursor::Default,
         pending_resize: None,
+        next_inside_out_redraw: None,
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -280,6 +281,12 @@ struct Host<A: WinitWgpuApp> {
     /// instead of once per event keeps the window content from
     /// trailing the cursor.
     pending_resize: Option<PhysicalSize<u32>>,
+    /// Wall-clock deadline for the next inside-out redraw, derived from
+    /// the most recent `prepare.next_redraw_in`. `None` means no
+    /// widget is asking for a future frame; `Some(t)` means fire
+    /// `request_redraw` once `now >= t`. Cleared after firing — the
+    /// next prepare re-derives it.
+    next_inside_out_redraw: Option<Instant>,
 }
 
 struct Gfx {
@@ -728,11 +735,25 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         gfx.queue.submit(Some(encoder.finish()));
                         frame.present();
 
-                        // Animation in flight → request another frame so springs
-                        // keep stepping. When everything settles, the loop idles
-                        // again until the next input event.
-                        if prepare.needs_redraw {
-                            gfx.window.request_redraw();
+                        // Inside-out redraw scheduling: Aetna folds
+                        // every visible widget's `redraw_within`
+                        // request — plus its own continuous-redraw
+                        // signals (animations, samples_time shaders)
+                        // — into one deadline. We fire ASAP for
+                        // zero-deadline requests; for non-zero we
+                        // park the wake-up time and let
+                        // `about_to_wait` set the control flow.
+                        match prepare.next_redraw_in {
+                            None => {
+                                self.next_inside_out_redraw = None;
+                            }
+                            Some(d) if d.is_zero() => {
+                                self.next_inside_out_redraw = None;
+                                gfx.window.request_redraw();
+                            }
+                            Some(d) => {
+                                self.next_inside_out_redraw = Some(Instant::now() + d);
+                            }
                         }
                     }
                     _ => {}
@@ -747,20 +768,44 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             return;
         };
 
-        let Some(interval) = self.config.redraw_interval else {
-            event_loop.set_control_flow(ControlFlow::Wait);
-            return;
-        };
-
         let now = Instant::now();
-        let next = self
-            .next_periodic_redraw
-            .get_or_insert_with(|| now + interval);
-        if now >= *next {
-            gfx.window.request_redraw();
-            *next = now + interval;
+
+        // Refresh the periodic-config wake-up. This is the legacy
+        // host-config knob; with widgets adopting `redraw_within` it
+        // becomes unnecessary, but keep it as a manual override for
+        // hosts that want to force a cadence regardless of what the
+        // tree asks.
+        if let Some(interval) = self.config.redraw_interval {
+            let next = self
+                .next_periodic_redraw
+                .get_or_insert_with(|| now + interval);
+            if now >= *next {
+                gfx.window.request_redraw();
+                *next = now + interval;
+            }
         }
-        event_loop.set_control_flow(ControlFlow::WaitUntil(*next));
+
+        // Pick the earlier of the inside-out deadline and the
+        // periodic-config wake-up. If both fire by `now`, fire and
+        // clear the inside-out one (the periodic one self-advances
+        // above).
+        let mut wake_up = self.next_periodic_redraw;
+        if let Some(t) = self.next_inside_out_redraw {
+            if now >= t {
+                gfx.window.request_redraw();
+                self.next_inside_out_redraw = None;
+            } else {
+                wake_up = Some(match wake_up {
+                    Some(p) => p.min(t),
+                    None => t,
+                });
+            }
+        }
+
+        match wake_up {
+            Some(t) => event_loop.set_control_flow(ControlFlow::WaitUntil(t)),
+            None => event_loop.set_control_flow(ControlFlow::Wait),
+        }
     }
 }
 
