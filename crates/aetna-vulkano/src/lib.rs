@@ -21,10 +21,12 @@ mod instance;
 pub mod naga_compile;
 mod pipeline;
 pub mod runner;
+mod surface;
 mod text;
 
 pub use naga_compile::{CompileError, wgsl_to_spirv};
 pub use runner::{PointerMove, PrepareResult, PrepareTimings, Runner};
+pub use surface::{VulkanoAppTexture, app_texture};
 
 /// Vulkan device features the runner's stock pipelines depend on.
 /// Hosts must merge this with their own required features when calling

@@ -78,6 +78,7 @@ pub use aetna_core::runtime::{PointerMove, PrepareResult, PrepareTimings};
 
 use crate::icon::IconPaint;
 use crate::image::ImagePaint;
+use crate::surface::SurfacePaint;
 use crate::instance::set_scissor;
 use crate::naga_compile::wgsl_to_spirv;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
@@ -111,6 +112,7 @@ pub struct Runner {
     text_paint: TextPaint,
     icon_paint: IconPaint,
     image_paint: ImagePaint,
+    surface_paint: SurfacePaint,
 
     quad_vbo: Subbuffer<[f32]>,
 
@@ -190,6 +192,7 @@ struct PaintRecorder<'a> {
     text: &'a mut TextPaint,
     icons: &'a mut IconPaint,
     images: &'a mut ImagePaint,
+    surfaces: &'a mut SurfacePaint,
 }
 
 impl TextRecorder for PaintRecorder<'_> {
@@ -268,6 +271,17 @@ impl TextRecorder for PaintRecorder<'_> {
         _scale_factor: f32,
     ) -> std::ops::Range<usize> {
         self.images.record(rect, scissor, image, tint, radius)
+    }
+
+    fn record_app_texture(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        texture: &aetna_core::surface::AppTexture,
+        alpha: aetna_core::surface::SurfaceAlpha,
+        _scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.surfaces.record(rect, scissor, texture, alpha)
     }
 }
 
@@ -446,6 +460,14 @@ impl Runner {
             cmd_alloc,
             image_subpass,
         );
+        let surface_subpass =
+            Subpass::from(render_pass.clone(), 0).expect("aetna-vulkano: surface subpass 0");
+        let surface_paint = SurfacePaint::new(
+            device.clone(),
+            memory_alloc.clone(),
+            descriptor_alloc.clone(),
+            surface_subpass,
+        );
 
         // Filtering sampler bound at @group(1) @binding(1) for every
         // backdrop-sampling pipeline. Mirrors the wgpu side: linear
@@ -475,6 +497,7 @@ impl Runner {
             text_paint,
             icon_paint,
             image_paint,
+            surface_paint,
             quad_vbo,
             frame_set_layout,
             instance_alloc,
@@ -634,12 +657,14 @@ impl Runner {
         self.text_paint.frame_begin();
         self.icon_paint.frame_begin();
         self.image_paint.frame_begin();
+        self.surface_paint.frame_begin();
         let pipelines = &self.pipelines;
         let backdrop_shaders = &self.backdrop_shaders;
         let mut recorder = PaintRecorder {
             text: &mut self.text_paint,
             icons: &mut self.icon_paint,
             images: &mut self.image_paint,
+            surfaces: &mut self.surface_paint,
         };
         self.core.prepare_paint(
             &ops,
@@ -677,6 +702,7 @@ impl Runner {
         self.text_paint.flush();
         self.icon_paint.flush();
         self.image_paint.flush();
+        self.surface_paint.flush();
         {
             // FrameUniforms.viewport is the **logical** viewport — the
             // vertex shader divides per-instance positions (which layout
@@ -1053,6 +1079,40 @@ impl Runner {
                         builder
                             .draw(4, run.count, 0, run.first)
                             .expect("draw image");
+                    }
+                }
+                PaintItem::AppTexture(idx) => {
+                    let run = self.surface_paint.run(idx);
+                    let pipeline = self.surface_paint.pipeline_for(run.alpha);
+                    builder
+                        .bind_pipeline_graphics(pipeline.clone())
+                        .expect("bind_pipeline_graphics surface");
+                    self.set_viewport(builder);
+                    set_scissor(builder, run.scissor, full);
+                    builder
+                        .bind_descriptor_sets(
+                            PipelineBindPoint::Graphics,
+                            pipeline.layout().clone(),
+                            0,
+                            (
+                                self.frame_descriptor_set().clone(),
+                                self.surface_paint.descriptor_for_run(run).clone(),
+                            ),
+                        )
+                        .expect("bind_descriptor_sets surface");
+                    builder
+                        .bind_vertex_buffers(
+                            0,
+                            (
+                                self.quad_vbo.clone(),
+                                self.surface_paint.instance_buf().clone(),
+                            ),
+                        )
+                        .expect("bind_vertex_buffers surface");
+                    unsafe {
+                        builder
+                            .draw(4, run.count, 0, run.first)
+                            .expect("draw surface");
                     }
                 }
                 PaintItem::IconRun(idx) => {
