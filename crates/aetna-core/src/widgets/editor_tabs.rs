@@ -289,10 +289,16 @@ where
 /// resulting element are `{strip_key}:tab:{value}` (whole tab) and
 /// `{strip_key}:close:{value}` (the `×`). `selected` styles the tab
 /// as active.
+///
+/// `leading` is an optional element placed inside the tab body before
+/// the label — typically a small status indicator (CI dot, modified
+/// mark, brand glyph) that should sit inside the tab and inherit its
+/// hover / focus envelope. Pass `None` for the plain label-only shape.
 #[track_caller]
 pub fn editor_tab(
     strip_key: &str,
     value: impl std::fmt::Display,
+    leading: Option<El>,
     label: impl Into<String>,
     selected: bool,
     config: EditorTabsConfig,
@@ -331,7 +337,12 @@ pub fn editor_tab(
         }
     }
 
-    let body_children: Vec<El> = vec![label_el, close];
+    let mut body_children: Vec<El> = Vec::with_capacity(3);
+    if let Some(leading) = leading {
+        body_children.push(leading);
+    }
+    body_children.push(label_el);
+    body_children.push(close);
     let body = row(body_children)
         .gap(tokens::SPACE_2)
         .align(Align::Center)
@@ -415,7 +426,7 @@ where
         .into_iter()
         .map(|(value, label)| {
             let selected = value.to_string() == current_str;
-            editor_tab(&key, value, label, selected, config).at_loc(caller)
+            editor_tab(&key, value, None, label, selected, config).at_loc(caller)
         })
         .collect();
 
@@ -509,6 +520,7 @@ mod tests {
         let tab = editor_tab(
             "docs",
             "readme",
+            None,
             "README.md",
             false,
             EditorTabsConfig::default(),
@@ -522,6 +534,7 @@ mod tests {
         let active = editor_tab(
             "docs",
             "readme",
+            None,
             "README.md",
             true,
             EditorTabsConfig::default(),
@@ -529,6 +542,7 @@ mod tests {
         let inactive = editor_tab(
             "docs",
             "readme",
+            None,
             "README.md",
             false,
             EditorTabsConfig::default(),
@@ -546,7 +560,7 @@ mod tests {
             active_style: ActiveTabStyle::TopAccent,
             ..Default::default()
         };
-        let active = editor_tab("docs", "readme", "README.md", true, cfg);
+        let active = editor_tab("docs", "readme", None, "README.md", true, cfg);
         // Column with [rule, body]; the rule is the first child and
         // carries the PRIMARY fill on the active tab.
         assert!(active.children.len() >= 2);
@@ -559,7 +573,7 @@ mod tests {
             active_style: ActiveTabStyle::BottomRule,
             ..Default::default()
         };
-        let active = editor_tab("docs", "readme", "README.md", true, cfg);
+        let active = editor_tab("docs", "readme", None, "README.md", true, cfg);
         let last = active.children.last().expect("at least one child");
         assert_eq!(last.fill, Some(tokens::PRIMARY));
     }
@@ -570,7 +584,7 @@ mod tests {
             active_style: ActiveTabStyle::TopAccent,
             ..Default::default()
         };
-        let inactive = editor_tab("docs", "readme", "README.md", false, cfg);
+        let inactive = editor_tab("docs", "readme", None, "README.md", false, cfg);
         // Rule row is still present so the tab's height stays stable
         // across selection changes, but its fill is unset.
         assert_eq!(inactive.children[0].fill, None);
@@ -586,8 +600,8 @@ mod tests {
         // child, which is a row of [label, close]. The close icon is
         // always present in the layout — only its rest opacity changes
         // — so geometry stays stable across selection.
-        let active = editor_tab("docs", "readme", "README.md", true, cfg);
-        let inactive = editor_tab("docs", "readme", "README.md", false, cfg);
+        let active = editor_tab("docs", "readme", None, "README.md", true, cfg);
+        let inactive = editor_tab("docs", "readme", None, "README.md", false, cfg);
         let active_body = &active.children[0];
         let inactive_body = &inactive.children[0];
         assert_eq!(active_body.children.len(), 2);
@@ -609,7 +623,7 @@ mod tests {
             close_visibility: CloseVisibility::Dimmed,
             ..Default::default()
         };
-        let inactive = editor_tab("docs", "readme", "README.md", false, cfg);
+        let inactive = editor_tab("docs", "readme", None, "README.md", false, cfg);
         let body = &inactive.children[0];
         let close = &body.children[1];
         // Dimmed sits between hidden and visible — close should rest
@@ -633,13 +647,32 @@ mod tests {
             close_visibility: CloseVisibility::Always,
             ..Default::default()
         };
-        let inactive = editor_tab("docs", "readme", "README.md", false, cfg);
+        let inactive = editor_tab("docs", "readme", None, "README.md", false, cfg);
         let body = &inactive.children[0];
         let close = &body.children[1];
         // `Always` is full opacity unconditionally — the modifier is a
         // no-op at rest=1.0, so we skip attaching it to keep tree
         // dumps for this flavor uncluttered.
         assert_eq!(close.hover_alpha, None);
+    }
+
+    #[test]
+    fn editor_tab_leading_prepends_inside_the_body_row() {
+        let dot = crate::tree::column([crate::widgets::text::text("●")])
+            .width(Size::Fixed(8.0))
+            .height(Size::Fixed(8.0));
+        let tab = editor_tab(
+            "docs",
+            "readme",
+            Some(dot),
+            "README.md",
+            false,
+            EditorTabsConfig::default(),
+        );
+        // Outer is column([body]); body's children become
+        // [leading, label, close] when leading is Some.
+        let body = &tab.children[0];
+        assert_eq!(body.children.len(), 3);
     }
 
     #[test]
