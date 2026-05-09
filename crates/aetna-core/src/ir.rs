@@ -125,19 +125,21 @@ pub enum DrawOp {
     /// Unlike `DrawOp::Image`, the backend does not upload pixels —
     /// it samples the existing texture identified by `texture` during
     /// paint, keying its bind-group cache on
-    /// [`crate::surface::AppTextureId`]. `rect` is the resolved widget
-    /// box; the full texture is sampled across that rect with
-    /// bilinear filtering — texture dimensions and rect dimensions
-    /// are independent and a mismatched aspect ratio stretches the
-    /// content. `ImageFit`-style projection is a future enhancement.
-    /// `alpha` selects the blend path. SVG bundle output emits a
-    /// placeholder rect labelled with the texture's id.
+    /// [`crate::surface::AppTextureId`]. `rect` is the post-`fit`
+    /// destination rect; for `Cover` it can extend past the El's
+    /// content area and is clipped via `scissor`. `transform` is an
+    /// affine applied to the textured quad in destination space,
+    /// around the centre of `rect`. `alpha` selects the blend path.
+    /// SVG bundle output emits a placeholder rect labelled with the
+    /// texture's id.
     AppTexture {
         id: String,
         rect: Rect,
         scissor: Option<Rect>,
         texture: crate::surface::AppTexture,
         alpha: crate::surface::SurfaceAlpha,
+        fit: ImageFit,
+        transform: crate::affine::Affine2,
     },
     /// An app-supplied vector asset rasterised through the MSDF atlas
     /// path. The backend rasterises the asset once per unique

@@ -29,11 +29,11 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
+use aetna_core::affine::Affine2;
 use aetna_core::paint::PhysicalScissor;
 use aetna_core::shader::stock_wgsl;
 use aetna_core::surface::{
-    AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat,
-    next_app_texture_id,
+    AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat, next_app_texture_id,
 };
 use aetna_core::tree::Rect;
 
@@ -41,14 +41,18 @@ use bytemuck::{Pod, Zeroable};
 
 const INITIAL_INSTANCE_CAPACITY: usize = 16;
 
-const SURFACE_INSTANCE_ATTRS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![
+const SURFACE_INSTANCE_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
     1 => Float32x4, // rect (xy = top-left logical px, zw = size)
+    2 => Float32x4, // affine matrix (a, b, c, d)
+    3 => Float32x2, // affine translation (tx, ty)
 ];
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 struct SurfaceInstance {
     rect: [f32; 4],
+    matrix: [f32; 4],
+    translation: [f32; 2],
 }
 
 pub(crate) struct SurfaceRun {
@@ -208,6 +212,7 @@ impl SurfacePaint {
         scissor: Option<PhysicalScissor>,
         texture: &AppTexture,
         alpha: SurfaceAlpha,
+        transform: Affine2,
     ) -> Range<usize> {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             let start = self.runs.len();
@@ -217,6 +222,8 @@ impl SurfacePaint {
         let texture_idx = self.ensure_bind_group(device, texture);
         let instance = SurfaceInstance {
             rect: [rect.x, rect.y, rect.w, rect.h],
+            matrix: [transform.a, transform.b, transform.c, transform.d],
+            translation: [transform.tx, transform.ty],
         };
         let first = self.instances.len() as u32;
         self.instances.push(instance);
@@ -234,13 +241,10 @@ impl SurfacePaint {
         let id = texture.id().0;
         if !self.cache.contains_key(&id) {
             let backend = texture.backend();
-            let wgpu_tex = backend
-                .as_any()
-                .downcast_ref::<WgpuAppTexture>()
-                .expect(
-                    "AppTexture passed to aetna-wgpu was not constructed by aetna_wgpu::app_texture; \
+            let wgpu_tex = backend.as_any().downcast_ref::<WgpuAppTexture>().expect(
+                "AppTexture passed to aetna-wgpu was not constructed by aetna_wgpu::app_texture; \
                      mixing backends in one runtime is unsupported",
-                );
+            );
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("aetna_wgpu::surface::bind_group"),
                 layout: &self.bind_layout,

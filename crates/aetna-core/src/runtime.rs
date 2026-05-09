@@ -1357,6 +1357,7 @@ impl RunnerCore {
                     scissor,
                     texture,
                     alpha,
+                    transform,
                     ..
                 } => {
                     close_run(
@@ -1373,8 +1374,14 @@ impl RunnerCore {
                     if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
                         continue;
                     }
-                    let recorded =
-                        text.record_app_texture(*rect, phys, texture, *alpha, scale_factor);
+                    let recorded = text.record_app_texture(
+                        *rect,
+                        phys,
+                        texture,
+                        *alpha,
+                        *transform,
+                        scale_factor,
+                    );
                     for index in recorded {
                         self.paint_items.push(PaintItem::AppTexture(index));
                     }
@@ -1715,6 +1722,7 @@ pub trait TextRecorder {
         _scissor: Option<PhysicalScissor>,
         _texture: &crate::surface::AppTexture,
         _alpha: crate::surface::SurfaceAlpha,
+        _transform: crate::affine::Affine2,
         _scale_factor: f32,
     ) -> Range<usize> {
         0..0

@@ -37,6 +37,7 @@
 //! shaders, and backdrop-sampling materials all flow through the same
 //! tree and event model.
 
+pub mod affine;
 pub mod anim;
 pub mod bundle;
 pub mod cursor;

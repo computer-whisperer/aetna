@@ -171,6 +171,27 @@ impl El {
         self
     }
 
+    /// How a [`crate::Kind::Surface`] El's texture projects into its
+    /// resolved rect. Defaults to [`crate::image::ImageFit::Fill`] —
+    /// stretch to the rect — for parity with the pre-`surface_fit`
+    /// behaviour. `Contain` / `Cover` / `None` mirror the modes on
+    /// [`crate::El::image_fit`].
+    pub fn surface_fit(mut self, fit: crate::image::ImageFit) -> Self {
+        self.surface_fit = fit;
+        self
+    }
+
+    /// Affine applied to the texture quad in destination space, around
+    /// the centre of the post-[`Self::surface_fit`] rect. Defaults to
+    /// identity. Use this for rotation, mirroring, source-dimension-
+    /// independent zoom/pan, or any combination thereof. The El's
+    /// auto-clip scissor still clamps the rendered content to the
+    /// resolved rect.
+    pub fn surface_transform(mut self, transform: crate::affine::Affine2) -> Self {
+        self.surface_transform = transform;
+        self
+    }
+
     /// Attach a vector asset source. Typically set via the
     /// [`crate::tree::vector`] builder (which also sets
     /// [`crate::Kind::Vector`]); reach for this method on a stock

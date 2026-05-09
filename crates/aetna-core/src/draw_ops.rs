@@ -545,19 +545,24 @@ fn push_node(
 
     if let Some(crate::surface::SurfaceSource::Texture(tex)) = &n.surface_source {
         let inner = inner_painted_rect.inset(n.padding);
-        // Surfaces fill their content rect 1:1; clip to it for the
-        // same reason image draws are clipped — overflow shouldn't
-        // bleed into siblings even if the El opts out of `.clip()`.
+        let (tw, th) = tex.size_px();
+        let dest = n.surface_fit.project(tw, th, inner);
+        // Always clip surface draws to the El's content rect so
+        // `Cover` / `None` overflow and any out-of-bounds
+        // `surface_transform` is cropped without forcing every author
+        // to call `.clip()`. The clamp respects any inherited scissor.
         let scissor = match own_scissor {
             Some(s) => s.intersect(inner),
             None => Some(inner),
         };
         out.push(DrawOp::AppTexture {
             id: n.computed_id.clone(),
-            rect: inner,
+            rect: dest,
             scissor,
             texture: tex.clone(),
             alpha: n.surface_alpha,
+            fit: n.surface_fit,
+            transform: n.surface_transform,
         });
     }
 
@@ -1923,18 +1928,101 @@ mod tests {
             rect,
             scissor,
             alpha,
+            fit,
+            transform,
             ..
         } = surf_op
         else {
             unreachable!()
         };
-        // Surface fills its content rect 1:1 — no fit projection.
+        // Default surface_fit is Fill — rect matches the content rect 1:1.
+        assert_eq!(*fit, crate::image::ImageFit::Fill);
         assert!((rect.w - 200.0).abs() < 1e-3, "rect.w = {}", rect.w);
         assert!((rect.h - 100.0).abs() < 1e-3, "rect.h = {}", rect.h);
+        // Default surface_transform is identity.
+        assert!(transform.is_identity());
         // Auto-clip applies regardless of `.clip()`.
         let s = scissor.expect("surface op carries a scissor");
         assert!((s.w - 200.0).abs() < 1e-3, "scissor.w = {}", s.w);
         assert_eq!(*alpha, crate::surface::SurfaceAlpha::Opaque);
+    }
+
+    #[test]
+    fn surface_fit_contain_letterboxes_aspect_mismatch() {
+        // 100×50 texture (2:1) into a 400×400 box with Contain →
+        // dest = 400×200 centred vertically.
+        let tex = stub_app_texture(100, 50);
+        let mut root = crate::row([crate::tree::surface(tex)
+            .surface_fit(crate::image::ImageFit::Contain)
+            .width(Size::Fixed(400.0))
+            .height(Size::Fixed(400.0))]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 600.0, 600.0));
+        let ops = draw_ops(&root, &state);
+        let DrawOp::AppTexture {
+            rect, scissor, fit, ..
+        } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::AppTexture { .. }))
+            .expect("surface emits a DrawOp::AppTexture")
+        else {
+            unreachable!()
+        };
+        assert_eq!(*fit, crate::image::ImageFit::Contain);
+        assert!((rect.w - 400.0).abs() < 1e-3, "rect.w = {}", rect.w);
+        assert!((rect.h - 200.0).abs() < 1e-3, "rect.h = {}", rect.h);
+        // Scissor still clamps to the 400×400 content rect.
+        let s = scissor.expect("surface op carries a scissor");
+        assert!((s.h - 400.0).abs() < 1e-3, "scissor.h = {}", s.h);
+    }
+
+    #[test]
+    fn surface_fit_cover_overflows_rect_with_scissor_clamp() {
+        // 100×50 texture into a 400×400 box with Cover → dest = 800×400
+        // (overflowing horizontally). Scissor clamps to 400×400.
+        let tex = stub_app_texture(100, 50);
+        let mut root = crate::row([crate::tree::surface(tex)
+            .surface_fit(crate::image::ImageFit::Cover)
+            .width(Size::Fixed(400.0))
+            .height(Size::Fixed(400.0))]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 600.0, 600.0));
+        let ops = draw_ops(&root, &state);
+        let DrawOp::AppTexture {
+            rect, scissor, fit, ..
+        } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::AppTexture { .. }))
+            .expect("surface emits a DrawOp::AppTexture")
+        else {
+            unreachable!()
+        };
+        assert_eq!(*fit, crate::image::ImageFit::Cover);
+        assert!((rect.w - 800.0).abs() < 1e-3, "rect.w = {}", rect.w);
+        assert!((rect.h - 400.0).abs() < 1e-3, "rect.h = {}", rect.h);
+        let s = scissor.expect("surface op carries a scissor");
+        assert!((s.w - 400.0).abs() < 1e-3, "scissor.w = {}", s.w);
+    }
+
+    #[test]
+    fn surface_transform_propagates_through_to_draw_op() {
+        let tex = stub_app_texture(64, 32);
+        let m = crate::affine::Affine2::rotate(0.5);
+        let mut root = crate::row([crate::tree::surface(tex)
+            .surface_transform(m)
+            .width(Size::Fixed(200.0))
+            .height(Size::Fixed(100.0))]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 400.0));
+        let ops = draw_ops(&root, &state);
+        let DrawOp::AppTexture { transform, .. } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::AppTexture { .. }))
+            .expect("surface emits a DrawOp::AppTexture")
+        else {
+            unreachable!()
+        };
+        assert_eq!(*transform, m);
     }
 
     #[test]

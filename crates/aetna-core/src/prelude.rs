@@ -11,6 +11,7 @@
 //! tessellation) and frame-internal hit-test/focus helpers. Reach for
 //! those via their explicit modules when needed.
 
+pub use crate::affine::Affine2;
 pub use crate::anim::{AnimProp, AnimValue, Animation, SpringConfig, Timing, TweenConfig};
 pub use crate::bundle::artifact::{
     Bundle, render_bundle, render_bundle_themed, render_bundle_with, render_bundle_with_theme,
@@ -54,8 +55,8 @@ pub use crate::tree::{
     vector, virtual_list, virtual_list_dyn,
 };
 pub use crate::vector::{
-    IconMaterial, PathBuilder, VectorAsset, VectorColor, VectorFill, VectorFillRule,
-    VectorLineCap, VectorLineJoin, VectorPath, VectorSegment, VectorStroke,
+    IconMaterial, PathBuilder, VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorLineCap,
+    VectorLineJoin, VectorPath, VectorSegment, VectorStroke,
 };
 pub use crate::widgets::accordion::{
     self, AccordionAction, accordion, accordion_content, accordion_item, accordion_item_key,

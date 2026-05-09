@@ -304,26 +304,14 @@ impl PathBuilder {
 
     /// SVG `Q cx cy x y`.
     pub fn quad_to(mut self, cx: f32, cy: f32, x: f32, y: f32) -> Self {
-        self.segments
-            .push(VectorSegment::QuadTo([cx, cy], [x, y]));
+        self.segments.push(VectorSegment::QuadTo([cx, cy], [x, y]));
         self
     }
 
     /// SVG `C c1x c1y c2x c2y x y`.
-    pub fn cubic_to(
-        mut self,
-        c1x: f32,
-        c1y: f32,
-        c2x: f32,
-        c2y: f32,
-        x: f32,
-        y: f32,
-    ) -> Self {
-        self.segments.push(VectorSegment::CubicTo(
-            [c1x, c1y],
-            [c2x, c2y],
-            [x, y],
-        ));
+    pub fn cubic_to(mut self, c1x: f32, c1y: f32, c2x: f32, c2y: f32, x: f32, y: f32) -> Self {
+        self.segments
+            .push(VectorSegment::CubicTo([c1x, c1y], [c2x, c2y], [x, y]));
         self
     }
 

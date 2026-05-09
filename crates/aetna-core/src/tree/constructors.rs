@@ -334,32 +334,37 @@ pub fn vector(asset: crate::vector::VectorAsset) -> El {
 /// [`El::width`] / [`El::height`] (or `.fill_size()`) for an explicit
 /// box.
 ///
-/// # Sizing and the source/display relationship
+/// # Sizing, projection, and transforms
 ///
 /// The texture's pixel dimensions are **independent of the rendered
-/// size**. The widget always samples the full source texture across
-/// its entire resolved rect with bilinear filtering — if the rect's
-/// aspect ratio differs from the texture's, the texture stretches.
-/// 0.3.x ships only this fill-the-rect projection; `ImageFit`-style
-/// modes (Contain / Cover / None) are a future enhancement.
+/// size**. By default the widget stretches the texture across the
+/// resolved rect ([`crate::image::ImageFit::Fill`]); reach for
+/// [`El::surface_fit`] to letterbox-preserve aspect ratio
+/// ([`crate::image::ImageFit::Contain`]), crop-cover
+/// ([`crate::image::ImageFit::Cover`]), or paint at natural size
+/// ([`crate::image::ImageFit::None`]). [`El::surface_transform`]
+/// composes an affine on top — rotate, mirror, zoom/pan — applied
+/// around the centre of the post-fit rect.
 ///
-/// Practical consequences for app authors:
+/// Picking a sizing strategy:
 /// - For pixel-accurate display, size the widget to the texture's
 ///   pixel dimensions (the default constructor does this for you).
-/// - For a 3D viewport or video frame, size the widget to whatever
-///   layout dictates; the app should re-allocate its texture to
-///   match the resolved rect to avoid resampling cost. Read the
-///   layout rect via `UiState::rect_of_key(...)` after `prepare()`
-///   and re-allocate before the next frame.
-/// - To preserve aspect ratio, wrap the surface in a fixed-aspect
-///   layout container (e.g. a column with `Size::Fixed` width and
-///   matching height).
+/// - For a 3D viewport or video frame whose source resolution should
+///   track the rendered size, the app should re-allocate its texture
+///   to match the resolved rect (read it via `UiState::rect_of_key`
+///   after `prepare()`).
+/// - For an animated image whose natural dimensions are fixed
+///   (decoded GIF / WebP / APNG, decoded video frame),
+///   `surface_fit(Contain)` letterboxes into any layout rect with
+///   no per-resize allocation.
 ///
 /// # z-order, scissor, hit-test
 ///
 /// The widget participates in layout, scissor, scrolling, hit-test,
 /// and z-order like any other El: siblings declared before this one
-/// paint underneath, siblings after paint on top.
+/// paint underneath, siblings after paint on top. The auto-clip
+/// scissor clamps painted content to the El's content rect — affines
+/// or `Cover` projections that overflow are cropped.
 ///
 /// ```ignore
 /// // Pseudocode — the AppTexture comes from a backend constructor.
@@ -367,7 +372,9 @@ pub fn vector(asset: crate::vector::VectorAsset) -> El {
 /// let tex: AppTexture = /* aetna_wgpu::app_texture(...) */ todo!();
 /// let _ = surface(tex)
 ///     .fill_size()
-///     .surface_alpha(SurfaceAlpha::Opaque);
+///     .surface_fit(ImageFit::Contain)
+///     .surface_alpha(SurfaceAlpha::Opaque)
+///     .surface_transform(Affine2::rotate(0.1));
 /// ```
 #[track_caller]
 pub fn surface(texture: crate::surface::AppTexture) -> El {

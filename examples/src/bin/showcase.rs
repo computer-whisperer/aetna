@@ -206,9 +206,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the host loop. The host idles automatically when no visible
     // widget asks for a future frame (e.g. when the user navigates
     // to a different Media-page section).
-    aetna_winit_wgpu::run_host_app(
-        "Aetna — showcase",
-        viewport,
-        AnimatedShowcase::new(),
-    )
+    aetna_winit_wgpu::run_host_app("Aetna — showcase", viewport, AnimatedShowcase::new())
 }

@@ -4,9 +4,17 @@
 // mode. The backend builds three pipelines that share everything except
 // the fragment entry point and the blend state — no per-instance switch.
 //
-// Per-instance data is just `rect.xy/zw` (logical pixels). Sampling
-// uses `corner_uv` directly so the texture covers the rect 1:1; format-
-// dependent decode (sRGB → linear) is handled by the texture view.
+// Per-instance data carries:
+//   - `rect`: post-fit destination in logical pixels (xy = top-left,
+//     zw = size).
+//   - `matrix` + `translation`: a 2x3 affine applied to the textured
+//     quad in destination space, around the centre of `rect`. Identity
+//     reduces vs_main to a plain rect cover.
+//
+// Sampling uses `corner_uv` directly so the texture covers the post-fit
+// rect 1:1; format-dependent decode (sRGB → linear) is handled by the
+// texture view. ImageFit projection is applied CPU-side before the
+// instance is built.
 
 struct FrameUniforms {
     viewport: vec2<f32>,
@@ -23,7 +31,9 @@ struct VertexInput {
 };
 
 struct InstanceInput {
-    @location(1) rect: vec4<f32>,  // xy = top-left logical px, zw = size logical px
+    @location(1) rect:        vec4<f32>,  // xy = top-left logical px, zw = size logical px
+    @location(2) matrix:      vec4<f32>,  // a, b, c, d (Aetna Affine2 column-major: col0=[a,b], col1=[c,d])
+    @location(3) translation: vec2<f32>,  // tx, ty
 };
 
 struct VertexOutput {
@@ -33,7 +43,17 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
-    let pos_px = in.corner_uv * inst.rect.zw + inst.rect.xy;
+    let center = inst.rect.xy + inst.rect.zw * 0.5;
+    let local  = (in.corner_uv - vec2<f32>(0.5, 0.5)) * inst.rect.zw;
+    let m_a = inst.matrix.x;
+    let m_b = inst.matrix.y;
+    let m_c = inst.matrix.z;
+    let m_d = inst.matrix.w;
+    let transformed = vec2<f32>(
+        m_a * local.x + m_c * local.y + inst.translation.x,
+        m_b * local.x + m_d * local.y + inst.translation.y,
+    );
+    let pos_px = transformed + center;
     let clip = vec4<f32>(
         pos_px.x / frame.viewport.x * 2.0 - 1.0,
         1.0 - pos_px.y / frame.viewport.y * 2.0,

@@ -100,9 +100,9 @@ pub use aetna_core::runtime::{PointerMove, PrepareResult, PrepareTimings};
 
 use crate::icon::IconPaint;
 use crate::image::ImagePaint;
-use crate::surface::SurfacePaint;
 use crate::instance::set_scissor;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
+use crate::surface::SurfacePaint;
 use crate::text::TextPaint;
 
 /// Initial size for the dynamic instance buffer (grows as needed).
@@ -267,10 +267,11 @@ impl TextRecorder for PaintRecorder<'_> {
         scissor: Option<PhysicalScissor>,
         texture: &aetna_core::surface::AppTexture,
         alpha: aetna_core::surface::SurfaceAlpha,
+        transform: aetna_core::affine::Affine2,
         _scale_factor: f32,
     ) -> std::ops::Range<usize> {
         self.surfaces
-            .record(self.device, rect, scissor, texture, alpha)
+            .record(self.device, rect, scissor, texture, alpha, transform)
     }
 
     fn record_vector(

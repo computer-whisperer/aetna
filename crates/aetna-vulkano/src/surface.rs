@@ -12,11 +12,11 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
+use aetna_core::affine::Affine2;
 use aetna_core::paint::PhysicalScissor;
 use aetna_core::shader::stock_wgsl;
 use aetna_core::surface::{
-    AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat,
-    next_app_texture_id,
+    AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat, next_app_texture_id,
 };
 use aetna_core::tree::Rect;
 use bytemuck::{Pod, Zeroable};
@@ -67,6 +67,8 @@ const INSTANCE_ARENA_SIZE: u64 = 32 * 1024;
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub(crate) struct SurfaceInstance {
     rect: [f32; 4],
+    matrix: [f32; 4],
+    translation: [f32; 2],
 }
 
 pub(crate) struct SurfaceRun {
@@ -160,6 +162,7 @@ impl SurfacePaint {
         scissor: Option<PhysicalScissor>,
         texture: &AppTexture,
         alpha: SurfaceAlpha,
+        transform: Affine2,
     ) -> Range<usize> {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             let start = self.runs.len();
@@ -169,6 +172,8 @@ impl SurfacePaint {
         let texture_idx = self.ensure_descriptor(texture);
         let instance = SurfaceInstance {
             rect: [rect.x, rect.y, rect.w, rect.h],
+            matrix: [transform.a, transform.b, transform.c, transform.d],
+            translation: [transform.tx, transform.ty],
         };
         let first = self.instances.len() as u32;
         self.instances.push(instance);
@@ -186,14 +191,11 @@ impl SurfacePaint {
         let id = texture.id().0;
         if !self.cache.contains_key(&id) {
             let backend = texture.backend();
-            let vk_tex = backend
-                .as_any()
-                .downcast_ref::<VulkanoAppTexture>()
-                .expect(
-                    "AppTexture passed to aetna-vulkano was not constructed by \
+            let vk_tex = backend.as_any().downcast_ref::<VulkanoAppTexture>().expect(
+                "AppTexture passed to aetna-vulkano was not constructed by \
                      aetna_vulkano::app_texture; mixing backends in one runtime \
                      is unsupported",
-                );
+            );
             let descriptor_set = DescriptorSet::new(
                 self.descriptor_alloc.clone(),
                 self.pipeline_premul.layout().set_layouts()[1].clone(),
@@ -344,7 +346,11 @@ fn build_one(
         .binding(1, bind_instance)
         .attribute(0, attr(0, 0, Format::R32G32_SFLOAT))
         // location 1: rect @ offset 0 (4*f32 = 16)
-        .attribute(1, attr(1, 0, Format::R32G32B32A32_SFLOAT));
+        .attribute(1, attr(1, 0, Format::R32G32B32A32_SFLOAT))
+        // location 2: affine matrix @ offset 16 (4*f32 = 16)
+        .attribute(2, attr(1, 16, Format::R32G32B32A32_SFLOAT))
+        // location 3: affine translation @ offset 32 (2*f32 = 8)
+        .attribute(3, attr(1, 32, Format::R32G32_SFLOAT));
 
     GraphicsPipeline::new(
         device,

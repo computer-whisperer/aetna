@@ -25,7 +25,7 @@ const TEX_SIZE: u32 = 96;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let logical_width: u32 = 720;
-    let logical_height: u32 = 360;
+    let logical_height: u32 = 580;
     let scale_factor: f32 = 1.0;
     let width = (logical_width as f32 * scale_factor) as u32;
     let height = (logical_height as f32 * scale_factor) as u32;
@@ -82,6 +82,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tex_premul = make_app_texture(&device, &queue, AlphaPattern::Premultiplied);
     let tex_straight = make_app_texture(&device, &queue, AlphaPattern::Straight);
     let tex_opaque = make_app_texture(&device, &queue, AlphaPattern::Premultiplied);
+    let tex_fit_contain = make_app_texture(&device, &queue, AlphaPattern::Premultiplied);
+    let tex_fit_cover = make_app_texture(&device, &queue, AlphaPattern::Premultiplied);
+    let tex_fit_rotate = make_app_texture(&device, &queue, AlphaPattern::Premultiplied);
 
     let unpadded_bytes_per_row = width * 4;
     let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -97,7 +100,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
 
-    let mut tree = fixture(tex_premul, tex_straight, tex_opaque);
+    let mut tree = fixture(
+        tex_premul,
+        tex_straight,
+        tex_opaque,
+        tex_fit_contain,
+        tex_fit_cover,
+        tex_fit_rotate,
+    );
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -180,22 +190,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn fixture(premul: AppTexture, straight: AppTexture, opaque_tex: AppTexture) -> El {
+fn fixture(
+    premul: AppTexture,
+    straight: AppTexture,
+    opaque_tex: AppTexture,
+    fit_contain: AppTexture,
+    fit_cover: AppTexture,
+    fit_rotate: AppTexture,
+) -> El {
     column([
         h2("surface() — app-owned textures composited into the paint stream"),
         text("declared above the surface (paints below in z)").muted(),
         row([
-            cell("Premultiplied", tokens::PRIMARY, premul, SurfaceAlpha::Premultiplied),
-            cell("Straight", tokens::SECONDARY, straight, SurfaceAlpha::Straight),
+            cell(
+                "Premultiplied",
+                tokens::PRIMARY,
+                premul,
+                SurfaceAlpha::Premultiplied,
+            ),
+            cell(
+                "Straight",
+                tokens::SECONDARY,
+                straight,
+                SurfaceAlpha::Straight,
+            ),
             cell("Opaque", tokens::ACCENT, opaque_tex, SurfaceAlpha::Opaque),
         ])
         .gap(tokens::SPACE_4)
         .align(Align::Stretch),
         text("declared below the surface (paints above in z)").muted(),
+        text("surface_fit + surface_transform").muted(),
+        row([
+            fit_cell(
+                "Contain",
+                tokens::PRIMARY,
+                fit_contain,
+                ImageFit::Contain,
+                Affine2::IDENTITY,
+            ),
+            fit_cell(
+                "Cover",
+                tokens::SECONDARY,
+                fit_cover,
+                ImageFit::Cover,
+                Affine2::IDENTITY,
+            ),
+            fit_cell(
+                "Contain + rotate(0.4)",
+                tokens::ACCENT,
+                fit_rotate,
+                ImageFit::Contain,
+                Affine2::rotate(0.4),
+            ),
+        ])
+        .gap(tokens::SPACE_4)
+        .align(Align::Stretch),
     ])
     .padding(tokens::SPACE_4)
     .gap(tokens::SPACE_3)
     .align(Align::Stretch)
+}
+
+fn fit_cell(
+    label: &'static str,
+    backdrop: Color,
+    tex: AppTexture,
+    fit: ImageFit,
+    transform: Affine2,
+) -> El {
+    column([
+        text(label).heading(),
+        stack([
+            El::default()
+                .fill(backdrop)
+                .radius(8.0)
+                .width(Size::Fill(1.0))
+                .height(Size::Fill(1.0)),
+            surface(tex)
+                .surface_alpha(SurfaceAlpha::Premultiplied)
+                .surface_fit(fit)
+                .surface_transform(transform)
+                .width(Size::Fill(1.0))
+                .height(Size::Fill(1.0)),
+        ])
+        .width(Size::Fill(1.0))
+        .height(Size::Fixed(160.0)),
+    ])
+    .gap(tokens::SPACE_2)
+    .width(Size::Fill(1.0))
 }
 
 fn cell(label: &'static str, backdrop: Color, tex: AppTexture, alpha: SurfaceAlpha) -> El {

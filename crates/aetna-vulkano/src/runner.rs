@@ -78,10 +78,10 @@ pub use aetna_core::runtime::{PointerMove, PrepareResult, PrepareTimings};
 
 use crate::icon::IconPaint;
 use crate::image::ImagePaint;
-use crate::surface::SurfacePaint;
 use crate::instance::set_scissor;
 use crate::naga_compile::wgsl_to_spirv;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
+use crate::surface::SurfacePaint;
 use crate::text::TextPaint;
 
 /// Initial arena size for the per-frame `SubbufferAllocator`s. Sized so
@@ -279,9 +279,11 @@ impl TextRecorder for PaintRecorder<'_> {
         scissor: Option<PhysicalScissor>,
         texture: &aetna_core::surface::AppTexture,
         alpha: aetna_core::surface::SurfaceAlpha,
+        transform: aetna_core::affine::Affine2,
         _scale_factor: f32,
     ) -> std::ops::Range<usize> {
-        self.surfaces.record(rect, scissor, texture, alpha)
+        self.surfaces
+            .record(rect, scissor, texture, alpha, transform)
     }
 
     fn record_vector(
@@ -1338,4 +1340,3 @@ impl Runner {
         self.backdrop_descriptor_set = Some(set);
     }
 }
-

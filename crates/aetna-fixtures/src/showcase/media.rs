@@ -248,7 +248,12 @@ fn vector_demo_row() -> El {
     row([
         vector_tile("merge curve", curve_asset(0, 3, 4), 80.0, 100.0),
         vector_tile("steeper curve", curve_asset(0, 4, 3), 100.0, 80.0),
-        vector_tile("filled diamond", diamond_asset(Color::rgb(244, 114, 182)), 48.0, 48.0),
+        vector_tile(
+            "filled diamond",
+            diamond_asset(Color::rgb(244, 114, 182)),
+            48.0,
+            48.0,
+        ),
         vector_tile(
             "rounded path",
             squiggle_asset(Color::rgb(96, 165, 250)),
@@ -394,20 +399,25 @@ fn animated_surface_demo(tex: Option<&AppTexture>) -> El {
         .small();
     };
     row([
-        animated_surface_cell("Premultiplied", tokens::PRIMARY, tex.clone(), SurfaceAlpha::Premultiplied),
-        animated_surface_cell("Straight", tokens::SECONDARY, tex.clone(), SurfaceAlpha::Straight),
+        animated_surface_cell(
+            "Premultiplied",
+            tokens::PRIMARY,
+            tex.clone(),
+            SurfaceAlpha::Premultiplied,
+        ),
+        animated_surface_cell(
+            "Straight",
+            tokens::SECONDARY,
+            tex.clone(),
+            SurfaceAlpha::Straight,
+        ),
         animated_surface_cell("Opaque", tokens::ACCENT, tex.clone(), SurfaceAlpha::Opaque),
     ])
     .gap(tokens::SPACE_3)
     .align(Align::Stretch)
 }
 
-fn animated_surface_cell(
-    label: &str,
-    backdrop: Color,
-    tex: AppTexture,
-    alpha: SurfaceAlpha,
-) -> El {
+fn animated_surface_cell(label: &str, backdrop: Color, tex: AppTexture, alpha: SurfaceAlpha) -> El {
     // The cell column uses the default `Align::Stretch` so the stack's
     // `Size::Fill(1.0)` width actually claims the cell's full width —
     // a `Center`-aligned column collapses Fill children to their

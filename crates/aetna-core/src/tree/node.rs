@@ -305,13 +305,24 @@ pub struct El {
 
     /// App-owned GPU texture source for [`Kind::Surface`] elements.
     /// Set via [`Self::surface_source`] (typically through the
-    /// [`crate::tree::surface`] builder). The texture fills the
-    /// resolved rect 1:1; per-rect projection (`ImageFit`-style) is a
-    /// future enhancement.
+    /// [`crate::tree::surface`] builder).
     pub surface_source: Option<crate::surface::SurfaceSource>,
     /// How the surface texture composes with widgets painted below it.
     /// Defaults to [`crate::surface::SurfaceAlpha::Premultiplied`].
     pub surface_alpha: crate::surface::SurfaceAlpha,
+    /// How the surface texture projects into the resolved rect.
+    /// Defaults to [`ImageFit::Fill`] — stretch to the rect, ignoring
+    /// aspect ratio. `Contain` / `Cover` / `None` mirror the
+    /// corresponding modes on [`crate::tree::image`].
+    pub surface_fit: ImageFit,
+    /// Affine applied to the texture quad in destination space, around
+    /// the centre of the post-fit rect. Defaults to identity.
+    /// Composes after [`Self::surface_fit`]: the fit projection picks
+    /// the destination rect, then this matrix transforms it (rotate,
+    /// scale, translate, shear). The auto-clip scissor still clamps
+    /// to the El's content rect, so transforms that move the texture
+    /// outside that rect are cropped.
+    pub surface_transform: crate::affine::Affine2,
 
     /// Vector asset for [`Kind::Vector`] elements. Set via
     /// [`Self::vector_source`] (typically through the

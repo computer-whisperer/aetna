@@ -257,18 +257,32 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 scissor,
                 texture,
                 alpha,
+                fit,
+                transform,
             } => {
                 let (tw, th) = texture.size_px();
                 let format = texture.format();
                 let _ = write!(
                     s,
-                    "Surface tex_id={:<10} rect=({:.0},{:.0},{:.0},{:.0}) id={id} natural=({tw}x{th}) format={format:?} alpha={alpha:?}",
+                    "Surface tex_id={:<10} rect=({:.0},{:.0},{:.0},{:.0}) id={id} natural=({tw}x{th}) format={format:?} fit={fit:?} alpha={alpha:?}",
                     texture.id().0,
                     rect.x,
                     rect.y,
                     rect.w,
                     rect.h,
                 );
+                if !transform.is_identity() {
+                    let _ = write!(
+                        s,
+                        " transform=({:.3},{:.3},{:.3},{:.3},{:.3},{:.3})",
+                        transform.a,
+                        transform.b,
+                        transform.c,
+                        transform.d,
+                        transform.tx,
+                        transform.ty,
+                    );
+                }
                 if let Some(sci) = scissor {
                     write_scissor(&mut s, *sci);
                 }
