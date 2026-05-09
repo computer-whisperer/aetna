@@ -116,9 +116,11 @@ pub enum ActiveTabStyle {
 /// shows it unconditionally.
 ///
 /// The hover signal cascades from the tab through
-/// [`crate::tree::El::reveal_on_hover`] — when the user mouses over
-/// the tab (or directly over the `×`), the icon eases up to full
-/// opacity via the runtime's hover envelope.
+/// [`crate::tree::El::hover_alpha`] — when the user mouses over the
+/// tab (or directly over the `×`), the icon eases up to full opacity
+/// via the runtime's subtree interaction envelope. Keyboard focus on
+/// the tab also reveals the icon, so a tabbed-into inactive tab still
+/// shows its close affordance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum CloseVisibility {
@@ -306,9 +308,9 @@ pub fn editor_tab(
 
     // The close icon is always present in the layout so tab geometry
     // stays stable across selection. The active tab paints it at full
-    // opacity; inactive tabs use `reveal_on_hover(rest)` so the icon
-    // eases between its rest opacity and full as the tab (or the icon
-    // itself) is hovered.
+    // opacity; inactive tabs use `hover_alpha(rest, 1.0)` so the icon
+    // eases between its rest opacity and full as the tab is hovered,
+    // pressed, or keyboard-focused.
     let mut close = icon_button(IconName::X)
         .key(close_key)
         .icon_size(tokens::ICON_XS)
@@ -325,7 +327,7 @@ pub fn editor_tab(
         // 1.0). At 1.0 the modifier is a no-op; skipping it keeps
         // tree dumps for the `Always` flavor uncluttered.
         if rest < 1.0 {
-            close = close.reveal_on_hover(rest);
+            close = close.hover_alpha(rest, 1.0);
         }
     }
 
@@ -591,11 +593,13 @@ mod tests {
         assert_eq!(inactive_body.children.len(), 2);
         // The active tab's close paints at full opacity (no modifier).
         let active_close = &active_body.children[1];
-        assert_eq!(active_close.reveal_on_hover, None);
+        assert_eq!(active_close.hover_alpha, None);
         // The inactive tab's close is invisible at rest, fades in on
-        // hover via the runtime's hover envelope cascade.
+        // hover / focus / press via the subtree interaction envelope.
         let inactive_close = &inactive_body.children[1];
-        assert_eq!(inactive_close.reveal_on_hover, Some(0.0));
+        let cfg = inactive_close.hover_alpha.expect("hover_alpha attached");
+        assert_eq!(cfg.rest, 0.0);
+        assert_eq!(cfg.peak, 1.0);
     }
 
     #[test]
@@ -609,19 +613,21 @@ mod tests {
         let close = &body.children[1];
         // Dimmed sits between hidden and visible — close should rest
         // around 0.4 alpha and ease up on hover.
-        match close.reveal_on_hover {
-            Some(rest) => {
+        match close.hover_alpha {
+            Some(cfg) => {
                 assert!(
-                    rest > 0.0 && rest < 1.0,
-                    "Dimmed rest should be partial; got {rest}"
+                    cfg.rest > 0.0 && cfg.rest < 1.0,
+                    "Dimmed rest should be partial; got {}",
+                    cfg.rest,
                 );
+                assert_eq!(cfg.peak, 1.0);
             }
-            None => panic!("Dimmed should attach reveal_on_hover so hover composes the alpha"),
+            None => panic!("Dimmed should attach hover_alpha so interaction composes the alpha"),
         }
     }
 
     #[test]
-    fn close_visibility_always_skips_reveal_on_hover() {
+    fn close_visibility_always_skips_hover_alpha() {
         let cfg = EditorTabsConfig {
             close_visibility: CloseVisibility::Always,
             ..Default::default()
@@ -632,7 +638,7 @@ mod tests {
         // `Always` is full opacity unconditionally — the modifier is a
         // no-op at rest=1.0, so we skip attaching it to keep tree
         // dumps for this flavor uncluttered.
-        assert_eq!(close.reveal_on_hover, None);
+        assert_eq!(close.hover_alpha, None);
     }
 
     #[test]

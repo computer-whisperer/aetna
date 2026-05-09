@@ -30,11 +30,30 @@ pub enum AnimationMode {
 /// the animation tick and consumed by [`crate::draw_ops::draw_ops`] to
 /// modulate a node's surface visuals (lighten on hover, darken on press,
 /// fade in/out the focus ring).
+///
+/// Two flavours:
+///
+/// - **Per-node envelopes** (`Hover`, `Press`, `FocusRing`) track whether
+///   *this exact node* is the active hover / press / focus target. Drive
+///   per-element visuals — hover-lighten, press-darken, focus-ring fade.
+///   Exactly one node owns each at a time, mirroring the single-target
+///   `apply_to_state` semantics.
+/// - **Subtree envelopes** (`SubtreeHover`, `SubtreePress`,
+///   `SubtreeFocus`) track whether the active hover / press / focus
+///   target is *this node or any descendant*. Drive
+///   region-shaped affordances — hover-revealed close icons, action
+///   pills that should stay visible while the cursor moves to a
+///   focusable child, hover-driven translate / scale / tint. Multiple
+///   nodes can be "hot" simultaneously (every ancestor of the leaf
+///   target). CSS `:hover` semantics, lifted onto our id-keyed tree.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum EnvelopeKind {
     Hover,
     Press,
     FocusRing,
+    SubtreeHover,
+    SubtreePress,
+    SubtreeFocus,
 }
 
 /// Runtime visual animation state: app-authored prop animations plus

@@ -44,6 +44,7 @@ pub use constructors::{
 };
 pub use geometry::{Rect, Sides};
 pub use icon_name::IconName;
+pub use identity::HoverAlpha;
 pub use layout_types::{Align, Axis, Justify, Size};
 pub use node::El;
 pub use semantics::{InteractionState, Kind, Source, SurfaceRole};

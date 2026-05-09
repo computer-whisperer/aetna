@@ -16,6 +16,33 @@ use crate::anim::{AnimProp, AnimValue, Animation, Timing};
 use crate::state::{AnimationMode, EnvelopeKind};
 use crate::tree::{El, InteractionState};
 
+/// Snapshot of the active hover / focus / press leaf-targets for a
+/// frame. Threaded through the tick so each node can ask "is the hot
+/// target equal to me, or a descendant of me?" without re-walking the
+/// trackers per node.
+#[derive(Copy, Clone, Default)]
+pub(crate) struct HotTargets<'a> {
+    pub hovered: Option<&'a str>,
+    pub focused: Option<&'a str>,
+    pub pressed: Option<&'a str>,
+}
+
+/// True when `target_id` names `node_id` itself or any descendant of it
+/// in the path-shaped `computed_id` namespace (`root.x.y.z`). Returns
+/// false when either input is empty so callers don't need to special-
+/// case the pre-layout state.
+fn target_in_subtree(node_id: &str, target_id: &str) -> bool {
+    if node_id.is_empty() || target_id.is_empty() {
+        return false;
+    }
+    if target_id == node_id {
+        return true;
+    }
+    target_id
+        .strip_prefix(node_id)
+        .is_some_and(|rest| rest.starts_with('.'))
+}
+
 /// App-driven props, processed *first* on nodes with `n.animate` set.
 /// They write eased build-time values back to `n.fill` etc., so the
 /// state pass that follows reads the already-eased value when computing
@@ -31,14 +58,32 @@ const APP_PROPS: &[AnimProp] = &[
     AnimProp::AppTranslateY,
 ];
 
-/// State-driven envelopes, processed *after* app props. Always tracked
+/// Per-node state envelopes, processed *after* app props. Always tracked
 /// on keyed interactive nodes — no author opt-in. Each is a 0..1 amount
 /// written to `UiState::envelopes`; `apply_state` in `draw_ops` mixes
 /// the build-time visual toward the state-modulated visual based on it.
+/// Drives single-target visuals (hover-lighten, press-darken, focus-
+/// ring fade) — exactly one node owns each at a time.
 const STATE_PROPS: &[AnimProp] = &[
     AnimProp::HoverAmount,
     AnimProp::PressAmount,
     AnimProp::FocusRingAlpha,
+];
+
+/// Subtree state envelopes, processed alongside `STATE_PROPS`. Each
+/// tracks "is the active hover / focus / press target this node or any
+/// descendant?" — multiple nodes can be hot simultaneously (every
+/// ancestor of the leaf target). Drives region-shaped affordances
+/// (`hover_alpha`, future hover-driven translate / scale / tint).
+///
+/// Tracked on every focusable node (so the draw-time cascade can read
+/// the nearest focusable ancestor's envelope) and on every node
+/// carrying `hover_alpha` (so a non-focusable wrapper — the action-pill
+/// case — has a self-envelope to OR-merge with the inherited one).
+const SUBTREE_PROPS: &[AnimProp] = &[
+    AnimProp::SubtreeHoverAmount,
+    AnimProp::SubtreePressAmount,
+    AnimProp::SubtreeFocusAmount,
 ];
 
 #[allow(clippy::too_many_arguments)]
@@ -47,6 +92,7 @@ pub(crate) fn tick_node(
     anims: &mut HashMap<(String, AnimProp), Animation>,
     envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
     node_states: &HashMap<String, InteractionState>,
+    hot: HotTargets<'_>,
     focus_visible: bool,
     visited: &mut HashSet<(String, AnimProp)>,
     now: Instant,
@@ -64,6 +110,7 @@ pub(crate) fn tick_node(
                     anims,
                     envelopes,
                     node_states,
+                    hot,
                     focus_visible,
                     visited,
                     now,
@@ -72,8 +119,8 @@ pub(crate) fn tick_node(
                 );
             }
         }
-        // State-driven props: only on keyed interactive nodes; the
-        // library always tracks these, no author opt-in.
+        // Per-node state envelopes: only on keyed interactive nodes;
+        // the library always tracks these, no author opt-in.
         if node.key.is_some() {
             for &prop in STATE_PROPS {
                 let timing = state_timing_for(prop);
@@ -84,6 +131,32 @@ pub(crate) fn tick_node(
                     anims,
                     envelopes,
                     node_states,
+                    hot,
+                    focus_visible,
+                    visited,
+                    now,
+                    mode,
+                    needs_redraw,
+                );
+            }
+        }
+        // Subtree envelopes: tracked on focusable nodes (so the
+        // draw-time cascade can read the nearest focusable ancestor's
+        // envelope) and on any node carrying `hover_alpha` (so
+        // non-focusable wrappers — action pills, hover-revealed
+        // badges — get a self-envelope to OR-merge with the inherited
+        // one). Plain keyed-but-not-focusable nodes don't need them.
+        if node.focusable || node.hover_alpha.is_some() {
+            for &prop in SUBTREE_PROPS {
+                let timing = state_timing_for(prop);
+                process_prop(
+                    node,
+                    prop,
+                    timing,
+                    anims,
+                    envelopes,
+                    node_states,
+                    hot,
                     focus_visible,
                     visited,
                     now,
@@ -99,6 +172,7 @@ pub(crate) fn tick_node(
             anims,
             envelopes,
             node_states,
+            hot,
             focus_visible,
             visited,
             now,
@@ -116,6 +190,7 @@ fn process_prop(
     anims: &mut HashMap<(String, AnimProp), Animation>,
     envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
     node_states: &HashMap<String, InteractionState>,
+    hot: HotTargets<'_>,
     focus_visible: bool,
     visited: &mut HashSet<(String, AnimProp)>,
     now: Instant,
@@ -126,7 +201,7 @@ fn process_prop(
         .get(&node.computed_id)
         .copied()
         .unwrap_or_default();
-    let Some(target) = compute_target(node, prop, state, focus_visible) else {
+    let Some(target) = compute_target(node, prop, state, hot, focus_visible) else {
         return;
     };
     let key = (node.computed_id.clone(), prop);
@@ -162,8 +237,12 @@ fn compute_target(
     n: &El,
     prop: AnimProp,
     state: InteractionState,
+    hot: HotTargets<'_>,
     focus_visible: bool,
 ) -> Option<AnimValue> {
+    let in_subtree = |target: Option<&str>| -> bool {
+        target.is_some_and(|t| target_in_subtree(&n.computed_id, t))
+    };
     match prop {
         AnimProp::HoverAmount => Some(AnimValue::Float(
             if matches!(state, InteractionState::Hover) {
@@ -188,6 +267,25 @@ fn compute_target(
                 0.0
             },
         )),
+        AnimProp::SubtreeHoverAmount => Some(AnimValue::Float(if in_subtree(hot.hovered) {
+            1.0
+        } else {
+            0.0
+        })),
+        AnimProp::SubtreePressAmount => Some(AnimValue::Float(if in_subtree(hot.pressed) {
+            1.0
+        } else {
+            0.0
+        })),
+        // Subtree focus reveals on any focused descendant — including
+        // pointer-focused ones (no `focus_visible` gate). The pattern
+        // is "show me the close × on my focused tab", which a pointer
+        // focus path should satisfy too.
+        AnimProp::SubtreeFocusAmount => Some(AnimValue::Float(if in_subtree(hot.focused) {
+            1.0
+        } else {
+            0.0
+        })),
         AnimProp::AppFill => n.fill.map(AnimValue::Color),
         AnimProp::AppStroke => n.stroke.map(AnimValue::Color),
         AnimProp::AppTextColor => n.text_color.map(AnimValue::Color),
@@ -199,13 +297,17 @@ fn compute_target(
 }
 
 /// Library-default timing for state-driven envelopes. Hover, press,
-/// focus transitions are uniformly snappy — overshoot on a 0..1
-/// envelope reads as jitter, so we stick to a near-critical preset.
+/// focus transitions (and their subtree analogues) are uniformly
+/// snappy — overshoot on a 0..1 envelope reads as jitter, so we stick
+/// to a near-critical preset.
 fn state_timing_for(prop: AnimProp) -> Timing {
     match prop {
-        AnimProp::HoverAmount | AnimProp::PressAmount | AnimProp::FocusRingAlpha => {
-            Timing::SPRING_QUICK
-        }
+        AnimProp::HoverAmount
+        | AnimProp::PressAmount
+        | AnimProp::FocusRingAlpha
+        | AnimProp::SubtreeHoverAmount
+        | AnimProp::SubtreePressAmount
+        | AnimProp::SubtreeFocusAmount => Timing::SPRING_QUICK,
         // App props don't reach this function — they pull timing from
         // the per-node `animate` setting in `tick_node`.
         _ => Timing::SPRING_QUICK,
@@ -237,6 +339,24 @@ fn write_prop(
         (AnimProp::FocusRingAlpha, AnimValue::Float(v)) => {
             envelopes.insert(
                 (n.computed_id.clone(), EnvelopeKind::FocusRing),
+                v.clamp(0.0, 1.0),
+            );
+        }
+        (AnimProp::SubtreeHoverAmount, AnimValue::Float(v)) => {
+            envelopes.insert(
+                (n.computed_id.clone(), EnvelopeKind::SubtreeHover),
+                v.clamp(0.0, 1.0),
+            );
+        }
+        (AnimProp::SubtreePressAmount, AnimValue::Float(v)) => {
+            envelopes.insert(
+                (n.computed_id.clone(), EnvelopeKind::SubtreePress),
+                v.clamp(0.0, 1.0),
+            );
+        }
+        (AnimProp::SubtreeFocusAmount, AnimValue::Float(v)) => {
+            envelopes.insert(
+                (n.computed_id.clone(), EnvelopeKind::SubtreeFocus),
                 v.clamp(0.0, 1.0),
             );
         }

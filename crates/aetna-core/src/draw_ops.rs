@@ -41,6 +41,7 @@ pub fn draw_ops_with_theme(root: &El, ui_state: &UiState, theme: &Theme) -> Vec<
         1.0,
         0.0,
         0.0,
+        0.0,
     );
     resolve_palette(&mut out, theme.palette());
     out
@@ -97,11 +98,13 @@ fn resolve_uniform_block(uniforms: &mut UniformBlock, palette: &Palette) {
     }
 }
 
-// Recursion threads six "inherited from parent" paint values
-// (scissor, translate, opacity, focus / hover / press envelopes) plus
-// the four shared references (node, ui_state, theme, out accumulator).
-// The explicit signature documents the dataflow more clearly than a
-// bundling struct would.
+// Recursion threads seven "inherited from parent" paint values
+// (scissor, translate, opacity, focus / hover / press envelopes from
+// the nearest focusable ancestor, plus the *strict* nearest-focusable-
+// ancestor's combined subtree-interaction envelope used by
+// `hover_alpha`) and the four shared references (node, ui_state,
+// theme, out accumulator). The explicit signature documents the
+// dataflow more clearly than a bundling struct would.
 #[allow(clippy::too_many_arguments)]
 fn push_node(
     n: &El,
@@ -114,6 +117,7 @@ fn push_node(
     inherited_focus_envelope: f32,
     inherited_hover_envelope: f32,
     inherited_press_envelope: f32,
+    inherited_interaction_envelope: f32,
 ) {
     let computed = ui_state.rect(&n.computed_id);
     let state = ui_state.node_state(&n.computed_id);
@@ -172,23 +176,52 @@ fn push_node(
     } else {
         1.0
     };
-    // `reveal_on_hover` modulates the node's drawn alpha based on the
-    // *combined* hover envelope: max of the nearest focusable
-    // ancestor's hover and this node's own hover. The nearest-ancestor
-    // half is what `inherited_hover_envelope` already carries (the
-    // recursion below sets it to the focusable ancestor's envelope and
-    // passes through non-focusable wrappers); the self half lets a
-    // hover-revealed child stay visible when the cursor is on the
-    // child itself, even if the ancestor has lost hover.
-    let reveal_alpha_mul = match n.reveal_on_hover {
-        Some(rest) => {
-            let combined = inherited_hover_envelope.max(hover_amount);
-            rest + (1.0 - rest) * combined
+    // Subtree interaction envelope for this node: max of the hover,
+    // focus, and press envelopes covering "is the active target this
+    // node or any descendant?". Tracked only on nodes that consume it
+    // (focusable nodes plus `hover_alpha` consumers); other nodes read
+    // back as `0.0` and don't contribute. Used immediately for
+    // `hover_alpha` and below to update the cascade for descendants.
+    let self_interaction_envelope = ui_state
+        .envelope(&n.computed_id, EnvelopeKind::SubtreeHover)
+        .max(ui_state.envelope(&n.computed_id, EnvelopeKind::SubtreePress))
+        .max(ui_state.envelope(&n.computed_id, EnvelopeKind::SubtreeFocus));
+    // `hover_alpha` lerps the node's drawn alpha between `rest` and
+    // `peak` along the **subtree interaction envelope of the
+    // surrounding interaction region** — `max` of the nearest
+    // focusable ancestor's subtree envelope (cascaded as
+    // `inherited_interaction_envelope`) and this node's own subtree
+    // envelope when the consumer is itself focusable / a hover_alpha
+    // wrapper.
+    //
+    // The ancestor half handles the close-×-on-tab pattern: the close
+    // is below a focusable tab; when the tab (or anything inside it)
+    // is the hot target, the tab's subtree envelope rises and the
+    // close fades in. The self half handles the action-pill pattern:
+    // a non-focusable wrapper carrying `hover_alpha` whose own
+    // descendants are the hot target — the wrapper's own subtree
+    // envelope captures that case directly.
+    //
+    // Distinct from the per-node `Hover` / `Press` / `FocusRing`
+    // envelopes used by `apply_state` (single-target visuals like
+    // hover-lighten) and from `inherited_hover_envelope` /
+    // `inherited_press_envelope` (the per-node envelope cascade for
+    // `state_follows_interactive_ancestor`). Three independent
+    // mechanisms, each answering a different question:
+    //   - "is this node the hot target?" → per-node envelopes
+    //   - "is the slider's focusable container hot?" → per-node
+    //     cascade (state_follows_interactive_ancestor)
+    //   - "is anything in the surrounding interaction region hot?" →
+    //     subtree-interaction cascade (hover_alpha)
+    let hover_alpha_mul = match n.hover_alpha {
+        Some(cfg) => {
+            let combined = inherited_interaction_envelope.max(self_interaction_envelope);
+            cfg.rest + (cfg.peak - cfg.rest) * combined
         }
         None => 1.0,
     };
     let opacity =
-        inherited_opacity * n.opacity * focus_alpha_mul * blink_alpha_mul * reveal_alpha_mul;
+        inherited_opacity * n.opacity * focus_alpha_mul * blink_alpha_mul * hover_alpha_mul;
     // Children inherit the *immediate* focusable ancestor's envelope.
     // When this node is itself focusable, its envelope replaces the
     // inherited one; otherwise the inherited value passes through.
@@ -209,6 +242,17 @@ fn push_node(
         press_amount
     } else {
         inherited_press_envelope
+    };
+    // The interaction-envelope cascade replaces at focusable nodes:
+    // descendants of a focusable container read *that* container's
+    // subtree envelope, not the grandparent's. `hover_alpha` consumers
+    // OR-merge with their own (via `self_interaction_envelope` above)
+    // so a focusable consumer like an `icon_button` close-× still
+    // sees its parent tab's envelope through this cascade.
+    let child_interaction_envelope = if n.focusable {
+        self_interaction_envelope
+    } else {
+        inherited_interaction_envelope
     };
 
     let translated_rect = translated(computed, total_translate);
@@ -553,6 +597,7 @@ fn push_node(
             child_focus_envelope,
             child_hover_envelope,
             child_press_envelope,
+            child_interaction_envelope,
         );
     }
 
@@ -933,12 +978,13 @@ mod tests {
     }
 
     #[test]
-    fn reveal_on_hover_fades_child_with_focusable_ancestor_envelope() {
-        // A non-interactive child flagged with `reveal_on_hover` sits
-        // below a focusable container. With no hover anywhere, the
-        // child paints at `rest_opacity` * its declared alpha. When
-        // the container picks up hover, the child's effective alpha
-        // animates to full.
+    fn hover_alpha_fades_child_with_focusable_ancestor_envelope() {
+        // A non-interactive child flagged with `hover_alpha` sits below
+        // a focusable container. With no interaction anywhere, the
+        // child paints at `rest` * its declared alpha. When the
+        // container picks up hover, the cascade through the focusable
+        // ancestor's subtree-interaction envelope animates the child's
+        // effective alpha to `peak`.
         use crate::layout::layout;
 
         let make_tree = || {
@@ -946,7 +992,7 @@ mod tests {
                 .width(Size::Fixed(14.0))
                 .height(Size::Fixed(14.0))
                 .fill(tokens::FOREGROUND)
-                .reveal_on_hover(0.25)])
+                .hover_alpha(0.25, 1.0)])
             .key("container")
             .focusable()
             .width(Size::Fixed(120.0))
@@ -1009,10 +1055,11 @@ mod tests {
     }
 
     #[test]
-    fn reveal_on_hover_keeps_child_visible_while_self_hovered() {
-        // Even with no ancestor hover, a keyed child carrying
-        // `reveal_on_hover` stays visible while the cursor is directly
-        // on it — `max(inherited, self)` keeps the envelope at 1 when
+    fn hover_alpha_keeps_child_visible_while_self_hovered() {
+        // Even with no ancestor hover, a keyed focusable child
+        // carrying `hover_alpha` stays visible while the cursor is
+        // directly on it — the cascade carries the parent's subtree
+        // envelope down, and `max(inherited, self)` saturates when
         // either side fires.
         use crate::layout::layout;
 
@@ -1022,7 +1069,7 @@ mod tests {
             .width(Size::Fixed(14.0))
             .height(Size::Fixed(14.0))
             .fill(tokens::FOREGROUND)
-            .reveal_on_hover(0.0)])
+            .hover_alpha(0.0, 1.0)])
         .key("container")
         .focusable()
         .width(Size::Fixed(120.0))
@@ -1049,15 +1096,15 @@ mod tests {
         };
         assert_eq!(
             fill.a, 255,
-            "self-hover should keep a reveal_on_hover element fully visible \
+            "self-hover should keep a hover_alpha element fully visible \
              even when no ancestor is hovered",
         );
     }
 
     #[test]
-    fn reveal_on_hover_does_not_affect_unmarked_descendants() {
-        // Sibling control: a sibling without `reveal_on_hover` paints
-        // at its declared alpha regardless of ancestor hover, so the
+    fn hover_alpha_does_not_affect_unmarked_descendants() {
+        // Sibling control: a sibling without `hover_alpha` paints at
+        // its declared alpha regardless of ancestor hover, so the
         // modifier is opt-in and doesn't bleed.
         use crate::layout::layout;
 
@@ -1066,7 +1113,7 @@ mod tests {
                 .width(Size::Fixed(8.0))
                 .height(Size::Fixed(8.0))
                 .fill(tokens::FOREGROUND)
-                .reveal_on_hover(0.0),
+                .hover_alpha(0.0, 1.0),
             El::new(Kind::Custom("plain"))
                 .width(Size::Fixed(8.0))
                 .height(Size::Fixed(8.0))
@@ -1106,6 +1153,163 @@ mod tests {
         };
         assert_eq!(t.a, 0, "tagged child invisible at rest with rest=0");
         assert_eq!(p.a, 255, "unmarked sibling unaffected");
+    }
+
+    #[test]
+    fn hover_alpha_stays_revealed_when_focusable_descendant_is_hovered() {
+        // gh#11. A non-focusable wrapper carrying `hover_alpha` (the
+        // action-pill pattern) sits between a focusable card and the
+        // focusable buttons inside it. With the cursor on a button, the
+        // pill must stay revealed — the cascade reads the *card's*
+        // subtree envelope, which sees the hovered button as a
+        // descendant.
+        use crate::layout::layout;
+
+        let mut tree = column([row([crate::stack([
+            // Pill wrapper: not keyed, not focusable, but carries
+            // hover_alpha. Wraps two focusable buttons.
+            El::new(Kind::Custom("pill"))
+                .width(Size::Fixed(80.0))
+                .height(Size::Fixed(20.0))
+                .fill(tokens::FOREGROUND)
+                .hover_alpha(0.0, 1.0)
+                .axis(crate::tree::Axis::Row),
+        ])
+        .key("card")
+        .focusable()
+        .width(Size::Fixed(160.0))
+        .height(Size::Fixed(40.0))])])
+        .padding(20.0);
+        // Drop two focusable button keys directly under the pill.
+        tree.children[0].children[0].children[0]
+            .children
+            .push(El::new(Kind::Custom("play")).key("play").focusable());
+        tree.children[0].children[0].children[0]
+            .children
+            .push(El::new(Kind::Custom("more")).key("more").focusable());
+
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        // Hover the focusable descendant (button), not the card or
+        // the pill background. Pre-fix this caused the pill to fade
+        // out: card lost hover, pill inherited 0.0, descendant button
+        // didn't reach the pill via the focusable-ancestor cascade.
+        let play = state.target_of_key(&tree, "play").expect("play target");
+        state.hovered = Some(play);
+        state.apply_to_state();
+        state.set_animation_mode(crate::state::AnimationMode::Settled);
+        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+
+        let ops = draw_ops(&tree, &state);
+        let pill = find_quad(&ops, "pill").expect("pill quad");
+        let DrawOp::Quad { uniforms, .. } = pill else {
+            unreachable!()
+        };
+        let UniformValue::Color(fill) = uniforms.get("fill").expect("pill fill") else {
+            panic!("expected color uniform");
+        };
+        assert_eq!(
+            fill.a, 255,
+            "pill must stay fully revealed while a focusable descendant is hovered",
+        );
+    }
+
+    #[test]
+    fn hover_alpha_reveals_on_keyboard_focus_of_focusable_ancestor() {
+        // gh#8. A close-× icon inside an inactive editor tab uses
+        // `hover_alpha(0.0, 1.0)`. When the tab is keyboard-focused,
+        // the close affordance must reveal so a keyboard-only user
+        // sees that closing exists. Pre-fix `reveal_on_hover` only
+        // read the hover envelope and the close stayed at α=0.
+        use crate::layout::layout;
+
+        let mut tree = column([row([crate::stack([El::new(Kind::Custom("close"))
+            .key("close")
+            .focusable()
+            .width(Size::Fixed(14.0))
+            .height(Size::Fixed(14.0))
+            .fill(tokens::FOREGROUND)
+            .hover_alpha(0.0, 1.0)])
+        .key("tab")
+        .focusable()
+        .width(Size::Fixed(120.0))
+        .height(Size::Fixed(28.0))])])
+        .padding(20.0);
+
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        let tab = state.target_of_key(&tree, "tab").expect("tab target");
+        state.focused = Some(tab);
+        state.focus_visible = true;
+        state.apply_to_state();
+        state.set_animation_mode(crate::state::AnimationMode::Settled);
+        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+
+        let ops = draw_ops(&tree, &state);
+        let close = find_quad(&ops, "close").expect("close quad");
+        let DrawOp::Quad { uniforms, .. } = close else {
+            unreachable!()
+        };
+        let UniformValue::Color(fill) = uniforms.get("fill").expect("close fill") else {
+            panic!("expected color uniform");
+        };
+        assert_eq!(
+            fill.a, 255,
+            "keyboard focus on the tab should reveal the close affordance",
+        );
+    }
+
+    #[test]
+    fn hover_alpha_returns_to_rest_when_subtree_loses_interaction() {
+        // Inverse of #11 / #8: once the cursor leaves the surrounding
+        // interaction region, the affordance fades back to `rest`.
+        use crate::layout::layout;
+
+        let mut tree = column([
+            row([crate::stack([El::new(Kind::Custom("badge"))
+                .width(Size::Fixed(14.0))
+                .height(Size::Fixed(14.0))
+                .fill(tokens::FOREGROUND)
+                .hover_alpha(0.25, 1.0)])
+            .key("container")
+            .focusable()
+            .width(Size::Fixed(120.0))
+            .height(Size::Fixed(18.0))]),
+            // A second focusable that the cursor moves to. Its
+            // subtree envelope rises but the badge's interaction
+            // region (rooted at "container") does not.
+            row([
+                crate::stack([El::new(Kind::Custom("other_body")).width(Size::Fixed(80.0))])
+                    .key("other")
+                    .focusable()
+                    .width(Size::Fixed(120.0))
+                    .height(Size::Fixed(18.0)),
+            ]),
+        ])
+        .padding(20.0);
+
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        let other = state.target_of_key(&tree, "other").expect("other target");
+        state.hovered = Some(other);
+        state.apply_to_state();
+        state.set_animation_mode(crate::state::AnimationMode::Settled);
+        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+
+        let ops = draw_ops(&tree, &state);
+        let badge = find_quad(&ops, "badge").expect("badge quad");
+        let DrawOp::Quad { uniforms, .. } = badge else {
+            unreachable!()
+        };
+        let UniformValue::Color(fill) = uniforms.get("fill").expect("badge fill") else {
+            panic!("expected color uniform");
+        };
+        let expected = (255.0_f32 * 0.25).round() as u8;
+        assert!(
+            (fill.a as i32 - expected as i32).abs() <= 2,
+            "badge should be at rest opacity when interaction is on a sibling region; got {}",
+            fill.a,
+        );
     }
 
     fn find_quad<'a>(ops: &'a [DrawOp], id_substr: &str) -> Option<&'a DrawOp> {

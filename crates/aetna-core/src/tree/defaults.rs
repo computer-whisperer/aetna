@@ -26,7 +26,7 @@ impl Default for El {
             alpha_follows_focused_ancestor: false,
             blink_when_focused: false,
             state_follows_interactive_ancestor: false,
-            reveal_on_hover: None,
+            hover_alpha: None,
             source: Source::default(),
             axis: Axis::Overlay,
             gap: 0.0,

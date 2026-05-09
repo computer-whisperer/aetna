@@ -45,9 +45,10 @@ pub use crate::theme::Theme;
 pub use crate::toast::{Toast, ToastLevel, ToastSpec};
 pub use crate::tokens;
 pub use crate::tree::{
-    Align, Axis, Color, El, FontFamily, FontWeight, IconName, InteractionState, Justify, Kind,
-    Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column,
-    divider, hard_break, image, row, scroll, spacer, stack, text_runs, virtual_list,
+    Align, Axis, Color, El, FontFamily, FontWeight, HoverAlpha, IconName, InteractionState,
+    Justify, Kind, Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole,
+    TextWrap, column, divider, hard_break, image, row, scroll, spacer, stack, text_runs,
+    virtual_list,
 };
 pub use crate::vector::IconMaterial;
 pub use crate::widgets::accordion::{

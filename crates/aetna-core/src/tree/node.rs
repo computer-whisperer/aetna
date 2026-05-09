@@ -9,6 +9,7 @@ use crate::style::StyleProfile;
 
 use super::color::Color;
 use super::geometry::Sides;
+use super::identity::HoverAlpha;
 use super::layout_types::{Align, Axis, Justify, Size};
 use super::semantics::{Kind, Source, SurfaceRole};
 use super::text_types::{FontFamily, FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
@@ -90,20 +91,26 @@ pub struct El {
     /// reacts on the thumb itself, mirroring shadcn's
     /// `hover:ring-4 hover:ring-ring/50`.
     pub state_follows_interactive_ancestor: bool,
-    /// When `Some(rest_opacity)`, this node's paint opacity is
-    /// modulated by the nearest focusable ancestor's hover envelope
-    /// — combined with the node's own hover envelope via `max`, so
-    /// hovering the child directly also reveals it. The drawn alpha
-    /// interpolates from `rest_opacity` (no hover) up to `1.0` (full
-    /// hover), then composes multiplicatively with the existing
-    /// [`Self::opacity`] / inherited opacity stack.
+    /// When `Some`, this node's paint opacity is bound to the
+    /// **subtree interaction envelope** — `max` of the hover, focus,
+    /// and press envelopes for the subtree rooted here. The drawn
+    /// alpha interpolates from `rest` (no interaction anywhere in the
+    /// subtree) to `peak` (full interaction), then composes
+    /// multiplicatively with the existing [`Self::opacity`] /
+    /// inherited opacity stack.
+    ///
+    /// "Interaction" includes hovering, pressing, or keyboard-focusing
+    /// any descendant — so a hover-revealed close icon stays visible
+    /// when its tab is keyboard-focused, and an action pill stays
+    /// visible when the cursor moves to one of its focusable buttons.
+    /// Mirrors CSS's "this element OR any descendant is hot."
     ///
     /// Layout-neutral — the element's geometry stays fixed regardless
-    /// of hover. Use this for hover-revealed close buttons, secondary
-    /// actions on list rows, hover-only validation icons, and other
-    /// "show on hover" patterns whose visibility shouldn't shift the
-    /// surrounding layout.
-    pub reveal_on_hover: Option<f32>,
+    /// of interaction state. Use for hover-revealed close buttons,
+    /// secondary actions on list rows, hover-only validation icons,
+    /// and other "show on interaction" patterns whose visibility
+    /// shouldn't shift the surrounding layout.
+    pub hover_alpha: Option<HoverAlpha>,
     pub source: Source,
 
     // Layout

@@ -211,6 +211,19 @@ pub enum AnimProp {
     /// Focus-ring alpha — eases 0→1 on focus enter, 1→0 on focus leave.
     /// Lets the ring fade out after focus moves elsewhere.
     FocusRingAlpha,
+    /// 0..1 amount tracking "is the hover target this node or any
+    /// descendant?". Eases 0→1 when the cursor enters the subtree, 1→0
+    /// when it leaves. Drives region-shaped hover affordances
+    /// (`hover_alpha`, future hover-driven translate / scale / tint).
+    SubtreeHoverAmount,
+    /// 0..1 amount tracking "is the press target this node or any
+    /// descendant?". Subtree analogue of `PressAmount`.
+    SubtreePressAmount,
+    /// 0..1 amount tracking "is the focus target this node or any
+    /// descendant?". Subtree analogue of `FocusRingAlpha`. Composed
+    /// with `SubtreeHoverAmount` by `hover_alpha` so keyboard focus
+    /// reveals the same affordance hover does.
+    SubtreeFocusAmount,
     /// App-driven fill colour — eases between the values the build
     /// closure produces across rebuilds.
     AppFill,

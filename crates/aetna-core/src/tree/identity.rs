@@ -5,6 +5,26 @@ use std::panic::Location;
 use super::node::El;
 use super::semantics::{Kind, Source};
 
+/// Configuration for [`El::hover_alpha`] — the rest and peak alpha
+/// endpoints for a node whose opacity binds to the **subtree
+/// interaction envelope** (max of hover, focus, and press over the
+/// subtree rooted at this node).
+///
+/// `rest` is the drawn alpha when no descendant of this node is
+/// currently the active hover, focus, or press target. `peak` is the
+/// drawn alpha at full envelope. Linear interpolation between the two
+/// follows the eased subtree envelope (0..1).
+///
+/// Both fields are clamped to `[0.0, 1.0]` by [`El::hover_alpha`].
+/// Typical use is `rest < peak` ("reveal on interaction"), but the
+/// representation accepts `rest > peak` ("fade out on interaction") and
+/// sub-1.0 peaks for subtle affordances.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HoverAlpha {
+    pub rest: f32,
+    pub peak: f32,
+}
+
 impl El {
     pub fn new(kind: Kind) -> Self {
         Self {
@@ -80,22 +100,34 @@ impl El {
         self
     }
 
-    /// Reveal this element on hover of a focusable ancestor (or the
-    /// element itself).
+    /// Bind this element's paint opacity to the subtree interaction
+    /// envelope — the `max` of hover, focus, and press for the subtree
+    /// rooted at this element.
     ///
-    /// `rest_opacity` is the drawn alpha when no hover signal is
-    /// present (clamped to `[0, 1]`); the element fades up to full
-    /// opacity as the ancestor's hover envelope animates toward `1.0`.
-    /// Self-hover composes via `max`, so mousing directly onto the
-    /// element keeps it visible after the ancestor loses hover.
+    /// At rest (no descendant is the active hover, focus, or press
+    /// target) the element paints at `rest`. At full envelope it paints
+    /// at `peak`. Both are clamped to `[0.0, 1.0]`, with linear
+    /// interpolation in between following the eased envelope.
+    ///
+    /// "Subtree" matches CSS `:hover` semantics: hovering, focusing, or
+    /// pressing *any descendant* keeps the element revealed. A
+    /// hover-revealed close icon stays visible while the cursor moves
+    /// across the tab body or while the tab is keyboard-focused; an
+    /// action pill stays visible while the cursor moves between
+    /// focusable buttons inside it. The trigger isn't strictly
+    /// "hover" — focus and press also count — but `hover` is the
+    /// dominant case and the name reflects it.
     ///
     /// Layout-neutral — the element keeps its computed rect at all
-    /// times. Use this for hover-revealed close buttons, secondary
-    /// actions on list rows, hover-only validation icons, and other
-    /// "show on hover" patterns where the surrounding layout
-    /// shouldn't shift on hover.
-    pub fn reveal_on_hover(mut self, rest_opacity: f32) -> Self {
-        self.reveal_on_hover = Some(rest_opacity.clamp(0.0, 1.0));
+    /// times. Use for hover-revealed close buttons, secondary actions
+    /// on list rows, hover-only validation icons, and other
+    /// "show on interaction" patterns where the surrounding layout
+    /// shouldn't shift.
+    pub fn hover_alpha(mut self, rest: f32, peak: f32) -> Self {
+        self.hover_alpha = Some(HoverAlpha {
+            rest: rest.clamp(0.0, 1.0),
+            peak: peak.clamp(0.0, 1.0),
+        });
         self
     }
 
