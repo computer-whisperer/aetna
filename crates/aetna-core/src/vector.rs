@@ -61,6 +61,23 @@ impl VectorAsset {
         })
     }
 
+    /// Return this asset with every solid color resolved through
+    /// `palette`. Token names are preserved by palette resolution, so
+    /// subsequent palette swaps can resolve the same source asset again
+    /// while the resolved RGBA still participates in atlas identity.
+    pub fn resolved_palette(&self, palette: &crate::palette::Palette) -> Self {
+        let mut out = self.clone();
+        for path in &mut out.paths {
+            if let Some(fill) = &mut path.fill {
+                fill.color = resolve_vector_color(fill.color, palette);
+            }
+            if let Some(stroke) = &mut path.stroke {
+                stroke.color = resolve_vector_color(stroke.color, palette);
+            }
+        }
+        out
+    }
+
     /// Stable content-hash used as a cache key in MSDF / mesh atlases.
     /// Two assets with identical view box, paths, fills, strokes, and
     /// gradients hash to the same value — backends dedupe rasterised
@@ -72,20 +89,67 @@ impl VectorAsset {
     /// equal cases (`-0.0` vs `0.0`, `NaN` payloads) are treated as
     /// distinct, which matches what the atlas cache should do anyway.
     pub fn content_hash(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
         use std::hash::Hasher;
-        let mut h = DefaultHasher::new();
+        let mut h = StableHasher::new();
         hash_view_box(&mut h, self.view_box);
-        h.write_usize(self.paths.len());
+        write_len(&mut h, self.paths.len());
         for path in &self.paths {
             hash_path(&mut h, path);
         }
-        h.write_usize(self.gradients.len());
+        write_len(&mut h, self.gradients.len());
         for grad in &self.gradients {
             hash_gradient(&mut h, grad);
         }
         h.finish()
     }
+}
+
+fn resolve_vector_color(color: VectorColor, palette: &crate::palette::Palette) -> VectorColor {
+    match color {
+        VectorColor::Solid(c) => VectorColor::Solid(palette.resolve(c)),
+        VectorColor::CurrentColor | VectorColor::Gradient(_) => color,
+    }
+}
+
+/// A small fixed FNV-1a hasher for persistent-ish vector content
+/// identity. `DefaultHasher` is intentionally not specified by std;
+/// this keeps `VectorAsset::content_hash` deterministic across toolchain
+/// runs and target architectures.
+struct StableHasher {
+    state: u64,
+}
+
+impl StableHasher {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    fn new() -> Self {
+        Self {
+            state: Self::OFFSET,
+        }
+    }
+}
+
+impl std::hash::Hasher for StableHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.state ^= *byte as u64;
+            self.state = self.state.wrapping_mul(Self::PRIME);
+        }
+    }
+
+    fn finish(&self) -> u64 {
+        self.state
+    }
+}
+
+fn write_len(h: &mut impl std::hash::Hasher, len: usize) {
+    h.write_u64(len as u64);
+}
+
+fn hash_str(h: &mut impl std::hash::Hasher, value: &str) {
+    write_len(h, value.len());
+    h.write(value.as_bytes());
 }
 
 fn hash_view_box(h: &mut impl std::hash::Hasher, vb: [f32; 4]) {
@@ -95,7 +159,7 @@ fn hash_view_box(h: &mut impl std::hash::Hasher, vb: [f32; 4]) {
 }
 
 fn hash_path(h: &mut impl std::hash::Hasher, path: &VectorPath) {
-    h.write_usize(path.segments.len());
+    write_len(h, path.segments.len());
     for seg in &path.segments {
         hash_segment(h, seg);
     }
@@ -189,7 +253,7 @@ fn hash_color(h: &mut impl std::hash::Hasher, c: VectorColor) {
             match col.token {
                 Some(name) => {
                     h.write_u8(1);
-                    h.write(name.as_bytes());
+                    hash_str(h, name);
                 }
                 None => h.write_u8(0),
             }
@@ -229,7 +293,7 @@ fn hash_gradient(h: &mut impl std::hash::Hasher, g: &VectorGradient) {
 }
 
 fn hash_stops(h: &mut impl std::hash::Hasher, stops: &[VectorGradientStop]) {
-    h.write_usize(stops.len());
+    write_len(h, stops.len());
     for stop in stops {
         h.write_u32(stop.offset.to_bits());
         for c in stop.color {

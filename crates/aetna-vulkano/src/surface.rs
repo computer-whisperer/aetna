@@ -191,11 +191,17 @@ impl SurfacePaint {
         let id = texture.id().0;
         if !self.cache.contains_key(&id) {
             let backend = texture.backend();
-            let vk_tex = backend.as_any().downcast_ref::<VulkanoAppTexture>().expect(
-                "AppTexture passed to aetna-vulkano was not constructed by \
-                     aetna_vulkano::app_texture; mixing backends in one runtime \
-                     is unsupported",
-            );
+            let vk_tex = backend
+                .as_any()
+                .downcast_ref::<VulkanoAppTexture>()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "AppTexture passed to aetna-vulkano was not constructed by \
+                         aetna_vulkano::app_texture (actual backend: {}); mixing \
+                         backends in one runtime is unsupported",
+                        texture.backend_name(),
+                    )
+                });
             let descriptor_set = DescriptorSet::new(
                 self.descriptor_alloc.clone(),
                 self.pipeline_premul.layout().set_layouts()[1].clone(),

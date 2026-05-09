@@ -241,10 +241,13 @@ impl SurfacePaint {
         let id = texture.id().0;
         if !self.cache.contains_key(&id) {
             let backend = texture.backend();
-            let wgpu_tex = backend.as_any().downcast_ref::<WgpuAppTexture>().expect(
-                "AppTexture passed to aetna-wgpu was not constructed by aetna_wgpu::app_texture; \
-                     mixing backends in one runtime is unsupported",
-            );
+            let wgpu_tex = backend.as_any().downcast_ref::<WgpuAppTexture>().unwrap_or_else(|| {
+                panic!(
+                    "AppTexture passed to aetna-wgpu was not constructed by aetna_wgpu::app_texture \
+                     (actual backend: {}); mixing backends in one runtime is unsupported",
+                    texture.backend_name(),
+                )
+            });
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("aetna_wgpu::surface::bind_group"),
                 layout: &self.bind_layout,

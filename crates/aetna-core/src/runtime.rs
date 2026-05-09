@@ -1064,10 +1064,8 @@ impl RunnerCore {
         let shader_needs_redraw = ops.iter().any(|op| op_is_continuous(op, &samples_time));
 
         // Inside-out redraw deadlines: walk the El tree and aggregate
-        // `redraw_within` across visible widgets (rect ∩ viewport).
-        // Visibility filters off-screen / scrolled-out widgets the
-        // simple way for 0.3.x — full scissor inheritance is a future
-        // refinement.
+        // `redraw_within` across visible widgets (rect ∩ viewport and
+        // inherited clip scissors).
         let widget_redraw =
             aggregate_redraw_within(root, viewport, &self.ui_state.layout.computed_rects);
 
@@ -1479,21 +1477,58 @@ fn aggregate_redraw_within(
     rects: &std::collections::HashMap<String, Rect>,
 ) -> Option<std::time::Duration> {
     let mut acc: Option<std::time::Duration> = None;
-    visit_redraw_within(node, viewport, rects, &mut acc);
+    visit_redraw_within(node, viewport, rects, VisibilityClip::Unclipped, &mut acc);
     acc
+}
+
+#[derive(Clone, Copy)]
+enum VisibilityClip {
+    Unclipped,
+    Clipped(Rect),
+    Empty,
+}
+
+impl VisibilityClip {
+    fn intersect(self, rect: Rect) -> Self {
+        if rect.w <= 0.0 || rect.h <= 0.0 {
+            return Self::Empty;
+        }
+        match self {
+            Self::Unclipped => Self::Clipped(rect),
+            Self::Clipped(prev) => prev
+                .intersect(rect)
+                .map(Self::Clipped)
+                .unwrap_or(Self::Empty),
+            Self::Empty => Self::Empty,
+        }
+    }
+
+    fn permits(self, rect: Rect) -> bool {
+        if rect.w <= 0.0 || rect.h <= 0.0 {
+            return false;
+        }
+        match self {
+            Self::Unclipped => true,
+            Self::Clipped(clip) => rect.intersect(clip).is_some(),
+            Self::Empty => false,
+        }
+    }
 }
 
 fn visit_redraw_within(
     node: &El,
     viewport: Rect,
     rects: &std::collections::HashMap<String, Rect>,
+    inherited_clip: VisibilityClip,
     acc: &mut Option<std::time::Duration>,
 ) {
+    let rect = rects.get(&node.computed_id).copied();
     if let Some(d) = node.redraw_within {
-        if let Some(rect) = rects.get(&node.computed_id)
+        if let Some(rect) = rect
             && rect.w > 0.0
             && rect.h > 0.0
             && rect.intersect(viewport).is_some()
+            && inherited_clip.permits(rect)
         {
             *acc = Some(match *acc {
                 Some(prev) => prev.min(d),
@@ -1501,8 +1536,14 @@ fn visit_redraw_within(
             });
         }
     }
+    let child_clip = if node.clip {
+        rect.map(|r| inherited_clip.intersect(r))
+            .unwrap_or(VisibilityClip::Empty)
+    } else {
+        inherited_clip
+    };
     for child in &node.children {
-        visit_redraw_within(child, viewport, rects, acc);
+        visit_redraw_within(child, viewport, rects, child_clip, acc);
     }
 }
 
@@ -2053,6 +2094,42 @@ mod tests {
         assert_eq!(
             next, None,
             "off-screen redraw_within must not contribute to the aggregate",
+        );
+    }
+
+    #[test]
+    fn redraw_within_clipped_out_widget_is_ignored() {
+        use std::time::Duration;
+
+        let clipped = crate::column([crate::widgets::text::text("clipped")
+            .redraw_within(Duration::from_millis(16))
+            .width(crate::tree::Size::Fixed(10.0))
+            .height(crate::tree::Size::Fixed(10.0))])
+        .clip()
+        .width(crate::tree::Size::Fixed(100.0))
+        .height(crate::tree::Size::Fixed(20.0))
+        .layout(|ctx| {
+            vec![Rect::new(
+                ctx.container.x,
+                ctx.container.y + 30.0,
+                10.0,
+                10.0,
+            )]
+        });
+        let mut tree = crate::column([clipped]);
+
+        let mut core = RunnerCore::new();
+        let mut t = PrepareTimings::default();
+        let (_ops, _needs, next) = core.prepare_layout(
+            &mut tree,
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            1.0,
+            &mut t,
+            RunnerCore::no_time_shaders,
+        );
+        assert_eq!(
+            next, None,
+            "redraw_within inside an inherited clip but outside the clip rect must not contribute",
         );
     }
 

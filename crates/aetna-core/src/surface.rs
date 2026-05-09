@@ -12,12 +12,13 @@
 //! # Sizing contract
 //!
 //! The source texture's pixel dimensions are **independent of the
-//! rendered size**. `surface()` samples the full texture across its
-//! resolved layout rect with bilinear filtering — mismatched aspect
-//! ratios stretch the content. 0.3.x ships only this fill-the-rect
-//! projection; `ImageFit`-style modes are a future enhancement. See
-//! [`crate::tree::surface`] for sizing strategies (pixel-accurate,
-//! viewport-driven re-allocation, aspect-ratio wrappers).
+//! rendered size**. By default, `surface()` samples the full texture
+//! across its resolved layout rect with bilinear filtering; use
+//! [`crate::tree::El::surface_fit`] for `Contain`, `Cover`, or natural
+//! size projection, and [`crate::tree::El::surface_transform`] for
+//! destination-space affine transforms. See [`crate::tree::surface`]
+//! for sizing strategies (pixel-accurate, viewport-driven
+//! re-allocation, aspect-ratio wrappers).
 //!
 //! # Backend dispatch
 //!
@@ -117,6 +118,11 @@ pub trait AppTextureBackend: Send + Sync + fmt::Debug + 'static {
     /// asserts the trait object is its own concrete type; mixing
     /// backends in one runtime is unsupported.
     fn as_any(&self) -> &dyn Any;
+
+    /// Human-readable concrete backend type for diagnostics.
+    fn backend_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 /// An app-owned GPU texture handed to Aetna for compositing. Cheap
@@ -153,6 +159,11 @@ impl AppTexture {
     /// from their record path and downcast to their concrete type.
     pub fn backend(&self) -> &dyn AppTextureBackend {
         &*self.inner
+    }
+
+    /// Human-readable concrete backend type for diagnostics.
+    pub fn backend_name(&self) -> &'static str {
+        self.inner.backend_name()
     }
 }
 

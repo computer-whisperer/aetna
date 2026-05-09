@@ -82,7 +82,9 @@ pub fn resolve_palette(ops: &mut [DrawOp], palette: &Palette) {
                 }
             }
             DrawOp::AppTexture { .. } => {}
-            DrawOp::Vector { .. } => {}
+            DrawOp::Vector { asset, .. } => {
+                *asset = std::sync::Arc::new(asset.resolved_palette(palette));
+            }
             DrawOp::BackdropSnapshot => {}
         }
     }
@@ -2068,6 +2070,36 @@ mod tests {
         assert_eq!(
             first_seg,
             Some(crate::vector::VectorSegment::MoveTo([0.0, 0.0]))
+        );
+    }
+
+    #[test]
+    fn vector_asset_colors_resolve_against_active_palette() {
+        use crate::vector::{PathBuilder, VectorAsset, VectorColor};
+
+        let path = PathBuilder::new()
+            .move_to(0.0, 0.0)
+            .line_to(10.0, 10.0)
+            .stroke_solid(tokens::PRIMARY, 1.0)
+            .build();
+        let mut root =
+            crate::tree::vector(VectorAsset::from_paths([0.0, 0.0, 10.0, 10.0], vec![path]));
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 100.0));
+
+        let ops = draw_ops_with_theme(&root, &state, &Theme::aetna_light());
+        let DrawOp::Vector { asset, .. } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::Vector { .. }))
+            .expect("vector op")
+        else {
+            unreachable!()
+        };
+        let stroke = asset.paths[0].stroke.expect("stroke");
+        assert_eq!(
+            stroke.color,
+            VectorColor::Solid(crate::Palette::aetna_light().primary),
+            "vector token colors should resolve through the active palette"
         );
     }
 
