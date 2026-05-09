@@ -28,7 +28,7 @@ pub use crate::event::{
 pub use crate::icons::{all_icon_names, icon};
 pub use crate::image::{Image, ImageFit};
 pub use crate::ir::{DrawOp, TextAnchor};
-pub use crate::layout::{LayoutCtx, LayoutFn, VirtualItems};
+pub use crate::layout::{LayoutCtx, LayoutFn, VirtualItems, VirtualMode};
 pub use crate::metrics::{ComponentSize, MetricsRole, ThemeMetrics};
 pub use crate::palette::Palette;
 pub use crate::shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
@@ -48,7 +48,7 @@ pub use crate::tree::{
     Align, Axis, Color, El, FontFamily, FontWeight, HoverAlpha, IconName, InteractionState,
     Justify, Kind, Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole,
     TextWrap, column, divider, hard_break, image, row, scroll, spacer, stack, text_runs,
-    virtual_list,
+    virtual_list, virtual_list_dyn,
 };
 pub use crate::vector::IconMaterial;
 pub use crate::widgets::accordion::{

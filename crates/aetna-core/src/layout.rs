@@ -85,26 +85,44 @@ impl std::fmt::Debug for LayoutFn {
 }
 
 /// Virtualized list state attached to a [`Kind::VirtualList`] node.
-/// Holds the row count, fixed row height, and the closure that realizes
-/// a row by global index. Set via [`crate::virtual_list`]; the layout
-/// pass calls `build_row(i)` only for indices whose rect intersects the
-/// viewport.
+/// Holds the row count, the row-height policy, and the closure that
+/// realizes a row by global index. Set via [`crate::virtual_list`] or
+/// [`crate::virtual_list_dyn`]; the layout pass calls `build_row(i)`
+/// only for indices whose rect intersects the viewport.
 ///
-/// ## Current scope
+/// ## Row-height policies
 ///
-/// - **Fixed row height** — every row is `row_height` logical pixels
-///   tall. Variable-height rows would require an estimated height +
-///   measure cache; not yet supported.
+/// - [`VirtualMode::Fixed`] — every row is the same logical-pixel
+///   height. Scroll → visible-range is O(1).
+/// - [`VirtualMode::Dynamic`] — rows vary in height. The library uses
+///   `estimated_row_height` as a placeholder for unmeasured rows and
+///   measures (via the intrinsic pass) each row that becomes visible,
+///   caching the result on `UiState`. After enough scrolling the cache
+///   is fully warm; before then, the scroll position may shift slightly
+///   as estimates resolve to actual heights.
+///
+/// ## Other current scope
+///
 /// - **Vertical only** — feed/chat-log-shaped lists are the target.
 ///   A horizontal variant can come later.
 /// - **No row pooling** — visible rows are rebuilt from scratch each
 ///   layout pass. Fine for thousands of items; if it bottlenecks we
 ///   add a pool keyed by stable row keys.
+#[derive(Clone, Debug)]
+pub enum VirtualMode {
+    /// Every row is exactly `row_height` logical pixels tall.
+    Fixed { row_height: f32 },
+    /// Rows have variable heights. `estimated_row_height` seeds the
+    /// content-height total and the visible-range walk for rows that
+    /// haven't been measured yet.
+    Dynamic { estimated_row_height: f32 },
+}
+
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct VirtualItems {
     pub count: usize,
-    pub row_height: f32,
+    pub mode: VirtualMode,
     pub build_row: Arc<dyn Fn(usize) -> El + Send + Sync>,
 }
 
@@ -119,7 +137,24 @@ impl VirtualItems {
         );
         VirtualItems {
             count,
-            row_height,
+            mode: VirtualMode::Fixed { row_height },
+            build_row: Arc::new(build_row),
+        }
+    }
+
+    pub fn new_dyn<F>(count: usize, estimated_row_height: f32, build_row: F) -> Self
+    where
+        F: Fn(usize) -> El + Send + Sync + 'static,
+    {
+        assert!(
+            estimated_row_height > 0.0,
+            "VirtualItems::new_dyn requires estimated_row_height > 0.0 (got {estimated_row_height})"
+        );
+        VirtualItems {
+            count,
+            mode: VirtualMode::Dynamic {
+                estimated_row_height,
+            },
             build_row: Arc::new(build_row),
         }
     }
@@ -129,7 +164,7 @@ impl std::fmt::Debug for VirtualItems {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VirtualItems")
             .field("count", &self.count)
-            .field("row_height", &self.row_height)
+            .field("mode", &self.mode)
             .field("build_row", &"<fn>")
             .finish()
     }
@@ -335,14 +370,38 @@ fn layout_custom(node: &mut El, node_rect: Rect, layout_fn: LayoutFn, ui_state: 
     }
 }
 
-/// Virtualized list realization. Reads the stored scroll offset,
-/// clamps it to the available range, computes the visible row index
-/// range, calls `build_row(i)` for each, and lays them out at the
-/// scroll-shifted Y positions. Replaces both the column distribution
-/// and the scroll post-pass for `Kind::VirtualList` nodes.
+/// Virtualized list realization. Dispatches by [`VirtualMode`] —
+/// `Fixed` uses an O(1) division to find the visible range; `Dynamic`
+/// walks measured-or-estimated heights, measures each visible row's
+/// natural intrinsic height, and writes the result back to the height
+/// cache on `UiState` so subsequent frames have it available.
 fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state: &mut UiState) {
     let inner = node_rect.inset(node.padding);
-    let total_h = items.count as f32 * items.row_height;
+    match items.mode {
+        VirtualMode::Fixed { row_height } => {
+            layout_virtual_fixed(node, inner, items.count, row_height, items.build_row, ui_state)
+        }
+        VirtualMode::Dynamic {
+            estimated_row_height,
+        } => layout_virtual_dynamic(
+            node,
+            inner,
+            items.count,
+            estimated_row_height,
+            items.build_row,
+            ui_state,
+        ),
+    }
+}
+
+/// Clamp the stored scroll offset, write the metrics + thumb rect, and
+/// return the clamped offset. Shared scaffold for both virtual modes.
+fn write_virtual_scroll_state(
+    node: &El,
+    inner: Rect,
+    total_h: f32,
+    ui_state: &mut UiState,
+) -> f32 {
     let max_offset = (total_h - inner.h).max(0.0);
     let stored = ui_state
         .scroll
@@ -363,37 +422,181 @@ fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state:
             max_offset,
         },
     );
-
     write_thumb_rect(node, inner, total_h, max_offset, offset, ui_state);
+    offset
+}
 
-    if items.count == 0 {
+/// Assign the realized row a path-style `computed_id` matching the
+/// regular tree's role/key/index convention so hit-test, focus, and
+/// state lookups remain stable across scrolls.
+fn assign_virtual_row_id(child: &mut El, parent_id: &str, global_i: usize) {
+    let role = role_token(&child.kind);
+    let suffix = match (&child.key, role) {
+        (Some(k), r) => format!("{r}[{k}]"),
+        (None, r) => format!("{r}.{global_i}"),
+    };
+    assign_id(child, &format!("{parent_id}.{suffix}"));
+}
+
+fn layout_virtual_fixed(
+    node: &mut El,
+    inner: Rect,
+    count: usize,
+    row_height: f32,
+    build_row: Arc<dyn Fn(usize) -> El + Send + Sync>,
+    ui_state: &mut UiState,
+) {
+    let total_h = count as f32 * row_height;
+    let offset = write_virtual_scroll_state(node, inner, total_h, ui_state);
+
+    if count == 0 {
         node.children.clear();
         return;
     }
 
     // Visible index range — `start` floors, `end` ceils, both clamped.
-    let start = (offset / items.row_height).floor() as usize;
-    let end = (((offset + inner.h) / items.row_height).ceil() as usize).min(items.count);
+    let start = (offset / row_height).floor() as usize;
+    let end = (((offset + inner.h) / row_height).ceil() as usize).min(count);
 
-    let mut realized: Vec<El> = (start..end).map(|i| (items.build_row)(i)).collect();
+    let mut realized: Vec<El> = (start..end).map(|i| (build_row)(i)).collect();
     for (vis_i, child) in realized.iter_mut().enumerate() {
         let global_i = start + vis_i;
-        let role = role_token(&child.kind);
-        let suffix = match (&child.key, role) {
-            (Some(k), r) => format!("{r}[{k}]"),
-            (None, r) => format!("{r}.{global_i}"),
-        };
-        let child_path = format!("{}.{}", node.computed_id, suffix);
-        assign_id(child, &child_path);
+        assign_virtual_row_id(child, &node.computed_id, global_i);
 
-        let row_y = inner.y + global_i as f32 * items.row_height - offset;
-        let c_rect = Rect::new(inner.x, row_y, inner.w, items.row_height);
+        let row_y = inner.y + global_i as f32 * row_height - offset;
+        let c_rect = Rect::new(inner.x, row_y, inner.w, row_height);
         ui_state
             .layout
             .computed_rects
             .insert(child.computed_id.clone(), c_rect);
         layout_children(child, c_rect, ui_state);
     }
+    node.children = realized;
+}
+
+/// Variable-height virtualization. Each row's height comes from the
+/// `UiState` measurement cache if the row has been seen before, else
+/// from `estimated_row_height`. Visible rows are measured via
+/// [`intrinsic_constrained`] at the viewport width; the measured value
+/// is what positions sibling rows on this frame *and* gets written to
+/// the cache for the next.
+///
+/// Trade-off: when a row is first seen, the estimate it replaced may
+/// have been wrong by ~tens of pixels. The cumulative offset of the
+/// rows above it is then slightly off, so the scroll position appears
+/// to jump as the user scrolls into never-seen regions. Once the cache
+/// is warm for a region, scrolling is stable.
+fn layout_virtual_dynamic(
+    node: &mut El,
+    inner: Rect,
+    count: usize,
+    estimated_row_height: f32,
+    build_row: Arc<dyn Fn(usize) -> El + Send + Sync>,
+    ui_state: &mut UiState,
+) {
+    // Drop measurements past the new end if the data shrunk.
+    if let Some(map) = ui_state
+        .scroll
+        .measured_row_heights
+        .get_mut(&node.computed_id)
+    {
+        map.retain(|i, _| *i < count);
+        if map.is_empty() {
+            ui_state
+                .scroll
+                .measured_row_heights
+                .remove(&node.computed_id);
+        }
+    }
+
+    let (measured_sum, measured_count) = ui_state
+        .scroll
+        .measured_row_heights
+        .get(&node.computed_id)
+        .map(|m| (m.values().sum::<f32>(), m.len()))
+        .unwrap_or((0.0, 0));
+    let unmeasured = count.saturating_sub(measured_count);
+    let total_h = measured_sum + (unmeasured as f32) * estimated_row_height;
+
+    let offset = write_virtual_scroll_state(node, inner, total_h, ui_state);
+
+    if count == 0 {
+        node.children.clear();
+        return;
+    }
+
+    // Find the first row whose bottom edge is past `offset` using a
+    // scoped immutable borrow; releasing it before the render loop
+    // keeps `ui_state` mutably available below.
+    let (start, start_y) = {
+        let measured = ui_state
+            .scroll
+            .measured_row_heights
+            .get(&node.computed_id);
+        let row_h = |i: usize| -> f32 {
+            measured
+                .and_then(|m| m.get(&i).copied())
+                .unwrap_or(estimated_row_height)
+        };
+        let mut y = 0.0_f32;
+        let mut start = 0;
+        while start < count {
+            let h = row_h(start);
+            if y + h > offset {
+                break;
+            }
+            y += h;
+            start += 1;
+        }
+        (start, y)
+    };
+    let mut cursor_y = start_y;
+    let mut idx = start;
+
+    let mut realized: Vec<El> = Vec::new();
+    let mut new_measurements: Vec<(usize, f32)> = Vec::new();
+
+    while idx < count && cursor_y < offset + inner.h {
+        let mut child = (build_row)(idx);
+        assign_virtual_row_id(&mut child, &node.computed_id, idx);
+
+        // Mirror the column-child sizing rules from `layout_axis`:
+        // Fixed → literal, Hug → intrinsic, Fill → invalid here.
+        let actual_h = match child.height {
+            Size::Fixed(v) => v.max(0.0),
+            Size::Hug => intrinsic_constrained(&child, Some(inner.w)).1.max(0.0),
+            Size::Fill(_) => panic!(
+                "virtual_list_dyn row {idx} on {:?} must size with Size::Fixed or Size::Hug; \
+                 Size::Fill would absorb the viewport's height and break virtualization",
+                node.computed_id,
+            ),
+        };
+        new_measurements.push((idx, actual_h));
+
+        let row_y = inner.y + cursor_y - offset;
+        let c_rect = Rect::new(inner.x, row_y, inner.w, actual_h);
+        ui_state
+            .layout
+            .computed_rects
+            .insert(child.computed_id.clone(), c_rect);
+        layout_children(&mut child, c_rect, ui_state);
+
+        realized.push(child);
+        cursor_y += actual_h;
+        idx += 1;
+    }
+
+    if !new_measurements.is_empty() {
+        let entry = ui_state
+            .scroll
+            .measured_row_heights
+            .entry(node.computed_id.clone())
+            .or_default();
+        for (i, h) in new_measurements {
+            entry.insert(i, h);
+        }
+    }
+
     node.children = realized;
 }
 
@@ -1757,6 +1960,133 @@ mod tests {
         .height(Size::Fixed(200.0));
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+    }
+
+    #[test]
+    fn virtual_list_dyn_respects_per_row_fixed_heights() {
+        // Alternating 40px / 80px rows. With a 200px viewport and offset 0,
+        // accumulated y goes 0, 40, 120, 160, 240 — the fifth row starts
+        // past the viewport, so four rows are realized.
+        let mut root = crate::tree::virtual_list_dyn(20, 50.0, |i| {
+            let h = if i % 2 == 0 { 40.0 } else { 80.0 };
+            crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
+                .key(format!("row-{i}"))
+                .height(Size::Fixed(h))
+        });
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        assert_eq!(
+            root.children.len(),
+            4,
+            "expected 4 realized rows, got {}",
+            root.children.len()
+        );
+        // y positions: row 0 → 0, row 1 → 40, row 2 → 120, row 3 → 160.
+        let ys: Vec<f32> = root
+            .children
+            .iter()
+            .map(|c| state.rect(&c.computed_id).y)
+            .collect();
+        assert!((ys[0] - 0.0).abs() < 0.5, "row 0 expected y≈0, got {}", ys[0]);
+        assert!((ys[1] - 40.0).abs() < 0.5, "row 1 expected y≈40, got {}", ys[1]);
+        assert!((ys[2] - 120.0).abs() < 0.5, "row 2 expected y≈120, got {}", ys[2]);
+        assert!((ys[3] - 160.0).abs() < 0.5, "row 3 expected y≈160, got {}", ys[3]);
+    }
+
+    #[test]
+    fn virtual_list_dyn_caches_measured_heights() {
+        // Build a list where the first frame realizes rows 0..k, measuring
+        // each. After layout the cache should hold those measurements and
+        // the next frame should read them.
+        let mut root = crate::tree::virtual_list_dyn(50, 50.0, |i| {
+            crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
+                .key(format!("row-{i}"))
+                .height(Size::Fixed(30.0))
+        });
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        let measured = state
+            .scroll
+            .measured_row_heights
+            .get(&root.computed_id)
+            .expect("dynamic virtual list should populate the height cache");
+        // At least the realized rows (≈ ceil(200/30) = 7) should be cached.
+        assert!(
+            measured.len() >= 7,
+            "expected ≥ 7 cached row heights, got {}",
+            measured.len()
+        );
+        for (_, h) in measured.iter() {
+            assert!(
+                (h - 30.0).abs() < 0.5,
+                "expected cached height ≈ 30, got {h}"
+            );
+        }
+    }
+
+    #[test]
+    fn virtual_list_dyn_total_height_uses_measured_plus_estimate() {
+        // 20 rows of fixed 30px in a 200px viewport. First frame realizes
+        // 7 rows (200/30 = 6.66, ceil = 7). Cache holds 7 × 30 = 210;
+        // remaining 13 × estimate 50 = 650; content_h = 860; max_offset =
+        // 660. A second frame with offset 9999 must clamp to that 660.
+        let make_root = || {
+            crate::tree::virtual_list_dyn(20, 50.0, |i| {
+                crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
+                    .key(format!("row-{i}"))
+                    .height(Size::Fixed(30.0))
+            })
+        };
+        let mut state = UiState::new();
+        let mut root = make_root();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        let measured_count = state
+            .scroll
+            .measured_row_heights
+            .get(&root.computed_id)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let expected_total = measured_count as f32 * 30.0
+            + (20 - measured_count) as f32 * 50.0;
+        let expected_max_offset = expected_total - 200.0;
+
+        state
+            .scroll
+            .offsets
+            .insert(root.computed_id.clone(), 9999.0);
+        let mut root2 = make_root();
+        layout(&mut root2, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        let stored = state
+            .scroll
+            .offsets
+            .get(&root2.computed_id)
+            .copied()
+            .unwrap_or(0.0);
+        assert!(
+            (stored - expected_max_offset).abs() < 0.5,
+            "expected offset clamped to {expected_max_offset}, got {stored}"
+        );
+    }
+
+    #[test]
+    fn virtual_list_dyn_empty_count_realizes_no_children() {
+        let mut root = crate::tree::virtual_list_dyn(0, 50.0, |i| {
+            crate::widgets::text::text(format!("r{i}"))
+        });
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        assert_eq!(root.children.len(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "estimated_row_height > 0.0")]
+    fn virtual_list_dyn_zero_estimate_panics() {
+        let _ = crate::tree::virtual_list_dyn(10, 0.0, |i| {
+            crate::widgets::text::text(format!("r{i}"))
+        });
     }
 
     #[test]

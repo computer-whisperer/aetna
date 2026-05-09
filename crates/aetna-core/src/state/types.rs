@@ -366,6 +366,13 @@ pub(crate) struct ScrollState {
     /// Pre-empts normal hit-test so thumb drags don't also fire
     /// app-level pointer events.
     pub(crate) thumb_drag: Option<ThumbDrag>,
+    /// Per-virtual-list row-height measurement cache, keyed by the
+    /// virtual list node's `computed_id` and then by row index. Filled
+    /// by the layout pass for `VirtualMode::Dynamic` lists as rows
+    /// enter the viewport and are measured. Subsequent frames read this
+    /// instead of falling back to the estimated row height, so scroll
+    /// math stabilizes once the visible regions have been seen.
+    pub(crate) measured_row_heights: HashMap<String, HashMap<usize, f32>>,
 }
 
 /// Runtime queue for toast notifications. Apps provide fire-and-forget

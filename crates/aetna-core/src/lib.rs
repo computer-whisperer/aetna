@@ -91,7 +91,7 @@ pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
 pub use icons::{IconStroke, all_icon_names, icon, icon_path, icon_strokes, icon_vector_asset};
 pub use ir::{DrawOp, TextAnchor};
-pub use layout::{LayoutCtx, LayoutFn, VirtualItems, layout};
+pub use layout::{LayoutCtx, LayoutFn, VirtualItems, VirtualMode, layout};
 pub use metrics::{ComponentSize, MetricsRole, ThemeMetrics};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
 pub use state::{AnimationMode, UiState, WidgetState};
@@ -117,7 +117,7 @@ pub use theme::Theme;
 pub use tree::{
     Align, Axis, Color, El, FontFamily, FontWeight, IconName, InteractionState, Justify, Kind,
     Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column,
-    divider, hard_break, row, scroll, spacer, stack, text_runs, virtual_list,
+    divider, hard_break, row, scroll, spacer, stack, text_runs, virtual_list, virtual_list_dyn,
 };
 pub use vector::IconMaterial;
 // Vector path / mesh tessellation types are internal-tooling surface.

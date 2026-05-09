@@ -221,6 +221,41 @@ where
     el
 }
 
+/// Variable-height variant of [`virtual_list`]. Each row sizes itself
+/// from its own content (`Size::Hug` or `Size::Fixed` on the main
+/// axis); `estimated_row_height` is used for unmeasured rows when the
+/// library positions the visible window and computes the scrollbar
+/// thumb. The first time a row enters the viewport its actual intrinsic
+/// height is measured at the viewport width and cached on `UiState`,
+/// so scroll math converges as the user scrolls.
+///
+/// Use this when row heights are content-driven (diff hunks, expanded
+/// rows, comment threads) and a single `row_height` would either waste
+/// space or truncate. For genuinely uniform lists prefer
+/// [`virtual_list`] — its O(1) range math is cheaper and free of any
+/// estimate/measure jitter.
+#[track_caller]
+pub fn virtual_list_dyn<F>(count: usize, estimated_row_height: f32, build_row: F) -> El
+where
+    F: Fn(usize) -> El + Send + Sync + 'static,
+{
+    let mut el = El::new(Kind::VirtualList)
+        .at_loc(Location::caller())
+        .axis(Axis::Column)
+        .align(Align::Stretch)
+        .width(Size::Fill(1.0))
+        .height(Size::Fill(1.0))
+        .clip()
+        .scrollable()
+        .scrollbar();
+    el.virtual_items = Some(VirtualItems::new_dyn(
+        count,
+        estimated_row_height,
+        build_row,
+    ));
+    el
+}
+
 /// A `Fill(1)` filler. Inside a `row` it pushes siblings to the right;
 /// inside a `column` it pushes siblings to the bottom.
 #[track_caller]
