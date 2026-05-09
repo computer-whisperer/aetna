@@ -43,7 +43,10 @@ use aetna_core::{
 };
 use smallvec::smallvec;
 use vulkano::{
-    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
+    buffer::{
+        Buffer, BufferCreateInfo, BufferUsage, Subbuffer,
+        allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
+    },
     command_buffer::{
         AutoCommandBufferBuilder, CopyImageInfo, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
         SubpassBeginInfo, SubpassContents, SubpassEndInfo,
@@ -80,7 +83,11 @@ use crate::naga_compile::wgsl_to_spirv;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
 use crate::text::TextPaint;
 
-const INITIAL_INSTANCE_CAPACITY: u64 = 1024;
+/// Initial arena size for the per-frame `SubbufferAllocator`s. Sized so
+/// a typical UI frame's instance + uniform uploads fit in a single arena
+/// without having to grow; the allocator falls back to a larger arena
+/// automatically when a frame asks for more.
+const SUBALLOC_ARENA_SIZE: u64 = 1 << 20; // 1 MiB
 
 pub struct Runner {
     device: Arc<Device>,
@@ -106,11 +113,28 @@ pub struct Runner {
     image_paint: ImagePaint,
 
     quad_vbo: Subbuffer<[f32]>,
-    frame_uniform_buf: Subbuffer<FrameUniforms>,
-    frame_descriptor_set: Arc<DescriptorSet>,
 
-    instance_buf: Subbuffer<[QuadInstance]>,
-    instance_capacity: u64,
+    /// Layout for set 0 = `FrameUniforms`. Cached so `prepare()` can
+    /// rebuild the descriptor set against a fresh per-frame uniform
+    /// suballocation without re-querying the pipeline.
+    frame_set_layout: Arc<DescriptorSetLayout>,
+
+    /// Per-frame `SubbufferAllocator` for transient host-visible
+    /// uploads — quad-instance data and the frame-uniform block.
+    /// Allocations from these are valid for the lifetime of the
+    /// `Subbuffer` they yield, which the descriptor set / vertex
+    /// binding keeps alive across submission. Older arenas are reclaimed
+    /// once the frame's GpuFuture is cleaned up by the host loop.
+    instance_alloc: SubbufferAllocator,
+    uniform_alloc: SubbufferAllocator,
+
+    /// Per-frame quad-instance suballocation written in `prepare()` and
+    /// bound in `draw_items`. `None` between construction and the first
+    /// non-empty frame.
+    instance_buf: Option<Subbuffer<[QuadInstance]>>,
+    /// Per-frame descriptor set holding the freshly-allocated uniform
+    /// suballocation at binding 0.
+    frame_descriptor_set: Option<Arc<DescriptorSet>>,
 
     /// SPIR-V words cached per registered custom shader name. The
     /// pipeline itself is built lazily on first use.
@@ -360,36 +384,37 @@ impl Runner {
         )
         .expect("aetna-vulkano: quad VBO");
 
-        // Persistent host-visible frame uniforms. Host writes new values
-        // each frame in `prepare()`; the descriptor set bound to it
-        // doesn't need rebuilding because the buffer handle is stable.
-        let frame_uniform_buf = Buffer::new_sized::<FrameUniforms>(
+        // Cached set-0 layout — every rect-shaped pipeline shares it,
+        // so one layout drives the per-frame descriptor set rebuild in
+        // `prepare()`.
+        let frame_set_layout = rr.layout().set_layouts()[0].clone();
+
+        // Per-frame host-visible suballocators. The instance allocator
+        // backs `bind_vertex_buffers` slots; the uniform allocator backs
+        // `WriteDescriptorSet::buffer` for FrameUniforms. Both yield
+        // fresh suballocations every frame so a write in the next
+        // `prepare()` never contends with the GPU still reading the
+        // previous frame's bytes.
+        let instance_alloc = SubbufferAllocator::new(
             memory_alloc.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::UNIFORM_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
+            SubbufferAllocatorCreateInfo {
+                arena_size: SUBALLOC_ARENA_SIZE,
+                buffer_usage: BufferUsage::VERTEX_BUFFER,
                 memory_type_filter: MemoryTypeFilter::PREFER_HOST
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-        )
-        .expect("aetna-vulkano: frame uniform buffer");
-
-        // Bind the frame buffer to set 0 of the rounded_rect pipeline's
-        // layout. All rect-shaped pipelines share this set 0 binding,
-        // so one descriptor set serves them all.
-        let frame_set_layout = rr.layout().set_layouts()[0].clone();
-        let frame_descriptor_set = DescriptorSet::new(
-            descriptor_alloc.clone(),
-            frame_set_layout,
-            [WriteDescriptorSet::buffer(0, frame_uniform_buf.clone())],
-            [],
-        )
-        .expect("aetna-vulkano: frame descriptor set");
-
-        let instance_buf = create_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
+        );
+        let uniform_alloc = SubbufferAllocator::new(
+            memory_alloc.clone(),
+            SubbufferAllocatorCreateInfo {
+                arena_size: SUBALLOC_ARENA_SIZE,
+                buffer_usage: BufferUsage::UNIFORM_BUFFER,
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        );
 
         let text_subpass =
             Subpass::from(render_pass.clone(), 0).expect("aetna-vulkano: text subpass 0");
@@ -451,10 +476,11 @@ impl Runner {
             icon_paint,
             image_paint,
             quad_vbo,
-            frame_uniform_buf,
-            frame_descriptor_set,
-            instance_buf,
-            instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            frame_set_layout,
+            instance_alloc,
+            uniform_alloc,
+            instance_buf: None,
+            frame_descriptor_set: None,
             registered_shaders: HashMap::new(),
             backdrop_shaders: HashSet::new(),
             time_shaders: HashSet::new(),
@@ -465,7 +491,7 @@ impl Runner {
             start_time: Instant::now(),
             core: {
                 let mut c = RunnerCore::new();
-                c.quad_scratch = Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize);
+                c.quad_scratch = Vec::with_capacity(1024);
                 c
             },
         }
@@ -628,20 +654,22 @@ impl Runner {
         );
 
         let t_paint_end = Instant::now();
-        // Grow the instance buffer if needed. Power-of-two doubling
-        // matches aetna-wgpu and keeps reallocation amortised O(1).
-        let needed = self.core.quad_scratch.len() as u64;
-        if needed > self.instance_capacity {
-            let new_cap = needed.next_power_of_two().max(self.instance_capacity * 2);
-            self.instance_buf = create_instance_buffer(&self.memory_alloc, new_cap);
-            self.instance_capacity = new_cap;
-        }
+        // Each frame we allocate a fresh instance suballocation (and,
+        // below, a fresh uniform suballocation + descriptor set) so
+        // a host write here cannot contend with the GPU still reading
+        // last frame's bytes. The previous arena is reclaimed once its
+        // GpuFuture is cleaned up by the host loop.
         if !self.core.quad_scratch.is_empty() {
-            let mut write = self
-                .instance_buf
-                .write()
-                .expect("aetna-vulkano: instance buffer write");
-            write[..self.core.quad_scratch.len()].copy_from_slice(&self.core.quad_scratch);
+            let buf = self
+                .instance_alloc
+                .allocate_slice::<QuadInstance>(self.core.quad_scratch.len() as u64)
+                .expect("aetna-vulkano: instance suballocate");
+            buf.write()
+                .expect("aetna-vulkano: instance suballocation write")
+                .copy_from_slice(&self.core.quad_scratch);
+            self.instance_buf = Some(buf);
+        } else {
+            self.instance_buf = None;
         }
         // Sync atlas dirty regions to GPU images + upload glyph instances.
         // Text uploads run through their own one-shot command buffer
@@ -657,10 +685,10 @@ impl Runner {
             // size in the top-left — and silently break hit-testing,
             // because layout's logical rects no longer match what the user
             // sees.
-            let mut write = self
-                .frame_uniform_buf
-                .write()
-                .expect("aetna-vulkano: frame uniform write");
+            let buf = self
+                .uniform_alloc
+                .allocate_sized::<FrameUniforms>()
+                .expect("aetna-vulkano: frame uniform suballocate");
             // Pin time to 0 in Settled mode so headless fixtures
             // rendering a time-driven shader (e.g. stock::spinner)
             // stay byte-identical run-to-run.
@@ -668,11 +696,23 @@ impl Runner {
                 aetna_core::AnimationMode::Settled => 0.0,
                 aetna_core::AnimationMode::Live => (Instant::now() - self.start_time).as_secs_f32(),
             };
-            *write = FrameUniforms {
+            *buf.write()
+                .expect("aetna-vulkano: frame uniform suballocation write") = FrameUniforms {
                 viewport: [viewport.w, viewport.h],
                 time,
                 scale_factor,
             };
+            // Rebuild set 0 against the new suballocation. The 16-byte
+            // descriptor write is cheap and the old set keeps last
+            // frame's submission alive until its fence completes.
+            let set = DescriptorSet::new(
+                self.descriptor_alloc.clone(),
+                self.frame_set_layout.clone(),
+                [WriteDescriptorSet::buffer(0, buf)],
+                [],
+            )
+            .expect("aetna-vulkano: per-frame descriptor set");
+            self.frame_descriptor_set = Some(set);
         }
         timings.gpu_upload = Instant::now() - t_paint_end;
 
@@ -944,11 +984,12 @@ impl Runner {
                     // sample undefined memory, which is a no-op visual
                     // bug rather than a validation error since every
                     // backdrop shader still has the binding declared.
+                    let frame_set = self.frame_descriptor_set();
                     let sets: Vec<DescriptorSetWithOffsets> =
                         if is_backdrop_shader && let Some(bg) = &self.backdrop_descriptor_set {
-                            vec![self.frame_descriptor_set.clone().into(), bg.clone().into()]
+                            vec![frame_set.clone().into(), bg.clone().into()]
                         } else {
-                            vec![self.frame_descriptor_set.clone().into()]
+                            vec![frame_set.clone().into()]
                         };
                     builder
                         .bind_descriptor_sets(
@@ -959,7 +1000,10 @@ impl Runner {
                         )
                         .expect("bind_descriptor_sets");
                     builder
-                        .bind_vertex_buffers(0, (self.quad_vbo.clone(), self.instance_buf.clone()))
+                        .bind_vertex_buffers(
+                            0,
+                            (self.quad_vbo.clone(), self.instance_buf().clone()),
+                        )
                         .expect("bind_vertex_buffers");
                     // SAFETY: the pipeline expects 4 vertices (the unit
                     // quad strip) and `run.count` instances starting at
@@ -991,7 +1035,7 @@ impl Runner {
                             pipeline.layout().clone(),
                             0,
                             (
-                                self.frame_descriptor_set.clone(),
+                                self.frame_descriptor_set().clone(),
                                 self.image_paint.descriptor_for_run(run).clone(),
                             ),
                         )
@@ -1026,7 +1070,7 @@ impl Runner {
                                     PipelineBindPoint::Graphics,
                                     pipeline.layout().clone(),
                                     0,
-                                    self.frame_descriptor_set.clone(),
+                                    self.frame_descriptor_set().clone(),
                                 )
                                 .expect("bind_descriptor_sets icon tess");
                             builder
@@ -1051,7 +1095,7 @@ impl Runner {
                                     pipeline.layout().clone(),
                                     0,
                                     (
-                                        self.frame_descriptor_set.clone(),
+                                        self.frame_descriptor_set().clone(),
                                         self.icon_paint.msdf_page_descriptor(run.page).clone(),
                                     ),
                                 )
@@ -1092,7 +1136,7 @@ impl Runner {
                                     text_pipeline.layout().clone(),
                                     0,
                                     (
-                                        self.frame_descriptor_set.clone(),
+                                        self.frame_descriptor_set().clone(),
                                         self.text_paint.page_descriptor(run.kind, run.page).clone(),
                                     ),
                                 )
@@ -1104,7 +1148,7 @@ impl Runner {
                                     PipelineBindPoint::Graphics,
                                     text_pipeline.layout().clone(),
                                     0,
-                                    self.frame_descriptor_set.clone(),
+                                    self.frame_descriptor_set().clone(),
                                 )
                                 .expect("bind_descriptor_sets text highlight");
                         }
@@ -1150,6 +1194,26 @@ impl Runner {
                 }
             }
         }
+    }
+
+    /// Per-frame quad-instance suballocation, set in `prepare()`.
+    /// Panics if called outside the prepare → draw cycle (i.e. before
+    /// the first frame, or after a frame with no quad draws). Bind
+    /// sites are gated by the QuadRun / Image / Text PaintItems, all
+    /// of which `prepare()` only emits when there's data to upload.
+    fn instance_buf(&self) -> &Subbuffer<[QuadInstance]> {
+        self.instance_buf
+            .as_ref()
+            .expect("aetna-vulkano: instance_buf accessed before prepare()")
+    }
+
+    /// Per-frame descriptor set holding the freshly-rebuilt FrameUniforms.
+    /// Always set after `prepare()` (the uniform write is unconditional);
+    /// panics if drawn before any prepare.
+    fn frame_descriptor_set(&self) -> &Arc<DescriptorSet> {
+        self.frame_descriptor_set
+            .as_ref()
+            .expect("aetna-vulkano: frame_descriptor_set accessed before prepare()")
     }
 
     /// (Re)allocate the snapshot image to match `target_image`'s
@@ -1201,22 +1265,3 @@ impl Runner {
     }
 }
 
-fn create_instance_buffer(
-    allocator: &Arc<StandardMemoryAllocator>,
-    capacity: u64,
-) -> Subbuffer<[QuadInstance]> {
-    Buffer::new_slice::<QuadInstance>(
-        allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        capacity,
-    )
-    .expect("aetna-vulkano: instance buffer alloc")
-}

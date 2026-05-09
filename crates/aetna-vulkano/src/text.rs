@@ -36,7 +36,10 @@ use cosmic_text::fontdb;
 use smallvec::smallvec;
 use ttf_parser::Face;
 use vulkano::{
-    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
+    buffer::{
+        Buffer, BufferCreateInfo, BufferUsage, Subbuffer,
+        allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
+    },
     command_buffer::{
         AutoCommandBufferBuilder, BufferImageCopy, CommandBufferUsage, CopyBufferToImageInfo,
         allocator::StandardCommandBufferAllocator,
@@ -80,7 +83,7 @@ use aetna_core::runtime::TextRecorder;
 
 use crate::naga_compile::wgsl_to_spirv;
 
-const INITIAL_INSTANCE_CAPACITY: u64 = 256;
+const INSTANCE_ARENA_SIZE: u64 = 128 * 1024;
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
@@ -134,23 +137,23 @@ pub(crate) struct TextPaint {
     // Colour bitmap path.
     color_pages: Vec<PageGpu>,
     color_instances: Vec<ColorGlyphInstance>,
-    color_instance_buf: Subbuffer<[ColorGlyphInstance]>,
-    color_instance_capacity: u64,
+    color_instance_alloc: SubbufferAllocator,
+    color_instance_buf: Option<Subbuffer<[ColorGlyphInstance]>>,
     color_pipeline: Arc<GraphicsPipeline>,
     color_sampler: Arc<Sampler>,
 
     // MTSDF outline path.
     msdf_pages: Vec<PageGpu>,
     msdf_instances: Vec<MsdfGlyphInstance>,
-    msdf_instance_buf: Subbuffer<[MsdfGlyphInstance]>,
-    msdf_instance_capacity: u64,
+    msdf_instance_alloc: SubbufferAllocator,
+    msdf_instance_buf: Option<Subbuffer<[MsdfGlyphInstance]>>,
     msdf_pipeline: Arc<GraphicsPipeline>,
     msdf_sampler: Arc<Sampler>,
 
     // Inline-run highlight path (solid quads behind glyphs).
     highlight_instances: Vec<HighlightInstance>,
-    highlight_instance_buf: Subbuffer<[HighlightInstance]>,
-    highlight_instance_capacity: u64,
+    highlight_instance_alloc: SubbufferAllocator,
+    highlight_instance_buf: Option<Subbuffer<[HighlightInstance]>>,
     highlight_pipeline: Arc<GraphicsPipeline>,
 
     runs: Vec<TextRun>,
@@ -182,8 +185,20 @@ impl TextPaint {
             },
         )
         .expect("aetna-vulkano: text colour sampler");
-        let color_instance_buf =
-            create_color_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
+
+        let make_alloc = || {
+            SubbufferAllocator::new(
+                memory_alloc.clone(),
+                SubbufferAllocatorCreateInfo {
+                    arena_size: INSTANCE_ARENA_SIZE,
+                    buffer_usage: BufferUsage::VERTEX_BUFFER,
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+            )
+        };
+        let color_instance_alloc = make_alloc();
 
         let msdf_pipeline = build_msdf_pipeline(device.clone(), subpass.clone());
         let msdf_sampler = Sampler::new(
@@ -197,32 +212,30 @@ impl TextPaint {
             },
         )
         .expect("aetna-vulkano: text msdf sampler");
-        let msdf_instance_buf =
-            create_msdf_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
+        let msdf_instance_alloc = make_alloc();
 
         let highlight_pipeline = build_highlight_pipeline(device.clone(), subpass);
-        let highlight_instance_buf =
-            create_highlight_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
+        let highlight_instance_alloc = make_alloc();
         let _ = device;
 
         Self {
             atlas: GlyphAtlas::new(),
             msdf_atlas: MsdfAtlas::new(DEFAULT_BASE_EM, DEFAULT_SPREAD),
             color_pages: Vec::new(),
-            color_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
-            color_instance_buf,
-            color_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            color_instances: Vec::new(),
+            color_instance_alloc,
+            color_instance_buf: None,
             color_pipeline,
             color_sampler,
             msdf_pages: Vec::new(),
-            msdf_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
-            msdf_instance_buf,
-            msdf_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            msdf_instances: Vec::new(),
+            msdf_instance_alloc,
+            msdf_instance_buf: None,
             msdf_pipeline,
             msdf_sampler,
-            highlight_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
-            highlight_instance_buf,
-            highlight_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            highlight_instances: Vec::new(),
+            highlight_instance_alloc,
+            highlight_instance_buf: None,
             highlight_pipeline,
             runs: Vec::new(),
             memory_alloc,
@@ -608,47 +621,44 @@ impl TextPaint {
                 .expect("aetna-vulkano: text upload fence wait");
         }
 
-        // ---- Resize + write the colour instance buffer ----
-        if (self.color_instances.len() as u64) > self.color_instance_capacity {
-            let new_cap = (self.color_instances.len() as u64).next_power_of_two();
-            self.color_instance_buf = create_color_instance_buffer(&self.memory_alloc, new_cap);
-            self.color_instance_capacity = new_cap;
-        }
-        if !self.color_instances.is_empty() {
-            let mut write = self
-                .color_instance_buf
-                .write()
-                .expect("aetna-vulkano: text colour instance buf write");
-            write[..self.color_instances.len()].copy_from_slice(&self.color_instances);
-        }
-
-        // ---- Resize + write the MSDF instance buffer ----
-        if (self.msdf_instances.len() as u64) > self.msdf_instance_capacity {
-            let new_cap = (self.msdf_instances.len() as u64).next_power_of_two();
-            self.msdf_instance_buf = create_msdf_instance_buffer(&self.memory_alloc, new_cap);
-            self.msdf_instance_capacity = new_cap;
-        }
-        if !self.msdf_instances.is_empty() {
-            let mut write = self
-                .msdf_instance_buf
-                .write()
-                .expect("aetna-vulkano: text msdf instance buf write");
-            write[..self.msdf_instances.len()].copy_from_slice(&self.msdf_instances);
+        // ---- Per-frame instance suballocations ----
+        if self.color_instances.is_empty() {
+            self.color_instance_buf = None;
+        } else {
+            let buf = self
+                .color_instance_alloc
+                .allocate_slice::<ColorGlyphInstance>(self.color_instances.len() as u64)
+                .expect("aetna-vulkano: text colour instance suballocate");
+            buf.write()
+                .expect("aetna-vulkano: text colour instance suballocation write")
+                .copy_from_slice(&self.color_instances);
+            self.color_instance_buf = Some(buf);
         }
 
-        // ---- Resize + write the highlight instance buffer ----
-        if (self.highlight_instances.len() as u64) > self.highlight_instance_capacity {
-            let new_cap = (self.highlight_instances.len() as u64).next_power_of_two();
-            self.highlight_instance_buf =
-                create_highlight_instance_buffer(&self.memory_alloc, new_cap);
-            self.highlight_instance_capacity = new_cap;
+        if self.msdf_instances.is_empty() {
+            self.msdf_instance_buf = None;
+        } else {
+            let buf = self
+                .msdf_instance_alloc
+                .allocate_slice::<MsdfGlyphInstance>(self.msdf_instances.len() as u64)
+                .expect("aetna-vulkano: text msdf instance suballocate");
+            buf.write()
+                .expect("aetna-vulkano: text msdf instance suballocation write")
+                .copy_from_slice(&self.msdf_instances);
+            self.msdf_instance_buf = Some(buf);
         }
-        if !self.highlight_instances.is_empty() {
-            let mut write = self
-                .highlight_instance_buf
-                .write()
-                .expect("aetna-vulkano: text highlight instance buf write");
-            write[..self.highlight_instances.len()].copy_from_slice(&self.highlight_instances);
+
+        if self.highlight_instances.is_empty() {
+            self.highlight_instance_buf = None;
+        } else {
+            let buf = self
+                .highlight_instance_alloc
+                .allocate_slice::<HighlightInstance>(self.highlight_instances.len() as u64)
+                .expect("aetna-vulkano: text highlight instance suballocate");
+            buf.write()
+                .expect("aetna-vulkano: text highlight instance suballocation write")
+                .copy_from_slice(&self.highlight_instances);
+            self.highlight_instance_buf = Some(buf);
         }
     }
 
@@ -786,16 +796,25 @@ impl TextPaint {
         }
     }
 
+    /// Per-frame colour-glyph instance suballocation. Bind sites are
+    /// gated by the `TextRunKind::Color` arm, which `record(...)` only
+    /// emits when `color_instances` is non-empty.
     pub(crate) fn instance_buf_color(&self) -> &Subbuffer<[ColorGlyphInstance]> {
-        &self.color_instance_buf
+        self.color_instance_buf
+            .as_ref()
+            .expect("aetna-vulkano: text instance_buf_color accessed with no draws")
     }
 
     pub(crate) fn instance_buf_msdf(&self) -> &Subbuffer<[MsdfGlyphInstance]> {
-        &self.msdf_instance_buf
+        self.msdf_instance_buf
+            .as_ref()
+            .expect("aetna-vulkano: text instance_buf_msdf accessed with no draws")
     }
 
     pub(crate) fn instance_buf_highlight(&self) -> &Subbuffer<[HighlightInstance]> {
-        &self.highlight_instance_buf
+        self.highlight_instance_buf
+            .as_ref()
+            .expect("aetna-vulkano: text instance_buf_highlight accessed with no draws")
     }
 }
 
@@ -887,66 +906,6 @@ fn pack_msdf_rect_bytes(page: &MsdfAtlasPage, rect: MsdfRect) -> Vec<u8> {
         bytes.extend_from_slice(&page.pixels[start..end]);
     }
     bytes
-}
-
-fn create_color_instance_buffer(
-    allocator: &Arc<StandardMemoryAllocator>,
-    capacity: u64,
-) -> Subbuffer<[ColorGlyphInstance]> {
-    Buffer::new_slice::<ColorGlyphInstance>(
-        allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        capacity,
-    )
-    .expect("aetna-vulkano: colour glyph instance buffer alloc")
-}
-
-fn create_msdf_instance_buffer(
-    allocator: &Arc<StandardMemoryAllocator>,
-    capacity: u64,
-) -> Subbuffer<[MsdfGlyphInstance]> {
-    Buffer::new_slice::<MsdfGlyphInstance>(
-        allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        capacity,
-    )
-    .expect("aetna-vulkano: msdf glyph instance buffer alloc")
-}
-
-fn create_highlight_instance_buffer(
-    allocator: &Arc<StandardMemoryAllocator>,
-    capacity: u64,
-) -> Subbuffer<[HighlightInstance]> {
-    Buffer::new_slice::<HighlightInstance>(
-        allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        capacity,
-    )
-    .expect("aetna-vulkano: highlight instance buffer alloc")
 }
 
 fn build_color_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {

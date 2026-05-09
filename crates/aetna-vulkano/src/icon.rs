@@ -33,7 +33,10 @@ use aetna_core::vector::{
 use bytemuck::{Pod, Zeroable};
 use smallvec::smallvec;
 use vulkano::{
-    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
+    buffer::{
+        Buffer, BufferCreateInfo, BufferUsage, Subbuffer,
+        allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
+    },
     command_buffer::{
         AutoCommandBufferBuilder, BufferImageCopy, CommandBufferUsage, CopyBufferToImageInfo,
         allocator::StandardCommandBufferAllocator,
@@ -75,8 +78,8 @@ use vulkano::{
 use crate::naga_compile::wgsl_to_spirv;
 use crate::pipeline::build_shared_pipeline_layout;
 
-const INITIAL_VERTEX_CAPACITY: u64 = 1024;
-const INITIAL_INSTANCE_CAPACITY: u64 = 256;
+const TESS_VERTEX_ARENA_SIZE: u64 = 256 * 1024;
+const MSDF_INSTANCE_ARENA_SIZE: u64 = 64 * 1024;
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
@@ -95,8 +98,8 @@ struct MsdfPageGpu {
 pub(crate) struct IconPaint {
     // Tess path.
     tess_vertices: Vec<VectorMeshVertex>,
-    tess_vertex_buf: Subbuffer<[VectorMeshVertex]>,
-    tess_vertex_capacity: u64,
+    tess_vertex_alloc: SubbufferAllocator,
+    tess_vertex_buf: Option<Subbuffer<[VectorMeshVertex]>>,
     flat_pipeline: Arc<GraphicsPipeline>,
     relief_pipeline: Arc<GraphicsPipeline>,
     glass_pipeline: Arc<GraphicsPipeline>,
@@ -105,8 +108,8 @@ pub(crate) struct IconPaint {
     msdf_atlas: IconMsdfAtlas,
     msdf_pages: Vec<MsdfPageGpu>,
     msdf_instances: Vec<MsdfIconInstance>,
-    msdf_instance_buf: Subbuffer<[MsdfIconInstance]>,
-    msdf_instance_capacity: u64,
+    msdf_instance_alloc: SubbufferAllocator,
+    msdf_instance_buf: Option<Subbuffer<[MsdfIconInstance]>>,
     msdf_pipeline: Arc<GraphicsPipeline>,
     msdf_sampler: Arc<Sampler>,
 
@@ -146,7 +149,16 @@ impl IconPaint {
             "stock::vector_glass",
             stock_wgsl::VECTOR_GLASS,
         );
-        let tess_vertex_buf = create_vector_vertex_buffer(&memory_alloc, INITIAL_VERTEX_CAPACITY);
+        let tess_vertex_alloc = SubbufferAllocator::new(
+            memory_alloc.clone(),
+            SubbufferAllocatorCreateInfo {
+                arena_size: TESS_VERTEX_ARENA_SIZE,
+                buffer_usage: BufferUsage::VERTEX_BUFFER,
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        );
 
         let msdf_pipeline = build_msdf_pipeline(device.clone(), subpass);
         let msdf_sampler = Sampler::new(
@@ -160,21 +172,29 @@ impl IconPaint {
             },
         )
         .expect("aetna-vulkano: icon msdf sampler");
-        let msdf_instance_buf =
-            create_msdf_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
+        let msdf_instance_alloc = SubbufferAllocator::new(
+            memory_alloc.clone(),
+            SubbufferAllocatorCreateInfo {
+                arena_size: MSDF_INSTANCE_ARENA_SIZE,
+                buffer_usage: BufferUsage::VERTEX_BUFFER,
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        );
 
         Self {
-            tess_vertices: Vec::with_capacity(INITIAL_VERTEX_CAPACITY as usize),
-            tess_vertex_buf,
-            tess_vertex_capacity: INITIAL_VERTEX_CAPACITY,
+            tess_vertices: Vec::new(),
+            tess_vertex_alloc,
+            tess_vertex_buf: None,
             flat_pipeline,
             relief_pipeline,
             glass_pipeline,
             msdf_atlas: IconMsdfAtlas::new(DEFAULT_PX_PER_UNIT, DEFAULT_SPREAD),
             msdf_pages: Vec::new(),
-            msdf_instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
-            msdf_instance_buf,
-            msdf_instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            msdf_instances: Vec::new(),
+            msdf_instance_alloc,
+            msdf_instance_buf: None,
             msdf_pipeline,
             msdf_sampler,
             runs: Vec::new(),
@@ -270,17 +290,17 @@ impl IconPaint {
 
     pub(crate) fn flush(&mut self) {
         // ---- Tess vertex buffer ----
-        if (self.tess_vertices.len() as u64) > self.tess_vertex_capacity {
-            let new_cap = (self.tess_vertices.len() as u64).next_power_of_two();
-            self.tess_vertex_buf = create_vector_vertex_buffer(&self.memory_alloc, new_cap);
-            self.tess_vertex_capacity = new_cap;
-        }
-        if !self.tess_vertices.is_empty() {
-            let mut write = self
-                .tess_vertex_buf
-                .write()
-                .expect("aetna-vulkano: icon tess vertex buf write");
-            write[..self.tess_vertices.len()].copy_from_slice(&self.tess_vertices);
+        if self.tess_vertices.is_empty() {
+            self.tess_vertex_buf = None;
+        } else {
+            let buf = self
+                .tess_vertex_alloc
+                .allocate_slice::<VectorMeshVertex>(self.tess_vertices.len() as u64)
+                .expect("aetna-vulkano: icon tess vertex suballocate");
+            buf.write()
+                .expect("aetna-vulkano: icon tess vertex suballocation write")
+                .copy_from_slice(&self.tess_vertices);
+            self.tess_vertex_buf = Some(buf);
         }
 
         // ---- MSDF atlas pages: create new GPU images, upload dirty regions ----
@@ -355,17 +375,17 @@ impl IconPaint {
         }
 
         // ---- MSDF instance buffer ----
-        if (self.msdf_instances.len() as u64) > self.msdf_instance_capacity {
-            let new_cap = (self.msdf_instances.len() as u64).next_power_of_two();
-            self.msdf_instance_buf = create_msdf_instance_buffer(&self.memory_alloc, new_cap);
-            self.msdf_instance_capacity = new_cap;
-        }
-        if !self.msdf_instances.is_empty() {
-            let mut write = self
-                .msdf_instance_buf
-                .write()
-                .expect("aetna-vulkano: icon msdf instance buf write");
-            write[..self.msdf_instances.len()].copy_from_slice(&self.msdf_instances);
+        if self.msdf_instances.is_empty() {
+            self.msdf_instance_buf = None;
+        } else {
+            let buf = self
+                .msdf_instance_alloc
+                .allocate_slice::<MsdfIconInstance>(self.msdf_instances.len() as u64)
+                .expect("aetna-vulkano: icon msdf instance suballocate");
+            buf.write()
+                .expect("aetna-vulkano: icon msdf instance suballocation write")
+                .copy_from_slice(&self.msdf_instances);
+            self.msdf_instance_buf = Some(buf);
         }
     }
 
@@ -417,16 +437,27 @@ impl IconPaint {
         }
     }
 
+    /// Per-frame tess vertex suballocation. Panics if called for a
+    /// frame with no tess draws — bind sites are gated by the
+    /// `IconRunKind::Tess` arm, which `record(...)` only emits when
+    /// `tess_vertices` is non-empty.
     pub(crate) fn tess_vertex_buf(&self) -> &Subbuffer<[VectorMeshVertex]> {
-        &self.tess_vertex_buf
+        self.tess_vertex_buf
+            .as_ref()
+            .expect("aetna-vulkano: icon tess_vertex_buf accessed with no draws")
     }
 
     pub(crate) fn msdf_pipeline(&self) -> &Arc<GraphicsPipeline> {
         &self.msdf_pipeline
     }
 
+    /// Per-frame MSDF instance suballocation. Panics if called for a
+    /// frame with no MSDF draws — bind sites are gated by the
+    /// `IconRunKind::Msdf` arm.
     pub(crate) fn msdf_instance_buf(&self) -> &Subbuffer<[MsdfIconInstance]> {
-        &self.msdf_instance_buf
+        self.msdf_instance_buf
+            .as_ref()
+            .expect("aetna-vulkano: icon msdf_instance_buf accessed with no draws")
     }
 
     pub(crate) fn msdf_page_descriptor(&self, page: u32) -> &Arc<DescriptorSet> {
@@ -480,46 +511,6 @@ fn pack_rect_bytes(page: &IconMsdfPage, rect: IconRect) -> Vec<u8> {
         bytes.extend_from_slice(&page.pixels[start..end]);
     }
     bytes
-}
-
-fn create_vector_vertex_buffer(
-    allocator: &Arc<StandardMemoryAllocator>,
-    capacity: u64,
-) -> Subbuffer<[VectorMeshVertex]> {
-    Buffer::new_slice::<VectorMeshVertex>(
-        allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        capacity,
-    )
-    .expect("aetna-vulkano: icon tess vertex buffer alloc")
-}
-
-fn create_msdf_instance_buffer(
-    allocator: &Arc<StandardMemoryAllocator>,
-    capacity: u64,
-) -> Subbuffer<[MsdfIconInstance]> {
-    Buffer::new_slice::<MsdfIconInstance>(
-        allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        capacity,
-    )
-    .expect("aetna-vulkano: icon msdf instance buffer alloc")
 }
 
 fn tess_vertex_input_state() -> VertexInputState {

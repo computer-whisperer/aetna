@@ -105,8 +105,9 @@ fn vertex_input_state() -> VertexInputState {
 /// `rounded_rect` and `text` read `frame.viewport` only in the vertex
 /// stage, while `liquid_glass` reads `frame.time` in the fragment
 /// stage. That gives them non-identical set-0 layouts (`VERTEX` vs
-/// `VERTEX | FRAGMENT`), and the runner's single `frame_descriptor_set`
-/// is incompatible with whichever pipeline was built later (Vulkan
+/// `VERTEX | FRAGMENT`), and the runner's per-frame `frame_descriptor_set`
+/// (rebuilt against a cached set-0 layout each `prepare()`) is
+/// incompatible with whichever pipeline was built later (Vulkan
 /// VUID-vkCmdBindDescriptorSets-pDescriptorSets-00358).
 ///
 /// Forcing every set-0 binding to `VERTEX | FRAGMENT` produces a

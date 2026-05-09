@@ -470,14 +470,15 @@ impl<A: App> ApplicationHandler for Host<A> {
                 match future.map_err(|e| e.unwrap()) {
                     Ok(fence) => {
                         // Wait for the GPU to finish this frame before
-                        // returning. The simple-but-serial path: a
-                        // host-side Subbuffer::write() in the *next*
-                        // prepare() would otherwise hit
-                        // AccessConflict(DeviceRead) because the GPU is
-                        // still reading the instance buffer. wgpu hides
-                        // this with internal staging on `queue.write_*`;
-                        // vulkano makes us pick — wait now, or move to a
-                        // per-frame SubbufferAllocator when perf matters.
+                        // returning. The runner uploads via per-frame
+                        // `SubbufferAllocator` suballocations, so a host
+                        // write in the next `prepare()` would not hit
+                        // `AccessConflict(DeviceRead)` even with a frame
+                        // in flight; the demo keeps the wait for
+                        // simplicity (one frame at a time, no double
+                        // buffering of swapchain-side state). Apps that
+                        // want to overlap frames can drop this fence
+                        // wait — the upload path is already safe.
                         fence.wait(None).expect("frame fence wait");
                         rcx.previous_frame_end = Some(sync::now(rcx.device.clone()).boxed());
                     }

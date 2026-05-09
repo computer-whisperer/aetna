@@ -26,7 +26,10 @@ use aetna_core::tree::{Color, Rect};
 use bytemuck::{Pod, Zeroable};
 use smallvec::smallvec;
 use vulkano::{
-    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
+    buffer::{
+        Buffer, BufferCreateInfo, BufferUsage, Subbuffer,
+        allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
+    },
     command_buffer::{
         AutoCommandBufferBuilder, BufferImageCopy, CommandBufferUsage, CopyBufferToImageInfo,
         allocator::StandardCommandBufferAllocator,
@@ -69,7 +72,7 @@ use vulkano::{
 use crate::naga_compile::wgsl_to_spirv;
 use crate::pipeline::build_shared_pipeline_layout;
 
-const INITIAL_INSTANCE_CAPACITY: u64 = 32;
+const INSTANCE_ARENA_SIZE: u64 = 64 * 1024;
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
@@ -94,8 +97,13 @@ struct CachedTexture {
 
 pub(crate) struct ImagePaint {
     instances: Vec<ImageInstance>,
-    instance_buf: Subbuffer<[ImageInstance]>,
-    instance_capacity: u64,
+    /// Per-frame `SubbufferAllocator` backing `instance_buf`. Each
+    /// `flush()` allocates a fresh slice from it so a host write
+    /// doesn't contend with the GPU still reading last frame's bytes.
+    instance_alloc: SubbufferAllocator,
+    /// Per-frame instance suballocation; `Some` on frames with at
+    /// least one image draw, `None` otherwise. Bound at draw time.
+    instance_buf: Option<Subbuffer<[ImageInstance]>>,
     runs: Vec<ImageRun>,
 
     pipeline: Arc<GraphicsPipeline>,
@@ -135,12 +143,21 @@ impl ImagePaint {
             },
         )
         .expect("aetna-vulkano: image sampler");
-        let instance_buf = create_image_instance_buffer(&memory_alloc, INITIAL_INSTANCE_CAPACITY);
+        let instance_alloc = SubbufferAllocator::new(
+            memory_alloc.clone(),
+            SubbufferAllocatorCreateInfo {
+                arena_size: INSTANCE_ARENA_SIZE,
+                buffer_usage: BufferUsage::VERTEX_BUFFER,
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        );
 
         Self {
-            instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY as usize),
-            instance_buf,
-            instance_capacity: INITIAL_INSTANCE_CAPACITY,
+            instances: Vec::new(),
+            instance_alloc,
+            instance_buf: None,
             runs: Vec::new(),
             pipeline,
             sampler,
@@ -306,19 +323,18 @@ impl ImagePaint {
         let frame = self.frame_counter;
         self.cache.retain(|_, v| v.last_used_frame == frame);
 
-        // Resize + write instance buffer.
-        if (self.instances.len() as u64) > self.instance_capacity {
-            let new_cap = (self.instances.len() as u64).next_power_of_two();
-            self.instance_buf = create_image_instance_buffer(&self.memory_alloc, new_cap);
-            self.instance_capacity = new_cap;
+        if self.instances.is_empty() {
+            self.instance_buf = None;
+            return;
         }
-        if !self.instances.is_empty() {
-            let mut write = self
-                .instance_buf
-                .write()
-                .expect("aetna-vulkano: image instance buf write");
-            write[..self.instances.len()].copy_from_slice(&self.instances);
-        }
+        let buf = self
+            .instance_alloc
+            .allocate_slice::<ImageInstance>(self.instances.len() as u64)
+            .expect("aetna-vulkano: image instance suballocate");
+        buf.write()
+            .expect("aetna-vulkano: image instance suballocation write")
+            .copy_from_slice(&self.instances);
+        self.instance_buf = Some(buf);
     }
 
     pub(crate) fn run(&self, index: usize) -> &ImageRun {
@@ -329,8 +345,13 @@ impl ImagePaint {
         &self.pipeline
     }
 
+    /// Per-frame instance suballocation. Panics if called for a frame
+    /// with no image draws — bind sites are gated by `PaintItem::Image`,
+    /// which `record(...)` only emits when `instances` is non-empty.
     pub(crate) fn instance_buf(&self) -> &Subbuffer<[ImageInstance]> {
-        &self.instance_buf
+        self.instance_buf
+            .as_ref()
+            .expect("aetna-vulkano: image instance_buf accessed with no draws")
     }
 
     pub(crate) fn descriptor_for_run(&self, run: &ImageRun) -> &Arc<DescriptorSet> {
@@ -341,26 +362,6 @@ impl ImagePaint {
             .expect("cache entry alive for the frame")
             .descriptor_set
     }
-}
-
-fn create_image_instance_buffer(
-    allocator: &Arc<StandardMemoryAllocator>,
-    capacity: u64,
-) -> Subbuffer<[ImageInstance]> {
-    Buffer::new_slice::<ImageInstance>(
-        allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        capacity,
-    )
-    .expect("aetna-vulkano: image instance buffer alloc")
 }
 
 fn build_image_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
