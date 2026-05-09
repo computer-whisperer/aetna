@@ -32,7 +32,8 @@ use aetna_core::shader::stock_wgsl;
 use aetna_core::svg_icon::IconSource;
 use aetna_core::tree::{Color, Rect};
 use aetna_core::vector::{
-    IconMaterial, VectorMeshOptions, VectorMeshVertex, append_vector_asset_mesh,
+    IconMaterial, VectorAsset, VectorColor, VectorMeshOptions, VectorMeshVertex,
+    append_vector_asset_mesh,
 };
 
 use bytemuck::{Pod, Zeroable};
@@ -348,6 +349,70 @@ impl IconPaint {
         start..self.runs.len()
     }
 
+    /// Record an app-supplied [`VectorAsset`] for paint. Routes to the
+    /// MSDF path when the asset is monochrome (single solid color across
+    /// all stroke/fill specs) and free of gradients — that's the typical
+    /// commit-graph curve / chart-mark shape and gets crisp scaling
+    /// from the existing icon MSDF atlas. Falls back to tess for
+    /// multi-color or gradient assets so per-path colours render
+    /// correctly at the cost of pixel-rounded edges.
+    pub(crate) fn record_vector(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        asset: &VectorAsset,
+    ) -> Range<usize> {
+        if rect.w <= 0.0 || rect.h <= 0.0 {
+            let start = self.runs.len();
+            return start..start;
+        }
+        let start = self.runs.len();
+
+        let representative = representative_solid_color(asset);
+        let use_msdf = representative.is_some() && !asset.has_gradient();
+
+        if let Some(color) = representative.filter(|_| use_msdf) {
+            if let Some(slot) = self.msdf_atlas.ensure_vector_asset(asset) {
+                let (page_w, page_h) = self.msdf_page_dims(slot.page);
+                let instance = msdf_instance_for_icon(rect, color, &slot, page_w, page_h);
+                let first = self.msdf_instances.len() as u32;
+                self.msdf_instances.push(instance);
+                self.runs.push(IconRun {
+                    kind: IconRunKind::Msdf,
+                    scissor,
+                    first,
+                    count: 1,
+                    page: slot.page,
+                    material: IconMaterial::Flat,
+                });
+            }
+        } else {
+            // Tess fallback. Multi-color or gradient assets get correct
+            // per-path colours via per-vertex attributes; current_color
+            // is unused because programmatic paths express colours
+            // explicitly (a default white covers any stray
+            // `VectorColor::CurrentColor` from app-built assets that
+            // were derived from SVG sources).
+            let first = self.tess_vertices.len() as u32;
+            let mesh_run = append_vector_asset_mesh(
+                asset,
+                VectorMeshOptions::icon(rect, Color::rgb(255, 255, 255), 1.0),
+                &mut self.tess_vertices,
+            );
+            if mesh_run.count > 0 {
+                self.runs.push(IconRun {
+                    kind: IconRunKind::Tess,
+                    scissor,
+                    first,
+                    count: mesh_run.count,
+                    page: 0,
+                    material: IconMaterial::Flat,
+                });
+            }
+        }
+        start..self.runs.len()
+    }
+
     /// `(width, height)` of the CPU-side atlas page for `page_idx`.
     /// The GPU mirror may not exist yet (it's created at flush time);
     /// the UV computation only needs the page extent, not the texture.
@@ -444,6 +509,41 @@ impl IconPaint {
     pub(crate) fn msdf_page_bind_group(&self, page: u32) -> &wgpu::BindGroup {
         &self.msdf_pages[page as usize].bind_group
     }
+}
+
+/// Walk the asset's paths and return a single solid colour iff every
+/// non-`CurrentColor` stroke/fill resolves to the same RGBA. Returns
+/// `None` if the asset has multiple distinct colours, any gradient
+/// reference, or only `CurrentColor` paint (which we can't resolve at
+/// the call site for `vector()` since there's no inherited text
+/// color). Caller routes to MSDF only when this returns `Some`.
+fn representative_solid_color(asset: &VectorAsset) -> Option<Color> {
+    let mut chosen: Option<Color> = None;
+    for path in &asset.paths {
+        for color in path
+            .fill
+            .map(|f| f.color)
+            .into_iter()
+            .chain(path.stroke.map(|s| s.color))
+        {
+            match color {
+                VectorColor::Solid(c) => match chosen {
+                    None => chosen = Some(c),
+                    Some(prev)
+                        if prev.r == c.r && prev.g == c.g && prev.b == c.b && prev.a == c.a => {}
+                    Some(_) => return None,
+                },
+                VectorColor::Gradient(_) => return None,
+                // `CurrentColor` has no resolvable value here — skip
+                // so a mixed-style asset (one solid path + one
+                // current-color path) still routes to MSDF using the
+                // explicit color. Fully-current-color assets fall
+                // through with `chosen == None` and tess them.
+                VectorColor::CurrentColor => {}
+            }
+        }
+    }
+    chosen
 }
 
 fn msdf_instance_for_icon(

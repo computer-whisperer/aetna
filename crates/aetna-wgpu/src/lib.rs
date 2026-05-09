@@ -272,6 +272,16 @@ impl TextRecorder for PaintRecorder<'_> {
         self.surfaces
             .record(self.device, rect, scissor, texture, alpha)
     }
+
+    fn record_vector(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        asset: &aetna_core::vector::VectorAsset,
+        _scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.icons.record_vector(rect, scissor, asset)
+    }
 }
 
 impl Runner {
@@ -1117,7 +1127,13 @@ impl Runner {
                     pass.set_vertex_buffer(1, self.text_paint.instance_buf_for(run.kind).slice(..));
                     pass.draw(0..4, run.first..run.first + run.count);
                 }
-                PaintItem::IconRun(index) => {
+                PaintItem::IconRun(index) | PaintItem::Vector(index) => {
+                    // `PaintItem::Vector` is structurally identical to
+                    // `PaintItem::IconRun` — both index into the same
+                    // `IconPaint::runs` Vec since `record_vector`
+                    // appends there too. The variant is kept distinct
+                    // for paint-stream provenance (icon vs app vector)
+                    // but the dispatch is the same.
                     let run = self.icon_paint.run(index);
                     set_scissor(pass, run.scissor, full);
                     match run.kind {

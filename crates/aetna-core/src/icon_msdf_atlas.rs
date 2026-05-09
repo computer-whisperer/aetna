@@ -34,11 +34,17 @@ const ICON_PADDING: u32 = 2;
 const BYTES_PER_PIXEL: u32 = 4;
 
 /// Identity for a unique vector icon source. Built-ins enumerate;
-/// custom SVGs are keyed by their content hash.
+/// custom SVGs are keyed by their SVG-source content hash; programmatic
+/// `VectorAsset`s (used by [`crate::tree::vector`]) are keyed by their
+/// structural [`crate::vector::VectorAsset::content_hash`]. Three
+/// disjoint variants prevent the (vanishingly unlikely) case where an
+/// SVG-text hash coincides with a structural-asset hash from
+/// referencing the wrong slot.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum IconKey {
     Builtin(IconName),
     Custom(u64),
+    Vector(u64),
 }
 
 impl IconKey {
@@ -244,6 +250,38 @@ impl IconMsdfAtlas {
             self.spread,
             key.stroke_width() as f64,
         );
+        let slot = msdf.map(|m| self.pack(m));
+        self.map.insert(key, slot);
+        slot
+    }
+
+    /// Rasterise (or look up) the MTSDF for an app-supplied
+    /// [`crate::vector::VectorAsset`] and return its slot. The asset's
+    /// structural content hash is the cache key — apps that build the
+    /// same shape twice share one slot. Stroke width and other style
+    /// participate in the hash, so a single asset has one canonical
+    /// MTSDF; varying styles produce distinct slots automatically
+    /// without per-call quantisation.
+    pub fn ensure_vector_asset(
+        &mut self,
+        asset: &crate::vector::VectorAsset,
+    ) -> Option<IconMsdfSlot> {
+        let key = IconMsdfKey {
+            icon: IconKey::Vector(asset.content_hash()),
+            // Stroke width is encoded in the asset's content hash, so
+            // the per-key `stroke_q` is unused for vector assets. Pin
+            // to 0 so identical assets share one slot.
+            stroke_q: 0,
+        };
+        if let Some(entry) = self.map.get(&key) {
+            return *entry;
+        }
+        // The default-stroke-width parameter is only consulted by
+        // `build_icon_msdf` for paths whose stroke is `currentColor`.
+        // Programmatic `VectorAsset`s express their stroke width
+        // explicitly on each `VectorStroke`, so this default is
+        // unused — the value 1.0 is just a sane fallback.
+        let msdf = build_icon_msdf(asset, self.px_per_unit, self.spread, 1.0);
         let slot = msdf.map(|m| self.pack(m));
         self.map.insert(key, slot);
         slot
