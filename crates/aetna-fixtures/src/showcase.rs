@@ -287,6 +287,11 @@ struct InputsState {
     region: String,
     /// Whether the region select dropdown is currently open.
     region_open: bool,
+    /// Numeric input value — kept as a `String` so mid-edit states
+    /// (`"1."`, `""`, …) survive the build/event round-trip.
+    quantity: String,
+    /// Six-digit OTP code (typed verification, "123456" capped).
+    otp_code: String,
 }
 
 impl Default for InputsState {
@@ -299,6 +304,12 @@ impl Default for InputsState {
             selection: Selection::default(),
             region: "us-east".into(),
             region_open: false,
+            // Mid-range value so headless renders show both spinner
+            // buttons in non-degenerate states (neither at min nor max).
+            quantity: "12".into(),
+            // Half-filled so the section snapshot captures both the
+            // typed-cell and active-cell visuals at once.
+            otp_code: "248".into(),
         }
     }
 }
@@ -1484,9 +1495,44 @@ fn inputs_view(state: &InputsState) -> El {
         )],
     );
 
+    let quantity = titled_card(
+        "Quantity",
+        [
+            input_row(
+                "Items",
+                numeric_input(
+                    &state.quantity,
+                    &state.selection,
+                    "inputs-quantity",
+                    NumericInputOpts::default()
+                        .min(0.0)
+                        .max(99.0)
+                        .step(1.0)
+                        .placeholder("0"),
+                ),
+            ),
+            text("Click `−` / `+` to step; clamps to 0..=99. Type to edit directly.")
+                .small()
+                .muted(),
+        ],
+    );
+
+    let verification = titled_card(
+        "Verification code",
+        [
+            input_row("Code", input_otp(&state.otp_code, "inputs-otp", 6)),
+            text(
+                "Six-digit code; the next-to-fill cell shows the active border. \
+                  Backspace pops the last entry.",
+            )
+            .small()
+            .muted(),
+        ],
+    );
+
     column([
         h1("Inputs"),
-        scroll([volume, profile, bio, region])
+        scroll([volume, profile, bio, region, quantity, verification])
             .key("inputs-scroll")
             .height(Size::Fill(1.0))
             .gap(tokens::SPACE_4)
@@ -1532,6 +1578,28 @@ fn inputs_on_event(state: &mut InputsState, e: UiEvent) {
         "inputs-region",
         Some,
     ) {
+        return;
+    }
+
+    // Numeric input: spinner clicks (`{key}:dec` / `{key}:inc`) plus
+    // text edits routed to `{key}:field` are all folded by one helper.
+    let quantity_opts = NumericInputOpts::default()
+        .min(0.0)
+        .max(99.0)
+        .step(1.0)
+        .placeholder("0");
+    if numeric_input::apply_event(
+        &mut state.quantity,
+        &mut state.selection,
+        "inputs-quantity",
+        &quantity_opts,
+        &e,
+    ) {
+        return;
+    }
+
+    // OTP input: TextInput appends, Backspace pops, capped to 6 chars.
+    if input_otp::apply_event(&mut state.otp_code, "inputs-otp", 6, &e) {
         return;
     }
 
