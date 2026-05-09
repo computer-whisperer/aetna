@@ -283,41 +283,52 @@ fn apply_type_token(el: &mut El, token: tokens::TypeToken) {
 }
 
 fn apply_text_role(el: &mut El) {
+    // Non-Code roles default to the proportional face; explicit
+    // `.mono()` (which sets `explicit_mono`) wins so the natural
+    // reading order `text(s).mono().caption()` keeps the mono family.
+    // The Code role intentionally forces mono regardless — that's its
+    // whole purpose, and the explicit override would only be set true,
+    // never false, so there's no conflict to resolve.
+    let clear_mono = |el: &mut El| {
+        if !el.explicit_mono {
+            el.font_mono = false;
+        }
+    };
     match el.text_role {
         TextRole::Body => {
             apply_type_token(el, tokens::TEXT_SM);
             el.font_weight = FontWeight::Regular;
-            el.font_mono = false;
+            clear_mono(el);
             el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Caption => {
             apply_type_token(el, tokens::TEXT_XS);
             el.font_weight = FontWeight::Regular;
-            el.font_mono = false;
+            clear_mono(el);
             el.text_color = Some(tokens::MUTED_FOREGROUND);
         }
         TextRole::Label => {
             apply_type_token(el, tokens::TEXT_SM);
             el.font_weight = FontWeight::Medium;
-            el.font_mono = false;
+            clear_mono(el);
             el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Title => {
             apply_type_token(el, tokens::TEXT_BASE);
             el.font_weight = FontWeight::Semibold;
-            el.font_mono = false;
+            clear_mono(el);
             el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Heading => {
             apply_type_token(el, tokens::TEXT_2XL);
             el.font_weight = FontWeight::Semibold;
-            el.font_mono = false;
+            clear_mono(el);
             el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Display => {
             apply_type_token(el, tokens::TEXT_3XL);
             el.font_weight = FontWeight::Bold;
-            el.font_mono = false;
+            clear_mono(el);
             el.text_color = Some(tokens::FOREGROUND);
         }
         TextRole::Code => {
@@ -482,5 +493,45 @@ mod tests {
         assert_eq!(code.font_weight, FontWeight::Regular);
         assert_eq!(code.text_color, Some(tokens::FOREGROUND));
         assert!(code.font_mono);
+    }
+
+    #[test]
+    fn explicit_mono_survives_subsequent_role_modifier() {
+        // gh#12. The natural reading order `text(s).mono().caption()`
+        // ("small mono caption") used to silently render in the
+        // proportional face — `.caption()` reset `font_mono = false`
+        // because non-Code roles bake the proportional family in. The
+        // `explicit_mono` flag set by `.mono()` now suppresses that
+        // reset for every non-Code role.
+        let mono_first = text("+2").mono().caption();
+        assert!(
+            mono_first.font_mono,
+            "`.mono()` chained before `.caption()` must keep mono on",
+        );
+        // Caption's other defaults still apply.
+        assert_eq!(mono_first.font_size, tokens::TEXT_XS.size);
+        assert_eq!(mono_first.text_color, Some(tokens::MUTED_FOREGROUND));
+
+        // Reversed order — the canonical order — also keeps mono on.
+        let role_first = text("+2").caption().mono();
+        assert!(role_first.font_mono);
+
+        // Same gating across the rest of the role family.
+        for el in [
+            text("+1").mono().body(),
+            text("+1").mono().label(),
+            text("+1").mono().title(),
+            text("+1").mono().heading(),
+            text("+1").mono().display(),
+        ] {
+            assert!(
+                el.font_mono,
+                "explicit .mono() must survive every non-Code role",
+            );
+        }
+
+        // The Code role is unconditionally mono — no explicit_mono
+        // gating needed, but verify nothing regressed.
+        assert!(text("x").mono().code().font_mono);
     }
 }

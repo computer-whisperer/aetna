@@ -141,6 +141,15 @@ pub struct El {
     /// Author overrode the monospace font face for this node — theme
     /// application leaves [`Self::mono_font_family`] alone when set.
     pub explicit_mono_font_family: bool,
+    /// Author opted this node into the monospace family via
+    /// [`Self::mono`]. Role modifiers ([`Self::caption`], [`Self::label`],
+    /// [`Self::body`], [`Self::title`], [`Self::heading`],
+    /// [`Self::display`]) leave [`Self::font_mono`] alone when this flag
+    /// is set, so the natural reading order `text(s).mono().caption()`
+    /// keeps the mono family. Without this guard, role application
+    /// silently resets `font_mono = false`. The [`Self::code`] role
+    /// always forces `font_mono = true` regardless.
+    pub explicit_mono: bool,
 
     // Visual style — these still live on `El` because the modifier API
     // (`.fill(c)`, `.radius(r)`, `.shadow(s)`) is what users type. The

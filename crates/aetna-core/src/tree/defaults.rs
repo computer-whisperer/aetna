@@ -44,6 +44,7 @@ impl Default for El {
             explicit_radius: false,
             explicit_font_family: false,
             explicit_mono_font_family: false,
+            explicit_mono: false,
             fill: None,
             dim_fill: None,
             stroke: None,

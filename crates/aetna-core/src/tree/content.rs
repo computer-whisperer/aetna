@@ -155,8 +155,15 @@ impl El {
         self
     }
 
+    /// Opt this node into the monospace face. Setting this flag also
+    /// sets [`El::explicit_mono`] so a subsequent role modifier
+    /// (`.caption()` / `.label()` / `.body()` / `.title()` /
+    /// `.heading()` / `.display()`) won't silently reset `font_mono`
+    /// when the role's default is non-mono. The natural reading order
+    /// `text(s).mono().caption()` therefore renders in mono.
     pub fn mono(mut self) -> Self {
         self.font_mono = true;
+        self.explicit_mono = true;
         self
     }
 
