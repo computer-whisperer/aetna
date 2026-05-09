@@ -251,10 +251,49 @@ impl RunnerCore {
             .last_tree
             .as_ref()
             .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
+        // Stash the previous hover target so we can pair Leave/Enter
+        // events on identity change. `set_hovered` mutates the state
+        // and only returns whether identity flipped.
+        let prev_hover = self.ui_state.hovered.clone();
         let hover_changed = self.ui_state.set_hovered(hit, Instant::now());
         let modifiers = self.ui_state.modifiers;
 
         let mut out = Vec::new();
+
+        // Hover-transition events: Leave on the prior target (when
+        // there was one), Enter on the new target (when there is one).
+        // Both fire on identity change only — cursor moves *within* the
+        // same hovered node are visual no-ops here, matching the
+        // redraw-debouncing semantics. Always Leave-then-Enter so apps
+        // observe the cleared state before the new one.
+        if hover_changed {
+            if let Some(prev) = prev_hover {
+                out.push(UiEvent {
+                    key: Some(prev.key.clone()),
+                    target: Some(prev),
+                    pointer: Some((x, y)),
+                    key_press: None,
+                    text: None,
+                    selection: None,
+                    modifiers,
+                    click_count: 0,
+                    kind: UiEventKind::PointerLeave,
+                });
+            }
+            if let Some(new) = self.ui_state.hovered.clone() {
+                out.push(UiEvent {
+                    key: Some(new.key.clone()),
+                    target: Some(new),
+                    pointer: Some((x, y)),
+                    key_press: None,
+                    text: None,
+                    selection: None,
+                    modifiers,
+                    click_count: 0,
+                    kind: UiEventKind::PointerEnter,
+                });
+            }
+        }
 
         // Selection drag-extend takes precedence over the focusable
         // Drag emission. Cross-leaf: if the pointer hits a selectable
@@ -311,11 +350,37 @@ impl RunnerCore {
         }
     }
 
-    pub fn pointer_left(&mut self) {
+    /// Pointer left the window — clear hover / press trackers.
+    /// Returns a `PointerLeave` event for the previously hovered
+    /// target (when there was one) so apps can run hover-leave side
+    /// effects symmetrically with `PointerEnter`. Cursor positions on
+    /// the leave event are the last known pointer position before the
+    /// pointer exited, since winit no longer reports coordinates once
+    /// the cursor is outside the window.
+    pub fn pointer_left(&mut self) -> Vec<UiEvent> {
+        let last_pos = self.ui_state.pointer_pos;
+        let prev_hover = self.ui_state.hovered.clone();
+        let modifiers = self.ui_state.modifiers;
         self.ui_state.pointer_pos = None;
         self.ui_state.set_hovered(None, Instant::now());
         self.ui_state.pressed = None;
         self.ui_state.pressed_secondary = None;
+
+        let mut out = Vec::new();
+        if let Some(prev) = prev_hover {
+            out.push(UiEvent {
+                key: Some(prev.key.clone()),
+                target: Some(prev),
+                pointer: last_pos,
+                key_press: None,
+                text: None,
+                selection: None,
+                modifiers,
+                click_count: 0,
+                kind: UiEventKind::PointerLeave,
+            });
+        }
+        out
     }
 
     /// Primary/secondary/middle pointer button pressed at `(x, y)`.
@@ -1589,7 +1654,11 @@ mod tests {
     #[test]
     fn pointer_moved_without_press_emits_no_drag() {
         let mut core = lay_out_input_tree(false);
-        assert!(core.pointer_moved(50.0, 50.0).events.is_empty());
+        let events = core.pointer_moved(50.0, 50.0).events;
+        // No press → no Drag emission. Hover-transition events
+        // (PointerEnter/Leave) may fire; just assert nothing in the
+        // out vec carries the Drag kind.
+        assert!(!events.iter().any(|e| e.kind == UiEventKind::Drag));
     }
 
     #[test]
@@ -1682,16 +1751,21 @@ mod tests {
         let btn = core.rect_of_key("btn").expect("btn rect");
         let (cx, cy) = (btn.x + btn.w * 0.5, btn.y + btn.h * 0.5);
 
-        // First move enters the button — hover identity changes.
+        // First move enters the button — hover identity changes, so a
+        // PointerEnter fires (no preceding Leave because no prior
+        // hover target).
         let first = core.pointer_moved(cx, cy);
-        assert!(first.events.is_empty());
+        assert_eq!(first.events.len(), 1);
+        assert_eq!(first.events[0].kind, UiEventKind::PointerEnter);
+        assert_eq!(first.events[0].key.as_deref(), Some("btn"));
         assert!(
             first.needs_redraw,
             "entering a focusable should warrant a redraw",
         );
 
         // Same node, slightly different coords. Hover identity is
-        // unchanged, no drag is active — must not redraw.
+        // unchanged, no drag is active — must not redraw or emit any
+        // events.
         let second = core.pointer_moved(cx + 1.0, cy);
         assert!(second.events.is_empty());
         assert!(
@@ -1700,13 +1774,146 @@ mod tests {
         );
 
         // Moving off the button into empty space changes hover to
-        // None — that's a visible transition (envelope ramps down).
+        // None — that's a visible transition (envelope ramps down)
+        // and a PointerLeave fires.
         let off = core.pointer_moved(0.0, 0.0);
-        assert!(off.events.is_empty());
+        assert_eq!(off.events.len(), 1);
+        assert_eq!(off.events[0].kind, UiEventKind::PointerLeave);
+        assert_eq!(off.events[0].key.as_deref(), Some("btn"));
         assert!(
             off.needs_redraw,
             "leaving a hovered node still warrants a redraw",
         );
+    }
+
+    #[test]
+    fn pointer_moved_between_keyed_targets_emits_leave_then_enter() {
+        // Cursor crossing from one keyed node to another emits a paired
+        // PointerLeave (old target) followed by PointerEnter (new
+        // target). Apps can observe the cleared state before the new
+        // one — important for things like cancelling a hover-intent
+        // prefetch on the old target before kicking off one for the
+        // new.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let ti = core.rect_of_key("ti").expect("ti rect");
+
+        // Enter btn first.
+        let _ = core.pointer_moved(btn.x + 4.0, btn.y + 4.0);
+
+        // Cross to ti.
+        let cross = core.pointer_moved(ti.x + 4.0, ti.y + 4.0);
+        let kinds: Vec<UiEventKind> = cross.events.iter().map(|e| e.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![UiEventKind::PointerLeave, UiEventKind::PointerEnter],
+            "paired Leave-then-Enter on cross-target hover transition",
+        );
+        assert_eq!(cross.events[0].key.as_deref(), Some("btn"));
+        assert_eq!(cross.events[1].key.as_deref(), Some("ti"));
+        assert!(cross.needs_redraw);
+    }
+
+    #[test]
+    fn pointer_left_emits_leave_for_prior_hover() {
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let _ = core.pointer_moved(btn.x + 4.0, btn.y + 4.0);
+
+        let events = core.pointer_left();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, UiEventKind::PointerLeave);
+        assert_eq!(events[0].key.as_deref(), Some("btn"));
+    }
+
+    #[test]
+    fn pointer_left_with_no_prior_hover_emits_nothing() {
+        let mut core = lay_out_input_tree(false);
+        // No prior pointer_moved into a keyed target — pointer_left
+        // should be a no-op event-wise (state still gets cleared).
+        let events = core.pointer_left();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn ui_state_hovered_key_returns_leaf_key() {
+        let mut core = lay_out_input_tree(false);
+        assert_eq!(core.ui_state().hovered_key(), None);
+
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        core.pointer_moved(btn.x + 4.0, btn.y + 4.0);
+        assert_eq!(core.ui_state().hovered_key(), Some("btn"));
+
+        // Off-target → None again.
+        core.pointer_moved(0.0, 0.0);
+        assert_eq!(core.ui_state().hovered_key(), None);
+    }
+
+    #[test]
+    fn ui_state_is_hovering_within_walks_subtree() {
+        // Card (keyed, focusable) wraps an inner icon-button (keyed).
+        // is_hovering_within("card") should be true whenever the
+        // cursor is on the card body OR on the inner button.
+        use crate::tree::*;
+        let mut tree = crate::column([crate::stack([
+            crate::widgets::button::button("Inner").key("inner_btn")
+        ])
+        .key("card")
+        .focusable()
+        .width(Size::Fixed(120.0))
+        .height(Size::Fixed(60.0))])
+        .padding(20.0);
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 400.0, 200.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+
+        // Pre-hover: false everywhere.
+        assert!(!core.ui_state().is_hovering_within("card"));
+        assert!(!core.ui_state().is_hovering_within("inner_btn"));
+
+        // Hover the inner button. Both the leaf and its ancestor card
+        // should report subtree-hover true.
+        let inner = core.rect_of_key("inner_btn").expect("inner rect");
+        core.pointer_moved(inner.x + 4.0, inner.y + 4.0);
+        assert!(core.ui_state().is_hovering_within("card"));
+        assert!(core.ui_state().is_hovering_within("inner_btn"));
+
+        // Unrelated / unknown keys read as false.
+        assert!(!core.ui_state().is_hovering_within("not_a_key"));
+
+        // Off the tree — both flip back to false.
+        core.pointer_moved(0.0, 0.0);
+        assert!(!core.ui_state().is_hovering_within("card"));
+        assert!(!core.ui_state().is_hovering_within("inner_btn"));
+    }
+
+    #[test]
+    fn build_cx_hover_accessors_default_off_without_state() {
+        use crate::Theme;
+        let theme = Theme::default();
+        let cx = crate::BuildCx::new(&theme);
+        assert_eq!(cx.hovered_key(), None);
+        assert!(!cx.is_hovering_within("anything"));
+    }
+
+    #[test]
+    fn build_cx_hover_accessors_delegate_when_state_attached() {
+        use crate::Theme;
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        core.pointer_moved(btn.x + 4.0, btn.y + 4.0);
+
+        let theme = Theme::default();
+        let cx = crate::BuildCx::new(&theme).with_ui_state(core.ui_state());
+        assert_eq!(cx.hovered_key(), Some("btn"));
+        assert!(cx.is_hovering_within("btn"));
+        assert!(!cx.is_hovering_within("ti"));
     }
 
     fn lay_out_paragraph_tree() -> RunnerCore {

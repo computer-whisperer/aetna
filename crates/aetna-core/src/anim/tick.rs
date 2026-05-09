@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use web_time::Instant;
 
 use crate::anim::{AnimProp, AnimValue, Animation, Timing};
+use crate::state::query::target_in_subtree;
 use crate::state::{AnimationMode, EnvelopeKind};
 use crate::tree::{El, InteractionState};
 
@@ -25,22 +26,6 @@ pub(crate) struct HotTargets<'a> {
     pub hovered: Option<&'a str>,
     pub focused: Option<&'a str>,
     pub pressed: Option<&'a str>,
-}
-
-/// True when `target_id` names `node_id` itself or any descendant of it
-/// in the path-shaped `computed_id` namespace (`root.x.y.z`). Returns
-/// false when either input is empty so callers don't need to special-
-/// case the pre-layout state.
-fn target_in_subtree(node_id: &str, target_id: &str) -> bool {
-    if node_id.is_empty() || target_id.is_empty() {
-        return false;
-    }
-    if target_id == node_id {
-        return true;
-    }
-    target_id
-        .strip_prefix(node_id)
-        .is_some_and(|rest| rest.starts_with('.'))
 }
 
 /// App-driven props, processed *first* on nodes with `n.animate` set.

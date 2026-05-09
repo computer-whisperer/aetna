@@ -409,6 +409,33 @@ pub enum UiEventKind {
     /// Emitted by `pointer_down`, `pointer_moved` (during a drag),
     /// and the runtime's escape / dismiss paths.
     SelectionChanged,
+    /// Pointer crossed onto a keyed hit-test target. Routed to the
+    /// newly hovered leaf — `event.target` is the new hover target,
+    /// `event.pointer` is the current pointer position. Fires
+    /// once per identity change, including the initial hover when the
+    /// pointer first enters a keyed region from nothing.
+    ///
+    /// Use for transition-driven side effects (sound on hover-enter,
+    /// analytics, hover-intent prefetch) — read state via
+    /// [`crate::BuildCx::hovered_key`] /
+    /// [`crate::BuildCx::is_hovering_within`] when you just need to
+    /// branch the build output. Both surfaces stay coherent because
+    /// the runtime debounces redraws and events to the same
+    /// hover-identity transitions.
+    ///
+    /// Always paired with a preceding `PointerLeave` for the previous
+    /// target (when there was one). Apps that want subtree-aware
+    /// behavior (parent stays "hot" while a child is hovered) should
+    /// query `is_hovering_within` rather than tracking enter/leave on
+    /// every keyed descendant.
+    PointerEnter,
+    /// Pointer crossed off a keyed hit-test target — either onto a
+    /// different keyed target (paired with a following `PointerEnter`)
+    /// or off any keyed surface entirely. Routed to the leaf that
+    /// just lost hover — `event.target` is the previous hover target,
+    /// `event.pointer` is the current pointer position (or the last
+    /// known position when the pointer left the window).
+    PointerLeave,
 }
 
 /// Per-frame, read-only context for [`App::build`].
@@ -426,13 +453,31 @@ pub enum UiEventKind {
 #[derive(Copy, Clone, Debug)]
 pub struct BuildCx<'a> {
     theme: &'a crate::Theme,
+    ui_state: Option<&'a crate::state::UiState>,
 }
 
 impl<'a> BuildCx<'a> {
     /// Construct a [`BuildCx`] borrowing the supplied theme. Hosts call
     /// this once per frame after [`App::theme`] and before [`App::build`].
+    /// Hosts that own a [`crate::state::UiState`] should chain
+    /// [`Self::with_ui_state`] so the app can read interaction state
+    /// (hover) during build via [`Self::hovered_key`] /
+    /// [`Self::is_hovering_within`].
     pub fn new(theme: &'a crate::Theme) -> Self {
-        Self { theme }
+        Self {
+            theme,
+            ui_state: None,
+        }
+    }
+
+    /// Attach the runtime's [`crate::state::UiState`] so build-time
+    /// accessors (`hovered_key`, `is_hovering_within`) can answer.
+    /// When omitted, those accessors return `None` / `false` — useful
+    /// for headless rendering paths that don't track interaction
+    /// state.
+    pub fn with_ui_state(mut self, ui_state: &'a crate::state::UiState) -> Self {
+        self.ui_state = Some(ui_state);
+        self
     }
 
     /// The active runtime theme for this frame.
@@ -443,6 +488,34 @@ impl<'a> BuildCx<'a> {
     /// Shorthand for `self.theme().palette()`.
     pub fn palette(&self) -> &crate::Palette {
         self.theme.palette()
+    }
+
+    /// Key of the leaf node currently under the pointer, or `None`
+    /// when nothing is hovered or this `BuildCx` was built without a
+    /// `UiState` (headless rendering paths).
+    ///
+    /// Use for branching the build output on hover state without
+    /// mirroring it via `App::on_event` handlers — e.g., a sidebar
+    /// row that previews details in a side pane based on what's
+    /// currently hovered.
+    ///
+    /// For region-aware queries (parent stays "hot" while a child is
+    /// hovered), prefer [`Self::is_hovering_within`].
+    pub fn hovered_key(&self) -> Option<&str> {
+        self.ui_state?.hovered_key()
+    }
+
+    /// True iff `key`'s node — or any descendant of it — is the
+    /// current hover target. Subtree-aware, matching the semantics of
+    /// [`crate::tree::El::hover_alpha`]. Returns `false` when this
+    /// `BuildCx` has no attached `UiState` or when `key` isn't in the
+    /// current tree.
+    ///
+    /// Reads the underlying tracker, not the eased subtree envelope —
+    /// the boolean flips immediately on hit-test identity change.
+    pub fn is_hovering_within(&self, key: &str) -> bool {
+        self.ui_state
+            .is_some_and(|state| state.is_hovering_within(key))
     }
 }
 

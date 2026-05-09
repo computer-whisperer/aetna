@@ -18,7 +18,7 @@ mod cursor;
 mod focus;
 mod interaction;
 mod keyboard;
-mod query;
+pub(crate) mod query;
 mod scroll;
 mod selection;
 mod toast;

@@ -717,9 +717,12 @@ impl Runner {
         self.core.pointer_moved(x, y)
     }
 
-    /// Pointer left the window — clear hover/press.
-    pub fn pointer_left(&mut self) {
-        self.core.pointer_left();
+    /// Pointer left the window — clear hover/press. Returns a
+    /// `PointerLeave` event for the previously hovered target (when
+    /// there was one); hosts should route the events through
+    /// `App::on_event` like the other pointer entry points.
+    pub fn pointer_left(&mut self) -> Vec<aetna_core::UiEvent> {
+        self.core.pointer_left()
     }
 
     /// Mouse button down at `(x, y)` (logical px) for the given

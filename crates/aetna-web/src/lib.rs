@@ -507,7 +507,9 @@ mod web_entry {
 
                 WindowEvent::CursorLeft { .. } => {
                     self.last_pointer = None;
-                    gfx.renderer.pointer_left();
+                    for event in gfx.renderer.pointer_left() {
+                        self.app.on_event(event);
+                    }
                     gfx.window.request_redraw();
                 }
 
@@ -601,7 +603,7 @@ mod web_entry {
 
                     self.app.before_build();
                     let theme = self.app.theme();
-                    let cx = BuildCx::new(&theme);
+                    let cx = BuildCx::new(&theme).with_ui_state(gfx.renderer.ui_state());
                     let mut tree = self.app.build(&cx);
                     let palette = theme.palette().clone();
                     gfx.renderer.set_theme(theme);

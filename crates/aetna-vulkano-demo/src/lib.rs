@@ -259,7 +259,9 @@ impl<A: App> ApplicationHandler for Host<A> {
 
             WindowEvent::CursorLeft { .. } => {
                 self.last_pointer = None;
-                rcx.runner.pointer_left();
+                for event in rcx.runner.pointer_left() {
+                    self.app.on_event(event);
+                }
                 rcx.window.request_redraw();
             }
 
@@ -370,7 +372,7 @@ impl<A: App> ApplicationHandler for Host<A> {
 
                 self.app.before_build();
                 let theme = self.app.theme();
-                let cx = BuildCx::new(&theme);
+                let cx = BuildCx::new(&theme).with_ui_state(rcx.runner.ui_state());
                 let mut tree = self.app.build(&cx);
                 let palette = theme.palette().clone();
                 rcx.runner.set_theme(theme);
@@ -629,7 +631,7 @@ mod tests {
             let _: fn(&$runner) -> String = <$runner>::debug_summary;
             let _: fn(&$runner, &str) -> Option<Rect> = <$runner>::rect_of_key;
             let _: fn(&mut $runner, f32, f32) -> PointerMove = <$runner>::pointer_moved;
-            let _: fn(&mut $runner) = <$runner>::pointer_left;
+            let _: fn(&mut $runner) -> Vec<UiEvent> = <$runner>::pointer_left;
             let _: fn(&mut $runner, f32, f32, PointerButton) -> Vec<UiEvent> =
                 <$runner>::pointer_down;
             let _: fn(&mut $runner, f32, f32, PointerButton) -> Vec<UiEvent> =

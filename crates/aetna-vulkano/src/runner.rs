@@ -688,8 +688,8 @@ impl Runner {
         self.core.pointer_moved(x, y)
     }
 
-    pub fn pointer_left(&mut self) {
-        self.core.pointer_left();
+    pub fn pointer_left(&mut self) -> Vec<aetna_core::UiEvent> {
+        self.core.pointer_left()
     }
 
     pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
