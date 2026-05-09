@@ -72,6 +72,11 @@ Shortcuts: `.fill_size()` for `.width(Fill(1.0)).height(Fill(1.0))`; `.hug()` fo
 
 ### 1.2 Component size
 
+Two independent knobs: `ComponentSize` scales control height / icon
+size on the size-driven widgets (button / tab / input / badge / …);
+container padding is per-constructor and overridden at the call site
+(see §1.2.1). There is no global density knob.
+
 Stock controls have a t-shirt size that matches shadcn's `size` prop
 1:1: `ComponentSize::{Xs, Sm, Md, Lg}`. Local modifiers:
 

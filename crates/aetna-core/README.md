@@ -136,9 +136,13 @@ Override per-call, Tailwind-shaped: `.padding(SPACE_4)` to swap the
 whole recipe (= `p-4`), or the additive shorthands `.pt(...)`,
 `.pb(...)`, `.pl(...)`, `.pr(...)`, `.px(...)`, `.py(...)` to override
 a single side or axis while preserving the constructor's defaults
-elsewhere (= `p-6 pt-0`). The override case below uses `.padding(0.0)`
-on `card_content` because its only child is a `scroll(...)` that
-should reach the card edges.
+elsewhere (= `p-6 pt-0`). The two compose, so a tighter card body that
+keeps the no-double-pad seam is
+`card_content([...]).padding(tokens::SPACE_3).pt(0.0)` (= `p-3 pt-0`)
+— `.padding(SPACE_3)` alone would reset the bundled `pt-0` and leave a
+visible doubled gap below the header. The override case below uses
+`.padding(0.0)` on `card_content` because its only child is a
+`scroll(...)` that should reach the card edges.
 
 ```ignore
 row([
@@ -203,12 +207,14 @@ fn log_row(role_color: Color, faint_fill: Option<Color>, content: El) -> El {
 column([
     toolbar([toolbar_title(thread.title.clone()), spacer(), badge(thread.state_label)]),
     scroll(thread.items.iter().map(|item| match item {
-        ChatItem::User(text) => log_row(tokens::INFO, Some(tokens::INFO.with_alpha(64)), paragraph(text)),
-        ChatItem::Assistant(text) => log_row(tokens::SUCCESS, None, paragraph(text)),
-        ChatItem::Reasoning { open, preview, body } => log_row(
+        // `paragraph` for plain user input; `md(...)` when the source
+        // is markdown (assistant streams, tool output prose).
+        ChatItem::User(text) => log_row(tokens::INFO, Some(tokens::INFO.with_alpha(38)), paragraph(text)),
+        ChatItem::Assistant(text) => log_row(tokens::SUCCESS, None, md(text)),
+        ChatItem::Reasoning { id, open, preview, body } => log_row(
             tokens::MUTED_FOREGROUND,
             None,
-            accordion_item("reasoning", item.id, preview, *open, [paragraph(body)]),
+            accordion_item("reasoning", id, preview, *open, [md(body)]),
         ),
         ChatItem::Tool(call) => log_row(
             tokens::WARNING,
