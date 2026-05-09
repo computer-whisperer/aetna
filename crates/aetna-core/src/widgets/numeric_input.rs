@@ -204,12 +204,42 @@ pub fn apply_event(
             return true;
         }
     }
+
+    // Only consume text events that actually target the inner field.
+    // text_input::apply_event itself doesn't gate on target_key
+    // (callers do, see the per-input dispatch in the Inputs section);
+    // forwarding every event would steal keystrokes meant for sibling
+    // widgets and dump them into our value.
     let field_key = format!("{key}:field");
+    if event.target_key() != Some(field_key.as_str()) {
+        return false;
+    }
+
     let text_opts = match opts.placeholder {
         Some(p) => TextInputOpts::default().placeholder(p),
         None => TextInputOpts::default(),
     };
-    text_input_apply(value, selection, &field_key, event, &text_opts)
+
+    // Run the text_input edit, then revert if the post-edit value
+    // contains non-numeric characters. The filter is permissive: any
+    // char in `[0-9.eE+\-]` is allowed so mid-edit states like `"-"`,
+    // `"1."`, or `"1.5e+"` keep the cursor where the user expects
+    // while the value isn't yet a complete f64.
+    let prev_value = value.clone();
+    let prev_selection = selection.clone();
+    let changed = text_input_apply(value, selection, &field_key, event, &text_opts);
+    if changed && !is_acceptable_numeric_progress(value) {
+        *value = prev_value;
+        *selection = prev_selection;
+        return false;
+    }
+    changed
+}
+
+fn is_acceptable_numeric_progress(s: &str) -> bool {
+    s.is_empty()
+        || s.chars()
+            .all(|c| matches!(c, '0'..='9' | '.' | 'e' | 'E' | '+' | '-'))
 }
 
 fn step_value(value: &mut String, opts: &NumericInputOpts<'_>, dir: i32) {
@@ -246,9 +276,32 @@ fn format_numeric(n: f64, decimals: Option<u8>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::{KeyModifiers, UiTarget};
+    use crate::tree::Rect;
 
     fn click(key: &str) -> UiEvent {
         UiEvent::synthetic_click(key)
+    }
+
+    /// Build a TextInput event targeting `target_key` with `text` as
+    /// the composed payload. Used to drive both the routing-gate and
+    /// the numeric-character-filter tests.
+    fn text_event(target_key: &str, text: &str) -> UiEvent {
+        UiEvent {
+            key: Some(target_key.to_string()),
+            target: Some(UiTarget {
+                key: target_key.to_string(),
+                node_id: format!("/{target_key}"),
+                rect: Rect::new(0.0, 0.0, 100.0, 32.0),
+            }),
+            pointer: None,
+            key_press: None,
+            text: Some(text.to_string()),
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 0,
+            kind: UiEventKind::TextInput,
+        }
     }
 
     #[test]
@@ -414,6 +467,83 @@ mod tests {
         // 1.0 → "1", not "1.0" (we only fall through to `f64::Display`
         // when the result has a fractional component).
         assert_eq!(value, "1");
+    }
+
+    #[test]
+    fn text_event_for_other_widget_is_ignored() {
+        // Regression: previously `apply_event` forwarded every
+        // non-spinner event into `text_input::apply_event`, which
+        // doesn't gate on target_key — so typing into a sibling
+        // text input would also write into the numeric input.
+        let mut value = String::from("42");
+        let mut sel = Selection::default();
+        let opts = NumericInputOpts::default();
+        // A TextInput event targeted at a sibling widget should not
+        // touch our value at all.
+        assert!(!apply_event(
+            &mut value,
+            &mut sel,
+            "n",
+            &opts,
+            &text_event("other-input", "x"),
+        ));
+        assert_eq!(value, "42");
+    }
+
+    #[test]
+    fn text_event_filter_rejects_non_numeric_chars() {
+        // A TextInput event targeting our inner field whose payload
+        // isn't numeric is rolled back so the value never absorbs
+        // letters / punctuation.
+        let mut value = String::from("12");
+        let mut sel = Selection::default();
+        let opts = NumericInputOpts::default();
+        assert!(!apply_event(
+            &mut value,
+            &mut sel,
+            "n",
+            &opts,
+            &text_event("n:field", "abc"),
+        ));
+        assert_eq!(value, "12");
+    }
+
+    #[test]
+    fn text_event_filter_accepts_partial_numeric_states() {
+        // Mid-edit values are kept: bare `-`, trailing `.`, exponent
+        // prefix, etc. should all pass the filter even though they
+        // aren't yet a complete f64.
+        for partial in ["-", "1.", "1.5e", "1.5e+", ".5", "+"] {
+            let mut value = String::new();
+            let mut sel = Selection::default();
+            let opts = NumericInputOpts::default();
+            assert!(
+                apply_event(
+                    &mut value,
+                    &mut sel,
+                    "n",
+                    &opts,
+                    &text_event("n:field", partial),
+                ),
+                "filter should accept partial value {partial:?}",
+            );
+            assert_eq!(value, partial, "value should equal {partial:?}");
+        }
+    }
+
+    #[test]
+    fn text_event_filter_accepts_full_numeric_paste() {
+        let mut value = String::new();
+        let mut sel = Selection::default();
+        let opts = NumericInputOpts::default();
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            "n",
+            &opts,
+            &text_event("n:field", "42.5"),
+        ));
+        assert_eq!(value, "42.5");
     }
 
     #[test]
