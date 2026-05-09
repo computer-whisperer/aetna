@@ -142,6 +142,7 @@ pub use widgets::accordion::{
 pub use widgets::alert::{alert, alert_description, alert_title};
 pub use widgets::avatar::{DEFAULT_AVATAR_SIZE, avatar_fallback, avatar_image, avatar_initials};
 pub use widgets::badge::badge;
+pub use widgets::blockquote::blockquote;
 pub use widgets::breadcrumb::{
     breadcrumb, breadcrumb_item, breadcrumb_link, breadcrumb_list, breadcrumb_page,
     breadcrumb_separator,
@@ -151,6 +152,7 @@ pub use widgets::card::{
     card, card_content, card_description, card_footer, card_header, card_title, titled_card,
 };
 pub use widgets::checkbox::checkbox;
+pub use widgets::code_block::code_block;
 pub use widgets::command::{
     command_group, command_icon, command_item, command_label, command_row, command_shortcut,
 };
@@ -172,6 +174,7 @@ pub use widgets::form::{
     field_row, form, form_control, form_description, form_item, form_label, form_message,
     form_section,
 };
+pub use widgets::list::{bullet_list, numbered_list};
 pub use widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use widgets::pagination::{
     pagination, pagination_content, pagination_ellipsis, pagination_item, pagination_link,
