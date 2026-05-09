@@ -104,11 +104,14 @@ pub enum Section {
     Toggles,
     Tabs,
     EditorTabs,
+    Accordion,
+    Navigation,
     Split,
     Glass,
     Surfaces,
     Alerts,
     Toasts,
+    Overlays,
     Images,
     Icons,
     Prose,
@@ -129,11 +132,14 @@ impl Section {
             Section::Toggles => "Toggles",
             Section::Tabs => "Tabs",
             Section::EditorTabs => "Editor tabs",
+            Section::Accordion => "Accordion",
+            Section::Navigation => "Navigation",
             Section::Split => "Split",
             Section::Glass => "Glass",
             Section::Surfaces => "Surfaces",
             Section::Alerts => "Alerts",
             Section::Toasts => "Toasts",
+            Section::Overlays => "Overlays",
             Section::Images => "Images",
             Section::Icons => "Icons",
             Section::Prose => "Prose",
@@ -154,11 +160,14 @@ impl Section {
             Section::Toggles => "nav-toggles",
             Section::Tabs => "nav-tabs",
             Section::EditorTabs => "nav-editor-tabs",
+            Section::Accordion => "nav-accordion",
+            Section::Navigation => "nav-navigation",
             Section::Split => "nav-split",
             Section::Glass => "nav-glass",
             Section::Surfaces => "nav-surfaces",
             Section::Alerts => "nav-alerts",
             Section::Toasts => "nav-toasts",
+            Section::Overlays => "nav-overlays",
             Section::Images => "nav-images",
             Section::Icons => "nav-icons",
             Section::Prose => "nav-prose",
@@ -166,7 +175,7 @@ impl Section {
         }
     }
 
-    pub const ALL: [Section; 20] = [
+    pub const ALL: [Section; 23] = [
         Section::Counter,
         Section::List,
         Section::Items,
@@ -178,11 +187,14 @@ impl Section {
         Section::Toggles,
         Section::Tabs,
         Section::EditorTabs,
+        Section::Accordion,
+        Section::Navigation,
         Section::Split,
         Section::Glass,
         Section::Surfaces,
         Section::Alerts,
         Section::Toasts,
+        Section::Overlays,
         Section::Images,
         Section::Icons,
         Section::Prose,
@@ -318,6 +330,44 @@ impl Default for TogglesState {
     }
 }
 
+struct AccordionState {
+    /// Which item is currently expanded. `None` = all collapsed —
+    /// shadcn's "type=single, collapsible" behavior, where re-clicking
+    /// the open item closes it.
+    open: Option<String>,
+}
+
+impl Default for AccordionState {
+    fn default() -> Self {
+        // Start with the second item open so headless renders show
+        // both the collapsed and expanded trigger treatments side by
+        // side, plus the expanded body.
+        Self {
+            open: Some("billing".into()),
+        }
+    }
+}
+
+struct OverlaysState {
+    /// Whether the dialog overlay layer is mounted.
+    dialog_open: bool,
+    /// Whether the sheet overlay layer is mounted.
+    sheet_open: bool,
+}
+
+impl Default for OverlaysState {
+    fn default() -> Self {
+        // Start with the dialog open so headless renders capture the
+        // dialog anatomy (header / title / description / footer);
+        // dismissing it and opening the sheet is the interactive path.
+        // Same "informative default" pattern Forms uses.
+        Self {
+            dialog_open: true,
+            sheet_open: false,
+        }
+    }
+}
+
 struct TabsState {
     /// Currently active tab — token returned from `tab_option_key`.
     tab: String,
@@ -441,9 +491,11 @@ pub struct Showcase {
     toggles: TogglesState,
     tabs: TabsState,
     editor_tabs: EditorTabsState,
+    accordion: AccordionState,
     split: SplitState,
     glass: GlassState,
     toasts: ToastsState,
+    overlays: OverlaysState,
 }
 
 impl Showcase {
@@ -471,8 +523,9 @@ impl App for Showcase {
         //
         // The Inputs and Tabs sections each contribute a single
         // popover layer (region select menu / actions dropdown) when
-        // their open flag is set; all other sections contribute
-        // none.
+        // their open flag is set; the Overlays section contributes
+        // dialog / sheet layers when its respective flag is set; all
+        // other sections contribute none.
         let region_layer = (self.section == Section::Inputs && self.inputs.region_open)
             .then(|| select_menu("inputs-region", REGION_OPTIONS.iter().copied()));
         let actions_layer = (self.section == Section::Tabs && self.tabs.actions_open).then(|| {
@@ -484,9 +537,13 @@ impl App for Showcase {
                     .map(|a| menu_item(*a).key(format!("tabs-action:{a}"))),
             )
         });
+        let dialog_layer =
+            (self.section == Section::Overlays && self.overlays.dialog_open).then(overlays_dialog);
+        let sheet_layer =
+            (self.section == Section::Overlays && self.overlays.sheet_open).then(overlays_sheet);
         overlays(
             row([sidebar(self.section, self.theme_choice), content(self)]),
-            [region_layer, actions_layer],
+            [region_layer, actions_layer, dialog_layer, sheet_layer],
         )
     }
 
@@ -538,11 +595,14 @@ impl App for Showcase {
             Section::Toggles => toggles_on_event(&mut self.toggles, event),
             Section::Tabs => tabs_on_event(&mut self.tabs, event),
             Section::EditorTabs => editor_tabs_on_event(&mut self.editor_tabs, event),
+            Section::Accordion => accordion_on_event(&mut self.accordion, event),
+            Section::Navigation => {} // static fixture, no events
             Section::Split => split_on_event(&mut self.split, event),
             Section::Glass => glass_on_event(&mut self.glass, event),
             Section::Surfaces => {} // static fixture, no events
             Section::Alerts => {}   // static fixture, no events
             Section::Toasts => toasts_on_event(&mut self.toasts, event),
+            Section::Overlays => overlays_on_event(&mut self.overlays, event),
             Section::Images => {}   // static fixture, no events
             Section::Icons => {}    // static fixture, no events
             Section::Prose => {}    // static fixture, no events
@@ -629,6 +689,8 @@ fn content(app: &Showcase) -> El {
         Section::Toggles => toggles_view(&app.toggles),
         Section::Tabs => tabs_view(&app.tabs),
         Section::EditorTabs => editor_tabs_view(&app.editor_tabs),
+        Section::Accordion => accordion_view(&app.accordion),
+        Section::Navigation => navigation_view(),
         Section::Split => split_view(&app.split),
         Section::Glass => {
             return glass_view(&app.glass)
@@ -638,6 +700,7 @@ fn content(app: &Showcase) -> El {
         Section::Surfaces => surfaces_view(),
         Section::Alerts => alerts_view(),
         Section::Toasts => toasts_view(&app.toasts),
+        Section::Overlays => overlays_view(&app.overlays),
         Section::Images => images_view(),
         Section::Icons => icons_view(),
         Section::Prose => prose_view(),
@@ -1860,6 +1923,125 @@ fn editor_tabs_on_event(state: &mut EditorTabsState, e: UiEvent) {
     );
 }
 
+// ---- Accordion section ----
+//
+// FAQ-style stack of three collapsible items. Demonstrates the
+// "type=single, collapsible" controlled pattern: the app owns
+// `Option<String>`, `accordion::apply_event` toggles the value (open
+// → None when re-clicked, closed → Some(value) on first click). One
+// item starts open so headless renders show both expanded and
+// collapsed trigger treatments alongside an expanded body.
+
+const ACCORDION_KEY: &str = "showcase-accordion";
+
+fn accordion_view(state: &AccordionState) -> El {
+    let item = |value: &str, label: &str, body: El| -> El {
+        let open = state.open.as_deref() == Some(value);
+        accordion_item(ACCORDION_KEY, value, label, open, [body])
+    };
+
+    column([
+        h1("Accordion"),
+        paragraph(
+            "Controlled disclosure: the app owns an `Option<String>`. \
+             Re-clicking the open item closes it (shadcn's `collapsible`).",
+        )
+        .muted(),
+        accordion([
+            item(
+                "shipping",
+                "Shipping & delivery",
+                paragraph(
+                    "Orders ship within 1–2 business days. Tracking emails \
+                     arrive once the carrier scans the package.",
+                ),
+            ),
+            accordion_separator(),
+            item(
+                "billing",
+                "Billing",
+                paragraph(
+                    "Invoices are billed monthly on the anniversary of the \
+                     account creation date. Annual plans are charged once \
+                     up front and renew automatically.",
+                ),
+            ),
+            accordion_separator(),
+            item(
+                "support",
+                "Support",
+                paragraph(
+                    "Email support@example.com or open a ticket from the \
+                     Settings → Support tab.",
+                ),
+            ),
+        ]),
+    ])
+    .gap(tokens::SPACE_4)
+    .height(Size::Hug)
+}
+
+fn accordion_on_event(state: &mut AccordionState, e: UiEvent) {
+    let _ = accordion::apply_event(&mut state.open, &e, ACCORDION_KEY, |s| Some(s.to_string()));
+}
+
+// ---- Navigation section ----
+//
+// Static composition that covers the three navigation-chrome widgets
+// (`breadcrumb`, `pagination`, `separator`) in one panel. Each is too
+// small to justify its own section but collectively they're the
+// pieces an LLM authoring a typical paged list view reaches for.
+
+fn navigation_view() -> El {
+    let crumbs = breadcrumb_list([
+        breadcrumb_item(breadcrumb_link("Home")),
+        breadcrumb_separator(),
+        breadcrumb_item(breadcrumb_link("Documents")),
+        breadcrumb_separator(),
+        breadcrumb_item(breadcrumb_link("Reports")),
+        breadcrumb_separator(),
+        breadcrumb_item(breadcrumb_page("Q1 summary")),
+    ]);
+
+    let pages = pagination_content([
+        pagination_item(pagination_previous()),
+        pagination_item(pagination_link("1", false)),
+        pagination_item(pagination_link("2", true)),
+        pagination_item(pagination_link("3", false)),
+        pagination_item(pagination_ellipsis()),
+        pagination_item(pagination_link("9", false)),
+        pagination_item(pagination_next()),
+    ]);
+
+    column([
+        h1("Navigation"),
+        paragraph(
+            "Three small chrome widgets used together on most paged \
+             list views: `breadcrumb` for the path, `separator` between \
+             logical groups, `pagination` for the page picker.",
+        )
+        .muted(),
+        h3("Breadcrumb").label(),
+        crumbs,
+        separator(),
+        h3("Pagination").label(),
+        pages,
+        separator(),
+        h3("Separators in toolbars").label(),
+        row([
+            text("File").label(),
+            vertical_separator(),
+            text("Edit").label(),
+            vertical_separator(),
+            text("View").label(),
+        ])
+        .gap(tokens::SPACE_3)
+        .align(Align::Center),
+    ])
+    .gap(tokens::SPACE_3)
+    .height(Size::Hug)
+}
+
 // ---- Split section ----
 //
 // Resizable sidebar — the dominant use of `resize_handle`. The app
@@ -2395,6 +2577,117 @@ fn toasts_on_event(state: &mut ToastsState, e: UiEvent) {
     };
     state.pending.push(spec);
     state.fires += 1;
+}
+
+// ---- Overlays section ----
+//
+// Two trigger buttons; clicks open an overlay layer that `build()`
+// appends to the root stack (same pattern as the region select on
+// the Inputs section and the actions dropdown on the Tabs section).
+// Each layer's scrim emits `{key}:dismiss` on outside-click — the app
+// flips the open flag back to false. The dialog and sheet content
+// helpers compose the shadcn-shaped header / description / footer
+// anatomies.
+
+const OVERLAYS_DIALOG_KEY: &str = "showcase-dialog";
+const OVERLAYS_SHEET_KEY: &str = "showcase-sheet";
+
+fn overlays_view(state: &OverlaysState) -> El {
+    column([
+        h1("Overlays"),
+        paragraph(
+            "`dialog` for centered modals, `sheet` for edge-attached \
+             panels. Both compose `overlay([scrim, content])`; the scrim \
+             emits `{key}:dismiss` on outside click. The Showcase app \
+             contributes the layers to its root stack only when the \
+             section's open flag is set.",
+        )
+        .muted(),
+        row([
+            button("Open dialog").key("overlays-open-dialog").primary(),
+            button("Open sheet (left)").key("overlays-open-sheet"),
+        ])
+        .gap(tokens::SPACE_2),
+        text(format!(
+            "dialog: {}, sheet: {}",
+            if state.dialog_open { "open" } else { "closed" },
+            if state.sheet_open { "open" } else { "closed" },
+        ))
+        .muted()
+        .small(),
+    ])
+    .gap(tokens::SPACE_4)
+    .height(Size::Hug)
+}
+
+fn overlays_dialog() -> El {
+    dialog(
+        OVERLAYS_DIALOG_KEY,
+        [
+            dialog_header([
+                dialog_title("Confirm changes"),
+                dialog_description(
+                    "Settings have been edited. Save now to keep your changes, \
+                     or close this dialog to keep editing.",
+                ),
+            ]),
+            dialog_footer([
+                button("Cancel")
+                    .key(format!("{OVERLAYS_DIALOG_KEY}:dismiss"))
+                    .ghost(),
+                button("Save").key("overlays-dialog-save").primary(),
+            ]),
+        ],
+    )
+}
+
+fn overlays_sheet() -> El {
+    sheet(
+        OVERLAYS_SHEET_KEY,
+        SheetSide::Left,
+        [
+            sheet_header([
+                sheet_title("Filter"),
+                sheet_description(
+                    "Narrow the list with a few filters. Edge-attached so \
+                     it stays out of the main content's way.",
+                ),
+            ]),
+            paragraph(
+                "Sheets are useful for navigation drawers, secondary detail \
+                 inspectors, and filter panes — anywhere a full modal would \
+                 feel disruptive but a transient surface still wants its own \
+                 dedicated space.",
+            ),
+            sheet_footer([
+                button("Reset").key("overlays-sheet-reset").ghost(),
+                button("Apply").key("overlays-sheet-apply").primary(),
+            ]),
+        ],
+    )
+}
+
+fn overlays_on_event(state: &mut OverlaysState, e: UiEvent) {
+    if !matches!(e.kind, UiEventKind::Click | UiEventKind::Activate) {
+        return;
+    }
+    match e.route() {
+        Some("overlays-open-dialog") => state.dialog_open = true,
+        Some("overlays-open-sheet") => state.sheet_open = true,
+        // The scrim's `{key}:dismiss` and the in-dialog action buttons
+        // all close their respective layer.
+        Some(k) if k == format!("{OVERLAYS_DIALOG_KEY}:dismiss") || k == "overlays-dialog-save" => {
+            state.dialog_open = false;
+        }
+        Some(k)
+            if k == format!("{OVERLAYS_SHEET_KEY}:dismiss")
+                || k == "overlays-sheet-reset"
+                || k == "overlays-sheet-apply" =>
+        {
+            state.sheet_open = false;
+        }
+        _ => {}
+    }
 }
 
 // ---- Images section ----
