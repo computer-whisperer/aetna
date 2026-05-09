@@ -116,11 +116,31 @@ impl HostConfig {
 ///
 /// New apps should prefer [`App::before_build`]. This trait remains for
 /// code that wants to name a winit-host-specific app type while still
-/// using the same core lifecycle.
+/// using the same core lifecycle, and as a place to hang wgpu-specific
+/// hooks that the backend-neutral [`App`] trait can't carry — see
+/// [`Self::gpu_setup`] and [`Self::before_paint`].
 pub trait WinitWgpuApp: App {
     fn before_build(&mut self) {
         App::before_build(self);
     }
+
+    /// Called once after the host has created its `wgpu::Device` and
+    /// before the first frame is drawn. Apps that need to allocate
+    /// app-owned GPU textures (typically for use with
+    /// [`aetna_core::surface::AppTexture`] / `surface()` widgets)
+    /// initialize them here.
+    ///
+    /// Default: no-op. App authors who don't touch wgpu directly can
+    /// ignore this hook.
+    fn gpu_setup(&mut self, _device: &wgpu::Device, _queue: &wgpu::Queue) {}
+
+    /// Called each frame just before [`App::build`] runs. Apps update
+    /// their app-owned GPU textures here — typically by
+    /// `queue.write_texture(...)` of the next animation frame so the
+    /// composite the runner draws this frame samples fresh pixels.
+    ///
+    /// Default: no-op.
+    fn before_paint(&mut self, _queue: &wgpu::Queue) {}
 }
 
 struct BasicApp<A>(A);
@@ -416,11 +436,17 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             config,
             msaa,
         });
+        // Hand the app the device + queue so it can allocate any GPU
+        // textures it intends to display via `surface()` widgets. Runs
+        // once per Host lifetime (`resumed` is idempotent thanks to
+        // the `gfx.is_some()` guard at the top).
+        let gfx = self.gfx.as_ref().unwrap();
+        self.app.gpu_setup(&gfx.device, &gfx.queue);
         self.next_periodic_redraw = self
             .config
             .redraw_interval
             .map(|interval| Instant::now() + interval);
-        self.gfx.as_ref().unwrap().window.request_redraw();
+        gfx.window.request_redraw();
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -630,6 +656,12 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             .texture
                             .create_view(&wgpu::TextureViewDescriptor::default());
 
+                        // Per-frame GPU update hook — apps writing to
+                        // their own AppTextures (animated content,
+                        // 3D viewports, video frames) push pixels to
+                        // the queue here, before paint records draws
+                        // that sample those textures.
+                        self.app.before_paint(&gfx.queue);
                         WinitWgpuApp::before_build(&mut self.app);
                         let theme = self.app.theme();
                         let cx =

@@ -136,7 +136,7 @@ fn make_ring(w: u32, h: u32) -> Image {
     Image::from_rgba8(w, h, pixels)
 }
 
-pub fn view() -> El {
+pub fn view(animated_surface: Option<&AppTexture>) -> El {
     scroll([column([
         h1("Media"),
         paragraph(
@@ -146,6 +146,14 @@ pub fn view() -> El {
              tinted shape.",
         )
         .muted(),
+        section_card(
+            "Animated surface (app-owned GPU texture)",
+            "`surface(AppTexture)` composites pixels the app writes each frame — \
+             3D viewports, video, animated images. The host writes a procedural \
+             frame to a 96×96 RGBA8 texture in `WinitWgpuApp::before_paint`; \
+             Aetna samples it during paint, no upload, no extra render pass.",
+            [animated_surface_demo(animated_surface)],
+        ),
         section_card(
             "Avatars",
             "Image, fallback initials, or a colored shape — same anatomy.",
@@ -289,4 +297,58 @@ fn custom_icon_tile(svg: &LazyLock<SvgIcon>, label: &str, size: f32) -> El {
     .align(Align::Center)
     .padding(tokens::SPACE_3)
     .radius(tokens::RADIUS_MD)
+}
+
+/// Three tiles, each showing the animated surface under a different
+/// `SurfaceAlpha` mode against a colored backdrop. The shared
+/// `AppTexture` is cheap to clone (Arc-backed); each tile owns its
+/// own composite, so the same pixel data lights up the three blend
+/// paths simultaneously.
+fn animated_surface_demo(tex: Option<&AppTexture>) -> El {
+    let Some(tex) = tex else {
+        return paragraph(
+            "This demo requires a wgpu host that allocates an `AppTexture` and \
+             pushes a frame each tick (see `examples/src/bin/showcase.rs`). \
+             Headless render bundles render this card as a placeholder.",
+        )
+        .muted()
+        .small();
+    };
+    row([
+        animated_surface_cell("Premultiplied", tokens::PRIMARY, tex.clone(), SurfaceAlpha::Premultiplied),
+        animated_surface_cell("Straight", tokens::SECONDARY, tex.clone(), SurfaceAlpha::Straight),
+        animated_surface_cell("Opaque", tokens::ACCENT, tex.clone(), SurfaceAlpha::Opaque),
+    ])
+    .gap(tokens::SPACE_3)
+    .align(Align::Stretch)
+}
+
+fn animated_surface_cell(
+    label: &str,
+    backdrop: Color,
+    tex: AppTexture,
+    alpha: SurfaceAlpha,
+) -> El {
+    column([
+        text(label.to_string()).small().muted(),
+        stack([
+            // Backdrop — Premultiplied / Straight let it show through
+            // wherever the texture has alpha < 1; Opaque overwrites.
+            El::default()
+                .fill(backdrop)
+                .radius(tokens::RADIUS_MD)
+                .width(Size::Fill(1.0))
+                .height(Size::Fill(1.0)),
+            // The animated surface.
+            surface(tex)
+                .surface_alpha(alpha)
+                .width(Size::Fill(1.0))
+                .height(Size::Fill(1.0)),
+        ])
+        .width(Size::Fill(1.0))
+        .height(Size::Fixed(120.0)),
+    ])
+    .gap(tokens::SPACE_1)
+    .align(Align::Center)
+    .width(Size::Fill(1.0))
 }

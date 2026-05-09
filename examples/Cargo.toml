@@ -11,7 +11,9 @@ publish = false
 [dependencies]
 aetna-core = { version = "0.3.0", path = "../crates/aetna-core" }
 aetna-fixtures = { version = "0.3.0", path = "../crates/aetna-fixtures" }
+aetna-wgpu = { version = "0.3.0", path = "../crates/aetna-wgpu" }
 aetna-winit-wgpu = { version = "0.3.0", path = "../crates/aetna-winit-wgpu" }
+wgpu = "29"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # `wayland-data-control` is required so arboard talks to native

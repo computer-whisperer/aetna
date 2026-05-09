@@ -209,6 +209,14 @@ pub struct Showcase {
     pub(crate) overlays: overlays::State,
     pub(crate) animation: animation::State,
     pub(crate) hotkeys: hotkeys::State,
+
+    /// Optional app-owned GPU texture surfaced on the Media page to
+    /// demonstrate `surface()`. The fixtures crate is backend-neutral,
+    /// so it can't allocate one itself — the host wires it up (see
+    /// `examples/src/bin/showcase.rs` for the wgpu side that
+    /// allocates a `wgpu::Texture` in `gpu_setup` and writes a
+    /// procedurally-animated frame in `before_paint`).
+    pub(crate) animated_surface: Option<aetna_core::surface::AppTexture>,
 }
 
 impl Showcase {
@@ -225,6 +233,18 @@ impl Showcase {
             ..Default::default()
         }
     }
+
+    /// Hand the showcase an app-owned GPU texture for the Media page's
+    /// `surface()` demo. Pass `None` to clear it (the page falls back
+    /// to a placeholder explaining the demo needs a wgpu host).
+    pub fn set_animated_surface(&mut self, tex: Option<aetna_core::surface::AppTexture>) {
+        self.animated_surface = tex;
+    }
+
+    /// Borrow the registered animated-surface texture, if any.
+    pub fn animated_surface(&self) -> Option<&aetna_core::surface::AppTexture> {
+        self.animated_surface.as_ref()
+    }
 }
 
 impl App for Showcase {
@@ -240,7 +260,7 @@ impl App for Showcase {
             Section::TextInputs => text_inputs::view(&self.text_inputs),
             Section::Forms => forms::view(&self.forms),
             Section::Status => status::view(&self.status),
-            Section::Media => media::view(),
+            Section::Media => media::view(self.animated_surface.as_ref()),
             Section::ListsTables => lists_tables::view(&self.lists_tables),
             Section::TabsAccordion => tabs_accordion::view(&self.tabs_accordion),
             Section::Overlays => overlays::view(&self.overlays),

@@ -49,8 +49,10 @@ version = "0.3.0"
 dependencies = [
  "aetna-core",
  "aetna-fixtures",
+ "aetna-wgpu",
  "aetna-winit-wgpu",
  "arboard",
+ "wgpu",
 ]
 
 [[package]]
