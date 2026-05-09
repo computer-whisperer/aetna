@@ -1,0 +1,692 @@
+//! Walk pulldown-cmark events into an Aetna `El` tree.
+
+use aetna_core::prelude::*;
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
+
+/// Render a markdown document as an Aetna `El`.
+///
+/// The result is a `column([...])` of block-level Aetna widgets — the
+/// same shape an author would have hand-written. See the crate-level
+/// docs for the supported subset and the deferred features.
+pub fn md(input: &str) -> El {
+    let parser = Parser::new(input);
+    let mut walker = Walker::new();
+    for event in parser {
+        walker.handle(event);
+    }
+    walker.finish()
+}
+
+/// Block-level frame on the parser's open-container stack. `Walker`
+/// pops these on the matching `End` event and folds the collected
+/// child content into a single Aetna widget.
+enum Frame {
+    /// Open `<p>` — accumulates inline runs.
+    Paragraph(Vec<El>),
+    /// Open `<h1..h6>` — accumulates inline runs.
+    Heading(HeadingLevel, Vec<El>),
+    /// Open `<blockquote>` — accumulates block children.
+    BlockQuote(Vec<El>),
+    /// Open `<ul>` / `<ol>` — collects items as nested block lists.
+    List {
+        /// `None` ↔ bullet list, `Some(start)` ↔ ordered list starting
+        /// at `start` (CommonMark allows non-1 starts).
+        start: Option<u64>,
+        items: Vec<Vec<El>>,
+    },
+    /// Open `<li>` — accumulates one item's block children.
+    Item(Vec<El>),
+    /// Open `<pre><code>` — accumulating verbatim text.
+    CodeBlock(String),
+    /// Open `<a>` — accumulates inline children that share its URL.
+    /// The URL is applied to each text run on close (not via inline
+    /// style flags) so a link spanning multiple text events groups
+    /// correctly under one href in the painter.
+    Link(String, Vec<El>),
+    /// Open `<img>` — accumulates the alt text for placeholder
+    /// rendering. Image content loading is deferred (see crate docs).
+    Image(String),
+}
+
+/// Inline styling currently in effect for new text runs.
+///
+/// Markdown inline tags (`*em*`, `**strong**`, `~~strike~~`) can nest;
+/// each pair pushes / pops a depth counter. The Code and Link cases
+/// are scoped through their own frames in `Walker::stack` rather than
+/// as flags here, since they carry data (the run's `code_role` shape
+/// and the link URL respectively).
+#[derive(Default)]
+struct InlineState {
+    italic_depth: u32,
+    bold_depth: u32,
+    strike_depth: u32,
+}
+
+impl InlineState {
+    fn apply(&self, mut el: El) -> El {
+        if self.bold_depth > 0 {
+            el = el.bold();
+        }
+        if self.italic_depth > 0 {
+            el = el.italic();
+        }
+        if self.strike_depth > 0 {
+            el = el.strikethrough();
+        }
+        el
+    }
+}
+
+struct Walker {
+    /// Open block-level frames + open `<a>` / `<img>` containers,
+    /// innermost last. `<a>` and `<img>` are stack-tracked rather than
+    /// stored as inline-state flags because they own the text events
+    /// between Start/End and need to fold them into their own El on
+    /// close.
+    stack: Vec<Frame>,
+    /// Inline-style flags for upcoming text events.
+    inline: InlineState,
+    /// Top-level blocks collected outside any open frame.
+    root: Vec<El>,
+}
+
+impl Walker {
+    fn new() -> Self {
+        Self {
+            stack: Vec::new(),
+            inline: InlineState::default(),
+            root: Vec::new(),
+        }
+    }
+
+    fn handle(&mut self, event: Event<'_>) {
+        match event {
+            Event::Start(tag) => self.start(tag),
+            Event::End(end) => self.end(end),
+            Event::Text(text) => self.text(text.into_string()),
+            Event::Code(text) => self.code_span(text.into_string()),
+            Event::SoftBreak => self.text(" ".to_string()),
+            Event::HardBreak => {
+                self.ensure_inline_frame();
+                self.push_inline(hard_break());
+            }
+            Event::Rule => self.push_block(divider()),
+            // `$…$` / `$$…$$` math, raw HTML, footnotes, task list
+            // markers — all skipped for the Phase 2 surface. Math will
+            // route through a future `aetna-latex` integration.
+            Event::InlineMath(text) | Event::DisplayMath(text) => self.code_span(text.into_string()),
+            Event::Html(_) | Event::InlineHtml(_) => {}
+            Event::FootnoteReference(_) | Event::TaskListMarker(_) => {}
+        }
+    }
+
+    fn start(&mut self, tag: Tag<'_>) {
+        match tag {
+            Tag::Paragraph => self.stack.push(Frame::Paragraph(Vec::new())),
+            Tag::Heading { level, .. } => self.stack.push(Frame::Heading(level, Vec::new())),
+            Tag::BlockQuote(_) => self.stack.push(Frame::BlockQuote(Vec::new())),
+            Tag::List(start) => self.stack.push(Frame::List {
+                start,
+                items: Vec::new(),
+            }),
+            Tag::Item => self.stack.push(Frame::Item(Vec::new())),
+            Tag::CodeBlock(_) => self.stack.push(Frame::CodeBlock(String::new())),
+            Tag::Emphasis => self.inline.italic_depth += 1,
+            Tag::Strong => self.inline.bold_depth += 1,
+            Tag::Strikethrough => self.inline.strike_depth += 1,
+            Tag::Link { dest_url, .. } => {
+                self.stack
+                    .push(Frame::Link(dest_url.into_string(), Vec::new()));
+            }
+            Tag::Image { .. } => {
+                // Alt text accumulates through inline events while the
+                // image frame is open; on End we fold into a placeholder.
+                self.stack.push(Frame::Image(String::new()));
+            }
+            // Tables, footnote definitions, definition lists, and
+            // subscript / superscript are deferred — open the frame as
+            // a no-op container so the matching End drains cleanly.
+            Tag::Table(_)
+            | Tag::TableHead
+            | Tag::TableRow
+            | Tag::TableCell
+            | Tag::FootnoteDefinition(_)
+            | Tag::DefinitionList
+            | Tag::DefinitionListTitle
+            | Tag::DefinitionListDefinition
+            | Tag::HtmlBlock
+            | Tag::MetadataBlock(_)
+            | Tag::Subscript
+            | Tag::Superscript => {
+                // Push a paragraph frame so any inline text between
+                // Start and End ends up captured (and dropped when we
+                // pop). Cheaper than threading an explicit "ignored"
+                // frame and produces no spurious output.
+                self.stack.push(Frame::Paragraph(Vec::new()));
+            }
+        }
+    }
+
+    fn end(&mut self, end: TagEnd) {
+        match end {
+            TagEnd::Paragraph => {
+                if let Some(Frame::Paragraph(inlines)) = self.stack.pop() {
+                    // Empty paragraph: pulldown-cmark wraps inline
+                    // images in their own paragraph, so once the image
+                    // pops out as a block the wrapping paragraph is
+                    // empty. Skip emission for that case (and for any
+                    // other zero-run paragraph) so the document
+                    // doesn't carry phantom empty blocks.
+                    if inlines.is_empty() {
+                        return;
+                    }
+                    let block = build_paragraph(inlines);
+                    self.push_block(block);
+                }
+            }
+            TagEnd::Heading(_) => {
+                if let Some(Frame::Heading(level, inlines)) = self.stack.pop() {
+                    let block = build_heading(level, inlines);
+                    self.push_block(block);
+                }
+            }
+            TagEnd::BlockQuote(_) => {
+                if let Some(Frame::BlockQuote(blocks)) = self.stack.pop() {
+                    self.push_block(blockquote(blocks));
+                }
+            }
+            TagEnd::List(_) => {
+                if let Some(Frame::List { start, items }) = self.stack.pop() {
+                    let block = build_list(start, items);
+                    self.push_block(block);
+                }
+            }
+            TagEnd::Item => {
+                // Tight-list items in pulldown-cmark omit the wrapping
+                // `Paragraph` events — text events arrive directly
+                // under `Item`. We lazily push a `Paragraph` frame on
+                // the first inline event under such an item (see
+                // `ensure_inline_frame`). Drain any such open
+                // paragraphs into the item's blocks before closing.
+                while matches!(self.stack.last(), Some(Frame::Paragraph(_))) {
+                    if let Some(Frame::Paragraph(inlines)) = self.stack.pop()
+                        && !inlines.is_empty()
+                    {
+                        let block = build_paragraph(inlines);
+                        self.push_block(block);
+                    }
+                }
+                if let Some(Frame::Item(blocks)) = self.stack.pop() {
+                    let item_el = build_list_item(blocks);
+                    if let Some(Frame::List { items, .. }) = self.stack.last_mut() {
+                        items.push(vec![item_el]);
+                    }
+                }
+            }
+            TagEnd::CodeBlock => {
+                if let Some(Frame::CodeBlock(text)) = self.stack.pop() {
+                    self.push_block(code_block(strip_trailing_newline(text)));
+                }
+            }
+            TagEnd::Emphasis => self.inline.italic_depth = self.inline.italic_depth.saturating_sub(1),
+            TagEnd::Strong => self.inline.bold_depth = self.inline.bold_depth.saturating_sub(1),
+            TagEnd::Strikethrough => {
+                self.inline.strike_depth = self.inline.strike_depth.saturating_sub(1);
+            }
+            TagEnd::Link => {
+                if let Some(Frame::Link(url, inlines)) = self.stack.pop() {
+                    for run in inlines {
+                        // Each text leaf inside the `<a>` adopts the
+                        // same href so the renderer groups them into
+                        // one link for hit-testing.
+                        let linked = run.link(url.clone());
+                        self.push_inline(linked);
+                    }
+                }
+            }
+            TagEnd::Image => {
+                if let Some(Frame::Image(alt)) = self.stack.pop() {
+                    let placeholder = build_image_placeholder(&alt);
+                    // Markdown allows `![alt](url)` both inline and as a
+                    // block. We always emit a block placeholder for
+                    // Phase 2; inline-image-in-Inlines lands later.
+                    self.push_block(placeholder);
+                }
+            }
+            TagEnd::Table
+            | TagEnd::TableHead
+            | TagEnd::TableRow
+            | TagEnd::TableCell
+            | TagEnd::FootnoteDefinition
+            | TagEnd::DefinitionList
+            | TagEnd::DefinitionListTitle
+            | TagEnd::DefinitionListDefinition
+            | TagEnd::HtmlBlock
+            | TagEnd::MetadataBlock(_)
+            | TagEnd::Subscript
+            | TagEnd::Superscript => {
+                // Drain the matching ignored frame from `start`.
+                self.stack.pop();
+            }
+        }
+    }
+
+    fn text(&mut self, s: String) {
+        // CodeBlock receives raw text; everything else flows through
+        // an inline buffer with the active style applied.
+        if let Some(Frame::CodeBlock(buf)) = self.stack.last_mut() {
+            buf.push_str(&s);
+            return;
+        }
+        if let Some(Frame::Image(alt)) = self.stack.last_mut() {
+            alt.push_str(&s);
+            return;
+        }
+        self.ensure_inline_frame();
+        let run = self.inline.apply(text(s));
+        self.push_inline(run);
+    }
+
+    fn code_span(&mut self, s: String) {
+        // Inline code: `text(...).code()` carries the code role, which
+        // theme application maps to mono + foreground. Strikethrough
+        // / italic / bold can wrap a code span in CommonMark, so the
+        // current InlineState still applies on top of `.code()`.
+        if matches!(self.stack.last(), Some(Frame::CodeBlock(_))) {
+            // Inside a fenced code block, `Event::Code` shouldn't
+            // arrive — but if it does, treat as raw text.
+            if let Some(Frame::CodeBlock(buf)) = self.stack.last_mut() {
+                buf.push_str(&s);
+            }
+            return;
+        }
+        self.ensure_inline_frame();
+        let run = self.inline.apply(text(s).code());
+        self.push_inline(run);
+    }
+
+    /// Lazily open a `Paragraph` frame so an inline event arriving
+    /// directly under an `Item` (CommonMark's tight-list shape — no
+    /// wrapping `<p>`) has somewhere to land. The matching
+    /// `TagEnd::Item` drains any such open paragraph back into the
+    /// item before closing it.
+    fn ensure_inline_frame(&mut self) {
+        match self.stack.last() {
+            Some(Frame::Paragraph(_) | Frame::Heading(_, _) | Frame::Link(_, _)) => {}
+            Some(Frame::Item(_)) => self.stack.push(Frame::Paragraph(Vec::new())),
+            _ => {}
+        }
+    }
+
+    /// Append a block-level El to the innermost block container, or
+    /// the root if none is open.
+    fn push_block(&mut self, el: El) {
+        for frame in self.stack.iter_mut().rev() {
+            match frame {
+                Frame::BlockQuote(blocks) | Frame::Item(blocks) => {
+                    blocks.push(el);
+                    return;
+                }
+                _ => {}
+            }
+        }
+        self.root.push(el);
+    }
+
+    /// Append an inline-level El to the innermost inline-accepting
+    /// container (paragraph, heading, link). Drops if none is open —
+    /// stray text outside a paragraph should not be reachable from a
+    /// well-formed pulldown-cmark stream.
+    fn push_inline(&mut self, el: El) {
+        for frame in self.stack.iter_mut().rev() {
+            match frame {
+                Frame::Paragraph(runs)
+                | Frame::Heading(_, runs)
+                | Frame::Link(_, runs) => {
+                    runs.push(el);
+                    return;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn finish(mut self) -> El {
+        // Defensive: a malformed input could leave open frames. Drain
+        // anything still on the stack into root order so we still
+        // produce a valid El rather than panicking.
+        while let Some(frame) = self.stack.pop() {
+            match frame {
+                Frame::Paragraph(runs) => self.root.push(build_paragraph(runs)),
+                Frame::Heading(level, runs) => self.root.push(build_heading(level, runs)),
+                Frame::BlockQuote(blocks) => self.root.push(blockquote(blocks)),
+                Frame::List { start, items } => self.root.push(build_list(start, items)),
+                Frame::Item(blocks) => self.root.push(build_list_item(blocks)),
+                Frame::CodeBlock(text) => self.root.push(code_block(strip_trailing_newline(text))),
+                Frame::Link(_, runs) => {
+                    for run in runs {
+                        self.root.push(run);
+                    }
+                }
+                Frame::Image(alt) => self.root.push(build_image_placeholder(&alt)),
+            }
+        }
+        column(self.root)
+            .gap(tokens::SPACE_4)
+            .width(Size::Fill(1.0))
+            .height(Size::Hug)
+    }
+}
+
+/// Build a paragraph block. A single plain `text(...)` run can become
+/// a `paragraph(...)` (one wrapped string); anything richer collapses
+/// to `text_runs([...])`.
+fn build_paragraph(runs: Vec<El>) -> El {
+    if let Some(plain) = single_plain_text(&runs) {
+        return paragraph(plain);
+    }
+    text_runs(runs)
+        .wrap_text()
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+}
+
+/// Build a heading block. For headings whose only content is plain
+/// text, use `h1` / `h2` / `h3` so the result carries the semantic
+/// `Kind::Heading` (visible in tree dumps and inspect output). For
+/// styled headings we fall back to a heading-roled `text_runs`.
+fn build_heading(level: HeadingLevel, runs: Vec<El>) -> El {
+    if let Some(plain) = single_plain_text(&runs) {
+        return match level {
+            HeadingLevel::H1 => h1(plain),
+            HeadingLevel::H2 => h2(plain),
+            // h4–h6 are rare and Aetna's heading vocabulary stops at
+            // h3 — clamp the rest so deep nesting still renders.
+            _ => h3(plain),
+        };
+    }
+    let role = match level {
+        HeadingLevel::H1 => TextRole::Display,
+        HeadingLevel::H2 => TextRole::Heading,
+        _ => TextRole::Title,
+    };
+    text_runs(runs)
+        .text_role(role)
+        .wrap_text()
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+}
+
+fn build_list(start: Option<u64>, items: Vec<Vec<El>>) -> El {
+    // `items` came in as `Vec<Vec<El>>` (one outer per item), each
+    // single-element since `TagEnd::Item` already collapsed each item's
+    // blocks to a single `column([...])` (or single block) via
+    // `build_list_item`. Re-flatten.
+    let item_els: Vec<El> = items.into_iter().flatten().collect();
+    match start {
+        None => bullet_list(item_els),
+        Some(_) => {
+            // pulldown-cmark surfaces the start number, but Aetna's
+            // numbered_list always counts from 1. Rebasing the marker
+            // is a future ergonomics-only addition — uncommon enough
+            // that the simple form is the right Phase 2 default.
+            numbered_list(item_els)
+        }
+    }
+}
+
+/// Collapse one item's accumulated blocks into a single El. Single
+/// block → that block; multiple blocks → wrap in `column`.
+fn build_list_item(mut blocks: Vec<El>) -> El {
+    if blocks.len() == 1 {
+        blocks.pop().unwrap()
+    } else {
+        column(blocks)
+            .gap(tokens::SPACE_2)
+            .width(Size::Fill(1.0))
+            .height(Size::Hug)
+    }
+}
+
+fn build_image_placeholder(alt: &str) -> El {
+    // Phase 2 doesn't wire image loading. Surface the alt text so the
+    // page reads sensibly until inline-image support lands; muted +
+    // italic so it doesn't look like first-class content.
+    let label = if alt.is_empty() { "[image]".to_string() } else { format!("[image: {alt}]") };
+    paragraph(label).muted().italic()
+}
+
+/// Inspect a run vector and return a single plain string if every run
+/// is a default-styled `Kind::Text` leaf (no bold, italic, strike,
+/// link, code, custom color). Drives the heading + paragraph builder
+/// fast paths. The `Body` role's auto-applied `FOREGROUND` text color
+/// counts as "default"; a run that explicitly sets a different color
+/// disqualifies the fast path.
+fn single_plain_text(runs: &[El]) -> Option<String> {
+    let mut out = String::new();
+    for run in runs {
+        if !matches!(run.kind, Kind::Text) {
+            return None;
+        }
+        if run.font_weight != FontWeight::Regular
+            || run.text_italic
+            || run.text_strikethrough
+            || run.text_underline
+            || run.text_link.is_some()
+            || run.text_role != TextRole::Body
+        {
+            return None;
+        }
+        // Body role auto-sets `text_color = Some(FOREGROUND)`. Treat
+        // `None` and `Some(FOREGROUND)` both as "default"; anything
+        // else (a `.color(...)` override) is styled.
+        if let Some(c) = run.text_color
+            && c != tokens::FOREGROUND
+        {
+            return None;
+        }
+        let s = run.text.as_deref()?;
+        out.push_str(s);
+    }
+    Some(out)
+}
+
+/// Trim a single trailing `\n` (pulldown-cmark always emits one at
+/// the end of a fenced or indented code block).
+fn strip_trailing_newline(mut s: String) -> String {
+    if s.ends_with('\n') {
+        s.pop();
+    }
+    s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The transformer always wraps blocks in a `column`. Reach into
+    /// it for the test assertions.
+    fn blocks(input: &str) -> Vec<El> {
+        match md(input) {
+            el if matches!(el.kind, Kind::Group) && el.axis == Axis::Column => el.children,
+            other => panic!("expected outer column, got {:?}", other.kind),
+        }
+    }
+
+    #[test]
+    fn empty_document_yields_an_empty_column() {
+        let bs = blocks("");
+        assert!(bs.is_empty());
+    }
+
+    #[test]
+    fn h1_h2_h3_map_to_heading_constructors() {
+        let bs = blocks("# Title\n\n## Subtitle\n\n### Section");
+        assert_eq!(bs.len(), 3);
+        assert_eq!(bs[0].kind, Kind::Heading);
+        assert_eq!(bs[0].text.as_deref(), Some("Title"));
+        assert_eq!(bs[0].text_role, TextRole::Display);
+        assert_eq!(bs[1].text_role, TextRole::Heading);
+        assert_eq!(bs[2].text_role, TextRole::Title);
+    }
+
+    #[test]
+    fn h4_h5_h6_clamp_to_h3() {
+        let bs = blocks("#### Four\n\n##### Five\n\n###### Six");
+        for b in &bs {
+            assert_eq!(b.kind, Kind::Heading);
+            assert_eq!(b.text_role, TextRole::Title);
+        }
+    }
+
+    #[test]
+    fn plain_paragraph_collapses_to_paragraph_widget() {
+        let bs = blocks("Just some prose.");
+        assert_eq!(bs.len(), 1);
+        assert_eq!(bs[0].kind, Kind::Text);
+        assert_eq!(bs[0].text.as_deref(), Some("Just some prose."));
+        assert_eq!(bs[0].text_wrap, TextWrap::Wrap);
+    }
+
+    #[test]
+    fn paragraph_with_inline_styling_uses_text_runs() {
+        let bs = blocks("Hello **world** and *italic* and `code`.");
+        assert_eq!(bs.len(), 1);
+        assert_eq!(bs[0].kind, Kind::Inlines);
+        let runs: Vec<&El> = bs[0].children.iter().collect();
+        // Plain "Hello " + bold "world" + " and " + italic "italic" +
+        // " and " + code "code" + ".".
+        assert!(runs.iter().any(|r| r.font_weight == FontWeight::Bold && r.text.as_deref() == Some("world")));
+        assert!(runs.iter().any(|r| r.text_italic && r.text.as_deref() == Some("italic")));
+        assert!(runs.iter().any(|r| r.text_role == TextRole::Code && r.text.as_deref() == Some("code")));
+    }
+
+    #[test]
+    fn link_groups_runs_under_the_same_url() {
+        let bs = blocks("Check [the **bold** site](https://aetna.dev) for info.");
+        assert_eq!(bs[0].kind, Kind::Inlines);
+        let linked: Vec<&El> = bs[0]
+            .children
+            .iter()
+            .filter(|r| r.text_link.as_deref() == Some("https://aetna.dev"))
+            .collect();
+        assert!(!linked.is_empty(), "expected at least one linked run");
+        // The bold word inside the link keeps its bold flag plus the
+        // shared href.
+        assert!(linked.iter().any(|r| r.font_weight == FontWeight::Bold));
+    }
+
+    #[test]
+    fn bullet_list_emits_bullet_list_widget() {
+        let bs = blocks("- one\n- two\n- three");
+        assert_eq!(bs.len(), 1);
+        // bullet_list returns a column of overlay-stack items — the
+        // children count matches the item count.
+        assert_eq!(bs[0].kind, Kind::Group);
+        assert_eq!(bs[0].axis, Axis::Column);
+        assert_eq!(bs[0].children.len(), 3);
+    }
+
+    #[test]
+    fn ordered_list_emits_numbered_list_widget() {
+        let bs = blocks("1. alpha\n2. beta\n3. gamma");
+        assert_eq!(bs[0].kind, Kind::Group);
+        assert_eq!(bs[0].axis, Axis::Column);
+        assert_eq!(bs[0].children.len(), 3);
+        // The first item's marker slot should carry the "1." label.
+        let first_marker_slot = &bs[0].children[0].children[0];
+        let first_marker = &first_marker_slot.children[0];
+        assert_eq!(first_marker.text.as_deref(), Some("1."));
+    }
+
+    #[test]
+    fn nested_list_lives_inside_the_outer_item() {
+        let input = "- outer one\n  - inner a\n  - inner b\n- outer two";
+        let bs = blocks(input);
+        assert_eq!(bs.len(), 1);
+        let outer = &bs[0];
+        assert_eq!(outer.children.len(), 2);
+        // First outer item collapses to a multi-block column (paragraph
+        // + nested list). The transformer wraps multi-block items in
+        // `column`; reach into it.
+        let first_item_body = &outer.children[0].children[1];
+        // first_item_body is the body slot in the overlay-stack item
+        // shape. It contains a single child: the list-item content.
+        let inner_content = &first_item_body.children[0];
+        // For nested-list items, the content is a column of [paragraph,
+        // nested bullet_list]. The second child is the nested list.
+        assert_eq!(inner_content.kind, Kind::Group);
+        assert!(inner_content.children.len() >= 2);
+    }
+
+    #[test]
+    fn blockquote_wraps_inner_paragraphs() {
+        let bs = blocks("> First line.\n>\n> Second line.");
+        assert_eq!(bs.len(), 1);
+        // blockquote is a stack of [rule, body_column].
+        assert_eq!(bs[0].kind, Kind::Group);
+        assert_eq!(bs[0].axis, Axis::Overlay);
+        assert_eq!(bs[0].children.len(), 2);
+        let body = &bs[0].children[1];
+        assert_eq!(body.children.len(), 2);
+    }
+
+    #[test]
+    fn fenced_code_block_keeps_verbatim_text() {
+        let bs = blocks("```\nfn main() {}\n```");
+        assert_eq!(bs.len(), 1);
+        // code_block surface contains a single mono text leaf.
+        let surface = &bs[0];
+        assert_eq!(surface.surface_role, SurfaceRole::Sunken);
+        let body = &surface.children[0];
+        assert_eq!(body.text.as_deref(), Some("fn main() {}"));
+        assert!(body.font_mono);
+    }
+
+    #[test]
+    fn indented_code_block_keeps_verbatim_text() {
+        let bs = blocks("    let x = 1;\n    let y = 2;");
+        assert_eq!(bs.len(), 1);
+        let body = &bs[0].children[0];
+        assert_eq!(body.text.as_deref(), Some("let x = 1;\nlet y = 2;"));
+    }
+
+    #[test]
+    fn horizontal_rule_emits_a_divider() {
+        let bs = blocks("Above.\n\n---\n\nBelow.");
+        let kinds: Vec<&Kind> = bs.iter().map(|b| &b.kind).collect();
+        assert!(kinds.iter().any(|k| matches!(k, Kind::Divider)));
+    }
+
+    #[test]
+    fn hard_break_inside_paragraph_emits_hard_break_node() {
+        // CommonMark hard break = trailing two spaces + newline.
+        let bs = blocks("line one  \nline two");
+        assert_eq!(bs[0].kind, Kind::Inlines);
+        assert!(bs[0].children.iter().any(|c| matches!(c.kind, Kind::HardBreak)));
+    }
+
+    #[test]
+    fn soft_break_renders_as_a_space() {
+        let bs = blocks("line one\nline two");
+        assert_eq!(bs[0].kind, Kind::Text);
+        // Plain paragraph fast path; soft break became a single space.
+        let s = bs[0].text.as_deref().unwrap();
+        assert!(s.contains("line one line two"), "got {s:?}");
+    }
+
+    #[test]
+    fn image_renders_as_alt_placeholder() {
+        let bs = blocks("![diagram of pipeline](pipeline.png)");
+        assert_eq!(bs.len(), 1);
+        let s = bs[0].text.as_deref().unwrap_or("");
+        assert!(s.contains("diagram of pipeline"), "got {s:?}");
+    }
+
+    #[test]
+    fn document_outer_column_carries_block_gap() {
+        let el = md("# A\n\nb");
+        assert_eq!(el.kind, Kind::Group);
+        assert_eq!(el.gap, tokens::SPACE_4);
+    }
+}
