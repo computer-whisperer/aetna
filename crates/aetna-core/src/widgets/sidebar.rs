@@ -113,6 +113,8 @@ pub fn sidebar_menu_button(label: impl Into<String>, current: bool) -> El {
         .fill(tokens::CARD)
         .default_radius(tokens::RADIUS_SM)
         .default_gap(tokens::SPACE_2)
+        .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
+        .default_height(Size::Fixed(40.0))
         .width(Size::Fill(1.0))
         .align(Align::Center);
     if current {
@@ -184,8 +186,11 @@ mod tests {
 
         assert_eq!(current.metrics_role, Some(MetricsRole::ListItem));
         assert_eq!(current.align, Align::Center);
+        assert_eq!(current.height, Size::Fixed(40.0));
         assert_eq!(current.surface_role, SurfaceRole::Current);
         assert!(current.focusable);
+        assert_eq!(inactive.height, Size::Fixed(40.0));
+        assert_eq!(inactive.padding, Sides::xy(tokens::SPACE_3, 0.0));
         assert!(inactive.fill.is_none());
     }
 }

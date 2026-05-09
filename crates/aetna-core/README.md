@@ -63,6 +63,7 @@ primitives. The list is short:
 | Grouped content (settings card, panel of fields, any "boxed" surface) | `card([card_header([card_title("Title")]), card_content([...])])` or `titled_card("Title", [...])` | `column([...]).fill(CARD).stroke(BORDER).radius(...)` or `column(...).surface_role(SurfaceRole::Panel)` (Panel only sets stroke + shadow — not fill) |
 | Sidebar / nav rail | `sidebar([sidebar_header(...), sidebar_group([...])])` plus `sidebar_menu_button_with_icon(...)` for items | custom nav rows, or `column(...).surface_role(SurfaceRole::Panel)` for the wrapper |
 | Toolbar / page header row | `toolbar([toolbar_title("Documents"), spacer(), toolbar_group([...])])` | ad hoc action rows with inconsistent vertical alignment |
+| Conversation / event-log row | a local `log_row(role_color, faint_fill, content)` helper built from `row([gutter, content])`; use `accordion_item` for collapsible reasoning/tool details | `card([card_header([badge(role)]), card_content([message])])` repeated for every chat message |
 | Tabs / segmented control | `tabs_list(key, &current, options)` + `tab_trigger` + `tabs::apply_event` | manual `row([button, button]).fill(MUTED)` segment, or hand-rolled selected-tab state |
 | Dialog | `dialog(key, [dialog_header([...]), body, dialog_footer([...])])` | a custom centered overlay card |
 | Edge sheet | `sheet(key, SheetSide::Right, [sheet_header([...]), body])` | a modal manually pinned to the viewport edge |
@@ -90,7 +91,7 @@ primitives. The list is short:
 | Raster image (logo, screenshot, thumbnail) | `image(Image::from_rgba8(...)).image_fit(ImageFit::Contain)` | reaching for a custom shader |
 | Throwaway notification | accumulate `ToastSpec::success("Saved")` and return them from `App::drain_toasts` | spinning a manual modal with a timer |
 
-Smells that mean an affordance is being missed: `column(...).surface_role(SurfaceRole::Panel)` (use `card()` or `sidebar()` — Panel decorates, it doesn't fill); a `row([title, spacer(), action]).fill(MUTED).stroke(BORDER)` *header bar* sitting above a body inside a `card` — that's a hand-rolled `card_header`, lift the row into `card_header([...]).fill(MUTED)` (or split each "header bar over body" block into its own `card([card_header(...), card_content(...)])` and stack them in a column); a `column([row, body]).fill(CARD).stroke(BORDER)` reinventing the card silhouette (call `card([...])`); `.gap(0.0)` (already the default — delete it); `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier); wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly); an explicit `.fill(tokens::BACKGROUND)` on the root (the host already paints it); and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
+Smells that mean an affordance is being missed: `column(...).surface_role(SurfaceRole::Panel)` (use `card()` or `sidebar()` — Panel decorates, it doesn't fill); a `row([title, spacer(), action]).fill(MUTED).stroke(BORDER)` *header bar* sitting above a body inside a `card` — that's a hand-rolled `card_header`, lift the row into `card_header([...]).fill(MUTED)` (or split each "header bar over body" block into its own `card([card_header(...), card_content(...)])` and stack them in a column); a `column([row, body]).fill(CARD).stroke(BORDER)` reinventing the card silhouette (call `card([...])`); a transcript rendered as one `card()` per message (use an event-log row with a narrow role gutter so long assistant output reads as a stream, not a stack of panels); `.gap(0.0)` (already the default — delete it); `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier); wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly); an explicit `.fill(tokens::BACKGROUND)` on the root (the host already paints it); and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
 
 ## Common app shells
 
@@ -165,6 +166,63 @@ column([
         "history" => history_view(self),
         _ => working_view(self),
     },
+])
+```
+
+A **chat / event-log workbench**:
+
+Keep the app shell boring: `sidebar` on the left, `toolbar` for selected
+thread identity and actions, `scroll(log_rows)` for the transcript, and a
+bottom composer row with `text_area` plus actions. The transcript itself is
+not a card collection. Cards isolate objects; event logs should scan as one
+continuous record with small role markers.
+
+```ignore
+fn log_row(role_color: Color, faint_fill: Option<Color>, content: El) -> El {
+    let row = row([
+        El::new(Kind::Custom("log_gutter"))
+            .fill(role_color)
+            .width(Size::Fixed(3.0))
+            .height(Size::Fill(1.0)),
+        content
+            .padding(Sides {
+                left: tokens::SPACE_3,
+                right: tokens::SPACE_2,
+                top: tokens::SPACE_2,
+                bottom: tokens::SPACE_2,
+            })
+            .width(Size::Fill(1.0)),
+    ])
+    .width(Size::Fill(1.0));
+    if let Some(fill) = faint_fill { row.fill(fill) } else { row }
+}
+
+column([
+    toolbar([toolbar_title(thread.title.clone()), spacer(), badge(thread.state_label)]),
+    scroll(thread.items.iter().map(|item| match item {
+        ChatItem::User(text) => log_row(tokens::INFO, Some(tokens::INFO.with_alpha(18)), paragraph(text)),
+        ChatItem::Assistant(text) => log_row(tokens::SUCCESS, None, paragraph(text)),
+        ChatItem::Reasoning { open, preview, body } => log_row(
+            tokens::MUTED_FOREGROUND,
+            None,
+            accordion_item("reasoning", item.id, preview, *open, [paragraph(body)]),
+        ),
+        ChatItem::Tool(call) => log_row(
+            tokens::WARNING,
+            None,
+            accordion_item("tool", call.id, call.summary, call.open, [code_block(call.details)]),
+        ),
+    }))
+    .key(format!("thread-scroll:{}", thread.id))
+    .padding(tokens::SPACE_4)
+    .height(Size::Fill(1.0)),
+    row([
+        text_area(&self.compose, &self.selection, "compose").height(Size::Fixed(120.0)),
+        button("Send").primary().key("send"),
+    ])
+    .gap(tokens::SPACE_3)
+    .padding(tokens::SPACE_3)
+    .align(Align::End),
 ])
 ```
 
