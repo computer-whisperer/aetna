@@ -463,8 +463,7 @@ pub fn app_texture(image: Arc<VkImage>) -> AppTexture {
     };
     let samples = image.samples();
     assert_eq!(
-        u32::from(samples as u32),
-        1,
+        samples as u32, 1,
         "aetna_vulkano::app_texture: source image must be single-sampled (got {:?})",
         samples,
     );

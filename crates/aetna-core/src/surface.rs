@@ -59,10 +59,11 @@ pub enum SurfaceFormat {
 /// The choice affects blend state and lets opaque content skip blend
 /// math; it does *not* change z-order. Widgets above the surface in the
 /// paint stream still paint over it, regardless of mode.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SurfaceAlpha {
     /// Texture carries premultiplied alpha. Default; matches Aetna's
     /// internal blend convention.
+    #[default]
     Premultiplied,
     /// Texture is fully opaque. Backend skips blending — pixels written
     /// to the surface rect replace whatever was there. Pick this for 3D
@@ -73,12 +74,6 @@ pub enum SurfaceAlpha {
     /// content authored in a paint app or rasterised by a third-party
     /// vector library that doesn't premultiply.
     Straight,
-}
-
-impl Default for SurfaceAlpha {
-    fn default() -> Self {
-        Self::Premultiplied
-    }
 }
 
 /// Stable identity for an [`AppTexture`]. Allocated by the constructor
