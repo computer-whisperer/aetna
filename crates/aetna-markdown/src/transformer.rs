@@ -1,7 +1,7 @@
 //! Walk pulldown-cmark events into an Aetna `El` tree.
 
 use aetna_core::prelude::*;
-use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 /// Render a markdown document as an Aetna `El`.
 ///
@@ -9,7 +9,14 @@ use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 /// same shape an author would have hand-written. See the crate-level
 /// docs for the supported subset and the deferred features.
 pub fn md(input: &str) -> El {
-    let parser = Parser::new(input);
+    // GFM tables + `~~strike~~` are the two pulldown-cmark options
+    // we light up. Both have direct widget-kit / inline-modifier
+    // analogs (tables -> `widgets::table`, strikethrough -> the
+    // `text_strikethrough` field on text runs). Footnotes, math, and
+    // task-list markers stay off until the markdown surface grows
+    // first-class support.
+    let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH;
+    let parser = Parser::new_ext(input, options);
     let mut walker = Walker::new();
     for event in parser {
         walker.handle(event);
@@ -46,6 +53,30 @@ enum Frame {
     /// Open `<img>` — accumulates the alt text for placeholder
     /// rendering. Image content loading is deferred (see crate docs).
     Image(String),
+    /// Open `<table>` — collects the header and body rows the matching
+    /// `End(Table)` folds into a `widgets::table` block.
+    Table {
+        /// Per-column alignments (`:---`, `:---:`, `---:`). Carried so
+        /// a future column-align extension can be wired without
+        /// re-plumbing the walker; today the cell builders ignore them
+        /// and use the table widget's defaults.
+        #[allow(dead_code)]
+        alignments: Vec<Alignment>,
+        /// Header row, populated on `TagEnd::TableHead`. `None` if the
+        /// document somehow ends a table without a header (CommonMark
+        /// + GFM always emits one but this stays defensive).
+        head: Option<Vec<El>>,
+        /// Body rows, accumulated on each `TagEnd::TableRow`.
+        body: Vec<Vec<El>>,
+    },
+    /// Open `<thead>` — accumulates the header cells.
+    TableHead(Vec<El>),
+    /// Open `<tr>` (body row) — accumulates the row's cells.
+    TableRow(Vec<El>),
+    /// Open `<th>` / `<td>`. `in_header` toggles the header-styled
+    /// `table_head(...)` builder on close vs. the body-styled
+    /// `table_cell(...)`.
+    TableCell { runs: Vec<El>, in_header: bool },
 }
 
 /// Inline styling currently in effect for new text runs.
@@ -143,14 +174,30 @@ impl Walker {
                 // image frame is open; on End we fold into a placeholder.
                 self.stack.push(Frame::Image(String::new()));
             }
-            // Tables, footnote definitions, definition lists, and
-            // subscript / superscript are deferred — open the frame as
-            // a no-op container so the matching End drains cleanly.
-            Tag::Table(_)
-            | Tag::TableHead
-            | Tag::TableRow
-            | Tag::TableCell
-            | Tag::FootnoteDefinition(_)
+            Tag::Table(alignments) => {
+                self.stack.push(Frame::Table {
+                    alignments,
+                    head: None,
+                    body: Vec::new(),
+                });
+            }
+            Tag::TableHead => self.stack.push(Frame::TableHead(Vec::new())),
+            Tag::TableRow => self.stack.push(Frame::TableRow(Vec::new())),
+            Tag::TableCell => {
+                // Header vs body is decided by what the topmost open
+                // frame is at cell-start time: a `TableHead` parent
+                // means this cell renders with the header recipe.
+                let in_header = matches!(self.stack.last(), Some(Frame::TableHead(_)));
+                self.stack.push(Frame::TableCell {
+                    runs: Vec::new(),
+                    in_header,
+                });
+            }
+            // Footnote definitions, definition lists, and subscript /
+            // superscript are deferred — open a paragraph frame so any
+            // inline text between Start and End ends up captured (and
+            // dropped when we pop).
+            Tag::FootnoteDefinition(_)
             | Tag::DefinitionList
             | Tag::DefinitionListTitle
             | Tag::DefinitionListDefinition
@@ -158,10 +205,6 @@ impl Walker {
             | Tag::MetadataBlock(_)
             | Tag::Subscript
             | Tag::Superscript => {
-                // Push a paragraph frame so any inline text between
-                // Start and End ends up captured (and dropped when we
-                // pop). Cheaper than threading an explicit "ignored"
-                // frame and produces no spurious output.
                 self.stack.push(Frame::Paragraph(Vec::new()));
             }
         }
@@ -253,11 +296,39 @@ impl Walker {
                     self.push_block(placeholder);
                 }
             }
-            TagEnd::Table
-            | TagEnd::TableHead
-            | TagEnd::TableRow
-            | TagEnd::TableCell
-            | TagEnd::FootnoteDefinition
+            TagEnd::Table => {
+                if let Some(Frame::Table { head, body, .. }) = self.stack.pop() {
+                    self.push_block(build_table(head, body));
+                }
+            }
+            TagEnd::TableHead => {
+                if let Some(Frame::TableHead(cells)) = self.stack.pop() {
+                    let header_row = table_row(cells);
+                    if let Some(Frame::Table { head, .. }) = self.stack.last_mut() {
+                        *head = Some(vec![header_row]);
+                    }
+                }
+            }
+            TagEnd::TableRow => {
+                if let Some(Frame::TableRow(cells)) = self.stack.pop() {
+                    let body_row = table_row(cells);
+                    if let Some(Frame::Table { body, .. }) = self.stack.last_mut() {
+                        body.push(vec![body_row]);
+                    }
+                }
+            }
+            TagEnd::TableCell => {
+                if let Some(Frame::TableCell { runs, in_header }) = self.stack.pop() {
+                    let cell = build_table_cell(runs, in_header);
+                    match self.stack.last_mut() {
+                        Some(Frame::TableHead(cells)) | Some(Frame::TableRow(cells)) => {
+                            cells.push(cell);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            TagEnd::FootnoteDefinition
             | TagEnd::DefinitionList
             | TagEnd::DefinitionListTitle
             | TagEnd::DefinitionListDefinition
@@ -309,10 +380,16 @@ impl Walker {
     /// directly under an `Item` (CommonMark's tight-list shape — no
     /// wrapping `<p>`) has somewhere to land. The matching
     /// `TagEnd::Item` drains any such open paragraph back into the
-    /// item before closing it.
+    /// item before closing it. Table cells already accept inlines
+    /// directly so they don't need the lazy paragraph.
     fn ensure_inline_frame(&mut self) {
         match self.stack.last() {
-            Some(Frame::Paragraph(_) | Frame::Heading(_, _) | Frame::Link(_, _)) => {}
+            Some(
+                Frame::Paragraph(_)
+                | Frame::Heading(_, _)
+                | Frame::Link(_, _)
+                | Frame::TableCell { .. },
+            ) => {}
             Some(Frame::Item(_)) => self.stack.push(Frame::Paragraph(Vec::new())),
             _ => {}
         }
@@ -334,15 +411,16 @@ impl Walker {
     }
 
     /// Append an inline-level El to the innermost inline-accepting
-    /// container (paragraph, heading, link). Drops if none is open —
-    /// stray text outside a paragraph should not be reachable from a
-    /// well-formed pulldown-cmark stream.
+    /// container (paragraph, heading, link, table cell). Drops if
+    /// none is open — stray text outside a paragraph should not be
+    /// reachable from a well-formed pulldown-cmark stream.
     fn push_inline(&mut self, el: El) {
         for frame in self.stack.iter_mut().rev() {
             match frame {
                 Frame::Paragraph(runs)
                 | Frame::Heading(_, runs)
-                | Frame::Link(_, runs) => {
+                | Frame::Link(_, runs)
+                | Frame::TableCell { runs, .. } => {
                     runs.push(el);
                     return;
                 }
@@ -369,6 +447,11 @@ impl Walker {
                     }
                 }
                 Frame::Image(alt) => self.root.push(build_image_placeholder(&alt)),
+                Frame::Table { head, body, .. } => self.root.push(build_table(head, body)),
+                Frame::TableHead(_) | Frame::TableRow(_) | Frame::TableCell { .. } => {
+                    // Cells / rows whose enclosing table never closed
+                    // can't usefully be rendered standalone — drop.
+                }
             }
         }
         column(self.root)
@@ -446,6 +529,48 @@ fn build_list_item(mut blocks: Vec<El>) -> El {
             .width(Size::Fill(1.0))
             .height(Size::Hug)
     }
+}
+
+/// Build a `widgets::table` block from the parsed header and body
+/// rows. Falls back to body-only if no header was emitted.
+fn build_table(head: Option<Vec<El>>, body: Vec<Vec<El>>) -> El {
+    // `body` came in as `Vec<Vec<El>>` (one outer per row) but each
+    // inner Vec is single-element since `TagEnd::TableRow` already
+    // built one `table_row(...)` per row. Re-flatten into row-Els.
+    let body_rows: Vec<El> = body.into_iter().flatten().collect();
+    match head {
+        Some(header_rows) => table([
+            table_header(header_rows),
+            table_body(body_rows),
+        ]),
+        None => table([table_body(body_rows)]),
+    }
+}
+
+/// Wrap accumulated inline runs into a header-styled or body-styled
+/// table cell. Plain-text-only cells flow through `table_head` /
+/// `text(...)` so the cell carries the right typography defaults; mixed
+/// inline content uses `text_runs([...])` (header-style is degraded to
+/// plain-string-only for now — styled headings inside a markdown table
+/// are rare and the table widget's `table_head` doesn't accept a
+/// styled El today).
+fn build_table_cell(runs: Vec<El>, in_header: bool) -> El {
+    if in_header {
+        // Concatenate to plain text — loses inline styling in header
+        // cells. Acceptable Phase 2 simplification.
+        let label = runs
+            .iter()
+            .filter_map(|r| r.text.as_deref())
+            .collect::<String>();
+        return table_head(label);
+    }
+    if let Some(plain) = single_plain_text(&runs) {
+        return table_cell(text(plain));
+    }
+    if runs.is_empty() {
+        return table_cell(text(""));
+    }
+    table_cell(text_runs(runs).width(Size::Fill(1.0)))
 }
 
 fn build_image_placeholder(alt: &str) -> El {
@@ -688,5 +813,81 @@ mod tests {
         let el = md("# A\n\nb");
         assert_eq!(el.kind, Kind::Group);
         assert_eq!(el.gap, tokens::SPACE_4);
+    }
+
+    #[test]
+    fn table_emits_header_plus_body_widget() {
+        let bs = blocks(
+            "\
+| Name  | Role |\n\
+|-------|------|\n\
+| Ada   | dev  |\n\
+| Grace | ops  |\n",
+        );
+        assert_eq!(bs.len(), 1);
+        let t = &bs[0];
+        // `widgets::table` is `Kind::Custom("table")` with a header
+        // child and a body child.
+        assert_eq!(t.kind, Kind::Custom("table"));
+        assert_eq!(t.children.len(), 2);
+        let header = &t.children[0];
+        let body = &t.children[1];
+        assert_eq!(header.kind, Kind::Custom("table_header"));
+        assert_eq!(body.kind, Kind::Custom("table_body"));
+        // Header has one row of two cells.
+        assert_eq!(header.children.len(), 1);
+        assert_eq!(header.children[0].children.len(), 2);
+        // Body has two rows, each with two cells.
+        assert_eq!(body.children.len(), 2);
+        assert_eq!(body.children[0].children.len(), 2);
+    }
+
+    #[test]
+    fn table_header_cells_carry_caption_styling() {
+        let bs = blocks(
+            "\
+| Header |\n\
+|--------|\n\
+| body   |\n",
+        );
+        let t = &bs[0];
+        let header_cell = &t.children[0].children[0].children[0];
+        assert_eq!(header_cell.text.as_deref(), Some("Header"));
+        // `table_head(...)` applies the caption role.
+        assert_eq!(header_cell.text_role, TextRole::Caption);
+    }
+
+    #[test]
+    fn table_body_cells_with_inline_styling_use_text_runs() {
+        let bs = blocks(
+            "\
+| Col |\n\
+|-----|\n\
+| **bold** word |\n",
+        );
+        let t = &bs[0];
+        let body_cell = &t.children[1].children[0].children[0];
+        // Body cell wraps the styled content in an Inlines paragraph.
+        assert_eq!(body_cell.kind, Kind::Inlines);
+        assert!(body_cell
+            .children
+            .iter()
+            .any(|r| r.font_weight == FontWeight::Bold && r.text.as_deref() == Some("bold")));
+    }
+
+    #[test]
+    fn strikethrough_inline_run_marks_text_strikethrough() {
+        // GFM strikethrough is gated behind ENABLE_STRIKETHROUGH; the
+        // walker already had the Tag matcher, but the parser only
+        // emits the events when the option is on.
+        let bs = blocks("Some ~~obsolete~~ text.");
+        assert_eq!(bs[0].kind, Kind::Inlines);
+        let strike: Vec<&El> = bs[0]
+            .children
+            .iter()
+            .filter(|r| r.text_strikethrough)
+            .collect();
+        assert!(!strike.is_empty(), "expected a strikethrough run");
+        assert_eq!(strike[0].text.as_deref(), Some("obsolete"));
     }
 }

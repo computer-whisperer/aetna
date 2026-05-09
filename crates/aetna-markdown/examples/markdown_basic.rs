@@ -45,6 +45,17 @@ fn render(md: &str) -> El {
 }
 ```
 
+GFM strikethrough renders as a ~~struck-through~~ inline run, and a \
+GFM table maps to the existing `widgets::table` anatomy:
+
+| Construct | Maps to            |
+|-----------|--------------------|
+| Heading   | `h1` / `h2` / `h3` |
+| List      | `bullet_list` / `numbered_list` |
+| Blockquote| `blockquote`       |
+| Code block| `code_block`       |
+| Table     | `table`            |
+
 ---
 
 The horizontal rule above closes the document.
