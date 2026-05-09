@@ -107,6 +107,7 @@ pub enum Section {
     Toasts,
     Images,
     Icons,
+    Prose,
 }
 
 impl Section {
@@ -127,6 +128,7 @@ impl Section {
             Section::Toasts => "Toasts",
             Section::Images => "Images",
             Section::Icons => "Icons",
+            Section::Prose => "Prose",
         }
     }
 
@@ -147,10 +149,11 @@ impl Section {
             Section::Toasts => "nav-toasts",
             Section::Images => "nav-images",
             Section::Icons => "nav-icons",
+            Section::Prose => "nav-prose",
         }
     }
 
-    const ALL: [Section; 15] = [
+    const ALL: [Section; 16] = [
         Section::Counter,
         Section::List,
         Section::Palette,
@@ -166,6 +169,7 @@ impl Section {
         Section::Toasts,
         Section::Images,
         Section::Icons,
+        Section::Prose,
     ];
 }
 
@@ -480,6 +484,7 @@ impl App for Showcase {
             Section::Toasts => toasts_on_event(&mut self.toasts, event),
             Section::Images => {} // static fixture, no events
             Section::Icons => {}  // static fixture, no events
+            Section::Prose => {}  // static fixture, no events
         }
     }
 
@@ -507,36 +512,41 @@ fn nav_section(key: &str) -> Option<Section> {
 // ---- Shell: sidebar + content ----
 
 fn sidebar(active: Section, theme_choice: ThemeChoice) -> El {
-    let mut entries: Vec<El> = vec![
-        text("Aetna").bold().font_size(18.0),
-        text("showcase").muted().small(),
-    ];
-    for s in Section::ALL {
-        let mut b = button(s.label()).key(s.nav_key());
-        b = if s == active { b.primary() } else { b.ghost() };
-        entries.push(b);
-    }
-    // Theme picker pinned to the bottom of the sidebar via a flexible
-    // spacer above it. Demonstrates the runtime palette swap end-to-end:
+    // Section nav lives inside its own scroll viewport so the list can
+    // grow past the sidebar height without the column overflowing the
+    // viewport. The header above and the theme toggle below stay
+    // pinned; the scroll claims the leftover Fill(1.0) height between
+    // them. Demonstrates the runtime palette swap end-to-end:
     // toggling the switch flips `Showcase::theme()` and every tokened
     // surface in the tree resolves through the new palette on the next
     // frame.
-    entries.push(spacer().height(Size::Fill(1.0)));
-    entries.push(
+    let nav_buttons: Vec<El> = Section::ALL
+        .into_iter()
+        .map(|s| {
+            let b = button(s.label()).key(s.nav_key());
+            if s == active { b.primary() } else { b.ghost() }
+        })
+        .collect();
+    column([
+        text("Aetna").bold().font_size(18.0),
+        text("showcase").muted().small(),
+        scroll(nav_buttons)
+            .key("nav-scroll")
+            .gap(tokens::SPACE_2)
+            .height(Size::Fill(1.0)),
         row([
             text("Light theme").label().width(Size::Fill(1.0)),
             switch(theme_choice.is_light()).key("theme-toggle"),
         ])
         .gap(tokens::SPACE_2)
         .align(Align::Center),
-    );
-    column(entries)
-        .gap(tokens::SPACE_2)
-        .padding(tokens::SPACE_4)
-        .width(Size::Fixed(180.0))
-        .height(Size::Fill(1.0))
-        .fill(tokens::CARD)
-        .stroke(tokens::BORDER)
+    ])
+    .gap(tokens::SPACE_2)
+    .padding(tokens::SPACE_4)
+    .width(Size::Fixed(180.0))
+    .height(Size::Fill(1.0))
+    .fill(tokens::CARD)
+    .stroke(tokens::BORDER)
 }
 
 fn content(app: &Showcase) -> El {
@@ -565,6 +575,7 @@ fn content(app: &Showcase) -> El {
         Section::Toasts => toasts_view(&app.toasts),
         Section::Images => images_view(),
         Section::Icons => icons_view(),
+        Section::Prose => prose_view(),
     };
     column([body])
         .padding(tokens::SPACE_7)
@@ -2314,6 +2325,99 @@ fn custom_icon_tile(svg: &LazyLock<SvgIcon>, label: &str, size: f32) -> El {
     .fill(tokens::CARD)
     .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_MD)
+}
+
+// ---- Prose section ----
+//
+// Long-form-content widgets — `bullet_list`, `numbered_list`,
+// `blockquote`, `code_block` — composed against the existing heading +
+// paragraph + `text_runs` primitives. Mirrors the markdown vocabulary
+// that the upcoming `aetna-markdown` transformer will target, so each
+// stays directly inspectable as both an Aetna fixture and a preview of
+// rendered markdown shape.
+
+fn prose_view() -> El {
+    scroll([column([
+        h1("Prose"),
+        paragraph(
+            "Long-form-content widgets compose the markdown-shaped \
+             vocabulary that the upcoming `aetna-markdown` transformer \
+             will target. Each is plain Aetna — selectable text, themed \
+             surfaces, the same layout pass as everything else.",
+        )
+        .muted(),
+        h2("Headings"),
+        h3("Subheading"),
+        text_runs([
+            text("Headings stack at "),
+            text("h1").code(),
+            text(" / "),
+            text("h2").code(),
+            text(" / "),
+            text("h3").code(),
+            text(" — the "),
+            text("display").italic(),
+            text(", "),
+            text("heading").italic(),
+            text(", and "),
+            text("title").italic(),
+            text(" text roles, respectively."),
+        ])
+        .wrap_text()
+        .width(Size::Fill(1.0))
+        .height(Size::Hug),
+        h2("Bulleted list"),
+        bullet_list(vec![
+            text("Plain string items wrap inside the content column so a long item flows under itself rather than under the bullet."),
+            text_runs([
+                text("Inline runs work in items: "),
+                text("bold").bold(),
+                text(", "),
+                text("italic").italic(),
+                text(", "),
+                text("code").code(),
+                text(", "),
+                text("links").link("https://aetna.dev"),
+                text("."),
+            ]),
+            column([
+                paragraph("Composite items host nested blocks — a paragraph, then a sub-list:"),
+                bullet_list(["nested one", "nested two"]),
+            ])
+            .gap(tokens::SPACE_2)
+            .width(Size::Fill(1.0)),
+        ]),
+        h2("Numbered list"),
+        numbered_list([
+            "Markers right-align so the period sits flush across items.",
+            "Marker-slot width grows with the item count — `9.` and `99.` lay out without crowding the content.",
+            "Plain-text items wrap inside the content column, same convention as the bullet list.",
+        ]),
+        h2("Blockquote"),
+        blockquote([
+            paragraph(
+                "Markdown's shape is HTML's shape. Aetna's widget kit \
+                 already mirrors most of that shape, so the upcoming \
+                 transformer mostly hands events to existing constructors.",
+            ),
+            paragraph("— Aetna design notes").muted(),
+        ]),
+        h2("Code block"),
+        paragraph(
+            "Multi-line monospace inside a sunken surface. Phase 1 \
+             ships a single-string body; highlighted runs and a copy \
+             affordance arrive alongside syntax highlighting later.",
+        )
+        .muted(),
+        code_block(
+            "fn render(md: &str) -> El {\n    \
+                 // pulldown-cmark events -> El\n    \
+                 todo!(\"phase 2\")\n}",
+        ),
+    ])
+    .gap(tokens::SPACE_4)
+    .align(Align::Start)
+    .width(Size::Fill(1.0))])
 }
 
 #[cfg(test)]
