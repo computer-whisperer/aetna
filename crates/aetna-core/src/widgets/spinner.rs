@@ -117,7 +117,8 @@ mod tests {
         assert_eq!(s.width, Size::Fixed(DEFAULT_SIZE));
         assert_eq!(s.height, Size::Fixed(DEFAULT_SIZE));
         assert_eq!(
-            DEFAULT_SIZE, tokens::ICON_SM,
+            DEFAULT_SIZE,
+            tokens::ICON_SM,
             "spinner default size should match icon-sm so it drops into icon slots"
         );
     }

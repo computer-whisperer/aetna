@@ -395,7 +395,13 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
         // Register any custom shaders the app declared. Done once at
         // startup; pipelines are cached for the runner's lifetime.
         for s in self.app.shaders() {
-            renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop, s.samples_time);
+            renderer.register_shader_with(
+                &device,
+                s.name,
+                s.wgsl,
+                s.samples_backdrop,
+                s.samples_time,
+            );
         }
 
         let msaa = (sample_count > 1)

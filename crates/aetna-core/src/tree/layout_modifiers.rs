@@ -234,14 +234,30 @@ mod tests {
     #[test]
     fn pt_sets_only_top_and_marks_explicit() {
         let el = fresh().pt(7.0);
-        assert_eq!(el.padding, Sides { left: 0.0, right: 0.0, top: 7.0, bottom: 0.0 });
+        assert_eq!(
+            el.padding,
+            Sides {
+                left: 0.0,
+                right: 0.0,
+                top: 7.0,
+                bottom: 0.0
+            }
+        );
         assert!(el.explicit_padding);
     }
 
     #[test]
     fn px_py_set_only_their_axis() {
         let el = fresh().px(4.0).py(2.0);
-        assert_eq!(el.padding, Sides { left: 4.0, right: 4.0, top: 2.0, bottom: 2.0 });
+        assert_eq!(
+            el.padding,
+            Sides {
+                left: 4.0,
+                right: 4.0,
+                top: 2.0,
+                bottom: 2.0
+            }
+        );
         assert!(el.explicit_padding);
     }
 
@@ -249,7 +265,15 @@ mod tests {
     fn pt_overrides_only_top_when_following_padding() {
         // Tailwind shape: `p-4 pt-0` keeps left/right/bottom at 4 and zeros only top.
         let el = fresh().padding(4.0).pt(0.0);
-        assert_eq!(el.padding, Sides { left: 4.0, right: 4.0, top: 0.0, bottom: 4.0 });
+        assert_eq!(
+            el.padding,
+            Sides {
+                left: 4.0,
+                right: 4.0,
+                top: 0.0,
+                bottom: 4.0
+            }
+        );
         assert!(el.explicit_padding);
     }
 
@@ -259,20 +283,52 @@ mod tests {
         // Other sides keep the default's value; explicit_padding flips so the
         // metrics pass cannot stamp over the override.
         let el = fresh().default_padding(4.0).pt(0.0);
-        assert_eq!(el.padding, Sides { left: 4.0, right: 4.0, top: 0.0, bottom: 4.0 });
+        assert_eq!(
+            el.padding,
+            Sides {
+                left: 4.0,
+                right: 4.0,
+                top: 0.0,
+                bottom: 4.0
+            }
+        );
         assert!(el.explicit_padding);
     }
 
     #[test]
     fn per_side_chainables_compose() {
         let el = fresh().pl(1.0).pr(2.0).pt(3.0).pb(4.0);
-        assert_eq!(el.padding, Sides { left: 1.0, right: 2.0, top: 3.0, bottom: 4.0 });
+        assert_eq!(
+            el.padding,
+            Sides {
+                left: 1.0,
+                right: 2.0,
+                top: 3.0,
+                bottom: 4.0
+            }
+        );
         assert!(el.explicit_padding);
     }
 
     #[test]
     fn sides_x_and_y_constructors_only_populate_one_axis() {
-        assert_eq!(Sides::x(5.0), Sides { left: 5.0, right: 5.0, top: 0.0, bottom: 0.0 });
-        assert_eq!(Sides::y(5.0), Sides { left: 0.0, right: 0.0, top: 5.0, bottom: 5.0 });
+        assert_eq!(
+            Sides::x(5.0),
+            Sides {
+                left: 5.0,
+                right: 5.0,
+                top: 0.0,
+                bottom: 0.0
+            }
+        );
+        assert_eq!(
+            Sides::y(5.0),
+            Sides {
+                left: 0.0,
+                right: 0.0,
+                top: 5.0,
+                bottom: 5.0
+            }
+        );
     }
 }

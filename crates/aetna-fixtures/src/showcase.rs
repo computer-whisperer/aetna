@@ -504,7 +504,7 @@ impl App for Showcase {
             Section::Glass => glass_on_event(&mut self.glass, event),
             Section::Surfaces => {} // static fixture, no events
             Section::Toasts => toasts_on_event(&mut self.toasts, event),
-            Section::Images => {} // static fixture, no events
+            Section::Images => {}   // static fixture, no events
             Section::Icons => {}    // static fixture, no events
             Section::Prose => {}    // static fixture, no events
             Section::Markdown => {} // static fixture, no events
@@ -808,7 +808,10 @@ fn selectable_showcase_item(
     description: &'static str,
     action: El,
 ) -> El {
-    current_if(showcase_item(key, source, title, description, action), state.selected == key)
+    current_if(
+        showcase_item(key, source, title, description, action),
+        state.selected == key,
+    )
 }
 
 fn current_if(row: El, current: bool) -> El {
@@ -1683,9 +1686,7 @@ fn editor_tabs_view(state: &EditorTabsState) -> El {
     // below — that visual merge is the whole point of the Lifted
     // treatment. The outer column's SPACE_4 gap keeps the title and
     // pickers airy without breaking the tab/panel attachment.
-    let strip_and_panel = column([strip, panel])
-        .gap(0.0)
-        .height(Size::Fill(1.0));
+    let strip_and_panel = column([strip, panel]).gap(0.0).height(Size::Fill(1.0));
     column([
         h1("Editor tabs"),
         text(
@@ -2151,17 +2152,14 @@ fn spinner_demo(label: &str, content: El) -> El {
 }
 
 fn time_shader_tile(label: &str, content: El) -> El {
-    column([
-        content,
-        text(label).muted().small(),
-    ])
-    .fill(tokens::CARD)
-    .stroke(tokens::BORDER)
-    .radius(tokens::RADIUS_LG)
-    .padding(tokens::SPACE_4)
-    .gap(tokens::SPACE_4)
-    .align(Align::Stretch)
-    .width(Size::Fill(1.0))
+    column([content, text(label).muted().small()])
+        .fill(tokens::CARD)
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_LG)
+        .padding(tokens::SPACE_4)
+        .gap(tokens::SPACE_4)
+        .align(Align::Stretch)
+        .width(Size::Fill(1.0))
 }
 
 fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {
@@ -2404,7 +2402,6 @@ fn icons_view() -> El {
              gradient colour baked per vertex).",
         )
         .muted(),
-
         titled_card(
             "Built-in lucide icons (monochrome / MSDF)",
             vec![
@@ -2418,7 +2415,6 @@ fn icons_view() -> El {
                 .gap(tokens::SPACE_3),
             ],
         ),
-
         // Custom SVG icons (gradient-driven, tess path). Pipewire on the
         // left as the hero artwork; the synthetic corner cases on the
         // right each isolate one gradient feature so a regression shows

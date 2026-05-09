@@ -1030,9 +1030,7 @@ mod tests {
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         // Hit-test only resolves to the deepest interactive target,
         // so cursor-on-close hovers the close, not the container.
-        let close_target = state
-            .target_of_key(&tree, "close")
-            .expect("close target");
+        let close_target = state.target_of_key(&tree, "close").expect("close target");
         state.hovered = Some(close_target);
         state.apply_to_state();
         state.set_animation_mode(crate::state::AnimationMode::Settled);

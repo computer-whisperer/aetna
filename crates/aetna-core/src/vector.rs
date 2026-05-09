@@ -447,9 +447,7 @@ fn collect_group(
 ) {
     for node in group.children() {
         match node {
-            usvg::Node::Group(group) => {
-                collect_group(group, force_current_color, out, gradients)
-            }
+            usvg::Node::Group(group) => collect_group(group, force_current_color, out, gradients),
             usvg::Node::Path(path) if path.is_visible() => {
                 if let Some(vector_path) = convert_path(path, force_current_color, gradients) {
                     out.push(vector_path);
@@ -500,9 +498,9 @@ fn convert_path(
         fill: path
             .fill()
             .and_then(|fill| convert_fill(fill, transform, force_current_color, gradients)),
-        stroke: path.stroke().and_then(|stroke| {
-            convert_stroke(stroke, transform, force_current_color, gradients)
-        }),
+        stroke: path
+            .stroke()
+            .and_then(|stroke| convert_stroke(stroke, transform, force_current_color, gradients)),
     })
 }
 
@@ -529,7 +527,12 @@ fn convert_stroke(
     gradients: &mut Vec<VectorGradient>,
 ) -> Option<VectorStroke> {
     Some(VectorStroke {
-        color: convert_paint(stroke.paint(), abs_transform, force_current_color, gradients)?,
+        color: convert_paint(
+            stroke.paint(),
+            abs_transform,
+            force_current_color,
+            gradients,
+        )?,
         opacity: stroke.opacity().get(),
         width: stroke.width().get(),
         line_cap: match stroke.linecap() {
@@ -849,11 +852,7 @@ fn apply_spread(t: f32, spread: VectorSpreadMethod) -> f32 {
         VectorSpreadMethod::Pad => t.clamp(0.0, 1.0),
         VectorSpreadMethod::Reflect => {
             let m = t.rem_euclid(2.0);
-            if m > 1.0 {
-                2.0 - m
-            } else {
-                m
-            }
+            if m > 1.0 { 2.0 - m } else { m }
         }
         VectorSpreadMethod::Repeat => t.rem_euclid(1.0),
     }

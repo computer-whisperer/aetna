@@ -77,7 +77,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     renderer.set_theme(app.theme());
     renderer.set_animation_mode(aetna_core::AnimationMode::Settled);
     for shader in app.shaders() {
-        renderer.register_shader_with(&device, shader.name, shader.wgsl, shader.samples_backdrop, shader.samples_time);
+        renderer.register_shader_with(
+            &device,
+            shader.name,
+            shader.wgsl,
+            shader.samples_backdrop,
+            shader.samples_time,
+        );
     }
     app.before_build();
     let theme = app.theme();

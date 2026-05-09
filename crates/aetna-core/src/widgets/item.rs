@@ -204,9 +204,15 @@ mod tests {
         assert_eq!(row.fill, None, "default item rests transparent");
         assert_eq!(row.children[0].kind, Kind::Custom("item_rail"));
         assert_eq!(row.children[0].opacity, 0.0);
-        assert!(row.children[0].animate.is_some(), "rail opacity should ease");
+        assert!(
+            row.children[0].animate.is_some(),
+            "rail opacity should ease"
+        );
         assert_eq!(row.children[1].axis, Axis::Row);
-        assert_eq!(row.children[1].padding, Sides::xy(tokens::SPACE_3, tokens::SPACE_2));
+        assert_eq!(
+            row.children[1].padding,
+            Sides::xy(tokens::SPACE_3, tokens::SPACE_2)
+        );
         assert!(row.animate.is_some(), "item fill/stroke should ease");
     }
 

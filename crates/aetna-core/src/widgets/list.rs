@@ -158,12 +158,7 @@ fn numbered_marker_width(count: usize) -> f32 {
     // `12.` for a 12-item list, `100.` for a 100-item list.
     let widest_num = count.max(1);
     let sample = format!("{}.", widest_num);
-    let w = line_width(
-        &sample,
-        tokens::TEXT_BASE.size,
-        FontWeight::Regular,
-        false,
-    );
+    let w = line_width(&sample, tokens::TEXT_BASE.size, FontWeight::Regular, false);
     (w + 2.0).ceil()
 }
 

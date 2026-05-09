@@ -609,16 +609,18 @@ impl Runner {
         // shader registered with `samples_time=true` keeps the host
         // loop ticking even when no animation is settling.
         let time_shaders = &self.time_shaders;
-        let (ops, needs_redraw) = self.core.prepare_layout(
-            root,
-            viewport,
-            scale_factor,
-            &mut timings,
-            |handle| match handle {
-                ShaderHandle::Custom(name) => time_shaders.contains(name),
-                ShaderHandle::Stock(_) => false,
-            },
-        );
+        let (ops, needs_redraw) =
+            self.core
+                .prepare_layout(
+                    root,
+                    viewport,
+                    scale_factor,
+                    &mut timings,
+                    |handle| match handle {
+                        ShaderHandle::Custom(name) => time_shaders.contains(name),
+                        ShaderHandle::Stock(_) => false,
+                    },
+                );
 
         // Paint stream: pack quads, record text, preserve z-order. The
         // closure is the wgpu-specific "is this shader registered?"

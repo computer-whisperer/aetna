@@ -145,7 +145,9 @@ impl Walker {
             // `$…$` / `$$…$$` math, raw HTML, footnotes, task list
             // markers — all skipped for the Phase 2 surface. Math will
             // route through a future `aetna-latex` integration.
-            Event::InlineMath(text) | Event::DisplayMath(text) => self.code_span(text.into_string()),
+            Event::InlineMath(text) | Event::DisplayMath(text) => {
+                self.code_span(text.into_string())
+            }
             Event::Html(_) | Event::InlineHtml(_) => {}
             Event::FootnoteReference(_) | Event::TaskListMarker(_) => {}
         }
@@ -271,7 +273,9 @@ impl Walker {
                     self.push_block(code_block(strip_trailing_newline(text)));
                 }
             }
-            TagEnd::Emphasis => self.inline.italic_depth = self.inline.italic_depth.saturating_sub(1),
+            TagEnd::Emphasis => {
+                self.inline.italic_depth = self.inline.italic_depth.saturating_sub(1)
+            }
             TagEnd::Strong => self.inline.bold_depth = self.inline.bold_depth.saturating_sub(1),
             TagEnd::Strikethrough => {
                 self.inline.strike_depth = self.inline.strike_depth.saturating_sub(1);
@@ -539,10 +543,7 @@ fn build_table(head: Option<Vec<El>>, body: Vec<Vec<El>>) -> El {
     // built one `table_row(...)` per row. Re-flatten into row-Els.
     let body_rows: Vec<El> = body.into_iter().flatten().collect();
     match head {
-        Some(header_rows) => table([
-            table_header(header_rows),
-            table_body(body_rows),
-        ]),
+        Some(header_rows) => table([table_header(header_rows), table_body(body_rows)]),
         None => table([table_body(body_rows)]),
     }
 }
@@ -577,7 +578,11 @@ fn build_image_placeholder(alt: &str) -> El {
     // Phase 2 doesn't wire image loading. Surface the alt text so the
     // page reads sensibly until inline-image support lands; muted +
     // italic so it doesn't look like first-class content.
-    let label = if alt.is_empty() { "[image]".to_string() } else { format!("[image: {alt}]") };
+    let label = if alt.is_empty() {
+        "[image]".to_string()
+    } else {
+        format!("[image: {alt}]")
+    };
     paragraph(label).muted().italic()
 }
 
@@ -681,9 +686,18 @@ mod tests {
         let runs: Vec<&El> = bs[0].children.iter().collect();
         // Plain "Hello " + bold "world" + " and " + italic "italic" +
         // " and " + code "code" + ".".
-        assert!(runs.iter().any(|r| r.font_weight == FontWeight::Bold && r.text.as_deref() == Some("world")));
-        assert!(runs.iter().any(|r| r.text_italic && r.text.as_deref() == Some("italic")));
-        assert!(runs.iter().any(|r| r.text_role == TextRole::Code && r.text.as_deref() == Some("code")));
+        assert!(
+            runs.iter()
+                .any(|r| r.font_weight == FontWeight::Bold && r.text.as_deref() == Some("world"))
+        );
+        assert!(
+            runs.iter()
+                .any(|r| r.text_italic && r.text.as_deref() == Some("italic"))
+        );
+        assert!(
+            runs.iter()
+                .any(|r| r.text_role == TextRole::Code && r.text.as_deref() == Some("code"))
+        );
     }
 
     #[test]
@@ -788,7 +802,12 @@ mod tests {
         // CommonMark hard break = trailing two spaces + newline.
         let bs = blocks("line one  \nline two");
         assert_eq!(bs[0].kind, Kind::Inlines);
-        assert!(bs[0].children.iter().any(|c| matches!(c.kind, Kind::HardBreak)));
+        assert!(
+            bs[0]
+                .children
+                .iter()
+                .any(|c| matches!(c.kind, Kind::HardBreak))
+        );
     }
 
     #[test]
@@ -869,10 +888,12 @@ mod tests {
         let body_cell = &t.children[1].children[0].children[0];
         // Body cell wraps the styled content in an Inlines paragraph.
         assert_eq!(body_cell.kind, Kind::Inlines);
-        assert!(body_cell
-            .children
-            .iter()
-            .any(|r| r.font_weight == FontWeight::Bold && r.text.as_deref() == Some("bold")));
+        assert!(
+            body_cell
+                .children
+                .iter()
+                .any(|r| r.font_weight == FontWeight::Bold && r.text.as_deref() == Some("bold"))
+        );
     }
 
     #[test]

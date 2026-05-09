@@ -208,6 +208,5 @@ pub mod stock_wgsl {
     pub const IMAGE: &str = include_str!("../shaders/image.wgsl");
     pub const SPINNER: &str = include_str!("../shaders/spinner.wgsl");
     pub const SKELETON: &str = include_str!("../shaders/skeleton.wgsl");
-    pub const PROGRESS_INDETERMINATE: &str =
-        include_str!("../shaders/progress_indeterminate.wgsl");
+    pub const PROGRESS_INDETERMINATE: &str = include_str!("../shaders/progress_indeterminate.wgsl");
 }

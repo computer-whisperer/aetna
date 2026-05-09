@@ -407,7 +407,11 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
             // Arc: starting at 12 o'clock, sweeping clockwise by
             // `max_sweep` radians. SVG arc large-arc flag is 1 when
             // sweep > 180°, sweep flag is 1 for clockwise.
-            let large_arc = if max_sweep > std::f32::consts::PI { 1 } else { 0 };
+            let large_arc = if max_sweep > std::f32::consts::PI {
+                1
+            } else {
+                0
+            };
             let start_x = cx;
             let start_y = cy - center_r;
             let end_x = cx + (max_sweep.sin()) * center_r;

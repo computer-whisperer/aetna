@@ -592,16 +592,18 @@ impl Runner {
         // `samples_time=true` keeps the host loop ticking even when
         // no animation is settling.
         let time_shaders = &self.time_shaders;
-        let (ops, needs_redraw) = self.core.prepare_layout(
-            root,
-            viewport,
-            scale_factor,
-            &mut timings,
-            |handle| match handle {
-                ShaderHandle::Custom(name) => time_shaders.contains(name),
-                ShaderHandle::Stock(_) => false,
-            },
-        );
+        let (ops, needs_redraw) =
+            self.core
+                .prepare_layout(
+                    root,
+                    viewport,
+                    scale_factor,
+                    &mut timings,
+                    |handle| match handle {
+                        ShaderHandle::Custom(name) => time_shaders.contains(name),
+                        ShaderHandle::Stock(_) => false,
+                    },
+                );
 
         self.text_paint.frame_begin();
         self.icon_paint.frame_begin();
@@ -664,9 +666,7 @@ impl Runner {
             // stay byte-identical run-to-run.
             let time = match self.core.ui_state().animation_mode() {
                 aetna_core::AnimationMode::Settled => 0.0,
-                aetna_core::AnimationMode::Live => {
-                    (Instant::now() - self.start_time).as_secs_f32()
-                }
+                aetna_core::AnimationMode::Live => (Instant::now() - self.start_time).as_secs_f32(),
             };
             *write = FrameUniforms {
                 viewport: [viewport.w, viewport.h],

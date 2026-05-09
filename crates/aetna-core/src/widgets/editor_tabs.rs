@@ -611,7 +611,10 @@ mod tests {
         // around 0.4 alpha and ease up on hover.
         match close.reveal_on_hover {
             Some(rest) => {
-                assert!(rest > 0.0 && rest < 1.0, "Dimmed rest should be partial; got {rest}");
+                assert!(
+                    rest > 0.0 && rest < 1.0,
+                    "Dimmed rest should be partial; got {rest}"
+                );
             }
             None => panic!("Dimmed should attach reveal_on_hover so hover composes the alpha"),
         }
@@ -744,7 +747,11 @@ mod tests {
             |s| Some(s.to_string()),
             next_id,
         ));
-        assert_eq!(tabs, vec!["a"], "the last tab can't be closed via the helper");
+        assert_eq!(
+            tabs,
+            vec!["a"],
+            "the last tab can't be closed via the helper"
+        );
         assert_eq!(active, "a");
     }
 

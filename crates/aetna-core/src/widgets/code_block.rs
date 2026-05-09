@@ -68,6 +68,9 @@ mod tests {
         assert!(body.font_mono);
         assert_eq!(body.font_size, tokens::TEXT_SM.size);
         assert_eq!(body.text_wrap, TextWrap::NoWrap);
-        assert_eq!(body.text.as_deref(), Some("fn main() {\n    println!(\"hi\");\n}"));
+        assert_eq!(
+            body.text.as_deref(),
+            Some("fn main() {\n    println!(\"hi\");\n}")
+        );
     }
 }

@@ -436,7 +436,13 @@ mod web_entry {
                     if s.samples_backdrop && !want_copy_src {
                         continue;
                     }
-                    renderer.register_shader_with(&device, s.name, s.wgsl, s.samples_backdrop, s.samples_time);
+                    renderer.register_shader_with(
+                        &device,
+                        s.name,
+                        s.wgsl,
+                        s.samples_backdrop,
+                        s.samples_time,
+                    );
                 }
 
                 let msaa = MsaaTarget::new(&device, format, surface_extent(&config), SAMPLE_COUNT);

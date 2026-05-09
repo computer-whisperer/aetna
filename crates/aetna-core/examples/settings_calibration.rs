@@ -84,15 +84,11 @@ fn settings_sidebar() -> El {
 fn settings_main() -> El {
     column([
         settings_header(),
-        row([
-            settings_nav_card(),
-            settings_body(),
-            settings_aside(),
-        ])
-        .gap(tokens::SPACE_4)
-        .padding(tokens::SPACE_4)
-        .height(Size::Fill(1.0))
-        .align(Align::Stretch),
+        row([settings_nav_card(), settings_body(), settings_aside()])
+            .gap(tokens::SPACE_4)
+            .padding(tokens::SPACE_4)
+            .height(Size::Fill(1.0))
+            .align(Align::Stretch),
     ])
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0))
