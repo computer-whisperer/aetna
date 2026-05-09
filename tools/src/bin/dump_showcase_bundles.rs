@@ -26,12 +26,7 @@ fn main() -> std::io::Result<()> {
         let cx = BuildCx::new(&theme);
         let mut tree = app.build(&cx);
 
-        // Showcase nodes' source paths point into `aetna-fixtures`
-        // (where `Showcase::build` lives) — not this `aetna-tools`
-        // bin — so we hardcode the marker. For an app where the
-        // dump bin and the app code live in the same crate,
-        // `Some(env!("CARGO_PKG_NAME"))` is the recommended idiom.
-        let bundle = render_bundle(&mut tree, viewport, Some("aetna-fixtures"));
+        let bundle = render_bundle(&mut tree, viewport);
 
         let name = format!("showcase_{}", section.slug());
         let written = write_bundle(&bundle, &out_dir, &name)?;

@@ -22,7 +22,7 @@ struct VariableVirtualListApp {
 }
 
 fn build_row(i: usize) -> El {
-    let body: El = match i % 7 {
+    let body = match i % 7 {
         0 => column([
             text(format!("#{i:05} — expanded entry")).mono(),
             text("Two extra lines of context. Pretend this is a diff hunk header,")
@@ -32,21 +32,18 @@ fn build_row(i: usize) -> El {
                 .muted()
                 .text_wrap(TextWrap::Wrap),
         ])
-        .gap(tokens::SPACE_1)
-        .into(),
+        .gap(tokens::SPACE_1),
         3 => column([
             text(format!("#{i:05} — taller row")).mono(),
             text("One extra line of detail.").muted(),
         ])
-        .gap(tokens::SPACE_1)
-        .into(),
+        .gap(tokens::SPACE_1),
         _ => row([
             text(format!("#{i:05}")).mono(),
             spacer(),
             text(format!("entry {i}")),
         ])
-        .gap(tokens::SPACE_3)
-        .into(),
+        .gap(tokens::SPACE_3),
     };
 
     column([body])

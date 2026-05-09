@@ -111,7 +111,7 @@ fn fixture() -> El {
 fn main() -> std::io::Result<()> {
     let mut root = fixture();
     let viewport = Rect::new(0.0, 0.0, 900.0, 360.0);
-    let bundle = render_bundle(&mut root, viewport, Some(env!("CARGO_PKG_NAME")));
+    let bundle = render_bundle(&mut root, viewport);
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     let written = write_bundle(&bundle, &out_dir, "custom_paint")?;

@@ -125,11 +125,21 @@ pub enum InteractionState {
 
 /// Recorded source location for an element. Set automatically via
 /// `#[track_caller]` on every constructor.
+///
+/// `from_library` distinguishes Els constructed inside aetna's own
+/// widget closures (where the closure boundary defeats
+/// `#[track_caller]` and the recorded location lands inside aetna-core
+/// instead of at the user's call site) from Els constructed in user
+/// code. The lint pass uses this to gate user-facing findings and to
+/// walk blame attribution upward to the nearest user-source ancestor.
+/// Set explicitly via [`crate::tree::El::from_library`] at the few
+/// closure-builder sites that need it.
 #[derive(Clone, Copy, Debug, Default)]
 #[non_exhaustive]
 pub struct Source {
     pub file: &'static str,
     pub line: u32,
+    pub from_library: bool,
 }
 
 impl Source {
@@ -137,6 +147,7 @@ impl Source {
         Self {
             file: loc.file(),
             line: loc.line(),
+            from_library: false,
         }
     }
 }

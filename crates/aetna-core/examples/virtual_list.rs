@@ -75,12 +75,7 @@ fn main() -> std::io::Result<()> {
     ui_state.set_scroll_offset(list_id, 5000.0 * ROW_HEIGHT);
 
     let viewport = Rect::new(0.0, 0.0, 540.0, 540.0);
-    let bundle = render_bundle_with(
-        &mut root,
-        &mut ui_state,
-        viewport,
-        Some(env!("CARGO_PKG_NAME")),
-    );
+    let bundle = render_bundle_with(&mut root, &mut ui_state, viewport);
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     let written = write_bundle(&bundle, &out_dir, "virtual_list")?;

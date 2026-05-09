@@ -183,12 +183,12 @@ use aetna_core::prelude::*;
 let theme = app.theme();
 let cx = BuildCx::new(&theme);
 let mut tree = app.build(&cx);
-let bundle = render_bundle_themed(&mut tree, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
+let bundle = render_bundle_themed(&mut tree, viewport, &theme);
 write_bundle(&bundle, &out_dir, "scene_name")?;
 if !bundle.lint.findings.is_empty() { eprint!("{}", bundle.lint.text()); }
 ```
 
-The third argument scopes lint findings to your crate's source paths so library defaults don't drown out your code's issues — pass `env!("CARGO_PKG_NAME")` (or the literal name of the crate whose code you're rendering, if your dump bin lives elsewhere).
+Lint findings are gated on whether the offending element traces back to user code (vs. one of aetna's own widget closures); the bundle pass handles that automatically.
 
 The per-app shape is small: a `MockBackend` returning a canned snapshot, a `Scene` enum enumerating the views worth dumping, and `app.on_event(UiEvent::synthetic_click(key))` to drive state through the same `on_event` path users hit. Output goes to `crates/<app>/out/` (gitignored). Reference implementations:
 

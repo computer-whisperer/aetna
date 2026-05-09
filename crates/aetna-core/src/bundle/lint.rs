@@ -16,23 +16,22 @@
 //!
 //! Provenance: every finding records the source location of the
 //! offending node (via `#[track_caller]` propagation up to the user's
-//! call site). The lint accepts an optional `app_path_marker` —
-//! findings are kept only when there's a user-source ancestor with a
-//! source path containing this marker. The recommended idiom is to
-//! pass `Some(env!("CARGO_PKG_NAME"))` so the filter scopes to the
-//! calling crate without having to type out a workspace path. Pass
-//! `None` to see everything (including anything that fell through
-//! `track_caller`).
+//! call site). User code is distinguished from aetna's own widget
+//! internals by [`Source::from_library`], which a closure-builder
+//! site sets explicitly via [`crate::tree::El::from_library`] when
+//! `#[track_caller]` won't reach the user. Findings only attribute to
+//! sources where `from_library == false`.
 //!
 //! Overflow findings (rect and text) walk up to the nearest
 //! user-source ancestor for attribution. `#[track_caller]` doesn't
-//! propagate through closures, so a widget like `tabs_list` that
-//! builds children inside `.map(...)` records widget-internal source
-//! on those children. The lint detects the issue at the leaf but
-//! blames the user's call site, since that's where the fix lives
-//! (the user supplied the offending content). Raw-color findings are
-//! still self-attributed — those are intentional inside widgets and
-//! should only fire from user code directly.
+//! propagate through closures, so a widget that builds children
+//! inside `.map(...)` either forwards the user's caller via
+//! `.at_loc(caller)` (the prevailing pattern in aetna-core today) or
+//! marks itself with `.from_library()` so the lint walks up to the
+//! user's call site. Either way the user gets a finding pointing at
+//! their code, not at aetna-core internals. Raw-color and surface
+//! lints are still self-attributed — those are intentional inside
+//! widgets and should only fire from user code directly.
 
 use std::fmt::Write as _;
 
@@ -111,26 +110,19 @@ impl LintReport {
     }
 }
 
-/// Run the lint pass. When `app_path_marker` is `Some(m)`, findings
-/// are kept only if the offending node has a user-source ancestor
-/// (or is itself user-source) whose source path contains `m`. The
-/// recommended idiom is `Some(env!("CARGO_PKG_NAME"))` —
-/// `Location::caller()` records workspace-relative paths like
-/// `crates/your-app/src/...`, which contain the package name as a
-/// directory component. Pass `None` to see every finding (including
-/// any that fell through `track_caller` propagation).
-pub fn lint(root: &El, ui_state: &UiState, app_path_marker: Option<&str>) -> LintReport {
+/// Run the lint pass over `root`.
+///
+/// Findings are gated on whether the offending node (or its nearest
+/// ancestor) was constructed in user code rather than inside aetna's
+/// own widget closures. The signal is [`Source::from_library`], set
+/// explicitly via [`crate::tree::El::from_library`] at any closure-
+/// builder site that doesn't forward `Location::caller()` back to the
+/// user. The vast majority of nodes propagate user source through
+/// `#[track_caller]` and pass straight through.
+pub fn lint(root: &El, ui_state: &UiState) -> LintReport {
     let mut r = LintReport::default();
     let mut seen_ids: std::collections::BTreeMap<String, usize> = Default::default();
-    walk(
-        root,
-        None,
-        None,
-        ui_state,
-        &mut r,
-        &mut seen_ids,
-        app_path_marker,
-    );
+    walk(root, None, None, ui_state, &mut r, &mut seen_ids);
     for (id, n) in seen_ids {
         if n > 1 {
             r.findings.push(Finding {
@@ -144,11 +136,8 @@ pub fn lint(root: &El, ui_state: &UiState, app_path_marker: Option<&str>) -> Lin
     r
 }
 
-fn is_from_user(source: Source, app_marker: Option<&str>) -> bool {
-    match app_marker {
-        Some(marker) => source.file.contains(marker),
-        None => true,
-    }
+fn is_from_user(source: Source) -> bool {
+    !source.from_library
 }
 
 fn walk(
@@ -158,12 +147,11 @@ fn walk(
     ui_state: &UiState,
     r: &mut LintReport,
     seen: &mut std::collections::BTreeMap<String, usize>,
-    app_marker: Option<&str>,
 ) {
     *seen.entry(n.computed_id.clone()).or_default() += 1;
     let computed = ui_state.rect(&n.computed_id);
 
-    let from_user_self = is_from_user(n.source, app_marker);
+    let from_user_self = is_from_user(n.source);
     // Nearest user-source location attributable to this node — itself
     // when self is from user code, otherwise the closest ancestor's
     // user source. Used by overflow findings so widget-composed leaves
@@ -392,7 +380,7 @@ fn walk(
         || matches!(n.kind, Kind::Inlines)
         || matches!(n.kind, Kind::Custom("toast_stack"));
     for c in &n.children {
-        let from_user_child = is_from_user(c.source, app_marker);
+        let from_user_child = is_from_user(c.source);
         let child_blame = if from_user_child {
             Some(c.source)
         } else {
@@ -418,7 +406,7 @@ fn walk(
                 ),
             });
         }
-        walk(c, Some(&n.kind), child_blame, ui_state, r, seen, app_marker);
+        walk(c, Some(&n.kind), child_blame, ui_state, r, seen);
     }
 }
 
@@ -601,7 +589,7 @@ mod tests {
     fn lint_one(mut root: El) -> LintReport {
         let mut ui_state = UiState::new();
         layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 160.0, 48.0));
-        lint(&root, &ui_state, None)
+        lint(&root, &ui_state)
     }
 
     #[test]
@@ -807,19 +795,19 @@ mod tests {
 
     #[test]
     fn overflow_findings_attribute_to_nearest_user_source_ancestor() {
-        // Simulate the closure-built-widget pattern: a root in user
-        // code whose child is constructed with an aetna-internal
-        // source (mimicking what `tabs_list` does when it builds tab
-        // triggers inside `.map(|...| tab_trigger(...))` — the closure
-        // boundary breaks `#[track_caller]` so the trigger's recorded
-        // source points inside aetna-core, not at the user's call).
+        // Closure-built-widget shape: an Element constructed inside an
+        // aetna widget closure carries `from_library: true`. Its
+        // overflow finding should attribute to the nearest non-library
+        // ancestor's source.
         let user_source = Source {
-            file: "crates/test_app/src/screen.rs",
+            file: "src/screen.rs",
             line: 42,
+            from_library: false,
         };
         let widget_source = Source {
-            file: "crates/aetna-core/src/widgets/tabs.rs",
+            file: "src/widgets/tabs.rs",
             line: 200,
+            from_library: true,
         };
 
         let mut leaf = crate::text("A very long dashboard label")
@@ -834,36 +822,32 @@ mod tests {
 
         let mut ui_state = UiState::new();
         layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 160.0, 48.0));
-        let report = lint(&root, &ui_state, Some("crates/test_app/src"));
+        let report = lint(&root, &ui_state);
 
         let text_overflow = report
             .findings
             .iter()
             .find(|f| f.kind == FindingKind::TextOverflow)
             .unwrap_or_else(|| panic!("expected TextOverflow finding\n{}", report.text()));
-        // Detection happens at the leaf, attribution walks up to the
-        // user-source ancestor.
         assert_eq!(text_overflow.source.file, user_source.file);
         assert_eq!(text_overflow.source.line, user_source.line);
     }
 
     #[test]
     fn overflow_finding_self_attributes_when_node_is_already_user_source() {
-        // Sanity check: when the offending node itself is in user
-        // code, the finding still points at it (no spurious walk to
-        // an ancestor with a different line number).
         let mut node = crate::text("A very long dashboard label")
             .width(Size::Fixed(40.0))
             .height(Size::Fixed(20.0));
         let user_source = Source {
-            file: "crates/test_app/src/screen.rs",
+            file: "src/screen.rs",
             line: 99,
+            from_library: false,
         };
         node.source = user_source;
 
         let mut ui_state = UiState::new();
         layout::layout(&mut node, &mut ui_state, Rect::new(0.0, 0.0, 160.0, 48.0));
-        let report = lint(&node, &ui_state, Some("crates/test_app/src"));
+        let report = lint(&node, &ui_state);
 
         let text_overflow = report
             .findings
@@ -874,13 +858,50 @@ mod tests {
     }
 
     #[test]
+    fn overflow_lint_fires_for_external_app_paths_issue_13() {
+        // Regression for #13: an external app's `Location::caller()`
+        // file paths look like `src/sidebar.rs` (relative to its own
+        // manifest), not `crates/<name>/src/...`. The old marker-
+        // substring filter silently dropped every overflow finding for
+        // these. With `from_library: false` (the user-code default),
+        // the overflow must fire.
+        let user_source = Source {
+            file: "src/sidebar.rs",
+            line: 17,
+            from_library: false,
+        };
+        let mut child = crate::column(Vec::<El>::new())
+            .width(Size::Fixed(32.0))
+            .height(Size::Fixed(32.0));
+        child.source = user_source;
+
+        let mut row = crate::row([child])
+            .width(Size::Fixed(256.0))
+            .height(Size::Fixed(28.0));
+        row.source = user_source;
+
+        let mut ui_state = UiState::new();
+        layout::layout(&mut row, &mut ui_state, Rect::new(0.0, 0.0, 256.0, 28.0));
+        let report = lint(&row, &ui_state);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::Overflow),
+            "expected an Overflow finding for the 32px child in a 28px row\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
     fn overflow_finding_suppressed_when_no_user_ancestor_exists() {
-        // Without any user-source ancestor in the chain, the lint
-        // marker filter is restored: there's nothing the user can
-        // act on, so the finding is silently dropped.
+        // Pure-library tree: every node carries `from_library: true`,
+        // so there's no user code to blame and the finding is dropped.
         let widget_source = Source {
-            file: "crates/aetna-core/src/widgets/tabs.rs",
+            file: "src/widgets/tabs.rs",
             line: 200,
+            from_library: true,
         };
         let mut leaf = crate::text("A very long dashboard label")
             .width(Size::Fixed(40.0))
@@ -898,7 +919,7 @@ mod tests {
             &mut ui_state,
             Rect::new(0.0, 0.0, 160.0, 48.0),
         );
-        let report = lint(&wrapper, &ui_state, Some("crates/test_app/src"));
+        let report = lint(&wrapper, &ui_state);
 
         assert!(
             !report

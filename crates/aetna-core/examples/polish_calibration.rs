@@ -16,7 +16,7 @@ fn main() -> std::io::Result<()> {
     let name = "polish_calibration";
     let theme = Theme::aetna_dark();
     let mut root = polish_calibration();
-    let bundle = render_bundle_themed(&mut root, viewport, Some(env!("CARGO_PKG_NAME")), &theme);
+    let bundle = render_bundle_themed(&mut root, viewport, &theme);
     let written = write_bundle(&bundle, &out_dir, name)?;
     for p in &written {
         println!("wrote {}", p.display());

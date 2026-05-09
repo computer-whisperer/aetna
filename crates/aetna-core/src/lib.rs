@@ -22,7 +22,7 @@
 //! let app = Demo;
 //! let theme = app.theme();
 //! let mut ui = app.build(&BuildCx::new(&theme));
-//! let bundle = render_bundle(&mut ui, Rect::new(0.0, 0.0, 720.0, 400.0), None);
+//! let bundle = render_bundle(&mut ui, Rect::new(0.0, 0.0, 720.0, 400.0));
 //! assert!(!bundle.svg.is_empty());
 //! ```
 //!

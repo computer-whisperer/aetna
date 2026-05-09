@@ -378,9 +378,14 @@ fn layout_custom(node: &mut El, node_rect: Rect, layout_fn: LayoutFn, ui_state: 
 fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state: &mut UiState) {
     let inner = node_rect.inset(node.padding);
     match items.mode {
-        VirtualMode::Fixed { row_height } => {
-            layout_virtual_fixed(node, inner, items.count, row_height, items.build_row, ui_state)
-        }
+        VirtualMode::Fixed { row_height } => layout_virtual_fixed(
+            node,
+            inner,
+            items.count,
+            row_height,
+            items.build_row,
+            ui_state,
+        ),
         VirtualMode::Dynamic {
             estimated_row_height,
         } => layout_virtual_dynamic(
@@ -396,12 +401,7 @@ fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state:
 
 /// Clamp the stored scroll offset, write the metrics + thumb rect, and
 /// return the clamped offset. Shared scaffold for both virtual modes.
-fn write_virtual_scroll_state(
-    node: &El,
-    inner: Rect,
-    total_h: f32,
-    ui_state: &mut UiState,
-) -> f32 {
+fn write_virtual_scroll_state(node: &El, inner: Rect, total_h: f32, ui_state: &mut UiState) -> f32 {
     let max_offset = (total_h - inner.h).max(0.0);
     let stored = ui_state
         .scroll
@@ -529,10 +529,7 @@ fn layout_virtual_dynamic(
     // scoped immutable borrow; releasing it before the render loop
     // keeps `ui_state` mutably available below.
     let (start, start_y) = {
-        let measured = ui_state
-            .scroll
-            .measured_row_heights
-            .get(&node.computed_id);
+        let measured = ui_state.scroll.measured_row_heights.get(&node.computed_id);
         let row_h = |i: usize| -> f32 {
             measured
                 .and_then(|m| m.get(&i).copied())
@@ -1988,10 +1985,26 @@ mod tests {
             .iter()
             .map(|c| state.rect(&c.computed_id).y)
             .collect();
-        assert!((ys[0] - 0.0).abs() < 0.5, "row 0 expected y≈0, got {}", ys[0]);
-        assert!((ys[1] - 40.0).abs() < 0.5, "row 1 expected y≈40, got {}", ys[1]);
-        assert!((ys[2] - 120.0).abs() < 0.5, "row 2 expected y≈120, got {}", ys[2]);
-        assert!((ys[3] - 160.0).abs() < 0.5, "row 3 expected y≈160, got {}", ys[3]);
+        assert!(
+            (ys[0] - 0.0).abs() < 0.5,
+            "row 0 expected y≈0, got {}",
+            ys[0]
+        );
+        assert!(
+            (ys[1] - 40.0).abs() < 0.5,
+            "row 1 expected y≈40, got {}",
+            ys[1]
+        );
+        assert!(
+            (ys[2] - 120.0).abs() < 0.5,
+            "row 2 expected y≈120, got {}",
+            ys[2]
+        );
+        assert!(
+            (ys[3] - 160.0).abs() < 0.5,
+            "row 3 expected y≈160, got {}",
+            ys[3]
+        );
     }
 
     #[test]
@@ -2049,8 +2062,7 @@ mod tests {
             .get(&root.computed_id)
             .map(|m| m.len())
             .unwrap_or(0);
-        let expected_total = measured_count as f32 * 30.0
-            + (20 - measured_count) as f32 * 50.0;
+        let expected_total = measured_count as f32 * 30.0 + (20 - measured_count) as f32 * 50.0;
         let expected_max_offset = expected_total - 200.0;
 
         state
@@ -2073,9 +2085,8 @@ mod tests {
 
     #[test]
     fn virtual_list_dyn_empty_count_realizes_no_children() {
-        let mut root = crate::tree::virtual_list_dyn(0, 50.0, |i| {
-            crate::widgets::text::text(format!("r{i}"))
-        });
+        let mut root =
+            crate::tree::virtual_list_dyn(0, 50.0, |i| crate::widgets::text::text(format!("r{i}")));
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
         assert_eq!(root.children.len(), 0);
@@ -2084,9 +2095,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "estimated_row_height > 0.0")]
     fn virtual_list_dyn_zero_estimate_panics() {
-        let _ = crate::tree::virtual_list_dyn(10, 0.0, |i| {
-            crate::widgets::text::text(format!("r{i}"))
-        });
+        let _ =
+            crate::tree::virtual_list_dyn(10, 0.0, |i| crate::widgets::text::text(format!("r{i}")));
     }
 
     #[test]

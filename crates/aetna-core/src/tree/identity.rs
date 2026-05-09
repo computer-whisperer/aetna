@@ -160,7 +160,11 @@ impl El {
     }
 
     pub fn at(mut self, file: &'static str, line: u32) -> Self {
-        self.source = Source { file, line };
+        self.source = Source {
+            file,
+            line,
+            from_library: false,
+        };
         self
     }
 
@@ -168,6 +172,18 @@ impl El {
     /// `#[track_caller]` constructors).
     pub fn at_loc(mut self, loc: &'static Location<'static>) -> Self {
         self.source = Source::from_caller(loc);
+        self
+    }
+
+    /// Mark this El as constructed inside an aetna library closure
+    /// where `#[track_caller]` doesn't reach user code (e.g. the
+    /// `.map(|item| ...)` body inside `tabs_list`, `radio_group`,
+    /// etc.). The lint pass uses this flag to walk blame attribution
+    /// upward to the nearest user-source ancestor instead of pointing
+    /// findings at aetna-core internals. User code never needs to call
+    /// this.
+    pub fn from_library(mut self) -> Self {
+        self.source.from_library = true;
         self
     }
 }
