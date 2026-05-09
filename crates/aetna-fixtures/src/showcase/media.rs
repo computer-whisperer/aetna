@@ -229,10 +229,86 @@ pub fn view(animated_surface: Option<&AppTexture>) -> El {
             .gap(tokens::SPACE_3)
             .align(Align::Center)],
         ),
+        section_card(
+            "Programmatic vectors (vector() + PathBuilder)",
+            "`vector(asset)` paints a programmatically-built `VectorAsset` through \
+             the icon MSDF atlas. Single-solid-colour assets route to MSDF for crisp \
+             scaling; multi-colour or gradient assets fall back to lyon tessellation. \
+             Identical geometry hashes into one atlas slot, so a list of merge curves \
+             with recurring (lane_delta, row_span) pairs shares cached rasterisations.",
+            [vector_demo_row()],
+        ),
     ])
     .gap(tokens::SPACE_4)
     .align(Align::Stretch)])
     .height(Size::Fill(1.0))
+}
+
+fn vector_demo_row() -> El {
+    row([
+        vector_tile("merge curve", curve_asset(0, 3, 4), 80.0, 100.0),
+        vector_tile("steeper curve", curve_asset(0, 4, 3), 100.0, 80.0),
+        vector_tile("filled diamond", diamond_asset(Color::rgb(244, 114, 182)), 48.0, 48.0),
+        vector_tile(
+            "rounded path",
+            squiggle_asset(Color::rgb(96, 165, 250)),
+            120.0,
+            48.0,
+        ),
+    ])
+    .gap(tokens::SPACE_4)
+    .align(Align::Center)
+}
+
+fn vector_tile(label: &str, asset: VectorAsset, w: f32, h: f32) -> El {
+    column([
+        El::new(Kind::Group)
+            .padding(tokens::SPACE_2)
+            .child(vector(asset).width(Size::Fixed(w)).height(Size::Fixed(h)))
+            .surface_role(SurfaceRole::Sunken)
+            .radius(tokens::RADIUS_MD),
+        text(label.to_string()).small().muted(),
+    ])
+    .gap(tokens::SPACE_1)
+    .align(Align::Center)
+}
+
+fn curve_asset(start_lane: i32, end_lane: i32, row_span: u32) -> VectorAsset {
+    let lane_w = 24.0;
+    let row_h = 24.0;
+    let dx = (end_lane - start_lane) as f32 * lane_w;
+    let dy = row_span as f32 * row_h;
+    let path = PathBuilder::new()
+        .move_to(0.0, 0.0)
+        .cubic_to(0.0, dy * 0.5, dx, dy * 0.5, dx, dy)
+        .stroke_solid(Color::rgb(132, 204, 22), 2.0)
+        .stroke_line_cap(VectorLineCap::Round)
+        .build();
+    VectorAsset::from_paths([0.0, 0.0, dx.abs().max(0.001), dy], vec![path])
+}
+
+fn diamond_asset(color: Color) -> VectorAsset {
+    let r = 12.0;
+    let path = PathBuilder::new()
+        .move_to(r, 0.0)
+        .line_to(2.0 * r, r)
+        .line_to(r, 2.0 * r)
+        .line_to(0.0, r)
+        .close()
+        .fill_solid(color)
+        .build();
+    VectorAsset::from_paths([0.0, 0.0, 2.0 * r, 2.0 * r], vec![path])
+}
+
+fn squiggle_asset(color: Color) -> VectorAsset {
+    let path = PathBuilder::new()
+        .move_to(0.0, 12.0)
+        .quad_to(15.0, 0.0, 30.0, 12.0)
+        .quad_to(45.0, 24.0, 60.0, 12.0)
+        .stroke_solid(color, 2.0)
+        .stroke_line_cap(VectorLineCap::Round)
+        .build();
+    VectorAsset::from_paths([0.0, 0.0, 60.0, 24.0], vec![path])
 }
 
 fn section_card<I: IntoIterator<Item = El>>(title: &str, blurb: &str, body: I) -> El {

@@ -18,7 +18,7 @@ const TEX_SIZE: u32 = 96;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let logical_width: u32 = 900;
-    let logical_height: u32 = 720;
+    let logical_height: u32 = 2100;
     let scale_factor: f32 = 1.0;
     let width = (logical_width as f32 * scale_factor) as u32;
     let height = (logical_height as f32 * scale_factor) as u32;
