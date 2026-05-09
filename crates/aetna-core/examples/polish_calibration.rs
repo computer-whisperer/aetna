@@ -10,7 +10,7 @@
 use aetna_core::prelude::*;
 
 fn main() -> std::io::Result<()> {
-    let viewport = Rect::new(0.0, 0.0, 1180.0, 780.0);
+    let viewport = Rect::new(0.0, 0.0, 1180.0, 876.0);
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
 
     let name = "polish_calibration";
@@ -78,6 +78,9 @@ fn nav_item(icon: &'static str, label: &'static str, selected: bool) -> El {
         format!("nav-{label}")
     })
     .metrics_role(MetricsRole::ListItem)
+    .gap(tokens::SPACE_3)
+    .padding(Sides::xy(tokens::SPACE_2, 0.0))
+    .height(Size::Fixed(40.0))
     .align(Align::Center)
     .focusable();
 
@@ -132,7 +135,7 @@ fn toolbar() -> El {
             .key("metric:action.primary"),
     ])
     .key("metric:header")
-    .gap(tokens::SPACE_2)
+    .gap(tokens::SPACE_4)
     .height(Size::Hug)
     .align(Align::Start)
 }

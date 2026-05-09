@@ -108,7 +108,7 @@ fn settings_header() -> El {
         button("Save changes").primary(),
     ])
     .key("metric:header")
-    .gap(tokens::SPACE_2)
+    .gap(tokens::SPACE_3)
     .height(Size::Fixed(56.0))
     .padding(Sides::xy(tokens::SPACE_4, 0.0))
     .align(Align::Center)
@@ -255,7 +255,8 @@ fn preferences_card() -> El {
             ),
         ])
         .gap(0.0)
-        .width(Size::Fill(1.0))]),
+        .width(Size::Fill(1.0))])
+        .padding(0.0),
     ])
     .key("metric:preferences.card")
 }
@@ -280,6 +281,8 @@ fn preference_row(title: &'static str, description: &'static str, control: El) -
         format!("preference-{title}")
     })
     .metrics_role(MetricsRole::PreferenceRow)
+    .gap(tokens::SPACE_4)
+    .padding(Sides::xy(tokens::SPACE_4, tokens::SPACE_3))
     .align(Align::Center)
 }
 
@@ -361,8 +364,8 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     })
     .metrics_role(MetricsRole::ListItem)
     .gap(tokens::SPACE_2)
-    .padding(Sides::xy(tokens::SPACE_3, 0.0))
-    .height(Size::Fixed(40.0))
+    .padding(Sides::xy(tokens::SPACE_2, 0.0))
+    .height(Size::Fixed(32.0))
     .align(Align::Center)
     .focusable();
 

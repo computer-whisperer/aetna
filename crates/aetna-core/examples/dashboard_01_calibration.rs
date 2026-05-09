@@ -124,8 +124,8 @@ fn side_item(icon_name: &'static str, label: &'static str, selected: bool) -> El
     })
     .metrics_role(MetricsRole::ListItem)
     .gap(tokens::SPACE_2)
-    .padding(Sides::xy(tokens::SPACE_3, 0.0))
-    .height(Size::Fixed(40.0))
+    .padding(Sides::xy(tokens::SPACE_2, 0.0))
+    .height(Size::Fixed(32.0))
     .align(Align::Center)
     .focusable();
 
@@ -204,7 +204,7 @@ fn dashboard_header() -> El {
         icon_button("bell").ghost(),
     ])
     .key("metric:header")
-    .gap(tokens::SPACE_2)
+    .gap(tokens::SPACE_3)
     .height(Size::Fixed(56.0))
     .padding(Sides::xy(tokens::SPACE_4, 0.0))
     .align(Align::Center)
@@ -251,7 +251,9 @@ fn metric_card(
         .align(Align::Center),
         value,
         text(note).caption().ellipsis().width(Size::Fill(1.0)),
-    ])])
+    ])
+    .padding(tokens::SPACE_4)
+    .gap(tokens::SPACE_2)])
     .key(if title == "Total Revenue" {
         "metric:kpi.card"
     } else {
@@ -265,11 +267,19 @@ fn chart_card() -> El {
         card_header([
             card_title("Visitors for the last 6 months"),
             card_description("Total visitors by channel."),
-        ]),
+        ])
+        .padding(tokens::SPACE_4),
         card_content([row(chart_bars())
             .gap(2.0)
-            .height(Size::Fixed(150.0))
-            .align(Align::End)]),
+            .height(Size::Fill(1.0))
+            .align(Align::End)])
+        .padding(Sides {
+            left: tokens::SPACE_4,
+            right: tokens::SPACE_4,
+            top: 0.0,
+            bottom: tokens::SPACE_4,
+        })
+        .height(Size::Fill(1.0)),
     ])
     .key("metric:chart.card")
     .width(Size::Fill(1.0))
@@ -303,14 +313,21 @@ fn sales_card() -> El {
         card_header([
             card_title("Recent Sales"),
             card_description("You made 265 sales this month."),
-        ]),
+        ])
+        .padding(tokens::SPACE_4),
         card_content([
             sale_row("OM", "Olivia Martin", "olivia@example.com", "+$1,999.00"),
             sale_row("JL", "Jackson Lee", "jackson@example.com", "+$39.00"),
             sale_row("IN", "Isabella Nguyen", "isabella@example.com", "+$299.00"),
             sale_row("WK", "William Kim", "will@example.com", "+$99.00"),
         ])
-        .gap(tokens::SPACE_2),
+        .gap(tokens::SPACE_2)
+        .padding(Sides {
+            left: tokens::SPACE_4,
+            right: tokens::SPACE_4,
+            top: 0.0,
+            bottom: tokens::SPACE_4,
+        }),
     ])
     .key("metric:sales.card")
     .width(Size::Fixed(330.0))
@@ -341,7 +358,7 @@ fn sale_row(
 
 fn documents_card() -> El {
     card([
-        card_header([card_title("Documents")]),
+        card_header([card_title("Documents")]).padding(tokens::SPACE_4),
         card_content([scroll([table([
             table_header([table_row([
                 table_head("").width(Size::Fixed(35.0)),
@@ -353,6 +370,7 @@ fn documents_card() -> El {
                 table_head("Reviewer").width(Size::Fixed(128.0)),
                 table_head("").width(Size::Fixed(32.0)),
             ])
+            .padding(Sides::xy(tokens::SPACE_4, 0.0))
             .key("metric:table.header")]),
             divider(),
             table_body([
@@ -408,6 +426,7 @@ fn document_row(
         table_cell(text(reviewer).muted()).width(Size::Fixed(128.0)),
         table_action_cell(),
     ])
+    .padding(Sides::xy(tokens::SPACE_4, 0.0))
     .key(if header == "Cover page" {
         "metric:table.row"
     } else {
