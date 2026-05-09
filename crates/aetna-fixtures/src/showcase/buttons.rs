@@ -147,7 +147,8 @@ pub fn view(state: &State) -> El {
         ),
     ])
     .gap(tokens::SPACE_4)
-    .align(Align::Start)])
+    .align(Align::Start)
+    .padding(Sides::xy(tokens::RING_WIDTH, 0.0))])
     .height(Size::Fill(1.0))
 }
 

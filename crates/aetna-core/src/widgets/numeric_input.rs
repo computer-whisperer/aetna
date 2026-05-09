@@ -168,10 +168,15 @@ pub fn numeric_input(
     let field_key = format!("{key}:field");
     let field = text_input_with(value, selection, &field_key, text_opts).width(Size::Fill(1.0));
 
+    // RING_WIDTH gap: each of `dec`, `field`, and `inc` is independently
+    // focusable, so a literal-zero gap means each focusable's right
+    // ring band gets painted over by the next sibling on the row.
+    // Two pixels of separation keeps the controls visually joined
+    // while leaving the ring uncut.
     row([dec, field, inc])
         .at_loc(caller)
         .key(key.to_string())
-        .gap(0.0)
+        .gap(tokens::RING_WIDTH)
         .align(Align::Center)
         .height(Size::Fixed(tokens::CONTROL_HEIGHT))
 }
