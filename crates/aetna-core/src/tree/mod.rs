@@ -40,7 +40,7 @@ mod visual_modifiers;
 
 pub use color::Color;
 pub use constructors::{
-    column, divider, hard_break, image, row, scroll, spacer, stack, surface, text_runs,
+    column, divider, hard_break, image, row, scroll, spacer, stack, surface, text_runs, vector,
     virtual_list, virtual_list_dyn,
 };
 pub use geometry::{Rect, Sides};

@@ -86,6 +86,7 @@ pub fn shader_manifest(ops: &[DrawOp]) -> String {
                 DrawOp::Icon { .. } => {}
                 DrawOp::Image { .. } => {} // bound to a per-image texture, not a stock shader
                 DrawOp::AppTexture { .. } => {} // bound to an app-owned texture, not a stock shader
+                DrawOp::Vector { .. } => {} // bound to the icon MSDF atlas, not a stock shader
                 DrawOp::BackdropSnapshot => {}
             }
         }
@@ -267,6 +268,28 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                     rect.y,
                     rect.w,
                     rect.h,
+                );
+                if let Some(sci) = scissor {
+                    write_scissor(&mut s, *sci);
+                }
+                s.push('\n');
+            }
+            DrawOp::Vector {
+                id,
+                rect,
+                scissor,
+                asset,
+            } => {
+                let [_, _, vw, vh] = asset.view_box;
+                let _ = write!(
+                    s,
+                    "Vector hash={:016x} rect=({:.0},{:.0},{:.0},{:.0}) id={id} view_box=({vw}x{vh}) paths={}",
+                    asset.content_hash(),
+                    rect.x,
+                    rect.y,
+                    rect.w,
+                    rect.h,
+                    asset.paths.len(),
                 );
                 if let Some(sci) = scissor {
                     write_scissor(&mut s, *sci);

@@ -139,6 +139,17 @@ pub enum DrawOp {
         texture: crate::surface::AppTexture,
         alpha: crate::surface::SurfaceAlpha,
     },
+    /// An app-supplied vector asset rasterised through the MSDF atlas
+    /// path. The backend rasterises the asset once per unique
+    /// [`crate::vector::VectorAsset::content_hash`] and samples the
+    /// cached MSDF across `rect` for any size. SVG bundle output emits
+    /// a placeholder rect labelled with the asset's hash.
+    Vector {
+        id: String,
+        rect: Rect,
+        scissor: Option<Rect>,
+        asset: std::sync::Arc<crate::vector::VectorAsset>,
+    },
     /// Mid-frame snapshot of the current target into a sampled texture,
     /// scheduled before any backdrop-sampling pass.
     BackdropSnapshot,
@@ -159,7 +170,8 @@ impl DrawOp {
             | DrawOp::AttributedText { id, .. }
             | DrawOp::Icon { id, .. }
             | DrawOp::Image { id, .. }
-            | DrawOp::AppTexture { id, .. } => id,
+            | DrawOp::AppTexture { id, .. }
+            | DrawOp::Vector { id, .. } => id,
             DrawOp::BackdropSnapshot => "<backdrop-snapshot>",
         }
     }
@@ -168,7 +180,10 @@ impl DrawOp {
             DrawOp::Quad { shader, .. }
             | DrawOp::GlyphRun { shader, .. }
             | DrawOp::AttributedText { shader, .. } => Some(shader),
-            DrawOp::Icon { .. } | DrawOp::Image { .. } | DrawOp::AppTexture { .. } => None,
+            DrawOp::Icon { .. }
+            | DrawOp::Image { .. }
+            | DrawOp::AppTexture { .. }
+            | DrawOp::Vector { .. } => None,
             DrawOp::BackdropSnapshot => None,
         }
     }
@@ -179,7 +194,8 @@ impl DrawOp {
             | DrawOp::AttributedText { scissor, .. }
             | DrawOp::Icon { scissor, .. }
             | DrawOp::Image { scissor, .. }
-            | DrawOp::AppTexture { scissor, .. } => *scissor,
+            | DrawOp::AppTexture { scissor, .. }
+            | DrawOp::Vector { scissor, .. } => *scissor,
             DrawOp::BackdropSnapshot => None,
         }
     }

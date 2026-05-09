@@ -139,8 +139,50 @@ fn emit_op(s: &mut String, op: &DrawOp) {
         DrawOp::AppTexture {
             id, rect, texture, ..
         } => emit_surface_placeholder(s, id, *rect, texture),
+        DrawOp::Vector {
+            id, rect, asset, ..
+        } => emit_vector_placeholder(s, id, *rect, asset),
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
+}
+
+/// Placeholder rect labelled with the vector asset's content hash and
+/// path count. The real tessellated geometry would emit far more SVG
+/// than the bundle is meant to carry; the placeholder lets inspection
+/// tooling see *where* a vector widget composites without rasterising
+/// it. (A future improvement could emit the actual `<path>` elements
+/// for true round-trip fidelity, since `VectorPath`'s data shape maps
+/// directly to SVG path commands.)
+fn emit_vector_placeholder(
+    s: &mut String,
+    id: &str,
+    rect: Rect,
+    asset: &crate::vector::VectorAsset,
+) {
+    let label = format!(
+        "Vector#{:08x} {} path{}",
+        asset.content_hash() as u32,
+        asset.paths.len(),
+        if asset.paths.len() == 1 { "" } else { "s" },
+    );
+    let _ = writeln!(
+        s,
+        r##"<rect data-node="{}" data-shader="stock::vector" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="#181818" stroke="#999" stroke-width="1" stroke-dasharray="4 2" />"##,
+        esc(id),
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+    );
+    let cx = rect.x + rect.w * 0.5;
+    let cy = rect.y + rect.h * 0.5;
+    let _ = writeln!(
+        s,
+        r##"<text x="{:.2}" y="{:.2}" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#bbb">{}</text>"##,
+        cx,
+        cy,
+        esc(&label),
+    );
 }
 
 /// Placeholder rect labelled with the image's content hash. The real

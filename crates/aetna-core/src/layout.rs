@@ -277,6 +277,7 @@ fn role_token(k: &Kind) -> &'static str {
         Kind::HardBreak => "hard_break",
         Kind::Image => "image",
         Kind::Surface => "surface",
+        Kind::Vector => "vector",
         Kind::Custom(name) => name,
     }
 }

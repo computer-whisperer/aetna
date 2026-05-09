@@ -51,9 +51,12 @@ pub use crate::tree::{
     Align, Axis, Color, El, FontFamily, FontWeight, HoverAlpha, IconName, InteractionState,
     Justify, Kind, Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole,
     TextWrap, column, divider, hard_break, image, row, scroll, spacer, stack, surface, text_runs,
-    virtual_list, virtual_list_dyn,
+    vector, virtual_list, virtual_list_dyn,
 };
-pub use crate::vector::IconMaterial;
+pub use crate::vector::{
+    IconMaterial, PathBuilder, VectorAsset, VectorColor, VectorFill, VectorFillRule,
+    VectorLineCap, VectorLineJoin, VectorPath, VectorSegment, VectorStroke,
+};
 pub use crate::widgets::accordion::{
     self, AccordionAction, accordion, accordion_content, accordion_item, accordion_item_key,
     accordion_separator, accordion_trigger, accordion_trigger_with_icon,

@@ -82,6 +82,7 @@ pub fn resolve_palette(ops: &mut [DrawOp], palette: &Palette) {
                 }
             }
             DrawOp::AppTexture { .. } => {}
+            DrawOp::Vector { .. } => {}
             DrawOp::BackdropSnapshot => {}
         }
     }
@@ -557,6 +558,20 @@ fn push_node(
             scissor,
             texture: tex.clone(),
             alpha: n.surface_alpha,
+        });
+    }
+
+    if let Some(asset) = &n.vector_source {
+        let inner = inner_painted_rect.inset(n.padding);
+        let scissor = match own_scissor {
+            Some(s) => s.intersect(inner),
+            None => Some(inner),
+        };
+        out.push(DrawOp::Vector {
+            id: n.computed_id.clone(),
+            rect: inner,
+            scissor,
+            asset: asset.clone(),
         });
     }
 
@@ -1920,6 +1935,69 @@ mod tests {
         let s = scissor.expect("surface op carries a scissor");
         assert!((s.w - 200.0).abs() < 1e-3, "scissor.w = {}", s.w);
         assert_eq!(*alpha, crate::surface::SurfaceAlpha::Opaque);
+    }
+
+    #[test]
+    fn vector_emits_draw_op_carrying_asset() {
+        use crate::vector::{PathBuilder, VectorAsset};
+        let curve = PathBuilder::new()
+            .move_to(0.0, 0.0)
+            .cubic_to(20.0, 0.0, 0.0, 60.0, 20.0, 60.0)
+            .stroke_solid(Color::rgb(80, 200, 240), 2.0)
+            .build();
+        let asset = VectorAsset::from_paths([0.0, 0.0, 20.0, 60.0], vec![curve]);
+        let expected_hash = asset.content_hash();
+        let mut root = crate::row([crate::tree::vector(asset)
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(120.0))]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 400.0));
+        let ops = draw_ops(&root, &state);
+        let op = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::Vector { .. }))
+            .expect("Kind::Vector emits a DrawOp::Vector");
+        let DrawOp::Vector {
+            rect,
+            scissor,
+            asset,
+            ..
+        } = op
+        else {
+            unreachable!()
+        };
+        // Widget's resolved rect drives paint, not the asset's view box.
+        assert!((rect.w - 40.0).abs() < 1e-3, "rect.w = {}", rect.w);
+        assert!((rect.h - 120.0).abs() < 1e-3, "rect.h = {}", rect.h);
+        // Auto-clip applies.
+        let s = scissor.expect("vector op carries a scissor");
+        assert!((s.w - 40.0).abs() < 1e-3, "scissor.w = {}", s.w);
+        // Content hash round-trips through Arc into the op.
+        assert_eq!(asset.content_hash(), expected_hash);
+        // The asset's first segment is preserved (sanity-check that the
+        // PathBuilder fed through correctly).
+        let first_seg = asset.paths[0].segments.first().copied();
+        assert_eq!(
+            first_seg,
+            Some(crate::vector::VectorSegment::MoveTo([0.0, 0.0]))
+        );
+    }
+
+    #[test]
+    fn vector_asset_content_hash_is_stable_and_distinguishing() {
+        use crate::vector::{PathBuilder, VectorAsset};
+        let make = |sx: f32| {
+            let p = PathBuilder::new()
+                .move_to(0.0, 0.0)
+                .line_to(sx, 1.0)
+                .stroke_solid(Color::rgb(0, 0, 0), 1.0)
+                .build();
+            VectorAsset::from_paths([0.0, 0.0, 10.0, 10.0], vec![p])
+        };
+        // Same inputs → same hash, across repeated builds.
+        assert_eq!(make(1.0).content_hash(), make(1.0).content_hash());
+        // Different geometry → different hash.
+        assert_ne!(make(1.0).content_hash(), make(2.0).content_hash());
     }
 
     #[test]

@@ -281,6 +281,53 @@ pub fn image(img: impl Into<Image>) -> El {
     El::new(Kind::Image).at_loc(Location::caller()).image(img)
 }
 
+/// An app-supplied vector asset rasterised once into the MSDF atlas
+/// and sampled at any size. Companion to [`crate::tree::icon`] for
+/// content that doesn't fit icon conventions: arbitrary-aspect
+/// bounding boxes, no theme-color rules, programmatic construction
+/// each frame. Pairs with [`crate::vector::PathBuilder`] for ergonomic
+/// path construction.
+///
+/// # Sizing
+///
+/// The default size matches the asset's view-box dimensions in logical
+/// pixels. Set [`El::width`] / [`El::height`] / [`El::fill_size`] to
+/// override; the MSDF samples across the resolved rect, so the asset
+/// stays sharp at any scale (subject to atlas pixel budget — see
+/// [`crate::vector::VectorAsset::content_hash`] for the cache shape).
+///
+/// # Caching
+///
+/// The asset's [`VectorAsset::content_hash`](crate::vector::VectorAsset::content_hash)
+/// is the atlas key — apps that build the same shape twice (two
+/// commits sharing a merge connector geometry, two flowchart edges
+/// with the same arc) share one MSDF rasterisation. Apps with
+/// per-frame-unique geometry get one rasterisation per unique shape
+/// per atlas eviction cycle.
+///
+/// ```ignore
+/// use aetna_core::prelude::*;
+/// use aetna_core::tree::Color;
+///
+/// let curve = PathBuilder::new()
+///     .move_to(0.0, 0.0)
+///     .cubic_to(20.0, 0.0, 0.0, 60.0, 20.0, 60.0)
+///     .stroke_solid(Color::rgb(80, 200, 240), 2.0)
+///     .stroke_line_cap(VectorLineCap::Round)
+///     .build();
+/// let asset = VectorAsset::from_paths([0.0, 0.0, 20.0, 60.0], vec![curve]);
+/// let _ = vector(asset);
+/// ```
+#[track_caller]
+pub fn vector(asset: crate::vector::VectorAsset) -> El {
+    let [_, _, vw, vh] = asset.view_box;
+    El::new(Kind::Vector)
+        .at_loc(Location::caller())
+        .width(Size::Fixed(vw.max(0.0)))
+        .height(Size::Fixed(vh.max(0.0)))
+        .vector_source(std::sync::Arc::new(asset))
+}
+
 /// An app-owned-texture surface. Aetna composites the texture into
 /// the paint stream at the El's resolved rect — no upload, no per-frame
 /// copy. The default size matches the texture's pixel dimensions; set

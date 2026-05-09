@@ -167,6 +167,11 @@ pub enum PaintItem {
     /// `SurfacePaint`-equivalent storage. Produced by the backend's
     /// surface recorder from a [`crate::ir::DrawOp::AppTexture`].
     AppTexture(usize),
+    /// One app-supplied vector draw. Indexes into the backend's
+    /// vector storage (typically the icon MSDF atlas, since the
+    /// rasterised content goes through the same pipeline). Produced
+    /// from a [`crate::ir::DrawOp::Vector`].
+    Vector(usize),
     BackdropSnapshot,
 }
 

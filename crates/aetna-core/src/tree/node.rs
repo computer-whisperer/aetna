@@ -313,6 +313,14 @@ pub struct El {
     /// Defaults to [`crate::surface::SurfaceAlpha::Premultiplied`].
     pub surface_alpha: crate::surface::SurfaceAlpha,
 
+    /// Vector asset for [`Kind::Vector`] elements. Set via
+    /// [`Self::vector_source`] (typically through the
+    /// [`crate::tree::vector`] builder). The asset's view box
+    /// determines the natural aspect ratio; the rasterised MSDF is
+    /// sampled across the resolved rect, so the rendered size is
+    /// independent of the source view-box dimensions.
+    pub vector_source: Option<std::sync::Arc<crate::vector::VectorAsset>>,
+
     pub children: Vec<El>,
 
     /// Paint-time alpha multiplier in `[0, 1]`. Default `1.0`. Multiplies

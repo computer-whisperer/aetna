@@ -32,6 +32,21 @@ pub struct VectorAsset {
 }
 
 impl VectorAsset {
+    /// Build a [`VectorAsset`] from a list of paths and an explicit view
+    /// box, without going through SVG parsing. The companion to
+    /// [`PathBuilder`] for apps that compose vector content
+    /// programmatically (commit-graph curves, Gantt connectors, custom
+    /// chart marks). Equivalent to setting the public fields directly,
+    /// but documents the construction site and keeps the gradient table
+    /// empty by default.
+    pub fn from_paths(view_box: [f32; 4], paths: Vec<VectorPath>) -> Self {
+        Self {
+            view_box,
+            paths,
+            gradients: Vec::new(),
+        }
+    }
+
     /// Whether any path's fill or stroke uses a gradient. Renderers that
     /// short-cut monochromatic icons through a coverage-only path (e.g.
     /// MSDF) need to detect this and route to a colour-aware path.
@@ -44,6 +59,353 @@ impl VectorAsset {
                     .map(|s| matches!(s.color, VectorColor::Gradient(_)))
                     .unwrap_or(false)
         })
+    }
+
+    /// Stable content-hash used as a cache key in MSDF / mesh atlases.
+    /// Two assets with identical view box, paths, fills, strokes, and
+    /// gradients hash to the same value — backends dedupe rasterised
+    /// MSDF / tessellated mesh entries on this so an app that builds
+    /// the same curve shape twice (e.g. two commits sharing a merge
+    /// connector geometry) shares one atlas slot.
+    ///
+    /// Floats hash via [`f32::to_bits`] — bitwise-equal-but-arithmetically-
+    /// equal cases (`-0.0` vs `0.0`, `NaN` payloads) are treated as
+    /// distinct, which matches what the atlas cache should do anyway.
+    pub fn content_hash(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hasher;
+        let mut h = DefaultHasher::new();
+        hash_view_box(&mut h, self.view_box);
+        h.write_usize(self.paths.len());
+        for path in &self.paths {
+            hash_path(&mut h, path);
+        }
+        h.write_usize(self.gradients.len());
+        for grad in &self.gradients {
+            hash_gradient(&mut h, grad);
+        }
+        h.finish()
+    }
+}
+
+fn hash_view_box(h: &mut impl std::hash::Hasher, vb: [f32; 4]) {
+    for v in vb {
+        h.write_u32(v.to_bits());
+    }
+}
+
+fn hash_path(h: &mut impl std::hash::Hasher, path: &VectorPath) {
+    h.write_usize(path.segments.len());
+    for seg in &path.segments {
+        hash_segment(h, seg);
+    }
+    match path.fill {
+        Some(f) => {
+            h.write_u8(1);
+            hash_fill(h, f);
+        }
+        None => h.write_u8(0),
+    }
+    match path.stroke {
+        Some(s) => {
+            h.write_u8(1);
+            hash_stroke(h, s);
+        }
+        None => h.write_u8(0),
+    }
+}
+
+fn hash_segment(h: &mut impl std::hash::Hasher, seg: &VectorSegment) {
+    match *seg {
+        VectorSegment::MoveTo(p) => {
+            h.write_u8(0);
+            hash_pt(h, p);
+        }
+        VectorSegment::LineTo(p) => {
+            h.write_u8(1);
+            hash_pt(h, p);
+        }
+        VectorSegment::QuadTo(c, p) => {
+            h.write_u8(2);
+            hash_pt(h, c);
+            hash_pt(h, p);
+        }
+        VectorSegment::CubicTo(c1, c2, p) => {
+            h.write_u8(3);
+            hash_pt(h, c1);
+            hash_pt(h, c2);
+            hash_pt(h, p);
+        }
+        VectorSegment::Close => h.write_u8(4),
+    }
+}
+
+fn hash_pt(h: &mut impl std::hash::Hasher, p: [f32; 2]) {
+    h.write_u32(p[0].to_bits());
+    h.write_u32(p[1].to_bits());
+}
+
+fn hash_fill(h: &mut impl std::hash::Hasher, f: VectorFill) {
+    hash_color(h, f.color);
+    h.write_u32(f.opacity.to_bits());
+    h.write_u8(match f.rule {
+        VectorFillRule::NonZero => 0,
+        VectorFillRule::EvenOdd => 1,
+    });
+}
+
+fn hash_stroke(h: &mut impl std::hash::Hasher, s: VectorStroke) {
+    hash_color(h, s.color);
+    h.write_u32(s.opacity.to_bits());
+    h.write_u32(s.width.to_bits());
+    h.write_u8(match s.line_cap {
+        VectorLineCap::Butt => 0,
+        VectorLineCap::Round => 1,
+        VectorLineCap::Square => 2,
+    });
+    h.write_u8(match s.line_join {
+        VectorLineJoin::Miter => 0,
+        VectorLineJoin::MiterClip => 1,
+        VectorLineJoin::Round => 2,
+        VectorLineJoin::Bevel => 3,
+    });
+    h.write_u32(s.miter_limit.to_bits());
+}
+
+fn hash_color(h: &mut impl std::hash::Hasher, c: VectorColor) {
+    match c {
+        VectorColor::CurrentColor => h.write_u8(0),
+        VectorColor::Solid(col) => {
+            h.write_u8(1);
+            h.write_u8(col.r);
+            h.write_u8(col.g);
+            h.write_u8(col.b);
+            h.write_u8(col.a);
+            // The token name participates in identity — the same rgba
+            // resolved from different tokens (e.g. a hard-coded
+            // overlay vs `tokens::ACCENT`) should still be one cache
+            // entry post-resolve, but the *unresolved* asset hashes
+            // distinctly so palette swaps invalidate cleanly.
+            match col.token {
+                Some(name) => {
+                    h.write_u8(1);
+                    h.write(name.as_bytes());
+                }
+                None => h.write_u8(0),
+            }
+        }
+        VectorColor::Gradient(idx) => {
+            h.write_u8(2);
+            h.write_u32(idx);
+        }
+    }
+}
+
+fn hash_gradient(h: &mut impl std::hash::Hasher, g: &VectorGradient) {
+    match g {
+        VectorGradient::Linear(lin) => {
+            h.write_u8(0);
+            hash_pt(h, lin.p1);
+            hash_pt(h, lin.p2);
+            hash_stops(h, &lin.stops);
+            hash_spread(h, lin.spread);
+            for v in lin.absolute_to_local {
+                h.write_u32(v.to_bits());
+            }
+        }
+        VectorGradient::Radial(rad) => {
+            h.write_u8(1);
+            hash_pt(h, rad.center);
+            h.write_u32(rad.radius.to_bits());
+            hash_pt(h, rad.focal);
+            h.write_u32(rad.focal_radius.to_bits());
+            hash_stops(h, &rad.stops);
+            hash_spread(h, rad.spread);
+            for v in rad.absolute_to_local {
+                h.write_u32(v.to_bits());
+            }
+        }
+    }
+}
+
+fn hash_stops(h: &mut impl std::hash::Hasher, stops: &[VectorGradientStop]) {
+    h.write_usize(stops.len());
+    for stop in stops {
+        h.write_u32(stop.offset.to_bits());
+        for c in stop.color {
+            h.write_u32(c.to_bits());
+        }
+    }
+}
+
+fn hash_spread(h: &mut impl std::hash::Hasher, s: VectorSpreadMethod) {
+    h.write_u8(match s {
+        VectorSpreadMethod::Pad => 0,
+        VectorSpreadMethod::Reflect => 1,
+        VectorSpreadMethod::Repeat => 2,
+    });
+}
+
+/// Imperative builder for a single [`VectorPath`]. Mirrors a subset of
+/// the SVG path command vocabulary (`M`, `L`, `C`, `Q`, `Z`) plus
+/// fill/stroke style. Returns a `VectorPath`; combine multiple via
+/// [`VectorAsset::from_paths`].
+///
+/// ```
+/// use aetna_core::vector::{
+///     PathBuilder, VectorAsset, VectorColor, VectorLineCap,
+/// };
+/// use aetna_core::tree::Color;
+///
+/// let curve = PathBuilder::new()
+///     .move_to(0.0, 0.0)
+///     .cubic_to(20.0, 0.0, 0.0, 60.0, 20.0, 60.0)
+///     .stroke_solid(Color::rgb(80, 200, 240), 2.0)
+///     .stroke_line_cap(VectorLineCap::Round)
+///     .build();
+/// let asset = VectorAsset::from_paths([0.0, 0.0, 20.0, 60.0], vec![curve]);
+/// // `asset.content_hash()` is stable across rebuilds with the same inputs,
+/// // so backends share one atlas slot per unique geometry.
+/// # let _ = asset;
+/// ```
+#[derive(Clone, Debug)]
+pub struct PathBuilder {
+    segments: Vec<VectorSegment>,
+    fill: Option<VectorFill>,
+    stroke: Option<VectorStroke>,
+}
+
+impl Default for PathBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PathBuilder {
+    pub fn new() -> Self {
+        Self {
+            segments: Vec::new(),
+            fill: None,
+            stroke: None,
+        }
+    }
+
+    /// SVG `M x y`.
+    pub fn move_to(mut self, x: f32, y: f32) -> Self {
+        self.segments.push(VectorSegment::MoveTo([x, y]));
+        self
+    }
+
+    /// SVG `L x y`.
+    pub fn line_to(mut self, x: f32, y: f32) -> Self {
+        self.segments.push(VectorSegment::LineTo([x, y]));
+        self
+    }
+
+    /// SVG `Q cx cy x y`.
+    pub fn quad_to(mut self, cx: f32, cy: f32, x: f32, y: f32) -> Self {
+        self.segments
+            .push(VectorSegment::QuadTo([cx, cy], [x, y]));
+        self
+    }
+
+    /// SVG `C c1x c1y c2x c2y x y`.
+    pub fn cubic_to(
+        mut self,
+        c1x: f32,
+        c1y: f32,
+        c2x: f32,
+        c2y: f32,
+        x: f32,
+        y: f32,
+    ) -> Self {
+        self.segments.push(VectorSegment::CubicTo(
+            [c1x, c1y],
+            [c2x, c2y],
+            [x, y],
+        ));
+        self
+    }
+
+    /// SVG `Z` — close the current subpath back to its `MoveTo`.
+    pub fn close(mut self) -> Self {
+        self.segments.push(VectorSegment::Close);
+        self
+    }
+
+    /// Fill with a solid colour at full opacity, non-zero rule. For
+    /// finer control set [`Self::fill`] directly.
+    pub fn fill_solid(mut self, color: crate::tree::Color) -> Self {
+        self.fill = Some(VectorFill {
+            color: VectorColor::Solid(color),
+            opacity: 1.0,
+            rule: VectorFillRule::NonZero,
+        });
+        self
+    }
+
+    /// Set the fill explicitly. `None` clears it.
+    pub fn fill(mut self, fill: Option<VectorFill>) -> Self {
+        self.fill = fill;
+        self
+    }
+
+    /// Stroke with a solid colour and explicit width, with default
+    /// line cap (`Butt`), line join (`Miter`), and miter limit (4.0).
+    /// For finer control chain [`Self::stroke_line_cap`] /
+    /// [`Self::stroke_line_join`] / [`Self::stroke_miter_limit`].
+    pub fn stroke_solid(mut self, color: crate::tree::Color, width: f32) -> Self {
+        self.stroke = Some(VectorStroke {
+            color: VectorColor::Solid(color),
+            opacity: 1.0,
+            width,
+            line_cap: VectorLineCap::Butt,
+            line_join: VectorLineJoin::Miter,
+            miter_limit: 4.0,
+        });
+        self
+    }
+
+    /// Set the stroke explicitly. `None` clears it.
+    pub fn stroke(mut self, stroke: Option<VectorStroke>) -> Self {
+        self.stroke = stroke;
+        self
+    }
+
+    pub fn stroke_line_cap(mut self, cap: VectorLineCap) -> Self {
+        if let Some(s) = self.stroke.as_mut() {
+            s.line_cap = cap;
+        }
+        self
+    }
+
+    pub fn stroke_line_join(mut self, join: VectorLineJoin) -> Self {
+        if let Some(s) = self.stroke.as_mut() {
+            s.line_join = join;
+        }
+        self
+    }
+
+    pub fn stroke_miter_limit(mut self, limit: f32) -> Self {
+        if let Some(s) = self.stroke.as_mut() {
+            s.miter_limit = limit;
+        }
+        self
+    }
+
+    pub fn stroke_opacity(mut self, opacity: f32) -> Self {
+        if let Some(s) = self.stroke.as_mut() {
+            s.opacity = opacity;
+        }
+        self
+    }
+
+    pub fn build(self) -> VectorPath {
+        VectorPath {
+            segments: self.segments,
+            fill: self.fill,
+            stroke: self.stroke,
+        }
     }
 }
 

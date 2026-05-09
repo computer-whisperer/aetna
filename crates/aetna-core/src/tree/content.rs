@@ -171,6 +171,18 @@ impl El {
         self
     }
 
+    /// Attach a vector asset source. Typically set via the
+    /// [`crate::tree::vector`] builder (which also sets
+    /// [`crate::Kind::Vector`]); reach for this method on a stock
+    /// widget El whose Kind you want to keep.
+    pub fn vector_source(
+        mut self,
+        asset: impl Into<std::sync::Arc<crate::vector::VectorAsset>>,
+    ) -> Self {
+        self.vector_source = Some(asset.into());
+        self
+    }
+
     /// Opt this node into the monospace face. Setting this flag also
     /// sets [`El::explicit_mono`] so a subsequent role modifier
     /// (`.caption()` / `.label()` / `.body()` / `.title()` /

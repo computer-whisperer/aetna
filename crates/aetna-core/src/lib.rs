@@ -122,7 +122,7 @@ pub use theme::Theme;
 pub use tree::{
     Align, Axis, Color, El, FontFamily, FontWeight, IconName, InteractionState, Justify, Kind,
     Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column,
-    divider, hard_break, row, scroll, spacer, stack, surface, text_runs, virtual_list,
+    divider, hard_break, row, scroll, spacer, stack, surface, text_runs, vector, virtual_list,
     virtual_list_dyn,
 };
 pub use vector::IconMaterial;
@@ -132,11 +132,11 @@ pub use vector::IconMaterial;
 // app authors aren't tempted to depend on them.
 #[doc(hidden)]
 pub use vector::{
-    VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorGradient, VectorGradientStop,
-    VectorLineCap, VectorLineJoin, VectorLinearGradient, VectorMesh, VectorMeshOptions,
-    VectorMeshRun, VectorMeshVertex, VectorParseError, VectorPath, VectorRadialGradient,
-    VectorSegment, VectorSpreadMethod, VectorStroke, append_vector_asset_mesh, parse_svg_asset,
-    tessellate_vector_asset,
+    PathBuilder, VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorGradient,
+    VectorGradientStop, VectorLineCap, VectorLineJoin, VectorLinearGradient, VectorMesh,
+    VectorMeshOptions, VectorMeshRun, VectorMeshVertex, VectorParseError, VectorPath,
+    VectorRadialGradient, VectorSegment, VectorSpreadMethod, VectorStroke,
+    append_vector_asset_mesh, parse_svg_asset, tessellate_vector_asset,
 };
 
 pub use widgets::accordion::{

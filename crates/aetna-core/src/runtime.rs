@@ -1342,6 +1342,31 @@ impl RunnerCore {
                         self.paint_items.push(PaintItem::AppTexture(index));
                     }
                 }
+                DrawOp::Vector {
+                    rect,
+                    scissor,
+                    asset,
+                    ..
+                } => {
+                    close_run(
+                        &mut self.runs,
+                        &mut self.paint_items,
+                        current,
+                        run_first,
+                        self.quad_scratch.len() as u32,
+                    );
+                    current = None;
+                    run_first = self.quad_scratch.len() as u32;
+
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        continue;
+                    }
+                    let recorded = text.record_vector(*rect, phys, asset, scale_factor);
+                    for index in recorded {
+                        self.paint_items.push(PaintItem::Vector(index));
+                    }
+                }
                 DrawOp::BackdropSnapshot => {
                     close_run(
                         &mut self.runs,
@@ -1615,6 +1640,21 @@ pub trait TextRecorder {
         _scissor: Option<PhysicalScissor>,
         _texture: &crate::surface::AppTexture,
         _alpha: crate::surface::SurfaceAlpha,
+        _scale_factor: f32,
+    ) -> Range<usize> {
+        0..0
+    }
+
+    /// Append an app-supplied vector draw. Backends with vector
+    /// support override this and return one or more indices into their
+    /// vector storage (each lands in `paint_items` as
+    /// `PaintItem::Vector`). The default returns an empty range so
+    /// backends without vector support paint nothing.
+    fn record_vector(
+        &mut self,
+        _rect: Rect,
+        _scissor: Option<PhysicalScissor>,
+        _asset: &crate::vector::VectorAsset,
         _scale_factor: f32,
     ) -> Range<usize> {
         0..0
@@ -3569,6 +3609,7 @@ mod tests {
                 PaintItem::Text(_) => "T",
                 PaintItem::Image(_) => "M",
                 PaintItem::AppTexture(_) => "A",
+                PaintItem::Vector(_) => "V",
                 PaintItem::BackdropSnapshot => "S",
             })
             .collect();
