@@ -203,7 +203,7 @@ fn log_row(role_color: Color, faint_fill: Option<Color>, content: El) -> El {
 column([
     toolbar([toolbar_title(thread.title.clone()), spacer(), badge(thread.state_label)]),
     scroll(thread.items.iter().map(|item| match item {
-        ChatItem::User(text) => log_row(tokens::INFO, Some(tokens::INFO.with_alpha(18)), paragraph(text)),
+        ChatItem::User(text) => log_row(tokens::INFO, Some(tokens::INFO.with_alpha(64)), paragraph(text)),
         ChatItem::Assistant(text) => log_row(tokens::SUCCESS, None, paragraph(text)),
         ChatItem::Reasoning { open, preview, body } => log_row(
             tokens::MUTED_FOREGROUND,
@@ -218,6 +218,7 @@ column([
     }))
     .key(format!("thread-scroll:{}", thread.id))
     .padding(tokens::SPACE_4)
+    .gap(tokens::SPACE_2)
     .height(Size::Fill(1.0)),
     row([
         text_area(&self.compose, &self.selection, "compose").height(Size::Fixed(120.0)),

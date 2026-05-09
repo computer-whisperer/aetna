@@ -793,18 +793,73 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
             apply_min(c, w + c.padding.left + c.padding.right, h)
         }
         Axis::Row => {
-            let mut w: f32 = c.padding.left + c.padding.right;
-            let mut h: f32 = 0.0;
+            // Two-pass measurement so that wrappable Fill children see
+            // the width they will actually be laid out at. Without
+            // this, a `Size::Fill` paragraph inside a row falls through
+            // `inline_paragraph_intrinsic`'s `available_width` fallback
+            // with `None` and reports its unwrapped single-line height
+            // — the row then under-reserves vertical space and the
+            // wrapped text overflows downward into the next row. This
+            // mirrors how `layout_axis` (the runtime pass) already
+            // splits Resolved vs. Fill main-axis sizing.
             let n = c.children.len();
-            for (i, ch) in c.children.iter().enumerate() {
-                let (cw, chh) = intrinsic(ch);
-                w += cw;
-                if i + 1 < n {
-                    w += c.gap;
+            let total_gap = c.gap * n.saturating_sub(1) as f32;
+            let inner_available = available_width
+                .map(|w| (w - c.padding.left - c.padding.right - total_gap).max(0.0));
+
+            // First pass: Fixed and Hug children measure unconstrained.
+            // Fixed-width wrappable children self-resolve their wrap
+            // width via `inline_paragraph_intrinsic`'s own Fixed
+            // fallback; Hug children take their natural width. We only
+            // need to feed an explicit available width to Fill.
+            let mut consumed: f32 = 0.0;
+            let mut fill_weight_total: f32 = 0.0;
+            let mut sizes: Vec<Option<(f32, f32)>> = Vec::with_capacity(n);
+            for ch in &c.children {
+                match ch.width {
+                    Size::Fill(w) => {
+                        fill_weight_total += w.max(0.001);
+                        sizes.push(None);
+                    }
+                    _ => {
+                        let (cw, chh) = intrinsic(ch);
+                        consumed += cw;
+                        sizes.push(Some((cw, chh)));
+                    }
                 }
-                h = h.max(chh);
             }
-            apply_min(c, w, h + c.padding.top + c.padding.bottom)
+
+            // Second pass: distribute the leftover among Fill children
+            // by weight and remeasure each with its share. Without an
+            // available_width hint (row inside a Hug ancestor with no
+            // outer constraint) we fall back to unconstrained
+            // measurement — same lossy shape as the prior code, but
+            // limited to the case where there's genuinely no width to
+            // distribute.
+            let fill_remaining = inner_available.map(|av| (av - consumed).max(0.0));
+            let mut w_total: f32 = c.padding.left + c.padding.right;
+            let mut h_max: f32 = 0.0;
+            for (i, (ch, slot)) in c.children.iter().zip(sizes.into_iter()).enumerate() {
+                let (cw, chh) = match slot {
+                    Some(rc) => rc,
+                    None => match (fill_remaining, fill_weight_total > 0.0) {
+                        (Some(av), true) => {
+                            let weight = match ch.width {
+                                Size::Fill(w) => w.max(0.001),
+                                _ => 1.0,
+                            };
+                            intrinsic_constrained(ch, Some(av * weight / fill_weight_total))
+                        }
+                        _ => intrinsic(ch),
+                    },
+                };
+                w_total += cw;
+                if i + 1 < n {
+                    w_total += c.gap;
+                }
+                h_max = h_max.max(chh);
+            }
+            apply_min(c, w_total, h_max + c.padding.top + c.padding.bottom)
         }
     }
 }
@@ -1801,6 +1856,76 @@ mod tests {
         assert!(
             (bottom_padding - PADDING).abs() < 0.5,
             "expected {PADDING}px between button and panel bottom, got {bottom_padding}",
+        );
+    }
+
+    #[test]
+    fn row_with_fill_paragraph_propagates_height_to_parent_column() {
+        // Regression: the Row branch of `intrinsic_constrained` called
+        // `intrinsic(ch)` unconstrained, so a wrappable Fill child
+        // (paragraph) measured as a single unwrapped line. Two such rows
+        // in a column then got one-line-tall allocations and the second
+        // row's gutter rect overlapped the first row's wrapped text
+        // (chat-port event-log recipe in aetna-core/README.md hit this).
+        //
+        // The fix mirrors `layout_axis`: the Row intrinsic distributes
+        // its available width across Fill children before measuring,
+        // so wrappable Fill children see the width they will actually
+        // be laid out at.
+        const COL_W: f32 = 600.0;
+        const GUTTER_W: f32 = 3.0;
+
+        let long = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, \
+                    sed do eiusmod tempor incididunt ut labore et dolore magna \
+                    aliqua. Ut enim ad minim veniam, quis nostrud exercitation \
+                    ullamco laboris nisi ut aliquip ex ea commodo consequat.";
+
+        let make_row = || {
+            let gutter = El::new(Kind::Custom("gutter"))
+                .width(Size::Fixed(GUTTER_W))
+                .height(Size::Fill(1.0));
+            let body = crate::paragraph(long).width(Size::Fill(1.0));
+            crate::row([gutter, body]).width(Size::Fill(1.0))
+        };
+
+        let mut root = column([make_row(), make_row()])
+            .width(Size::Fixed(COL_W))
+            .height(Size::Hug)
+            .align(Align::Stretch);
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, COL_W, 2000.0));
+
+        let row0_rect = state.rect(&root.children[0].computed_id);
+        let row1_rect = state.rect(&root.children[1].computed_id);
+        let para0_rect = state.rect(&root.children[0].children[1].computed_id);
+
+        // Both the paragraph rect and the row rect must reflect the
+        // wrapped (multi-line) height. The bug pinned them to a single
+        // line (~`TEXT_SM.line_height` = 20px), so the wrapped text
+        // painted outside the row's allocated rect.
+        let line_height = crate::tokens::TEXT_SM.line_height;
+        assert!(
+            para0_rect.h > line_height * 1.5,
+            "paragraph should wrap to multiple lines at ~597px wide; \
+             got h={} (line_height={})",
+            para0_rect.h,
+            line_height,
+        );
+        assert!(
+            row0_rect.h > line_height * 1.5,
+            "row 0 should accommodate the wrapped paragraph height; \
+             got h={} (line_height={})",
+            row0_rect.h,
+            line_height,
+        );
+
+        // Sanity: row 1 sits below row 0's allocated rect, not above it.
+        assert!(
+            row1_rect.y >= row0_rect.y + row0_rect.h - 0.5,
+            "row 1 starts at y={} but row 0 occupies y={}..{}",
+            row1_rect.y,
+            row0_rect.y,
+            row0_rect.y + row0_rect.h,
         );
     }
 }
