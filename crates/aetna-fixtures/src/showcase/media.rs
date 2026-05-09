@@ -270,29 +270,23 @@ fn fit_demo(label: &str, fit: ImageFit) -> El {
 }
 
 fn builtin_icon_tile(name: IconName, tint: Color) -> El {
-    column([
+    card([
         icon(name).icon_size(28.0).text_color(tint),
         text(name.name()).small().muted().center_text(),
     ])
     .gap(tokens::SPACE_1)
     .align(Align::Center)
     .padding(tokens::SPACE_3)
-    .width(Size::Fill(1.0))
-    .fill(tokens::CARD)
-    .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_MD)
 }
 
 fn custom_icon_tile(svg: &LazyLock<SvgIcon>, label: &str, size: f32) -> El {
-    column([
+    card([
         icon((**svg).clone()).icon_size(size),
         text(label.to_string()).small().muted().center_text(),
     ])
     .gap(tokens::SPACE_2)
     .align(Align::Center)
     .padding(tokens::SPACE_3)
-    .width(Size::Fill(1.0))
-    .fill(tokens::CARD)
-    .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_MD)
 }

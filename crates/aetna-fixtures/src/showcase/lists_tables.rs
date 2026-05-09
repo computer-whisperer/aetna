@@ -83,7 +83,7 @@ fn plain_list(state: &State) -> El {
             .stroke(tokens::BORDER)
             .radius(tokens::RADIUS_SM);
             if selected {
-                r = r.fill(tokens::CARD);
+                r = r.selected();
             }
             r
         })

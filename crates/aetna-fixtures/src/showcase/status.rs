@@ -211,29 +211,20 @@ fn section_label(s: &str) -> El {
 }
 
 fn spinner_tile(label: &str, content: El) -> El {
-    column([
+    card([
         stack([content])
             .align(Align::Center)
             .justify(Justify::Center)
             .height(Size::Fixed(48.0)),
         text(label).muted().small(),
     ])
-    .fill(tokens::CARD)
-    .stroke(tokens::BORDER)
-    .radius(tokens::RADIUS_LG)
     .padding(tokens::SPACE_4)
     .gap(tokens::SPACE_2)
     .align(Align::Center)
-    .width(Size::Fill(1.0))
 }
 
 fn skeleton_tile(label: &str, content: El) -> El {
-    column([content, text(label).muted().small()])
-        .fill(tokens::CARD)
-        .stroke(tokens::BORDER)
-        .radius(tokens::RADIUS_LG)
+    card([content, text(label).muted().small()])
         .padding(tokens::SPACE_4)
         .gap(tokens::SPACE_4)
-        .align(Align::Stretch)
-        .width(Size::Fill(1.0))
 }

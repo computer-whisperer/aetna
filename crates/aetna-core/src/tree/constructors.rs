@@ -12,7 +12,12 @@ use super::layout_types::{Align, Axis, Size};
 use super::node::El;
 use super::semantics::Kind;
 
-/// A vertical container.
+/// A vertical container — the layout fallback.
+///
+/// Reach for a named widget first: [`card`] / [`titled_card`] for boxed
+/// surfaces; [`sidebar`] for nav rails; [`toolbar`] for page headers;
+/// [`item`] for object rows; [`form_item`] / [`field_row`] for stacked
+/// fields. `column` is the right answer when no widget shape fits.
 ///
 /// Defaults match CSS flex's `display: flex; flex-direction: column`:
 /// `axis = Column`, `align = Stretch`, `width = Hug`, `height = Hug`,
@@ -27,6 +32,19 @@ use super::semantics::Kind;
 /// Switch `align` to `Center` / `Start` / `End` and children shrink
 /// to their content width so the alignment can position them — the
 /// same as CSS `align-items` non-stretch semantics.
+///
+/// **Smell:** `column([...]).fill(CARD).stroke(BORDER).radius(...)`
+/// reinvents [`card`]; `column([...]).fill(CARD).stroke(BORDER).width(SIDEBAR_WIDTH)`
+/// reinvents [`sidebar`]. Use the named widget — same recipe, the right
+/// surface role, less to forget.
+///
+/// [`card`]: crate::widgets::card::card
+/// [`titled_card`]: crate::widgets::card::titled_card
+/// [`sidebar`]: crate::widgets::sidebar::sidebar
+/// [`toolbar`]: crate::widgets::toolbar::toolbar
+/// [`item`]: crate::widgets::item::item
+/// [`form_item`]: crate::widgets::form::form_item
+/// [`field_row`]: crate::widgets::form::field_row
 #[track_caller]
 pub fn column<I, E>(children: I) -> El
 where
@@ -39,7 +57,15 @@ where
         .axis(Axis::Column)
 }
 
-/// A horizontal container.
+/// A horizontal container — the layout fallback.
+///
+/// Reach for a named widget first: [`item`] for clickable object rows
+/// (recent file, repo, project, person, asset entry — anywhere you'd
+/// otherwise build a focusable row with stacked text and trailing
+/// buttons); [`toolbar`] for page chrome; [`field_row`] for label +
+/// control; [`tabs_list`] for segmented controls; [`breadcrumb_list`] /
+/// [`pagination_content`] for navigation rows. `row` is the right
+/// answer when no widget shape fits.
 ///
 /// Defaults match CSS flex's `display: flex; flex-direction: row`:
 /// `axis = Row`, `align = Stretch`, `width = Hug`, `height = Hug`,
@@ -55,6 +81,18 @@ where
 ///
 /// To space children apart, set `.gap(tokens::SPACE_*)` — opt-in
 /// like CSS.
+///
+/// **Smell:** a focusable, keyed `row([column([t1, t2]), button, button])`
+/// used as a clickable resource entry — that's [`item`], not a hand-rolled
+/// row. The named widget gives you hover, press, focus, the rail, and
+/// the slots (`item_media`, `item_content`, `item_actions`) for free.
+///
+/// [`item`]: crate::widgets::item::item
+/// [`toolbar`]: crate::widgets::toolbar::toolbar
+/// [`field_row`]: crate::widgets::form::field_row
+/// [`tabs_list`]: crate::widgets::tabs::tabs_list
+/// [`breadcrumb_list`]: crate::widgets::breadcrumb::breadcrumb_list
+/// [`pagination_content`]: crate::widgets::pagination::pagination_content
 #[track_caller]
 pub fn row<I, E>(children: I) -> El
 where
@@ -68,6 +106,15 @@ where
 }
 
 /// An overlay stack; children share the parent's rect.
+///
+/// For modals, sheets, popovers, and tooltips reach for the named
+/// widget instead — [`dialog`], [`sheet`], [`popover`], `.tooltip(...)`.
+/// `stack` is the layered-visuals primitive (focus rings, custom
+/// badges painted over content) that those widgets compose against.
+///
+/// [`dialog`]: crate::widgets::dialog::dialog
+/// [`sheet`]: crate::widgets::sheet::sheet
+/// [`popover`]: crate::widgets::popover::popover
 #[track_caller]
 pub fn stack<I, E>(children: I) -> El
 where

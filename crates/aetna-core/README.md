@@ -7,51 +7,10 @@ Backend-agnostic UI primitives for Aetna apps.
 Aetna is shaped around how an LLM authors UI: vocabulary parity with the
 training distribution matters more than configurability, and the *minimum*
 output should be the *correct* output. The catalog below — `card`, `sidebar`,
-`tabs_list`, `dialog`, `toolbar`, etc. — mirrors the shadcn / WAI-ARIA
-shapes models already know. Reach for those before composing primitives.
-
-Start here for application code:
-
-```rust
-use aetna_core::prelude::*;
-
-struct Counter {
-    value: i32,
-}
-
-impl App for Counter {
-    fn build(&self, _cx: &BuildCx) -> El {
-        column([
-            h1(format!("{}", self.value)),
-            row([
-                button("-").key("dec"),
-                button("+").key("inc").primary(),
-            ])
-            .gap(tokens::SPACE_2),
-        ])
-        .gap(tokens::SPACE_3)
-        .padding(tokens::SPACE_4)
-    }
-
-    fn on_event(&mut self, event: UiEvent) {
-        if event.is_click_or_activate("inc") {
-            self.value += 1;
-        } else if event.is_click_or_activate("dec") {
-            self.value -= 1;
-        }
-    }
-}
-```
-
-`key` is the hit-test target *and* the event-routing identifier — same
-string, no separate `.on_click(...)` registration. Hover, press, and focus
-visuals are applied automatically; the author never tags a node "this one is
-hovered."
-
-Use `aetna-winit-wgpu` to open a native desktop window. Use `aetna-wgpu`
-directly only when writing a custom host or embedding Aetna in an existing
-render loop. If the UI mirrors external state, refresh it in
-`App::before_build` — hosts call that hook immediately before each `build`.
+`tabs_list`, `dialog`, `toolbar`, `item`, etc. — mirrors the shadcn /
+WAI-ARIA shapes models already know. **Reach for those before composing
+primitives.** `column` / `row` / `stack` / `button` / `text` are layout
+fallbacks for when no named widget fits, not the canonical app vocabulary.
 
 ## Reach for these first
 
@@ -61,15 +20,15 @@ primitives. The list is short:
 | Intent | Idiomatic call | Avoid |
 |---|---|---|
 | Grouped content (settings card, panel of fields, any "boxed" surface) | `card([card_header([card_title("Title")]), card_content([...])])` or `titled_card("Title", [...])` | `column([...]).fill(CARD).stroke(BORDER).radius(...)` or `column(...).surface_role(SurfaceRole::Panel)` (Panel only sets stroke + shadow — not fill) |
-| Flat sidebar / nav rail | `sidebar([sidebar_header(...), sidebar_group([...])])` plus `sidebar_menu_button_with_icon(...)` for leaf items | custom panel wrappers, or `column(...).surface_role(SurfaceRole::Panel)` for the sidebar surface |
+| Flat sidebar / nav rail | `sidebar([sidebar_header(...), sidebar_group([...])])` plus `sidebar_menu_button_with_icon(...)` for leaf items | `column(...).fill(CARD).stroke(BORDER).width(SIDEBAR_WIDTH)` or `column(...).surface_role(SurfaceRole::Panel)` for the sidebar surface |
 | Sidebar tree / dense resource list | keep `sidebar([...])`, then make one local `tree_row(depth, leading, label, trailing, current)` helper from `row([...]).focusable().height(Size::Fixed(28.0..40.0)).current()` and indent via padding | forcing every branch/file/stash into flat `sidebar_menu_button(...)`, or using card/table rows inside the sidebar |
 | Toolbar / page header row | `toolbar([toolbar_title("Documents"), spacer(), toolbar_group([...])]).padding(Sides::xy(tokens::SPACE_4, tokens::SPACE_2))` as app chrome; use `card_header` only inside a card | wrapping the top toolbar in `card([card_content([toolbar(...)])])`, or ad hoc action rows with inconsistent vertical alignment |
 | Conversation / event-log row | a local `log_row(role_color, faint_fill, content)` helper built from `row([gutter, content])`; use `accordion_item` for collapsible reasoning/tool details | `card([card_header([badge(role)]), card_content([message])])` repeated for every chat message |
 | Tabs / segmented control | `tabs_list(key, &current, options)` + `tabs::apply_event`; for icon/badge/count tabs, use `tabs_list_from_triggers([tab_trigger_content(key, value, [...], selected)])` | manual `row([button, button]).fill(MUTED)` segment, or hand-rolled selected-tab state |
-| Object/action list row (recent repo, file, project, person) | `item([item_media_icon(...), item_content([item_title(...), item_description(...)]), item_actions(...)])` inside `item_group([...])` | `row([...]).key(...).focusable()` with no radius, pointer cursor, or hover surface |
+| Object/action list row (recent repo, file, project, person) | `item([item_media_icon(...), item_content([item_title(...), item_description(...)]), item_actions(...)])` inside `item_group([...])` | `row([column([text, text]), button, button]).key(...)` — every clickable repo/file/project/person row is `item`, not a hand-rolled focusable row |
 | Dialog | `dialog(key, [dialog_header([...]), body, dialog_footer([...])])` | a custom centered overlay card |
 | Edge sheet | `sheet(key, SheetSide::Right, [sheet_header([...]), body])` | a modal manually pinned to the viewport edge |
-| Dropdown / context menu | `dropdown_menu(key, trigger, [dropdown_menu_label(...), dropdown_menu_item_with_shortcut(...)])` | a popover full of hand-rolled rows |
+| Dropdown / context menu | `dropdown_menu(key, trigger, [dropdown_menu_label(...), dropdown_menu_item_with_shortcut(...)])` | a popover full of hand-rolled rows; per-row `[Edit][Delete]` button pairs that should collapse into one trigger |
 | Standard tooltip | `.tooltip("...")` on any element | a manually-positioned popover |
 | Callout / validation summary | `alert([alert_title("Heads up"), alert_description("Details")]).warning()` | a manually styled card with status-colored text |
 | Status indicator (Online, Pending, Failed) | `badge("Online").success()` (also `.warning()` / `.destructive()` / `.info()` / `.muted()`) | `text("● Online").text_color(SUCCESS)` |
@@ -94,7 +53,26 @@ primitives. The list is short:
 | Raster image (logo, screenshot, thumbnail) | `image(Image::from_rgba8(...)).image_fit(ImageFit::Contain)` | reaching for a custom shader |
 | Throwaway notification | accumulate `ToastSpec::success("Saved")` and return them from `App::drain_toasts` | spinning a manual modal with a timer |
 
-Smells that mean an affordance is being missed: `column(...).surface_role(SurfaceRole::Panel)` (use `card()` or `sidebar()` — Panel decorates, it doesn't fill); `card([card_content([toolbar(...)])])` for the top app header — a toolbar is chrome, not a boxed content object; a `row([title, spacer(), action]).fill(MUTED).stroke(BORDER)` *header bar* sitting above a body inside a `card` — that's a hand-rolled `card_header`, lift the row into `card_header([...]).fill(MUTED)` (or split each "header bar over body" block into its own `card([card_header(...), card_content(...)])` and stack them in a column); a `column([row, body]).fill(CARD).stroke(BORDER)` reinventing the card silhouette (call `card([...])`); a keyed/focusable `row` used as a clickable recent file/repository/project/person entry (use `item` so hover, press, focus, media, title, description, and actions are named); a sidebar full of unrelated `card()` sections (use `sidebar_group`, `accordion_item`, or a local dense `tree_row` helper inside `sidebar`); a transcript rendered as one `card()` per message (use an event-log row with a narrow role gutter so long assistant output reads as a stream, not a stack of panels); `field_row` squeezing a repository URL, filesystem path, token, or search query into the right edge of a dialog (use stacked `form_item`); `.gap(0.0)` (already the default — delete it); `.font_size(...).font_weight(...).text_color(...)` on the same node (use a role modifier); wrapping a single child in `row([single])` to apply `.padding(...)` (every `El` has `.padding()` directly); an explicit `.fill(tokens::BACKGROUND)` on the root (the host already paints it); and `IconName::AlertCircle` as a placeholder when the project has its own SVG (use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`).
+## Smells that mean an affordance is being missed
+
+One per line — if any of these appear in your tree, a named widget is the
+right reach instead.
+
+- `column(...).surface_role(SurfaceRole::Panel)` — use `card()` or `sidebar()`. `Panel` decorates, it doesn't fill.
+- `column([row, body]).fill(CARD).stroke(BORDER)` reinventing the card silhouette — call `card([...])` (or `titled_card(...)`).
+- `column(...).fill(CARD).stroke(BORDER).width(SIDEBAR_WIDTH)` reinventing the sidebar surface — call `sidebar([...])`.
+- A keyed/focusable `row([column([t1,t2]), button, button])` used as a clickable file/repo/project/person/asset entry — use `item([item_media, item_content([item_title, item_description]), item_actions([...])])` so hover, press, focus, the rail, and the slots are named.
+- Per-row `[Edit][Delete]` button pairs in a narrow list — collapse to one `dropdown_menu` trigger or a single icon-button kebab; let selection drive editing in the right pane.
+- `card([card_content([toolbar(...)])])` for the top app header — a toolbar is chrome, not a boxed content object.
+- `row([title, spacer(), action]).fill(MUTED).stroke(BORDER)` *header bar* sitting above a body inside a `card` — that's a hand-rolled `card_header`. Lift the row into `card_header([...]).fill(MUTED)`, or split the "header bar over body" block into its own `card([card_header(...), card_content(...)])`.
+- A sidebar full of unrelated `card()` sections — use `sidebar_group`, `accordion_item`, or a local dense `tree_row` helper inside `sidebar`.
+- A transcript rendered as one `card()` per message — use an event-log row with a narrow role gutter so long assistant output reads as a stream.
+- `field_row` squeezing a repository URL, filesystem path, token, or search query into the right edge of a dialog — use stacked `form_item`.
+- `.gap(0.0)` — already the default; delete it.
+- `.font_size(...).font_weight(...).text_color(...)` on the same node — use a role modifier (`.heading()` / `.label()` / `.caption()` / `.muted()`).
+- Wrapping a single child in `row([single])` to apply `.padding(...)` — every `El` has `.padding()` directly.
+- An explicit `.fill(tokens::BACKGROUND)` on the root — the host already paints it.
+- `IconName::AlertCircle` as a placeholder when the project has its own SVG — use `SvgIcon::parse_current_color(include_str!("..."))` and pass it to `icon(...)`.
 
 ## Common app shells
 
@@ -162,6 +140,37 @@ row([
     .width(Size::Fixed(320.0))
     .height(Size::Fill(1.0)),
 ])
+```
+
+A list of selectable objects inside a card (recent repos, project
+imports, search results) — this is `item` + `item_group`, not a
+column of hand-rolled rows:
+
+```ignore
+titled_card(
+    "Recent repositories",
+    [item_group([
+        item([
+            item_media_icon(IconName::Folder),
+            item_content([
+                item_title("aetna"),
+                item_description("/home/christian/workspace/aetna"),
+            ]),
+            item_actions([badge("current").info()]),
+        ])
+        .key("recent:aetna")
+        .current(),
+        item([
+            item_media_icon(IconName::Folder),
+            item_content([
+                item_title("whisper-git"),
+                item_description("/home/christian/workspace/whisper-git"),
+            ]),
+            item_actions([icon(IconName::ChevronRight).muted()]),
+        ])
+        .key("recent:whisper"),
+    ])],
+)
 ```
 
 A **tabbed page**:
@@ -240,6 +249,54 @@ If `sidebar_menu_button_with_icon` doesn't fit your row anatomy (count
 badges, nested sub-groups, custom leading icons), keep the outer
 `sidebar([...])` for the panel surface and compose the rows freely
 inside. Same for `card_content` — anything column-shaped goes there.
+
+## App trait scaffolding
+
+Once the shell is in place, the `App` trait wires it to the runtime.
+`build` returns the `El` tree; `on_event` handles routed events keyed by
+the same string passed to `.key("...")` — same identifier, no separate
+`.on_click(...)` registration. Hover, press, and focus visuals are
+applied automatically; the author never tags a node "this one is
+hovered."
+
+```rust
+use aetna_core::prelude::*;
+
+struct Counter {
+    value: i32,
+}
+
+impl App for Counter {
+    fn build(&self, _cx: &BuildCx) -> El {
+        column([
+            h1(format!("{}", self.value)),
+            row([
+                button("-").key("dec"),
+                button("+").key("inc").primary(),
+            ])
+            .gap(tokens::SPACE_2),
+        ])
+        .gap(tokens::SPACE_3)
+        .padding(tokens::SPACE_4)
+    }
+
+    fn on_event(&mut self, event: UiEvent) {
+        if event.is_click_or_activate("inc") {
+            self.value += 1;
+        } else if event.is_click_or_activate("dec") {
+            self.value -= 1;
+        }
+    }
+}
+```
+
+This is a deliberately tiny example — `column`/`row`/`button` is fine
+for a counter, but for a real app start from the workbench skeletons
+above. Use `aetna-winit-wgpu` to open a native desktop window. Use
+`aetna-wgpu` directly only when writing a custom host or embedding
+Aetna in an existing render loop. If the UI mirrors external state,
+refresh it in `App::before_build` — hosts call that hook immediately
+before each `build`.
 
 ## Surface roles, briefly
 

@@ -68,7 +68,7 @@ pub fn view(state: &State) -> El {
             .stroke(tokens::BORDER)
             .radius(tokens::RADIUS_SM);
             if i == state.selected {
-                r = r.fill(tokens::CARD);
+                r = r.selected();
             }
             r
         })

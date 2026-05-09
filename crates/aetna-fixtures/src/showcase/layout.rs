@@ -68,7 +68,7 @@ pub fn on_event(state: &mut State, event: UiEvent) {
 }
 
 fn split_demo(state: &State) -> El {
-    let sidebar = column([
+    let files = sidebar([
         text("Files").bold(),
         text("README.md").muted(),
         text("Cargo.toml").muted(),
@@ -79,9 +79,6 @@ fn split_demo(state: &State) -> El {
     .gap(tokens::SPACE_2)
     .padding(tokens::SPACE_3)
     .width(Size::Fixed(state.sidebar_w))
-    .height(Size::Fill(1.0))
-    .fill(tokens::CARD)
-    .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_SM);
 
     let body = column([
@@ -109,14 +106,10 @@ fn split_demo(state: &State) -> El {
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0));
 
-    row([
-        sidebar,
-        resize_handle(Axis::Row).key(SPLIT_HANDLE_KEY),
-        body,
-    ])
-    .height(Size::Fixed(220.0))
-    .stroke(tokens::BORDER)
-    .radius(tokens::RADIUS_SM)
+    row([files, resize_handle(Axis::Row).key(SPLIT_HANDLE_KEY), body])
+        .height(Size::Fixed(220.0))
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_SM)
 }
 
 fn virtual_demo() -> El {

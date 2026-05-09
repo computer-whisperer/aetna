@@ -1,27 +1,25 @@
 #![doc = include_str!("../README.md")]
 //!
-//! # End-to-end build
+//! # Rendering smoke test
 //!
-//! The Counter sketch above renders end to end as:
+//! Any `App` builds and renders headlessly through the bundle pipeline:
 //!
 //! ```
 //! use aetna_core::prelude::*;
 //!
-//! struct Counter { value: i32 }
+//! struct Demo;
 //!
-//! impl App for Counter {
+//! impl App for Demo {
 //!     fn build(&self, _cx: &BuildCx) -> El {
-//!         column([
-//!             h1(format!("{}", self.value)),
-//!             row([button("-").key("dec"), button("+").key("inc").primary()])
-//!                 .gap(tokens::SPACE_2),
+//!         card([
+//!             card_header([card_title("Hello")]),
+//!             card_content([text("rendered headlessly")]),
 //!         ])
-//!         .gap(tokens::SPACE_3)
-//!         .padding(tokens::SPACE_4)
+//!         .width(Size::Fixed(320.0))
 //!     }
 //! }
 //!
-//! let app = Counter { value: 0 };
+//! let app = Demo;
 //! let theme = app.theme();
 //! let mut ui = app.build(&BuildCx::new(&theme));
 //! let bundle = render_bundle(&mut ui, Rect::new(0.0, 0.0, 720.0, 400.0), None);

@@ -70,6 +70,15 @@ pub enum FindingKind {
     /// `button(...).ghost()` legitimately produces a Raised node with
     /// no fill.)
     MissingSurfaceFill,
+    /// A `column` / `row` / `stack` whose visual recipe matches a stock
+    /// widget (card, sidebar, …). Reach for the named widget instead —
+    /// it bundles the right surface role, radius, shadow, and content
+    /// padding. The structural smells live in the widget catalog README;
+    /// this lint catches the two highest-confidence signatures
+    /// (`fill=CARD + stroke=BORDER + radius>0` ⇒ `card()`,
+    /// `fill=CARD + stroke=BORDER + width=SIDEBAR_WIDTH` without a Panel
+    /// surface role ⇒ `sidebar()`).
+    ReinventedWidget,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -235,6 +244,70 @@ fn walk(
                      wrap in card() / sidebar() / dialog() for the canonical recipe, or set .fill(tokens::CARD)"
                         .to_string(),
             });
+        }
+
+        // Reinvented widgets: a plain Group whose visual recipe matches
+        // a stock widget. The signatures stay narrow on purpose — both
+        // require the canonical token pair (fill = CARD, stroke =
+        // BORDER) and a structural marker (a non-zero radius for card,
+        // an exact SIDEBAR_WIDTH for sidebar). The real widgets escape
+        // these checks: `card()` returns Kind::Card, and `sidebar()`
+        // sets surface_role(Panel) — so neither stock widget trips its
+        // own lint when the user calls them directly.
+        //
+        // Skip empty Groups — a `column(Vec::<El>::new())` styled with
+        // CARD/BORDER is a pure visual swatch (color sample, divider
+        // stub) that's not pretending to be a card. Card-mimics
+        // always wrap content.
+        if matches!(n.kind, Kind::Group) && !n.children.is_empty() {
+            let card_fill = n
+                .fill
+                .as_ref()
+                .and_then(|c| c.token)
+                .is_some_and(|t| t == "card");
+            let border_stroke = n
+                .stroke
+                .as_ref()
+                .and_then(|c| c.token)
+                .is_some_and(|t| t == "border");
+            if card_fill && border_stroke {
+                let is_panel_surface = matches!(n.surface_role, SurfaceRole::Panel);
+                let sidebar_width = matches!(n.width, Size::Fixed(w) if (w - crate::tokens::SIDEBAR_WIDTH).abs() < 0.5);
+                if !is_panel_surface {
+                    if sidebar_width {
+                        r.findings.push(Finding {
+                            kind: FindingKind::ReinventedWidget,
+                            node_id: n.computed_id.clone(),
+                            source: n.source,
+                            message:
+                                "Group with fill=CARD, stroke=BORDER, width=SIDEBAR_WIDTH reinvents sidebar() — \
+                                 use sidebar([sidebar_header(...), sidebar_group([sidebar_menu([sidebar_menu_button(label, current)])])]) \
+                                 for the panel surface and the canonical row recipe"
+                                    .to_string(),
+                        });
+                    } else {
+                        // Any other Group with the canonical card-tone
+                        // pair is a hand-rolled card-or-aside surface.
+                        // Both the "boxed" case (non-zero radius, fits
+                        // inside another container) and the "side panel"
+                        // case (full-height inspector pane) collapse
+                        // into the same recipe — `card([...])` bundles
+                        // it. Mention sidebar() too, since for full-bleed
+                        // panels with custom widths (e.g. inspector
+                        // rails) the right answer might be sidebar().
+                        r.findings.push(Finding {
+                            kind: FindingKind::ReinventedWidget,
+                            node_id: n.computed_id.clone(),
+                            source: n.source,
+                            message:
+                                "Group with fill=CARD, stroke=BORDER reinvents the panel-surface recipe — \
+                                 use card([card_header([card_title(\"...\")]), card_content([...])]) / titled_card(\"Title\", [...]) for boxed content, \
+                                 or sidebar([...]) for a full-height nav/inspector pane (sidebar() also handles the custom-width case via .width(Size::Fixed(...)))"
+                                    .to_string(),
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -889,6 +962,133 @@ mod tests {
                 .findings
                 .iter()
                 .any(|f| f.kind == FindingKind::MissingSurfaceFill),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn handrolled_card_recipe_reports_reinvented_widget() {
+        // column().fill(CARD).stroke(BORDER).radius(>0) is the canonical
+        // hand-rolled card silhouette.
+        let root = crate::column([crate::text("body")])
+            .fill(crate::tokens::CARD)
+            .stroke(crate::tokens::BORDER)
+            .radius(crate::tokens::RADIUS_LG)
+            .width(Size::Fixed(160.0))
+            .height(Size::Fixed(48.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::ReinventedWidget && f.message.contains("card(")),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn real_card_widget_does_not_report_reinvented_widget() {
+        // card() returns Kind::Card, so the smell signature (which
+        // requires Kind::Group) excludes it by construction.
+        let root = crate::widgets::card::card([crate::text("body")])
+            .width(Size::Fixed(160.0))
+            .height(Size::Fixed(48.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::ReinventedWidget),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn handrolled_sidebar_recipe_reports_reinvented_widget() {
+        // column().fill(CARD).stroke(BORDER).width(SIDEBAR_WIDTH) without
+        // surface_role(Panel) is the volumetric_ui_v2 sidebar pattern.
+        let root = crate::column([crate::text("nav")])
+            .fill(crate::tokens::CARD)
+            .stroke(crate::tokens::BORDER)
+            .width(Size::Fixed(crate::tokens::SIDEBAR_WIDTH))
+            .height(Size::Fill(1.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::ReinventedWidget && f.message.contains("sidebar(")),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn real_sidebar_widget_does_not_report_reinvented_widget() {
+        // sidebar() sets surface_role(Panel), which excludes it from the
+        // smell signature even though its fill+stroke+width match.
+        let root = crate::widgets::sidebar::sidebar([crate::text("nav")]);
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::ReinventedWidget),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn empty_visual_swatch_does_not_report_reinvented_widget() {
+        // A childless Group styled with CARD/BORDER is a color sample,
+        // not a card-mimic. Card-mimics always wrap content; pure
+        // decorative boxes shouldn't trip the lint.
+        let root = crate::column(Vec::<El>::new())
+            .fill(crate::tokens::CARD)
+            .stroke(crate::tokens::BORDER)
+            .radius(crate::tokens::RADIUS_SM)
+            .width(Size::Fixed(42.0))
+            .height(Size::Fixed(34.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::ReinventedWidget),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn plain_column_does_not_report_reinvented_widget() {
+        // A normal column with no surface decoration is fine.
+        let root = crate::column([crate::text("a"), crate::text("b")])
+            .gap(crate::tokens::SPACE_2)
+            .width(Size::Fixed(120.0))
+            .height(Size::Fixed(40.0));
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::ReinventedWidget),
             "{}",
             report.text()
         );

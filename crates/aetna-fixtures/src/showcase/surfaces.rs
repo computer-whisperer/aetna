@@ -173,25 +173,19 @@ fn section_label(s: &str) -> El {
 }
 
 fn surface_role_tile(title: &str, token_name: &str, fill: Color) -> El {
-    column([text(title).label(), text(token_name).caption().muted()])
+    card([text(title).label(), text(token_name).caption().muted()])
         .gap(tokens::SPACE_1)
         .padding(tokens::SPACE_3)
         .fill(fill)
-        .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_MD)
-        .width(Size::Fill(1.0))
         .height(Size::Fixed(76.0))
 }
 
 fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {
-    column([text(label).title(), text(sub).muted().small()])
-        .fill(tokens::CARD)
-        .stroke(tokens::BORDER)
-        .radius(tokens::RADIUS_LG)
+    card([text(label).title(), text(sub).muted().small()])
         .shadow(shadow)
         .padding(tokens::SPACE_4)
         .gap(tokens::SPACE_1)
-        .width(Size::Fill(1.0))
         .height(Size::Fixed(120.0))
 }
 

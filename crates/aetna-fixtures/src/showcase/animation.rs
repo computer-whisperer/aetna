@@ -107,7 +107,7 @@ fn profile_card(i: usize, p: &Profile, on: bool) -> El {
     } else {
         (p.fill_resting, 1.0, 0.0, 0.85)
     };
-    column([
+    card([
         column(Vec::<El>::new())
             .key(format!("animation-swatch-{i}"))
             .fill(fill)
@@ -123,12 +123,7 @@ fn profile_card(i: usize, p: &Profile, on: bool) -> El {
         paragraph(p.blurb).small().muted(),
     ])
     .gap(tokens::SPACE_2)
-    .align(Align::Stretch)
     .padding(tokens::SPACE_3)
-    .fill(tokens::CARD)
-    .stroke(tokens::BORDER)
-    .radius(tokens::RADIUS_LG)
-    .width(Size::Fill(1.0))
 }
 
 #[cfg(test)]

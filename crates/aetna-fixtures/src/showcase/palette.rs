@@ -211,7 +211,7 @@ fn swatch_grid(defs: &'static [TokenDef], palette: &Palette) -> El {
 
 fn chip(token: TokenDef, palette: &Palette) -> El {
     let resolved = palette.resolve(token.color);
-    row([
+    card([row([
         column(Vec::<El>::new())
             .fill(token.color)
             .stroke(tokens::BORDER)
@@ -231,12 +231,10 @@ fn chip(token: TokenDef, palette: &Palette) -> El {
         .height(Size::Hug),
     ])
     .gap(tokens::SPACE_2)
-    .padding(Sides::xy(tokens::SPACE_2, tokens::SPACE_2))
     .align(Align::Center)
-    .fill(tokens::CARD)
-    .stroke(tokens::BORDER)
+    .width(Size::Fill(1.0))])
+    .padding(Sides::xy(tokens::SPACE_2, tokens::SPACE_2))
     .radius(tokens::RADIUS_MD)
-    .width(Size::Fill(1.0))
     .height(Size::Fixed(54.0))
 }
 
@@ -289,16 +287,14 @@ fn widget_preview() -> El {
 }
 
 fn surface_sample(title: &'static str, fill: Color) -> El {
-    column([
+    card([
         text(title).label(),
         text("surface sample").caption().muted(),
     ])
     .gap(tokens::SPACE_1)
     .padding(tokens::SPACE_3)
     .fill(fill)
-    .stroke(tokens::BORDER)
     .radius(tokens::RADIUS_MD)
-    .width(Size::Fill(1.0))
     .height(Size::Fixed(64.0))
 }
 

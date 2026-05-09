@@ -254,7 +254,7 @@ fn editor_tabs_demo(state: &State) -> El {
         },
     );
 
-    let panel = column([
+    let panel = card([
         h2(state.editor_active.clone()),
         text(format!(
             "{} open tab{} — click any tab to switch, × to close, + to open a new one.",
@@ -269,9 +269,6 @@ fn editor_tabs_demo(state: &State) -> El {
     ])
     .gap(tokens::SPACE_2)
     .padding(tokens::SPACE_4)
-    .fill(tokens::CARD)
-    .stroke(tokens::BORDER)
-    .width(Size::Fill(1.0))
     .height(Size::Fixed(140.0));
 
     let strip_and_panel = column([strip, panel]).gap(0.0);
