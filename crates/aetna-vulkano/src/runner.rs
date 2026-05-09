@@ -771,7 +771,6 @@ impl Runner {
         if self.core.paint_items.is_empty() {
             return;
         }
-        self.set_viewport(builder);
         self.draw_items(builder, &self.core.paint_items);
     }
 
@@ -826,7 +825,6 @@ impl Runner {
             self.ensure_snapshot(target_image.clone());
             // Pass A
             self.begin_pass(builder, framebuffer.clone(), Some(clear_color));
-            self.set_viewport(builder);
             self.draw_items(builder, &self.core.paint_items[..idx]);
             self.end_pass(builder);
             // Snapshot copy. vulkano's auto command buffer inserts the
@@ -839,14 +837,12 @@ impl Runner {
                 .expect("aetna-vulkano: copy target → snapshot");
             // Pass B
             self.begin_pass(builder, framebuffer, None);
-            self.set_viewport(builder);
             // Skip the BackdropSnapshot marker itself — it's a boundary
             // only, not a draw.
             self.draw_items(builder, &self.core.paint_items[idx + 1..]);
             self.end_pass(builder);
         } else {
             self.begin_pass(builder, framebuffer, Some(clear_color));
-            self.set_viewport(builder);
             self.draw_items(builder, &self.core.paint_items);
             self.end_pass(builder);
         }
@@ -926,7 +922,6 @@ impl Runner {
             match *item {
                 PaintItem::QuadRun(idx) => {
                     let run = &self.core.runs[idx];
-                    set_scissor(builder, run.scissor, full);
                     let pipeline = self
                         .pipelines
                         .get(&run.handle)
@@ -938,6 +933,8 @@ impl Runner {
                     builder
                         .bind_pipeline_graphics(pipeline.clone())
                         .expect("bind_pipeline_graphics");
+                    self.set_viewport(builder);
+                    set_scissor(builder, run.scissor, full);
                     // Backdrop pipelines expect set 0 = FrameUniforms
                     // and set 1 = (snapshot view + sampler). All
                     // backdrop shaders share a structurally-identical
@@ -982,11 +979,12 @@ impl Runner {
                 }
                 PaintItem::Image(idx) => {
                     let run = self.image_paint.run(idx);
-                    set_scissor(builder, run.scissor, full);
                     let pipeline = self.image_paint.pipeline();
                     builder
                         .bind_pipeline_graphics(pipeline.clone())
                         .expect("bind_pipeline_graphics image");
+                    self.set_viewport(builder);
+                    set_scissor(builder, run.scissor, full);
                     builder
                         .bind_descriptor_sets(
                             PipelineBindPoint::Graphics,
@@ -1015,13 +1013,14 @@ impl Runner {
                 }
                 PaintItem::IconRun(idx) => {
                     let run = self.icon_paint.run(idx);
-                    set_scissor(builder, run.scissor, full);
                     match run.kind {
                         IconRunKind::Tess => {
                             let pipeline = self.icon_paint.tess_pipeline(run.material);
                             builder
                                 .bind_pipeline_graphics(pipeline.clone())
                                 .expect("bind_pipeline_graphics icon tess");
+                            self.set_viewport(builder);
+                            set_scissor(builder, run.scissor, full);
                             builder
                                 .bind_descriptor_sets(
                                     PipelineBindPoint::Graphics,
@@ -1044,6 +1043,8 @@ impl Runner {
                             builder
                                 .bind_pipeline_graphics(pipeline.clone())
                                 .expect("bind_pipeline_graphics icon msdf");
+                            self.set_viewport(builder);
+                            set_scissor(builder, run.scissor, full);
                             builder
                                 .bind_descriptor_sets(
                                     PipelineBindPoint::Graphics,
@@ -1074,11 +1075,12 @@ impl Runner {
                 }
                 PaintItem::Text(idx) => {
                     let run = self.text_paint.run(idx);
-                    set_scissor(builder, run.scissor, full);
                     let text_pipeline = self.text_paint.pipeline_for(run.kind);
                     builder
                         .bind_pipeline_graphics(text_pipeline.clone())
                         .expect("bind_pipeline_graphics text");
+                    self.set_viewport(builder);
+                    set_scissor(builder, run.scissor, full);
                     // Glyph kinds bind set 0 (FrameUniforms) + set 1
                     // (per-page atlas image + sampler). Highlight kind
                     // binds set 0 only — its pipeline carries no set 1.
