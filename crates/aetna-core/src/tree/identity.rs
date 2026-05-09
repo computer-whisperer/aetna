@@ -123,6 +123,34 @@ impl El {
     /// on list rows, hover-only validation icons, and other
     /// "show on interaction" patterns where the surrounding layout
     /// shouldn't shift.
+    ///
+    /// # Beyond alpha
+    ///
+    /// For the other common hover affordances — Material-style lift
+    /// (`translate_y`), button-pop (`scale`), tint shift (`fill`) —
+    /// drive the prop from app code using
+    /// [`crate::BuildCx::is_hovering_within`] plus
+    /// [`Self::animate`]:
+    ///
+    /// ```ignore
+    /// fn build(&self, cx: &BuildCx) -> El {
+    ///     let lifted = cx.is_hovering_within("card");
+    ///     card([...])
+    ///         .key("card")
+    ///         .focusable()
+    ///         .translate(0.0, if lifted { -2.0 } else { 0.0 })
+    ///         .scale(if lifted { 1.02 } else { 1.0 })
+    ///         .animate(Timing::SPRING_QUICK)
+    /// }
+    /// ```
+    ///
+    /// `is_hovering_within` reads the same subtree predicate
+    /// `hover_alpha` consumes (CSS `:hover`-style cascade). `animate`
+    /// eases the prop between the two build values across frames, so
+    /// the transition is smooth without per-channel declarative API.
+    /// `hover_alpha` itself is the alpha-channel shorthand — it skips
+    /// the boolean-to-value conversion and the per-node `animate`
+    /// allocation, since alpha is the dominant hover affordance.
     pub fn hover_alpha(mut self, rest: f32, peak: f32) -> Self {
         self.hover_alpha = Some(HoverAlpha {
             rest: rest.clamp(0.0, 1.0),

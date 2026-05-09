@@ -1894,6 +1894,101 @@ mod tests {
     }
 
     #[test]
+    fn hover_driven_scale_via_is_hovering_within_plus_animate() {
+        // gh#10. The recipe that replaces a declarative
+        // hover_translate / hover_scale / hover_tint API: the build
+        // closure reads `cx.is_hovering_within(key)` and writes the
+        // target prop value; `.animate(...)` eases between build
+        // values across frames. End-to-end check that hover transition
+        // → eased scale settle.
+        use crate::Theme;
+        use crate::anim::Timing;
+        use crate::tree::*;
+
+        // Helper that mirrors the documented recipe — closure over a
+        // hover boolean so the test can drive the rebuild deterministically.
+        let build_card = |hovering: bool| -> El {
+            let scale = if hovering { 1.05 } else { 1.0 };
+            crate::column([crate::stack(
+                [crate::widgets::button::button("Inner").key("inner_btn")],
+            )
+            .key("card")
+            .focusable()
+            .scale(scale)
+            .animate(Timing::SPRING_QUICK)
+            .width(Size::Fixed(120.0))
+            .height(Size::Fixed(60.0))])
+            .padding(20.0)
+        };
+
+        let mut core = RunnerCore::new();
+        // Settled mode so the animate tick snaps each retarget to its
+        // value — lets us verify final-state values without timing.
+        core.ui_state
+            .set_animation_mode(crate::state::AnimationMode::Settled);
+
+        // Frame 1: not hovering → app builds with scale=1.0.
+        let theme = Theme::default();
+        let cx_pre = crate::BuildCx::new(&theme).with_ui_state(core.ui_state());
+        assert!(!cx_pre.is_hovering_within("card"));
+        let mut tree = build_card(cx_pre.is_hovering_within("card"));
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 400.0, 200.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+        core.ui_state
+            .tick_visual_animations(&mut tree, web_time::Instant::now());
+        let card_at_rest = tree.children[0].clone();
+        assert!((card_at_rest.scale - 1.0).abs() < 1e-3);
+
+        // Hover the card. is_hovering_within flips true.
+        let card_rect = core.rect_of_key("card").expect("card rect");
+        core.pointer_moved(card_rect.x + 4.0, card_rect.y + 4.0);
+
+        // Frame 2: app sees hovering=true, rebuilds with scale=1.05.
+        // Settled animate tick snaps scale to the new target.
+        let cx_hot = crate::BuildCx::new(&theme).with_ui_state(core.ui_state());
+        assert!(cx_hot.is_hovering_within("card"));
+        let mut tree = build_card(cx_hot.is_hovering_within("card"));
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 400.0, 200.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        core.snapshot(&tree, &mut t);
+        core.ui_state
+            .tick_visual_animations(&mut tree, web_time::Instant::now());
+        let card_hot = tree.children[0].clone();
+        assert!(
+            (card_hot.scale - 1.05).abs() < 1e-3,
+            "hover should drive card scale to 1.05 via animate; got {}",
+            card_hot.scale,
+        );
+
+        // Unhover → app rebuilds with scale=1.0; settled tick snaps back.
+        core.pointer_moved(0.0, 0.0);
+        let cx_cold = crate::BuildCx::new(&theme).with_ui_state(core.ui_state());
+        assert!(!cx_cold.is_hovering_within("card"));
+        let mut tree = build_card(cx_cold.is_hovering_within("card"));
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 400.0, 200.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        core.snapshot(&tree, &mut t);
+        core.ui_state
+            .tick_visual_animations(&mut tree, web_time::Instant::now());
+        let card_after = tree.children[0].clone();
+        assert!((card_after.scale - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
     fn build_cx_hover_accessors_default_off_without_state() {
         use crate::Theme;
         let theme = Theme::default();

@@ -284,6 +284,26 @@ overlay([
 
 The library handles `Hover` / `Press` / `Focus` envelopes automatically once `focusable` is set: hover lightens, press darkens, focus rings fade in/out. None of these are kind-keyed — they apply to any focusable node.
 
+#### Hover affordances beyond the built-in state
+
+For "show on hover" patterns whose visibility shouldn't shift the surrounding layout — close × on a tab, secondary actions on a list row, hover-only validation icons — reach for `.hover_alpha(rest, peak)`. It binds the element's drawn alpha to the **subtree interaction envelope** (max of hover, focus, and press over the subtree rooted at this node), so a hover-revealed close icon stays visible while the tab is keyboard-focused or while the cursor moves to a focusable descendant. CSS `:hover`-style cascade.
+
+For other hover-driven affordances (lift, scale-pop, tint shift), drive the prop from app code:
+
+```rust
+fn build(&self, cx: &BuildCx) -> El {
+    let lifted = cx.is_hovering_within("card");
+    card([...])
+        .key("card")
+        .focusable()
+        .translate(0.0, if lifted { -2.0 } else { 0.0 })
+        .scale(if lifted { 1.02 } else { 1.0 })
+        .animate(Timing::SPRING_QUICK)
+}
+```
+
+`BuildCx::is_hovering_within(key)` reads the same subtree predicate `hover_alpha` consumes. `.animate()` eases the prop between the two build values across frames, so transitions stay smooth without a per-channel declarative API. For transition-driven side effects (analytics, prefetch, sound), match `UiEventKind::PointerEnter` / `PointerLeave` on the corresponding key in `App::on_event`.
+
 ### 5. Custom shaders & custom layout
 
 The two **escape hatches** documented in `docs/SHADER_VISION.md`:
