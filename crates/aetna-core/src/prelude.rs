@@ -91,6 +91,10 @@ pub use crate::widgets::form::{
     field_row, form, form_control, form_description, form_item, form_label, form_message,
     form_section,
 };
+pub use crate::widgets::item::{
+    self, item, item_actions, item_content, item_description, item_footer, item_group, item_header,
+    item_media, item_media_icon, item_separator, item_title,
+};
 pub use crate::widgets::list::{bullet_list, numbered_list};
 pub use crate::widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use crate::widgets::pagination::{
@@ -122,7 +126,10 @@ pub use crate::widgets::switch::{self, switch};
 pub use crate::widgets::table::{
     self, table, table_body, table_cell, table_head, table_header, table_row,
 };
-pub use crate::widgets::tabs::{self, TabsAction, tab_option_key, tab_trigger, tabs_list};
+pub use crate::widgets::tabs::{
+    self, TabsAction, tab_option_key, tab_trigger, tab_trigger_content, tabs_list,
+    tabs_list_from_triggers,
+};
 pub use crate::widgets::text::{h1, h2, h3, mono, paragraph, text};
 pub use crate::widgets::text_area::{self, text_area};
 pub use crate::widgets::text_input::{

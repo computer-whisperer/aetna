@@ -94,6 +94,7 @@ pub enum Section {
     #[default]
     Counter,
     List,
+    Items,
     Palette,
     Picker,
     Settings,
@@ -116,6 +117,7 @@ impl Section {
         match self {
             Section::Counter => "Counter",
             Section::List => "List",
+            Section::Items => "Items",
             Section::Palette => "Palette",
             Section::Picker => "Picker",
             Section::Settings => "Settings",
@@ -138,6 +140,7 @@ impl Section {
         match self {
             Section::Counter => "nav-counter",
             Section::List => "nav-list",
+            Section::Items => "nav-items",
             Section::Palette => "nav-palette",
             Section::Picker => "nav-picker",
             Section::Settings => "nav-settings",
@@ -156,9 +159,10 @@ impl Section {
         }
     }
 
-    const ALL: [Section; 17] = [
+    const ALL: [Section; 18] = [
         Section::Counter,
         Section::List,
+        Section::Items,
         Section::Palette,
         Section::Picker,
         Section::Settings,
@@ -185,6 +189,18 @@ struct CounterState {
 #[derive(Default)]
 struct ListState {
     selected: Option<usize>,
+}
+
+struct ItemsState {
+    selected: String,
+}
+
+impl Default for ItemsState {
+    fn default() -> Self {
+        Self {
+            selected: "items:row:repo:aetna".into(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -381,6 +397,7 @@ pub struct Showcase {
     theme_choice: ThemeChoice,
     counter: CounterState,
     list: ListState,
+    items: ItemsState,
     palette: PaletteState,
     picker: PickerState,
     forms: FormsState,
@@ -475,6 +492,7 @@ impl App for Showcase {
         match self.section {
             Section::Counter => counter_on_event(&mut self.counter, event),
             Section::List => list_on_event(&mut self.list, event),
+            Section::Items => items_on_event(&mut self.items, event),
             Section::Palette => palette_on_event(&mut self.palette, event),
             Section::Picker => picker_on_event(&mut self.picker, event),
             Section::Settings => {} // static fixture, no events
@@ -563,6 +581,7 @@ fn content(app: &Showcase) -> El {
     let body = match app.section {
         Section::Counter => counter_view(&app.counter),
         Section::List => list_view(&app.list),
+        Section::Items => items_view(&app.items),
         Section::Palette => palette_view(&app.palette),
         Section::Picker => picker_view(&app.picker),
         Section::Settings => settings_view(),
@@ -692,6 +711,123 @@ fn list_on_event(state: &mut ListState, e: UiEvent) {
     {
         state.selected = Some(i);
     }
+}
+
+// ---- Items section ----
+
+fn items_view(state: &ItemsState) -> El {
+    let recent = titled_card(
+        "Recent repositories",
+        [item_group([
+            selectable_showcase_item(
+                state,
+                "items:row:repo:aetna",
+                IconName::Folder,
+                "aetna",
+                "/home/christian/workspace/aetna/aetna.main",
+                badge("current").info(),
+            ),
+            selectable_showcase_item(
+                state,
+                "items:row:repo:whisper",
+                IconName::Folder,
+                "whisper-git",
+                "/home/christian/workspace/whisper-git/aetna-ui",
+                icon(IconName::ChevronRight).muted(),
+            ),
+            selectable_showcase_item(
+                state,
+                "items:row:repo:dotfiles",
+                IconName::Folder,
+                "dotfiles",
+                "/home/christian/workspace/dotfiles",
+                badge("3").warning(),
+            ),
+        ])],
+    );
+
+    let team = titled_card(
+        "Team",
+        [item_group([
+            current_if(
+                item([
+                    item_media([avatar_fallback("Alicia Koch")]),
+                    item_content([
+                        item_title("Alicia Koch"),
+                        item_description("Reviewed the tabs interaction pass"),
+                    ]),
+                    item_actions([button("Assign").ghost().key("items:action:assign-alicia")]),
+                ])
+                .key("items:row:person:alicia"),
+                state.selected == "items:row:person:alicia",
+            ),
+            item_separator(),
+            current_if(
+                item([
+                    item_media([avatar_fallback("Max Leiter")]),
+                    item_content([
+                        item_title("Max Leiter"),
+                        item_description("Waiting on updated screenshots"),
+                    ]),
+                    item_actions([badge("pending").muted()]),
+                ])
+                .key("items:row:person:max"),
+                state.selected == "items:row:person:max",
+            ),
+        ])],
+    );
+
+    column([
+        h2("Items"),
+        paragraph(
+            "Use `item` for object rows with media, title, description, and actions. \
+             Click a row to switch the current treatment; hover and state changes \
+             ease through the standard interactive surface path.",
+        )
+        .muted(),
+        row([recent, team]).gap(tokens::SPACE_4).align(Align::Start),
+    ])
+    .gap(tokens::SPACE_4)
+    .height(Size::Fill(1.0))
+}
+
+fn items_on_event(state: &mut ItemsState, e: UiEvent) {
+    if matches!(e.kind, UiEventKind::Click | UiEventKind::Activate)
+        && let Some(k) = e.route()
+        && k.starts_with("items:row:")
+    {
+        state.selected = k.to_string();
+    }
+}
+
+fn selectable_showcase_item(
+    state: &ItemsState,
+    key: &'static str,
+    source: IconName,
+    title: &'static str,
+    description: &'static str,
+    action: El,
+) -> El {
+    current_if(showcase_item(key, source, title, description, action), state.selected == key)
+}
+
+fn current_if(row: El, current: bool) -> El {
+    if current { row.current() } else { row }
+}
+
+fn showcase_item(
+    key: &'static str,
+    source: IconName,
+    title: &'static str,
+    description: &'static str,
+    action: El,
+) -> El {
+    item([
+        item_media_icon(source),
+        item_content([item_title(title), item_description(description)]),
+        item_actions([action]),
+    ])
+    .key(key)
 }
 
 // ---- Palette section ----

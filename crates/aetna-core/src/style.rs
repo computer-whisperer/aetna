@@ -120,6 +120,14 @@ impl El {
     pub fn selected(mut self) -> Self {
         if text_only_leaf(&self) {
             self.text_color = Some(tokens::PRIMARY);
+        } else if matches!(self.kind, Kind::Custom("item")) {
+            self.style_profile = StyleProfile::Surface;
+            self.surface_role = SurfaceRole::Selected;
+            self.fill = Some(tokens::PRIMARY.with_alpha(18));
+            self.stroke = Some(tokens::PRIMARY.with_alpha(90));
+            self.stroke_width = 1.0;
+            set_content_color(&mut self, tokens::FOREGROUND);
+            set_item_rail(&mut self, tokens::PRIMARY);
         } else {
             match self.style_profile {
                 StyleProfile::TextOnly => {}
@@ -143,6 +151,14 @@ impl El {
         if text_only_leaf(&self) {
             self.text_color = Some(tokens::FOREGROUND);
             self.font_weight = FontWeight::Semibold;
+        } else if matches!(self.kind, Kind::Custom("item")) {
+            self.style_profile = StyleProfile::Surface;
+            self.surface_role = SurfaceRole::Current;
+            self.fill = Some(tokens::ACCENT.with_alpha(24));
+            self.stroke = Some(tokens::BORDER);
+            self.stroke_width = 1.0;
+            set_content_color(&mut self, tokens::FOREGROUND);
+            set_item_rail(&mut self, tokens::PRIMARY);
         } else {
             self.style_profile = StyleProfile::Surface;
             self.surface_role = SurfaceRole::Current;
@@ -346,6 +362,15 @@ fn set_content_color(el: &mut El, color: Color) {
     for child in &mut el.children {
         if child.text.is_some() || child.icon.is_some() {
             child.text_color = Some(color);
+        }
+    }
+}
+
+fn set_item_rail(el: &mut El, color: Color) {
+    for child in &mut el.children {
+        if matches!(child.kind, Kind::Custom("item_rail")) {
+            child.fill = Some(color);
+            child.opacity = 1.0;
         }
     }
 }

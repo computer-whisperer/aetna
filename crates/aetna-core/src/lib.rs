@@ -174,6 +174,10 @@ pub use widgets::form::{
     field_row, form, form_control, form_description, form_item, form_label, form_message,
     form_section,
 };
+pub use widgets::item::{
+    item, item_actions, item_content, item_description, item_footer, item_group, item_header,
+    item_media, item_media_icon, item_separator, item_title,
+};
 pub use widgets::list::{bullet_list, numbered_list};
 pub use widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use widgets::pagination::{
@@ -198,7 +202,10 @@ pub use widgets::skeleton::{skeleton, skeleton_circle};
 pub use widgets::slider::{SliderAction, slider};
 pub use widgets::switch::switch;
 pub use widgets::table::{table, table_body, table_cell, table_head, table_header, table_row};
-pub use widgets::tabs::{TabsAction, tab_option_key, tab_trigger, tabs_list};
+pub use widgets::tabs::{
+    TabsAction, tab_option_key, tab_trigger, tab_trigger_content, tabs_list,
+    tabs_list_from_triggers,
+};
 pub use widgets::text::{h1, h2, h3, mono, paragraph, text};
 pub use widgets::text_area::text_area;
 pub use widgets::text_input::{

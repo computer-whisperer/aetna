@@ -197,6 +197,55 @@ pub fn tab_trigger(
     styled.animate(Timing::SPRING_QUICK)
 }
 
+/// A tab trigger with app-supplied children instead of a plain string
+/// label. Use this for segmented controls whose options need icons,
+/// badges, dirty markers, or other compact metadata while keeping the
+/// same routed-key and active/inactive treatment as [`tab_trigger`].
+///
+/// Pair these triggers with [`tabs_list_from_triggers`] so the row keeps
+/// the stock muted pill container:
+///
+/// ```ignore
+/// tabs_list_from_triggers([
+///     tab_trigger_content("worktree", "main", [text("main").label(), badge("3")], active),
+/// ])
+/// ```
+#[track_caller]
+pub fn tab_trigger_content<I, E>(
+    list_key: &str,
+    value: impl std::fmt::Display,
+    children: I,
+    selected: bool,
+) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    let routed_key = tab_option_key(list_key, &value);
+    let base = El::new(Kind::Custom("tab_trigger"))
+        .at_loc(Location::caller())
+        .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::TabTrigger)
+        .focusable()
+        .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .key(routed_key)
+        .axis(Axis::Row)
+        .children(children)
+        .default_gap(tokens::SPACE_1)
+        .align(Align::Center)
+        .justify(Justify::Center)
+        .default_radius(tokens::RADIUS_SM)
+        .width(Size::Fill(1.0))
+        .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
+        .default_padding(Sides::xy(tokens::SPACE_3, 0.0));
+    let styled = if selected {
+        base.current()
+    } else {
+        base.ghost()
+    };
+    styled.animate(Timing::SPRING_QUICK)
+}
+
 /// A segmented-control row of tab triggers. Visually a muted pill
 /// containing one [`tab_trigger`] per option; the active trigger
 /// surfaces above the muted base.
@@ -241,6 +290,28 @@ where
             tab_trigger(&key, value, label, selected).at_loc(caller)
         })
         .collect();
+    tabs_list_container(caller, triggers)
+}
+
+/// A segmented-control row for triggers that have already been built
+/// with [`tab_trigger`] or [`tab_trigger_content`]. This is the
+/// child-rich variant of [`tabs_list`]: it keeps the stock tab-list
+/// container while letting each option carry icons, badges, or other
+/// compact metadata.
+#[track_caller]
+pub fn tabs_list_from_triggers<I, E>(triggers: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    tabs_list_container(Location::caller(), triggers)
+}
+
+fn tabs_list_container<I, E>(caller: &'static Location<'static>, triggers: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
     El::new(Kind::Custom("tabs_list"))
         .at_loc(caller)
         .metrics_role(MetricsRole::TabList)
@@ -263,6 +334,7 @@ mod tests {
     use crate::hit_test::hit_test_target;
     use crate::layout::layout;
     use crate::state::UiState;
+    use crate::widgets::text::text;
 
     fn click_event(key: &str) -> UiEvent {
         UiEvent {
@@ -305,6 +377,26 @@ mod tests {
         // Active triggers carry the .current() treatment: ACCENT
         // fill, BORDER stroke, and Selected/Current surface role for
         // theme dispatch.
+        assert_eq!(active.fill, Some(tokens::ACCENT));
+        assert_eq!(active.surface_role, SurfaceRole::Current);
+    }
+
+    #[test]
+    fn tab_trigger_content_keeps_tab_treatment_for_rich_children() {
+        let active = tab_trigger_content(
+            "worktree",
+            "main",
+            [text("main").label(), text("3").caption().muted()],
+            true,
+        );
+
+        assert_eq!(active.key.as_deref(), Some("worktree:tab:main"));
+        assert_eq!(active.metrics_role, Some(MetricsRole::TabTrigger));
+        assert_eq!(active.axis, Axis::Row);
+        assert_eq!(active.align, Align::Center);
+        assert_eq!(active.justify, Justify::Center);
+        assert_eq!(active.gap, tokens::SPACE_1);
+        assert_eq!(active.children.len(), 2);
         assert_eq!(active.fill, Some(tokens::ACCENT));
         assert_eq!(active.surface_role, SurfaceRole::Current);
     }
@@ -354,6 +446,21 @@ mod tests {
         assert_ne!(zero.surface_role, SurfaceRole::Current);
         assert_eq!(seven.surface_role, SurfaceRole::Current);
         assert_ne!(fortytwo.surface_role, SurfaceRole::Current);
+    }
+
+    #[test]
+    fn tabs_list_from_triggers_keeps_stock_pill_container() {
+        let list = tabs_list_from_triggers([
+            tab_trigger_content("worktree", "main", [text("main").label()], true),
+            tab_trigger("worktree", "feature", "feature", false),
+        ]);
+
+        assert_eq!(list.key, None);
+        assert_eq!(list.metrics_role, Some(MetricsRole::TabList));
+        assert_eq!(list.axis, Axis::Row);
+        assert_eq!(list.children.len(), 2);
+        assert_eq!(list.fill, Some(tokens::MUTED));
+        assert_eq!(list.stroke, Some(tokens::BORDER));
     }
 
     #[test]
