@@ -29,6 +29,7 @@ pub struct Theme {
     roles: BTreeMap<SurfaceRole, SurfaceTheme>,
     icon_material: IconMaterial,
     font_family: FontFamily,
+    mono_font_family: FontFamily,
 }
 
 impl Theme {
@@ -109,6 +110,21 @@ impl Theme {
         self
     }
 
+    /// The default monospace font family applied to text nodes that
+    /// render as code (`font_mono = true`, `TextRole::Code`) and do
+    /// not set `.mono_font_family(...)` themselves. Independent of
+    /// [`Self::font_family`] — swapping the proportional face leaves
+    /// the code face alone, and vice versa.
+    pub fn mono_font_family(&self) -> FontFamily {
+        self.mono_font_family
+    }
+
+    /// Set the default monospace font family for code-tagged text.
+    pub fn with_mono_font_family(mut self, family: FontFamily) -> Self {
+        self.mono_font_family = family;
+        self
+    }
+
     /// Replace the runtime layout metrics.
     pub fn with_metrics(mut self, metrics: ThemeMetrics) -> Self {
         self.metrics = metrics;
@@ -159,6 +175,7 @@ impl Theme {
     pub(crate) fn apply_metrics(&self, root: &mut crate::El) {
         self.metrics.apply_to_tree(root);
         apply_font_family(root, self.font_family);
+        apply_mono_font_family(root, self.mono_font_family);
     }
 
     /// Shorthand for `self.palette().resolve(c)`. Library code that
@@ -264,6 +281,7 @@ impl Default for Theme {
             roles: BTreeMap::new(),
             icon_material: IconMaterial::Flat,
             font_family: FontFamily::default(),
+            mono_font_family: FontFamily::JetBrainsMono,
         }
     }
 }
@@ -361,6 +379,15 @@ fn apply_font_family(node: &mut crate::El, family: FontFamily) {
     }
 }
 
+fn apply_mono_font_family(node: &mut crate::El, family: FontFamily) {
+    if !node.explicit_mono_font_family {
+        node.mono_font_family = family;
+    }
+    for child in &mut node.children {
+        apply_mono_font_family(child, family);
+    }
+}
+
 fn default_color(uniforms: &mut UniformBlock, key: &'static str, color: Color) {
     uniforms.entry(key).or_insert(UniformValue::Color(color));
 }
@@ -414,5 +441,46 @@ mod tests {
             .apply_metrics(&mut root);
 
         assert_eq!(root.children[0].font_family, FontFamily::Roboto);
+    }
+
+    #[test]
+    fn theme_mono_font_family_applies_to_unset_text_nodes() {
+        let mut root = column([text("code()").code()]);
+        Theme::default().apply_metrics(&mut root);
+
+        // Default theme value is JetBrainsMono — propagated through
+        // the `apply_mono_font_family` walk to every text-bearing node
+        // that didn't pin its own.
+        assert_eq!(
+            root.children[0].mono_font_family,
+            FontFamily::JetBrainsMono
+        );
+    }
+
+    #[test]
+    fn theme_mono_font_family_swap_is_independent_from_proportional() {
+        let mut root = column([text("body"), text("code()").code()]);
+        Theme::default()
+            .with_font_family(FontFamily::Inter)
+            .with_mono_font_family(FontFamily::Roboto)
+            .apply_metrics(&mut root);
+
+        assert_eq!(root.children[0].font_family, FontFamily::Inter);
+        assert_eq!(root.children[1].mono_font_family, FontFamily::Roboto);
+        // Proportional slot stays Inter even on the code node.
+        assert_eq!(root.children[1].font_family, FontFamily::Inter);
+    }
+
+    #[test]
+    fn explicit_mono_font_family_survives_theme_default() {
+        let mut root = column([text("Pinned").code().jetbrains_mono()]);
+        Theme::default()
+            .with_mono_font_family(FontFamily::Roboto)
+            .apply_metrics(&mut root);
+
+        assert_eq!(
+            root.children[0].mono_font_family,
+            FontFamily::JetBrainsMono
+        );
     }
 }

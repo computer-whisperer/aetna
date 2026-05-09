@@ -1173,6 +1173,18 @@ fn font_bytes(family: FontFamily, weight: FontWeight) -> &'static [u8] {
                 &[]
             }
         }
+        FontFamily::JetBrainsMono => {
+            #[cfg(feature = "jetbrains-mono")]
+            {
+                let _ = weight;
+                aetna_fonts::JETBRAINS_MONO_VARIABLE
+            }
+            #[cfg(not(feature = "jetbrains-mono"))]
+            {
+                let _ = weight;
+                &[]
+            }
+        }
     }
 }
 
@@ -1193,6 +1205,7 @@ mod tests {
         assert!(wide > narrow * 2.0, "wide={wide} narrow={narrow}");
     }
 
+    #[cfg(feature = "roboto")]
     #[test]
     fn font_family_changes_proportional_measurement() {
         let roboto = line_width_with_family(

@@ -2,29 +2,35 @@
 //!
 //! This crate is a thin re-exporter: each Cargo feature pulls in a
 //! sibling crate that bundles the matching font family
-//! (`aetna-fonts-roboto`, `aetna-fonts-emoji`, `aetna-fonts-symbols`).
+//! (`aetna-fonts-inter`, `aetna-fonts-jetbrains-mono`, `aetna-fonts-roboto`,
+//! `aetna-fonts-emoji`, `aetna-fonts-symbols`).
 //! Splitting the families across crates keeps every published
 //! `.crate` artifact under crates.io's per-crate upload size limit,
 //! while the `aetna-fonts` API stays the same surface aetna-core (and
 //! application code) consumes.
 //!
-//! The default feature set is generous (Inter + Roboto + emoji + symbols) —
-//! chosen so that LLM output, which freely reaches for arrows, math
-//! operators, dingbats, and box-drawing characters, doesn't render as
-//! tofu (`◻`) out of the box.
+//! The default feature set is generous (Inter + JetBrains Mono + emoji +
+//! symbols) — chosen so that LLM output, which freely reaches for arrows,
+//! math operators, dingbats, and box-drawing characters, doesn't render as
+//! tofu (`◻`) out of the box, and so code samples land on a real
+//! programmer's mono instead of the UI sans.
 //!
 //! # Feature flags
 //!
-//! | feature   | adds                                                  | size (raw)   |
-//! |-----------|-------------------------------------------------------|--------------|
-//! | `inter`   | Inter Variable Roman / Italic                         | ~1.8 MB      |
-//! | `roboto`  | Roboto Regular / Medium / Bold / Italic               | ~1.8 MB      |
-//! | `emoji`   | NotoColorEmoji (CBDT color bitmaps)                   | ~10 MB       |
-//! | `symbols` | NotoSansSymbols2 + NotoSansMath                       | ~2.2 MB      |
+//! | feature          | adds                                                  | size (raw)   |
+//! |------------------|-------------------------------------------------------|--------------|
+//! | `inter`          | Inter Variable Roman / Italic                         | ~1.8 MB      |
+//! | `jetbrains-mono` | JetBrains Mono Variable Roman / Italic (with ligatures) | ~600 KB    |
+//! | `roboto`         | Roboto Regular / Medium / Bold / Italic               | ~1.8 MB      |
+//! | `emoji`          | NotoColorEmoji (CBDT color bitmaps)                   | ~10 MB       |
+//! | `symbols`        | NotoSansSymbols2 + NotoSansMath                       | ~2.2 MB      |
 //!
-//! `default = ["default_fonts"]` and `default_fonts = ["inter", "roboto",
-//! "emoji", "symbols"]`. To skip the bundled fonts entirely (for
-//! example, to ship your own Material Symbols or a brand typeface):
+//! `default = ["default_fonts"]` and `default_fonts = ["inter",
+//! "jetbrains-mono", "emoji", "symbols"]`. Roboto was previously bundled
+//! by default; it is still available behind the `roboto` feature for
+//! consumers that want the Material UI sans. To skip the bundled fonts
+//! entirely (for example, to ship your own Material Symbols or a brand
+//! typeface):
 //!
 //! ```toml
 //! aetna-fonts = { version = "0.2", default-features = false }
@@ -59,6 +65,9 @@ pub use aetna_fonts_roboto::{ROBOTO_BOLD, ROBOTO_ITALIC, ROBOTO_MEDIUM, ROBOTO_R
 #[cfg(feature = "inter")]
 pub use aetna_fonts_inter::{INTER_VARIABLE, INTER_VARIABLE_ITALIC};
 
+#[cfg(feature = "jetbrains-mono")]
+pub use aetna_fonts_jetbrains_mono::{JETBRAINS_MONO_VARIABLE, JETBRAINS_MONO_VARIABLE_ITALIC};
+
 #[cfg(feature = "emoji")]
 pub use aetna_fonts_emoji::NOTO_COLOR_EMOJI;
 
@@ -77,6 +86,10 @@ pub const DEFAULT_FONTS: &[&[u8]] = &[
     INTER_VARIABLE,
     #[cfg(feature = "inter")]
     INTER_VARIABLE_ITALIC,
+    #[cfg(feature = "jetbrains-mono")]
+    JETBRAINS_MONO_VARIABLE,
+    #[cfg(feature = "jetbrains-mono")]
+    JETBRAINS_MONO_VARIABLE_ITALIC,
     #[cfg(feature = "roboto")]
     ROBOTO_REGULAR,
     #[cfg(feature = "roboto")]

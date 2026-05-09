@@ -138,12 +138,12 @@ column([
 ### 1.3 Typography family
 
 Aetna treats the proportional UI font as a theme default, not a random
-renderer detail. The default is Inter, with Roboto bundled as a
-Material-style/compatibility alternate:
+renderer detail. The default is Inter; Roboto is available as a
+Material-style/compatibility alternate via the `roboto` Cargo feature:
 
 ```rust
 Theme::aetna_dark().with_font_family(FontFamily::Inter)
-Theme::aetna_dark().with_font_family(FontFamily::Roboto)
+Theme::aetna_dark().with_font_family(FontFamily::Roboto) // requires `roboto` feature
 ```
 
 Text nodes inherit the theme family before layout, so intrinsic sizes,
@@ -151,8 +151,9 @@ wrapping, ellipsis, SVG artifacts, and backend glyph shaping agree.
 Local text can still opt out with `.font_family(...)`, or use the
 convenience shorthands `.inter()` and `.roboto()`.
 
-Run `cargo run -p aetna-core --example font_family_comparison` to
-regenerate the current Roboto/Inter comparison fixture.
+Run `cargo run -p aetna-core --example font_family_comparison
+--features roboto` to regenerate the current Roboto/Inter comparison
+fixture.
 
 ### 1.4 Color vocabulary
 

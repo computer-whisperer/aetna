@@ -168,20 +168,21 @@ pub fn glyph_advance(face: &Face<'_>, glyph_id: u16, base_em: u32) -> f32 {
 mod tests {
     use super::*;
 
-    fn roboto_face() -> ttf_parser::Face<'static> {
-        ttf_parser::Face::parse(aetna_fonts::ROBOTO_REGULAR, 0).unwrap()
+    fn test_face() -> ttf_parser::Face<'static> {
+        ttf_parser::Face::parse(aetna_fonts::INTER_VARIABLE, 0).unwrap()
     }
 
     #[test]
     fn produces_msdf_for_letter_a() {
-        let face = roboto_face();
+        let face = test_face();
         let glyph_id = face.glyph_index('A').unwrap().0;
         let glyph = build_glyph_msdf(&face, glyph_id, 32, 4.0).expect("MSDF for A");
 
         assert_eq!(glyph.spread, 4.0);
         assert_eq!(glyph.rgba.len() as u32, glyph.width * glyph.height * 4);
         // 32px em with 4px spread on each side: bitmap height covers
-        // cap_height + spread*2 ≈ 28 px for Roboto.
+        // cap_height + spread*2 in the same ~28 px range across our
+        // bundled Latin sans faces.
         assert!(glyph.height >= 24 && glyph.height <= 36, "{}", glyph.height);
         assert!(glyph.width >= 16 && glyph.width <= 32, "{}", glyph.width);
         // 'A' has no horizontal bearing offset to speak of.
@@ -199,7 +200,7 @@ mod tests {
 
     #[test]
     fn whitespace_returns_none_but_keeps_advance() {
-        let face = roboto_face();
+        let face = test_face();
         let glyph_id = face.glyph_index(' ').unwrap().0;
         assert!(build_glyph_msdf(&face, glyph_id, 32, 4.0).is_none());
         let advance = glyph_advance(&face, glyph_id, 32);
@@ -210,7 +211,7 @@ mod tests {
     fn bitmap_has_inside_pixels() {
         // Sanity: the median-of-RGB inside the glyph should be > 128
         // somewhere (positive distance = inside the glyph).
-        let face = roboto_face();
+        let face = test_face();
         let glyph_id = face.glyph_index('O').unwrap().0;
         let glyph = build_glyph_msdf(&face, glyph_id, 32, 4.0).unwrap();
         let mut found_inside = false;
@@ -228,7 +229,7 @@ mod tests {
     #[test]
     fn bitmap_has_outside_pixels() {
         // The corners of the bitmap should be far outside (median ≈ 0).
-        let face = roboto_face();
+        let face = test_face();
         let glyph_id = face.glyph_index('A').unwrap().0;
         let glyph = build_glyph_msdf(&face, glyph_id, 32, 4.0).unwrap();
         let stride = glyph.width as usize * 4;
@@ -251,7 +252,7 @@ mod tests {
 
     #[test]
     fn distinct_glyphs_have_distinct_bitmaps() {
-        let face = roboto_face();
+        let face = test_face();
         let a = build_glyph_msdf(&face, face.glyph_index('A').unwrap().0, 32, 4.0).unwrap();
         let b = build_glyph_msdf(&face, face.glyph_index('B').unwrap().0, 32, 4.0).unwrap();
         // Different shapes ⇒ different pixel content (or, very loosely,

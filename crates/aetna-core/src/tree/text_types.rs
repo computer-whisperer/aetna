@@ -11,7 +11,12 @@ pub enum FontWeight {
     Bold,
 }
 
-/// Proportional UI font family.
+/// A bundled or named font family selectable by the theme. The enum
+/// covers the proportional UI faces (`Inter`, `Roboto`) and the
+/// monospace face (`JetBrainsMono`); themes carry one slot for each
+/// role (`Theme::font_family`, `Theme::mono_font_family`), and any
+/// run can override per-node via `.font_family(...)` /
+/// `.mono_font_family(...)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum FontFamily {
@@ -22,6 +27,10 @@ pub enum FontFamily {
     /// Roboto, retained for Material-style applications and backward
     /// compatibility with early Aetna typography.
     Roboto,
+    /// JetBrains Mono Variable, the bundled monospace face used for
+    /// code blocks, inline code, and any node tagged via `.mono()` or
+    /// `TextRole::Code`. Default value of `Theme::mono_font_family`.
+    JetBrainsMono,
 }
 
 impl FontFamily {
@@ -29,6 +38,7 @@ impl FontFamily {
         match self {
             FontFamily::Inter => "Inter Variable",
             FontFamily::Roboto => "Roboto",
+            FontFamily::JetBrainsMono => "JetBrains Mono",
         }
     }
 
@@ -39,6 +49,9 @@ impl FontFamily {
             }
             FontFamily::Roboto => {
                 "Roboto, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
+            }
+            FontFamily::JetBrainsMono => {
+                "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
             }
         }
     }

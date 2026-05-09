@@ -162,6 +162,10 @@ pub struct DecorationRect {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunStyle {
     pub family: FontFamily,
+    /// Monospace face used when [`Self::mono`] is set. Independent of
+    /// [`Self::family`] so a paragraph can mix proportional and code
+    /// runs that resolve through different theme slots.
+    pub mono_family: FontFamily,
     pub weight: FontWeight,
     pub italic: bool,
     pub mono: bool,
@@ -187,6 +191,7 @@ impl RunStyle {
     pub fn new(weight: FontWeight, color: Color) -> Self {
         Self {
             family: FontFamily::default(),
+            mono_family: FontFamily::JetBrainsMono,
             weight,
             italic: false,
             mono: false,
@@ -207,6 +212,10 @@ impl RunStyle {
     }
     pub fn family(mut self, family: FontFamily) -> Self {
         self.family = family;
+        self
+    }
+    pub fn mono_family(mut self, family: FontFamily) -> Self {
+        self.mono_family = family;
         self
     }
     /// Set the inline-run background colour. Backends paint a solid
@@ -610,12 +619,13 @@ impl GlyphAtlas {
             .map(|(_, style)| style.family.family_name().to_string())
             .unwrap_or_else(|| self.default_family().to_string());
         let default_attrs = Attrs::new().family(Family::Name(&primary_family));
-        // `style.mono` is preserved on RunStyle but doesn't yet route
-        // to a different family — that arrives with the monospace
-        // bundle slice.
+        // Mono runs resolve to `style.mono_family` (themed via
+        // `Theme::mono_font_family`, default `JetBrainsMono`), so
+        // proportional + code runs in the same paragraph land on
+        // different fontdb faces.
         let spans = runs.iter().enumerate().map(|(i, (text, style))| {
             let family = if style.mono {
-                primary_family.as_str()
+                style.mono_family.family_name()
             } else {
                 style.family.family_name()
             };
@@ -1516,9 +1526,10 @@ mod tests {
     #[test]
     fn fallback_face_resolves_math_arrow() {
         // U+2192 RIGHTWARDS ARROW lives in NotoSansSymbols2, not in
-        // Roboto. Shaping should still produce a non-zero glyph (i.e.
-        // not a tofu replacement) because cosmic-text walks fontdb to
-        // find the codepoint in the bundled symbols face.
+        // the Latin sans bundle. Shaping should still produce a
+        // non-zero glyph (i.e. not a tofu replacement) because
+        // cosmic-text walks fontdb to find the codepoint in the
+        // bundled symbols face.
         let mut atlas = GlyphAtlas::new();
         let run = atlas.shape_and_rasterize(
             "→",
@@ -1541,13 +1552,13 @@ mod tests {
 
     #[test]
     fn register_font_adds_to_database() {
-        // Re-register Roboto-Regular as a sanity check: load_font_data
+        // Re-register a known face as a sanity check: load_font_data
         // accepting our bytes proves the path is wired. (Verifying
         // *novel* coverage requires a font with a glyph the bundle
         // lacks — that's the symbols-fallback test above.)
         let mut atlas = GlyphAtlas::new();
         let before = atlas.font_system.db().faces().count();
-        atlas.register_font(aetna_fonts::ROBOTO_REGULAR.to_vec());
+        atlas.register_font(aetna_fonts::INTER_VARIABLE.to_vec());
         let after = atlas.font_system.db().faces().count();
         assert!(after > before, "register_font should add a face");
     }

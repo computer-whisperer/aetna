@@ -997,7 +997,9 @@ impl RunnerCore {
                     size,
                     line_height,
                     family,
+                    mono_family,
                     weight,
+                    mono,
                     wrap,
                     anchor,
                     underline,
@@ -1019,8 +1021,12 @@ impl RunnerCore {
                     if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
                         continue;
                     }
-                    let mut style =
-                        crate::text::atlas::RunStyle::new(*weight, *color).family(*family);
+                    let mut style = crate::text::atlas::RunStyle::new(*weight, *color)
+                        .family(*family)
+                        .mono_family(*mono_family);
+                    if *mono {
+                        style = style.mono();
+                    }
                     if *underline {
                         style = style.underline();
                     }

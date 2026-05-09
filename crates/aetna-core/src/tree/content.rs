@@ -89,6 +89,23 @@ impl El {
         self.font_family(FontFamily::Roboto)
     }
 
+    /// Override the monospace face used when this node renders as code
+    /// (`font_mono = true`, `TextRole::Code`, or any descendant that
+    /// inherits the value through theme propagation). Setting this
+    /// pins the node — theme `with_mono_font_family(...)` no longer
+    /// stamps over it.
+    pub fn mono_font_family(mut self, family: FontFamily) -> Self {
+        self.mono_font_family = family;
+        self.explicit_mono_font_family = true;
+        self
+    }
+
+    /// Pin this node's monospace face to JetBrains Mono. Convenience
+    /// shorthand for `.mono_font_family(FontFamily::JetBrainsMono)`.
+    pub fn jetbrains_mono(self) -> Self {
+        self.mono_font_family(FontFamily::JetBrainsMono)
+    }
+
     /// Set the icon for this element to either a built-in [`crate::IconName`],
     /// an app-supplied [`crate::SvgIcon`], or a string-typed name from
     /// the built-in vocabulary.

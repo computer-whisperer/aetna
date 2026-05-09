@@ -49,6 +49,10 @@ pub enum DrawOp {
         size: f32,
         line_height: f32,
         family: FontFamily,
+        /// Monospace face used when `mono` is set. Stamped from the
+        /// source El's `mono_font_family` (themed via
+        /// `Theme::mono_font_family`).
+        mono_family: FontFamily,
         weight: FontWeight,
         mono: bool,
         wrap: TextWrap,

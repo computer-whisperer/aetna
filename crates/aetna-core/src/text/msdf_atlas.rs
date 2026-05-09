@@ -341,14 +341,14 @@ fn merge_dirty(dirty: &mut Option<MsdfRect>, rect: MsdfRect) {
 mod tests {
     use super::*;
 
-    fn roboto_face() -> ttf_parser::Face<'static> {
-        ttf_parser::Face::parse(aetna_fonts::ROBOTO_REGULAR, 0).unwrap()
+    fn test_face() -> ttf_parser::Face<'static> {
+        ttf_parser::Face::parse(aetna_fonts::INTER_VARIABLE, 0).unwrap()
     }
 
     fn fake_font_id(seed: u32) -> fontdb::ID {
         let mut db = fontdb::Database::new();
-        db.load_font_data(aetna_fonts::ROBOTO_REGULAR.to_vec());
-        let id = db.faces().next().expect("test fontdb has Roboto").id;
+        db.load_font_data(aetna_fonts::INTER_VARIABLE.to_vec());
+        let id = db.faces().next().expect("test fontdb has Inter").id;
         let _ = seed;
         id
     }
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn ensure_inserts_glyph_and_marks_dirty() {
-        let face = roboto_face();
+        let face = test_face();
         let mut atlas = MsdfAtlas::default();
         let slot = atlas.ensure(key(&face, 'A'), &face).expect("slot");
         assert_eq!(slot.page, 0);
@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn ensure_is_idempotent() {
-        let face = roboto_face();
+        let face = test_face();
         let mut atlas = MsdfAtlas::default();
         let s1 = atlas.ensure(key(&face, 'A'), &face).unwrap();
         atlas.take_dirty();
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn whitespace_returns_none_but_caches_advance() {
-        let face = roboto_face();
+        let face = test_face();
         let mut atlas = MsdfAtlas::default();
         let space_key = key(&face, ' ');
         assert!(atlas.ensure(space_key, &face).is_none());
@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn distinct_glyphs_get_distinct_slots() {
-        let face = roboto_face();
+        let face = test_face();
         let mut atlas = MsdfAtlas::default();
         let a = atlas.ensure(key(&face, 'A'), &face).unwrap();
         let b = atlas.ensure(key(&face, 'B'), &face).unwrap();
@@ -404,7 +404,7 @@ mod tests {
 
     #[test]
     fn shelf_packer_fits_a_typical_run_in_one_page() {
-        let face = roboto_face();
+        let face = test_face();
         let mut atlas = MsdfAtlas::default();
         let font = fake_font_id(0);
         for ch in "The quick brown fox jumps over the lazy dog 0123456789".chars() {

@@ -442,6 +442,7 @@ fn push_node(
             size: painted_font_size,
             line_height: n.line_height * n.scale,
             family: n.font_family,
+            mono_family: n.mono_font_family,
             weight,
             mono: n.font_mono,
             wrap: n.text_wrap,
@@ -631,7 +632,9 @@ fn collect_inline_runs(node: &El, opacity: f32) -> Vec<(String, RunStyle)> {
             Kind::Text => {
                 if let Some(text) = &c.text {
                     let color = opaque(c.text_color.unwrap_or(tokens::FOREGROUND), opacity);
-                    let mut style = RunStyle::new(c.font_weight, color).family(c.font_family);
+                    let mut style = RunStyle::new(c.font_weight, color)
+                        .family(c.font_family)
+                        .mono_family(c.mono_font_family);
                     if c.text_italic {
                         style = style.italic();
                     }

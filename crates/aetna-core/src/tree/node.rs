@@ -131,6 +131,9 @@ pub struct El {
     pub explicit_gap: bool,
     pub explicit_radius: bool,
     pub explicit_font_family: bool,
+    /// Author overrode the monospace font face for this node — theme
+    /// application leaves [`Self::mono_font_family`] alone when set.
+    pub explicit_mono_font_family: bool,
 
     // Visual style — these still live on `El` because the modifier API
     // (`.fill(c)`, `.radius(r)`, `.shadow(s)`) is what users type. The
@@ -239,6 +242,11 @@ pub struct El {
     pub font_size: f32,
     pub line_height: f32,
     pub font_family: FontFamily,
+    /// Monospace face used when [`Self::font_mono`] is set (or when the
+    /// node carries [`TextRole::Code`]). Stamped by theme application
+    /// from [`crate::Theme::mono_font_family`] unless the author set it
+    /// explicitly via [`Self::mono_font_family`].
+    pub mono_font_family: FontFamily,
     pub font_weight: FontWeight,
     pub font_mono: bool,
     /// Italic styling. Author-set via [`Self::italic`]; honoured when

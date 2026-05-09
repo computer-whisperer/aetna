@@ -133,6 +133,7 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 size,
                 line_height,
                 family,
+                mono_family,
                 weight,
                 mono,
                 wrap,
@@ -144,9 +145,10 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
             } => {
                 let preview: String = text.chars().take(40).collect();
                 let suffix = if text.chars().count() > 40 { "…" } else { "" };
+                let face = if *mono { *mono_family } else { *family };
                 let _ = write!(
                     s,
-                    "Glyph  shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} text=\"{preview}{suffix}\" color={} size={size:.1} line_height={line_height:.1} family={family:?} weight={weight:?} mono={mono} wrap={wrap:?} anchor={anchor:?}",
+                    "Glyph  shader={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} text=\"{preview}{suffix}\" color={} size={size:.1} line_height={line_height:.1} family={face:?} weight={weight:?} mono={mono} wrap={wrap:?} anchor={anchor:?}",
                     shader.name(),
                     rect.x,
                     rect.y,

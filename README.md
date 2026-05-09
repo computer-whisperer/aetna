@@ -42,7 +42,7 @@ The architectural decision: `El` is the author's description of the scene; every
 | Custom-layout escape hatch | `El::layout(f)` accepts a `LayoutFn(LayoutCtx) -> Vec<Rect>` that replaces the column/row/overlay distribution for a node's children. The library still recurses, still drives hit-test/focus/animation/scroll off the produced rects. `cargo run -p aetna-core --example circular_layout` → `crates/aetna-core/out/circular_layout.svg`; `cargo run -p aetna-examples --bin circular_layout` (interactive compass rose, click-routed through LayoutFn-produced rects) |
 | Virtualized list | `virtual_list(count, row_height, build_row)` realizes only the rows whose rect intersects the viewport. Wheel events route via the existing scroll machinery; computed_ids derive from row keys so hover/press/focus state survives scrolling. `cargo run -p aetna-core --example virtual_list` (10k rows); `cargo run -p aetna-examples --bin virtual_list` (100k rows, interactive). Variable-height rows not yet supported. |
 | App trait + hit-test + automatic hover/press | `cargo run -p aetna-examples --bin counter` (interactive); `crates/aetna-wgpu/out/counter.wgpu.png` |
-| HiDPI text + shaped core layout + paragraph wrapping + text alignment | bundled Inter by default, Roboto as an alternate, `cosmic-text` core layout + swash rasterization, core-owned glyph atlas. SVG fallback (`crates/aetna-core/out/settings.svg`) aligned with wgpu output |
+| HiDPI text + shaped core layout + paragraph wrapping + text alignment | bundled Inter + JetBrains Mono by default (Roboto opt-in), `cosmic-text` core layout + swash rasterization, core-owned glyph atlas. SVG fallback (`crates/aetna-core/out/settings.svg`) aligned with wgpu output |
 | Clip + modal/overlay | `cargo run -p aetna-core --example modal` → `crates/aetna-core/out/modal.svg` |
 | Scroll viewport | `cargo run -p aetna-core --example scroll_list` → `crates/aetna-core/out/scroll_list.svg`; `cargo run -p aetna-examples --bin scroll_list` (interactive, wheel) |
 | Host-painted regions | reserve a keyed node in the tree, call `Runner::rect_of_key("viewport")` after `prepare()`, and let the host renderer paint into that rect |
@@ -139,7 +139,7 @@ crates/
   aetna-winit-wgpu/              optional native winit + wgpu app host
   aetna-vulkano-demo/            vulkano demo harness + backend parity bins
   aetna-web/                     workspace-private wasm browser entry point
-  aetna-fonts/                   bundled Inter + Roboto + emoji/symbol fallback faces
+  aetna-fonts/                   bundled Inter + JetBrains Mono + emoji/symbol faces (Roboto opt-in)
 examples/                        interactive cross-crate examples (`aetna-examples`)
 tools/                           Rust diagnostics (`aetna-tools`) plus helper scripts
 ```

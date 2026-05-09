@@ -67,6 +67,7 @@ version = "0.3.0"
 dependencies = [
  "aetna-fonts-emoji",
  "aetna-fonts-inter",
+ "aetna-fonts-jetbrains-mono",
  "aetna-fonts-roboto",
  "aetna-fonts-symbols",
 ]
@@ -77,6 +78,10 @@ version = "0.1.0"
 
 [[package]]
 name = "aetna-fonts-inter"
+version = "0.1.0"
+
+[[package]]
+name = "aetna-fonts-jetbrains-mono"
 version = "0.1.0"
 
 [[package]]

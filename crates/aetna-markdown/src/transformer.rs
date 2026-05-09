@@ -774,12 +774,18 @@ mod tests {
     fn fenced_code_block_keeps_verbatim_text() {
         let bs = blocks("```\nfn main() {}\n```");
         assert_eq!(bs.len(), 1);
-        // code_block surface contains a single mono text leaf.
+        // code_block surface contains a single mono text leaf that
+        // resolves to the JBM monospace face via the El default
+        // (themes can override with `with_mono_font_family`).
         let surface = &bs[0];
         assert_eq!(surface.surface_role, SurfaceRole::Sunken);
         let body = &surface.children[0];
         assert_eq!(body.text.as_deref(), Some("fn main() {}"));
         assert!(body.font_mono);
+        assert_eq!(
+            body.mono_font_family,
+            aetna_core::tree::FontFamily::JetBrainsMono
+        );
     }
 
     #[test]

@@ -35,13 +35,16 @@ web-time = "1"
 
 [features]
 default = ["default_fonts"]
-# Bundle aetna-fonts' default font set (Inter + Roboto + NotoColorEmoji +
-# Symbols2 + Math) into the binary. Disable to ship your own fonts via
-# `register_font`. The per-format features below are activated by
-# `default_fonts` and can also be toggled individually:
+# Bundle aetna-fonts' default font set (Inter + JetBrains Mono +
+# NotoColorEmoji + Symbols2 + Math) into the binary. Disable to ship
+# your own fonts via `register_font`. The per-format features below are
+# activated by `default_fonts` and can also be toggled individually —
+# Roboto is no longer in the default set but remains available via the
+# `roboto` feature for Material-style applications:
 # `aetna-core = { default-features = false, features = ["roboto"] }`.
-default_fonts = ["inter", "roboto", "emoji", "symbols"]
+default_fonts = ["inter", "jetbrains-mono", "emoji", "symbols"]
 inter = ["aetna-fonts/inter"]
+jetbrains-mono = ["aetna-fonts/jetbrains-mono"]
 roboto = ["aetna-fonts/roboto"]
 emoji = ["aetna-fonts/emoji"]
 symbols = ["aetna-fonts/symbols"]
@@ -49,3 +52,11 @@ symbols = ["aetna-fonts/symbols"]
 [[example]]
 name = "settings"
 path = "examples/settings.rs"
+
+# Roboto is no longer in `default_fonts`. The Inter↔Roboto comparison
+# example genuinely needs it, so it's gated behind the `roboto` feature
+# rather than rendering an empty Roboto column on a default build.
+[[example]]
+name = "font_family_comparison"
+path = "examples/font_family_comparison.rs"
+required-features = ["roboto"]

@@ -13,11 +13,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::create_dir_all(parent)?;
     }
 
-    // Build a fontdb with Roboto and pull a face.
+    // Build a fontdb with Inter and pull a face.
     let mut db = fontdb::Database::new();
-    db.load_font_data(aetna_fonts::ROBOTO_REGULAR.to_vec());
-    let id = db.faces().next().expect("Roboto").id;
-    let face = ttf_parser::Face::parse(aetna_fonts::ROBOTO_REGULAR, 0)?;
+    db.load_font_data(aetna_fonts::INTER_VARIABLE.to_vec());
+    let id = db.faces().next().expect("Inter").id;
+    let face = ttf_parser::Face::parse(aetna_fonts::INTER_VARIABLE, 0)?;
 
     let mut atlas = MsdfAtlas::default();
     let phrase = "The quick brown fox jumps over the lazy dog 0123456789";
