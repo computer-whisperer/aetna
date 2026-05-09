@@ -451,10 +451,7 @@ mod tests {
         // Default theme value is JetBrainsMono — propagated through
         // the `apply_mono_font_family` walk to every text-bearing node
         // that didn't pin its own.
-        assert_eq!(
-            root.children[0].mono_font_family,
-            FontFamily::JetBrainsMono
-        );
+        assert_eq!(root.children[0].mono_font_family, FontFamily::JetBrainsMono);
     }
 
     #[test]
@@ -478,9 +475,6 @@ mod tests {
             .with_mono_font_family(FontFamily::Roboto)
             .apply_metrics(&mut root);
 
-        assert_eq!(
-            root.children[0].mono_font_family,
-            FontFamily::JetBrainsMono
-        );
+        assert_eq!(root.children[0].mono_font_family, FontFamily::JetBrainsMono);
     }
 }

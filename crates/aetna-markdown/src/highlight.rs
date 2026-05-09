@@ -64,9 +64,7 @@ pub(crate) fn highlight_to_runs(source: &str, syntax: &SyntaxReference) -> Vec<E
     let mut lines = source.split('\n').peekable();
     while let Some(line) = lines.next() {
         let with_newline = format!("{line}\n");
-        let ops = state
-            .parse_line(&with_newline, set)
-            .unwrap_or_default();
+        let ops = state.parse_line(&with_newline, set).unwrap_or_default();
 
         let mut last = 0usize;
         for (offset, op) in ops {
@@ -202,10 +200,7 @@ mod tests {
     fn newlines_become_hard_breaks() {
         let syntax = find_syntax("rust").unwrap();
         let runs = highlight_to_runs("let a = 1;\nlet b = 2;\n", syntax);
-        let breaks = runs
-            .iter()
-            .filter(|r| r.kind == Kind::HardBreak)
-            .count();
+        let breaks = runs.iter().filter(|r| r.kind == Kind::HardBreak).count();
         assert!(breaks >= 1, "expected at least one hard break for \\n");
     }
 

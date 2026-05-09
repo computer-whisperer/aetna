@@ -468,9 +468,9 @@ impl Walker {
                 Frame::BlockQuote(blocks) => self.root.push(blockquote(blocks)),
                 Frame::List { start, items } => self.root.push(build_list(start, items)),
                 Frame::Item(blocks) => self.root.push(build_list_item(blocks)),
-                Frame::CodeBlock { lang, text } => self
-                    .root
-                    .push(build_code_block(lang.as_deref(), text)),
+                Frame::CodeBlock { lang, text } => {
+                    self.root.push(build_code_block(lang.as_deref(), text))
+                }
                 Frame::Link(_, runs) => {
                     for run in runs {
                         self.root.push(run);

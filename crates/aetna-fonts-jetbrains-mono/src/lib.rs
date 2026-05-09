@@ -8,7 +8,6 @@
 
 #![no_std]
 
-pub static JETBRAINS_MONO_VARIABLE: &[u8] =
-    include_bytes!("../fonts/JetBrainsMonoVariable.ttf");
+pub static JETBRAINS_MONO_VARIABLE: &[u8] = include_bytes!("../fonts/JetBrainsMonoVariable.ttf");
 pub static JETBRAINS_MONO_VARIABLE_ITALIC: &[u8] =
     include_bytes!("../fonts/JetBrainsMonoVariable-Italic.ttf");
