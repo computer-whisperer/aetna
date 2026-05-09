@@ -281,6 +281,34 @@ pub fn image(img: impl Into<Image>) -> El {
     El::new(Kind::Image).at_loc(Location::caller()).image(img)
 }
 
+/// An app-owned-texture surface. Aetna composites the texture into
+/// the paint stream at the El's resolved rect — no upload, no per-frame
+/// copy. The default size hugs the texture's pixel dimensions; set
+/// [`El::width`] / [`El::height`] (or `.fill_size()`) for an explicit
+/// box.
+///
+/// The widget participates in layout, scissor, scrolling, hit-test, and
+/// z-order like any other El: siblings declared before this one paint
+/// underneath, siblings after paint on top.
+///
+/// ```ignore
+/// // Pseudocode — the AppTexture comes from a backend constructor.
+/// use aetna_core::prelude::*;
+/// let tex: AppTexture = /* aetna_wgpu::app_texture(...) */ todo!();
+/// let _ = surface(tex)
+///     .fill_size()
+///     .surface_alpha(SurfaceAlpha::Opaque);
+/// ```
+#[track_caller]
+pub fn surface(texture: crate::surface::AppTexture) -> El {
+    let (w, h) = texture.size_px();
+    El::new(Kind::Surface)
+        .at_loc(Location::caller())
+        .width(Size::Fixed(w as f32))
+        .height(Size::Fixed(h as f32))
+        .surface_source(crate::surface::SurfaceSource::Texture(texture))
+}
+
 /// A 1-pixel separator line.
 #[track_caller]
 pub fn divider() -> El {

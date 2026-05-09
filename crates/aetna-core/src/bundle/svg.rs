@@ -136,6 +136,9 @@ fn emit_op(s: &mut String, op: &DrawOp) {
         DrawOp::Image {
             id, rect, image, ..
         } => emit_image_placeholder(s, id, *rect, image),
+        DrawOp::AppTexture {
+            id, rect, texture, ..
+        } => emit_surface_placeholder(s, id, *rect, texture),
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
 }
@@ -156,6 +159,38 @@ fn emit_image_placeholder(s: &mut String, id: &str, rect: Rect, image: &crate::i
         rect.h,
     );
     // Centred label so artifacts stay self-describing.
+    let cx = rect.x + rect.w * 0.5;
+    let cy = rect.y + rect.h * 0.5;
+    let _ = writeln!(
+        s,
+        r##"<text x="{:.2}" y="{:.2}" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#bbb">{}</text>"##,
+        cx,
+        cy,
+        esc(&label),
+    );
+}
+
+/// Placeholder rect labelled with the app texture's id and dimensions.
+/// SVG bundles can't sample a live GPU texture; the placeholder lets
+/// inspection tooling see *where* a surface widget composites without
+/// pretending to render its contents.
+fn emit_surface_placeholder(
+    s: &mut String,
+    id: &str,
+    rect: Rect,
+    texture: &crate::surface::AppTexture,
+) {
+    let (w, h) = texture.size_px();
+    let label = format!("AppTexture#{} {}x{}", texture.id().0, w, h);
+    let _ = writeln!(
+        s,
+        r##"<rect data-node="{}" data-shader="stock::surface" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="#222" stroke="#aaa" stroke-width="1" stroke-dasharray="6 3" />"##,
+        esc(id),
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+    );
     let cx = rect.x + rect.w * 0.5;
     let cy = rect.y + rect.h * 0.5;
     let _ = writeln!(

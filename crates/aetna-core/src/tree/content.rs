@@ -155,6 +155,22 @@ impl El {
         self
     }
 
+    /// Attach an app-owned GPU texture source. Typically set via the
+    /// [`crate::tree::surface`] builder (which also sets
+    /// [`crate::Kind::Surface`]); reach for this method on a stock
+    /// widget El whose Kind you want to keep.
+    pub fn surface_source(mut self, source: crate::surface::SurfaceSource) -> Self {
+        self.surface_source = Some(source);
+        self
+    }
+
+    /// How a [`crate::Kind::Surface`] El composes with widgets below
+    /// it. Default is [`crate::surface::SurfaceAlpha::Premultiplied`].
+    pub fn surface_alpha(mut self, alpha: crate::surface::SurfaceAlpha) -> Self {
+        self.surface_alpha = alpha;
+        self
+    }
+
     /// Opt this node into the monospace face. Setting this flag also
     /// sets [`El::explicit_mono`] so a subsequent role modifier
     /// (`.caption()` / `.label()` / `.body()` / `.title()` /

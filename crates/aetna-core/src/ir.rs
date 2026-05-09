@@ -121,6 +121,21 @@ pub enum DrawOp {
         radius: f32,
         fit: ImageFit,
     },
+    /// An app-owned GPU texture composited into the paint stream.
+    /// Unlike `DrawOp::Image`, the backend does not upload pixels —
+    /// it samples the existing texture identified by `texture` during
+    /// paint, keying its bind-group cache on
+    /// [`crate::surface::AppTextureId`]. `rect` is the resolved widget
+    /// box; the texture fills it 1:1 (no per-rect projection in 0.3.x).
+    /// `alpha` selects the blend path. SVG bundle output emits a
+    /// placeholder rect labelled with the texture's id.
+    AppTexture {
+        id: String,
+        rect: Rect,
+        scissor: Option<Rect>,
+        texture: crate::surface::AppTexture,
+        alpha: crate::surface::SurfaceAlpha,
+    },
     /// Mid-frame snapshot of the current target into a sampled texture,
     /// scheduled before any backdrop-sampling pass.
     BackdropSnapshot,
@@ -140,7 +155,8 @@ impl DrawOp {
             | DrawOp::GlyphRun { id, .. }
             | DrawOp::AttributedText { id, .. }
             | DrawOp::Icon { id, .. }
-            | DrawOp::Image { id, .. } => id,
+            | DrawOp::Image { id, .. }
+            | DrawOp::AppTexture { id, .. } => id,
             DrawOp::BackdropSnapshot => "<backdrop-snapshot>",
         }
     }
@@ -149,7 +165,7 @@ impl DrawOp {
             DrawOp::Quad { shader, .. }
             | DrawOp::GlyphRun { shader, .. }
             | DrawOp::AttributedText { shader, .. } => Some(shader),
-            DrawOp::Icon { .. } | DrawOp::Image { .. } => None,
+            DrawOp::Icon { .. } | DrawOp::Image { .. } | DrawOp::AppTexture { .. } => None,
             DrawOp::BackdropSnapshot => None,
         }
     }
@@ -159,7 +175,8 @@ impl DrawOp {
             | DrawOp::GlyphRun { scissor, .. }
             | DrawOp::AttributedText { scissor, .. }
             | DrawOp::Icon { scissor, .. }
-            | DrawOp::Image { scissor, .. } => *scissor,
+            | DrawOp::Image { scissor, .. }
+            | DrawOp::AppTexture { scissor, .. } => *scissor,
             DrawOp::BackdropSnapshot => None,
         }
     }

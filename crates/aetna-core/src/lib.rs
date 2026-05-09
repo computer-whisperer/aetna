@@ -61,6 +61,7 @@ pub mod selection;
 pub mod shader;
 pub mod state;
 pub mod style;
+pub mod surface;
 pub mod svg_icon;
 pub mod text;
 pub mod theme;
@@ -96,6 +97,10 @@ pub use metrics::{ComponentSize, MetricsRole, ThemeMetrics};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
 pub use state::{AnimationMode, UiState, WidgetState};
 pub use style::StyleProfile;
+pub use surface::{
+    AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat, SurfaceSource,
+    next_app_texture_id,
+};
 pub use svg_icon::{IconSource, IntoIconSource, SvgIcon};
 // Atlas/glyph types are backend-implementer surface (consumed by
 // `aetna-wgpu` / `aetna-vulkano` paint paths). App authors don't
@@ -117,7 +122,8 @@ pub use theme::Theme;
 pub use tree::{
     Align, Axis, Color, El, FontFamily, FontWeight, IconName, InteractionState, Justify, Kind,
     Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column,
-    divider, hard_break, row, scroll, spacer, stack, text_runs, virtual_list, virtual_list_dyn,
+    divider, hard_break, row, scroll, spacer, stack, surface, text_runs, virtual_list,
+    virtual_list_dyn,
 };
 pub use vector::IconMaterial;
 // Vector path / mesh tessellation types are internal-tooling surface.

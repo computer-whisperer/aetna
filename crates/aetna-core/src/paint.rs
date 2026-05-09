@@ -163,6 +163,10 @@ pub enum PaintItem {
     /// [`crate::runtime::TextRecorder::record_image`] from a
     /// [`crate::ir::DrawOp::Image`].
     Image(usize),
+    /// One app-owned-texture composite. Indexes into the backend's
+    /// `SurfacePaint`-equivalent storage. Produced by the backend's
+    /// surface recorder from a [`crate::ir::DrawOp::AppTexture`].
+    AppTexture(usize),
     BackdropSnapshot,
 }
 

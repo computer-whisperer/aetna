@@ -81,6 +81,7 @@ pub fn resolve_palette(ops: &mut [DrawOp], palette: &Palette) {
                     *t = palette.resolve(*t);
                 }
             }
+            DrawOp::AppTexture { .. } => {}
             DrawOp::BackdropSnapshot => {}
         }
     }
@@ -538,6 +539,24 @@ fn push_node(
             tint,
             radius: n.radius,
             fit: n.image_fit,
+        });
+    }
+
+    if let Some(crate::surface::SurfaceSource::Texture(tex)) = &n.surface_source {
+        let inner = inner_painted_rect.inset(n.padding);
+        // Surfaces fill their content rect 1:1; clip to it for the
+        // same reason image draws are clipped — overflow shouldn't
+        // bleed into siblings even if the El opts out of `.clip()`.
+        let scissor = match own_scissor {
+            Some(s) => s.intersect(inner),
+            None => Some(inner),
+        };
+        out.push(DrawOp::AppTexture {
+            id: n.computed_id.clone(),
+            rect: inner,
+            scissor,
+            texture: tex.clone(),
+            alpha: n.surface_alpha,
         });
     }
 
@@ -1839,6 +1858,68 @@ mod tests {
         // Opacity halves the alpha channel of the tint (255 → 128).
         assert_eq!(tint.a, 128, "tint.a after 0.5 opacity = {}", tint.a);
         assert_eq!((tint.r, tint.g, tint.b), (200, 100, 50));
+    }
+
+    /// Stub backend used by the surface-emission test. Nothing
+    /// inspects the texture at this layer, so the impl is minimal.
+    #[derive(Debug)]
+    struct StubAppTextureBackend {
+        id: crate::surface::AppTextureId,
+        size: (u32, u32),
+    }
+
+    impl crate::surface::AppTextureBackend for StubAppTextureBackend {
+        fn id(&self) -> crate::surface::AppTextureId {
+            self.id
+        }
+        fn size_px(&self) -> (u32, u32) {
+            self.size
+        }
+        fn format(&self) -> crate::surface::SurfaceFormat {
+            crate::surface::SurfaceFormat::Rgba8UnormSrgb
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    fn stub_app_texture(w: u32, h: u32) -> crate::surface::AppTexture {
+        crate::surface::AppTexture::from_backend(std::sync::Arc::new(StubAppTextureBackend {
+            id: crate::surface::next_app_texture_id(),
+            size: (w, h),
+        }))
+    }
+
+    #[test]
+    fn surface_emits_app_texture_op_filling_rect() {
+        let tex = stub_app_texture(64, 32);
+        let mut root = crate::row([crate::tree::surface(tex)
+            .width(Size::Fixed(200.0))
+            .height(Size::Fixed(100.0))
+            .surface_alpha(crate::surface::SurfaceAlpha::Opaque)]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 400.0));
+        let ops = draw_ops(&root, &state);
+        let surf_op = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::AppTexture { .. }))
+            .expect("Kind::Surface emits a DrawOp::AppTexture");
+        let DrawOp::AppTexture {
+            rect,
+            scissor,
+            alpha,
+            ..
+        } = surf_op
+        else {
+            unreachable!()
+        };
+        // Surface fills its content rect 1:1 — no fit projection.
+        assert!((rect.w - 200.0).abs() < 1e-3, "rect.w = {}", rect.w);
+        assert!((rect.h - 100.0).abs() < 1e-3, "rect.h = {}", rect.h);
+        // Auto-clip applies regardless of `.clip()`.
+        let s = scissor.expect("surface op carries a scissor");
+        assert!((s.w - 200.0).abs() < 1e-3, "scissor.w = {}", s.w);
+        assert_eq!(*alpha, crate::surface::SurfaceAlpha::Opaque);
     }
 
     #[test]

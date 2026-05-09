@@ -303,6 +303,16 @@ pub struct El {
     /// `ImageFit::Contain` — preserves aspect ratio and letterboxes.
     pub image_fit: ImageFit,
 
+    /// App-owned GPU texture source for [`Kind::Surface`] elements.
+    /// Set via [`Self::surface_source`] (typically through the
+    /// [`crate::tree::surface`] builder). The texture fills the
+    /// resolved rect 1:1; per-rect projection (`ImageFit`-style) is a
+    /// future enhancement.
+    pub surface_source: Option<crate::surface::SurfaceSource>,
+    /// How the surface texture composes with widgets painted below it.
+    /// Defaults to [`crate::surface::SurfaceAlpha::Premultiplied`].
+    pub surface_alpha: crate::surface::SurfaceAlpha,
+
     pub children: Vec<El>,
 
     /// Paint-time alpha multiplier in `[0, 1]`. Default `1.0`. Multiplies

@@ -1315,6 +1315,33 @@ impl RunnerCore {
                         self.paint_items.push(PaintItem::Image(index));
                     }
                 }
+                DrawOp::AppTexture {
+                    rect,
+                    scissor,
+                    texture,
+                    alpha,
+                    ..
+                } => {
+                    close_run(
+                        &mut self.runs,
+                        &mut self.paint_items,
+                        current,
+                        run_first,
+                        self.quad_scratch.len() as u32,
+                    );
+                    current = None;
+                    run_first = self.quad_scratch.len() as u32;
+
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        continue;
+                    }
+                    let recorded =
+                        text.record_app_texture(*rect, phys, texture, *alpha, scale_factor);
+                    for index in recorded {
+                        self.paint_items.push(PaintItem::AppTexture(index));
+                    }
+                }
                 DrawOp::BackdropSnapshot => {
                     close_run(
                         &mut self.runs,
@@ -1572,6 +1599,22 @@ pub trait TextRecorder {
         _tint: Option<Color>,
         _radius: f32,
         _fit: crate::image::ImageFit,
+        _scale_factor: f32,
+    ) -> Range<usize> {
+        0..0
+    }
+
+    /// Append an app-owned-texture composite. Backends with surface
+    /// support override this and return one or more indices into their
+    /// surface storage (each lands in `paint_items` as
+    /// `PaintItem::AppTexture`). The default returns an empty range so
+    /// backends without surface support paint nothing for surface Els.
+    fn record_app_texture(
+        &mut self,
+        _rect: Rect,
+        _scissor: Option<PhysicalScissor>,
+        _texture: &crate::surface::AppTexture,
+        _alpha: crate::surface::SurfaceAlpha,
         _scale_factor: f32,
     ) -> Range<usize> {
         0..0
@@ -3525,6 +3568,7 @@ mod tests {
                 PaintItem::IconRun(_) => "I",
                 PaintItem::Text(_) => "T",
                 PaintItem::Image(_) => "M",
+                PaintItem::AppTexture(_) => "A",
                 PaintItem::BackdropSnapshot => "S",
             })
             .collect();

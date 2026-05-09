@@ -85,6 +85,7 @@ pub fn shader_manifest(ops: &[DrawOp]) -> String {
                 }
                 DrawOp::Icon { .. } => {}
                 DrawOp::Image { .. } => {} // bound to a per-image texture, not a stock shader
+                DrawOp::AppTexture { .. } => {} // bound to an app-owned texture, not a stock shader
                 DrawOp::BackdropSnapshot => {}
             }
         }
@@ -243,6 +244,29 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                     rect.h,
                     image.width(),
                     image.height(),
+                );
+                if let Some(sci) = scissor {
+                    write_scissor(&mut s, *sci);
+                }
+                s.push('\n');
+            }
+            DrawOp::AppTexture {
+                id,
+                rect,
+                scissor,
+                texture,
+                alpha,
+            } => {
+                let (tw, th) = texture.size_px();
+                let format = texture.format();
+                let _ = write!(
+                    s,
+                    "Surface tex_id={:<10} rect=({:.0},{:.0},{:.0},{:.0}) id={id} natural=({tw}x{th}) format={format:?} alpha={alpha:?}",
+                    texture.id().0,
+                    rect.x,
+                    rect.y,
+                    rect.w,
+                    rect.h,
                 );
                 if let Some(sci) = scissor {
                     write_scissor(&mut s, *sci);

@@ -86,6 +86,8 @@ impl Default for El {
             image: None,
             image_tint: None,
             image_fit: ImageFit::Contain,
+            surface_source: None,
+            surface_alpha: crate::surface::SurfaceAlpha::Premultiplied,
             children: Vec::new(),
             opacity: 1.0,
             translate: (0.0, 0.0),

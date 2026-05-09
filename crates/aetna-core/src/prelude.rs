@@ -34,6 +34,9 @@ pub use crate::palette::Palette;
 pub use crate::shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
 pub use crate::state::{AnimationMode, WidgetState};
 pub use crate::style::StyleProfile;
+pub use crate::surface::{
+    AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat, SurfaceSource,
+};
 pub use crate::svg_icon::{IconSource, IntoIconSource, SvgIcon};
 pub use crate::text::metrics::{
     MeasuredText, TextHit, TextLayout, TextLine, caret_xy, caret_xy_with_family, hit_text,
@@ -47,7 +50,7 @@ pub use crate::tokens;
 pub use crate::tree::{
     Align, Axis, Color, El, FontFamily, FontWeight, HoverAlpha, IconName, InteractionState,
     Justify, Kind, Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole,
-    TextWrap, column, divider, hard_break, image, row, scroll, spacer, stack, text_runs,
+    TextWrap, column, divider, hard_break, image, row, scroll, spacer, stack, surface, text_runs,
     virtual_list, virtual_list_dyn,
 };
 pub use crate::vector::IconMaterial;

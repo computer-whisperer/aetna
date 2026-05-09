@@ -128,6 +128,7 @@ fn kind_str(k: &Kind) -> &str {
         Kind::Inlines => "Inlines",
         Kind::HardBreak => "HardBreak",
         Kind::Image => "Image",
+        Kind::Surface => "Surface",
         Kind::Custom(name) => name,
     }
 }
