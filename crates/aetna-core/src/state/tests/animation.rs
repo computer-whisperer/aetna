@@ -378,14 +378,24 @@ fn state_envelope_composes_on_app_eased_fill() {
 fn app_animation_skipped_when_animate_not_set() {
     // Without .animate(), app props are not tracked — the node's
     // fill snaps to whatever the build produces, no easing.
-    let mut tree_a = column([row([button("X").key("x").fill(Color::rgb(255, 0, 0))])]) // no .animate()
-        .padding(20.0);
+    //
+    // Note: many stock widgets (e.g. `button`) opt into animation
+    // by default, so this negative test uses a plain `Kind::Custom`
+    // node that genuinely has no animate field set.
+    fn swatch(fill: Color) -> El {
+        El::new(Kind::Custom("swatch"))
+            .key("x")
+            .fill(fill)
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))
+    }
+
+    let mut tree_a = column([row([swatch(Color::rgb(255, 0, 0))])]).padding(20.0);
     let mut state = UiState::new();
     layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
     state.tick_visual_animations(&mut tree_a, Instant::now());
 
-    let mut tree_b =
-        column([row([button("X").key("x").fill(Color::rgb(0, 0, 255))])]).padding(20.0);
+    let mut tree_b = column([row([swatch(Color::rgb(0, 0, 255))])]).padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
     state.tick_visual_animations(&mut tree_b, Instant::now());
 
