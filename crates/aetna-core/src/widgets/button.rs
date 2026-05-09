@@ -25,6 +25,7 @@
 
 use std::panic::Location;
 
+use crate::anim::Timing;
 use crate::cursor::Cursor;
 use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
@@ -52,6 +53,7 @@ pub fn button(label: impl Into<String>) -> El {
         .default_width(Size::Hug)
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
         .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
+        .animate(Timing::SPRING_QUICK)
 }
 
 #[track_caller]
@@ -73,6 +75,7 @@ pub fn icon_button(source: impl IntoIconSource) -> El {
         .default_radius(tokens::RADIUS_MD)
         .default_width(Size::Fixed(tokens::CONTROL_HEIGHT))
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
+        .animate(Timing::SPRING_QUICK)
 }
 
 #[track_caller]
@@ -102,4 +105,18 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .default_width(Size::Hug)
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
         .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
+        .animate(Timing::SPRING_QUICK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn buttons_ease_variant_changes() {
+        assert!(button("Save").animate.is_some());
+        assert!(button("Save").primary().animate.is_some());
+        assert!(icon_button("settings").animate.is_some());
+        assert!(button_with_icon("folder", "Open").animate.is_some());
+    }
 }

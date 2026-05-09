@@ -16,6 +16,7 @@
 
 use std::panic::Location;
 
+use crate::anim::Timing;
 use crate::cursor::Cursor;
 use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
@@ -117,11 +118,12 @@ pub fn sidebar_menu_button(label: impl Into<String>, current: bool) -> El {
         .default_height(Size::Fixed(40.0))
         .width(Size::Fill(1.0))
         .align(Align::Center);
-    if current {
+    let styled = if current {
         button.current()
     } else {
         button.ghost()
-    }
+    };
+    styled.animate(Timing::SPRING_QUICK)
 }
 
 #[track_caller]
@@ -148,11 +150,12 @@ pub fn sidebar_menu_button_with_icon(
     .default_height(Size::Fixed(40.0))
     .width(Size::Fill(1.0))
     .align(Align::Center);
-    if current {
+    let styled = if current {
         button.current()
     } else {
         button.ghost()
-    }
+    };
+    styled.animate(Timing::SPRING_QUICK)
 }
 
 #[track_caller]
@@ -189,8 +192,10 @@ mod tests {
         assert_eq!(current.height, Size::Fixed(40.0));
         assert_eq!(current.surface_role, SurfaceRole::Current);
         assert!(current.focusable);
+        assert!(current.animate.is_some(), "current changes should ease");
         assert_eq!(inactive.height, Size::Fixed(40.0));
         assert_eq!(inactive.padding, Sides::xy(tokens::SPACE_3, 0.0));
         assert!(inactive.fill.is_none());
+        assert!(inactive.animate.is_some(), "inactive changes should ease");
     }
 }
