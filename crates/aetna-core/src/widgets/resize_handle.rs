@@ -431,6 +431,7 @@ mod tests {
             _ => 0,
         };
         UiEvent {
+            path: None,
             key: Some(key.to_string()),
             target: Some(UiTarget {
                 key: key.to_string(),
@@ -449,6 +450,7 @@ mod tests {
 
     fn key_event(key: &str, ui_key: UiKey) -> UiEvent {
         UiEvent {
+            path: None,
             key: Some(key.to_string()),
             target: Some(UiTarget {
                 key: key.to_string(),

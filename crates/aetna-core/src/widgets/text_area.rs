@@ -560,6 +560,7 @@ mod tests {
 
     fn ev_key_with_mods(key: UiKey, modifiers: KeyModifiers) -> UiEvent {
         UiEvent {
+            path: None,
             key: None,
             target: None,
             pointer: None,
@@ -595,6 +596,7 @@ mod tests {
             target.rect.y + tokens::SPACE_2 + local.1,
         );
         UiEvent {
+            path: None,
             key: Some(target.key.clone()),
             target: Some(target),
             pointer: Some(pointer),
@@ -718,6 +720,7 @@ mod tests {
             ..Default::default()
         };
         let ev = UiEvent {
+            path: None,
             key: None,
             target: None,
             pointer: None,

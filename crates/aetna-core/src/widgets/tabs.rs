@@ -338,6 +338,7 @@ mod tests {
 
     fn click_event(key: &str) -> UiEvent {
         UiEvent {
+            path: None,
             kind: UiEventKind::Click,
             key: Some(key.to_string()),
             target: None,
@@ -632,6 +633,7 @@ mod tests {
         // Smoke test that a click event whose route comes from a real
         // UiTarget (mirroring what runtime delivers) is matched.
         let ev = UiEvent {
+            path: None,
             kind: UiEventKind::Click,
             key: Some("settings:tab:advanced".into()),
             target: Some(UiTarget {

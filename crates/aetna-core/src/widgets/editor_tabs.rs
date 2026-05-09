@@ -452,6 +452,7 @@ mod tests {
 
     fn click(key: &str) -> UiEvent {
         UiEvent {
+            path: None,
             kind: UiEventKind::Click,
             key: Some(key.to_string()),
             target: None,

@@ -267,6 +267,13 @@ pub struct UiEvent {
     /// manager read this to map double-click → select word, triple-
     /// click → select line.
     pub click_count: u8,
+    /// File system path for [`UiEventKind::FileHovered`] /
+    /// [`UiEventKind::FileDropped`] events. Multi-file drag-drops fire
+    /// one event per file (matching the underlying winit semantics);
+    /// each event carries one path. `PathBuf` rather than `String`
+    /// because Windows wide-char paths and unusual Unix paths aren't
+    /// guaranteed to be UTF-8.
+    pub path: Option<std::path::PathBuf>,
     pub kind: UiEventKind,
 }
 
@@ -287,6 +294,7 @@ impl UiEvent {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 1,
+            path: None,
         }
     }
 
@@ -436,6 +444,31 @@ pub enum UiEventKind {
     /// `event.pointer` is the current pointer position (or the last
     /// known position when the pointer left the window).
     PointerLeave,
+    /// A file is being dragged over the window (the user hasn't
+    /// released yet). `event.path` carries the file's path; multi-file
+    /// drags fire one event per file, matching the underlying winit
+    /// semantics. `event.target` is the keyed leaf at the current
+    /// pointer position when one was hit, otherwise `None`
+    /// (drop-zone overlays that span the window can match on
+    /// `event.target.is_none()` or filter by their own key).
+    ///
+    /// Apps use this to highlight a drop zone before the drop lands.
+    /// Always paired with either a later `FileHoverCancelled` (the
+    /// user moved off without releasing) or `FileDropped` (the user
+    /// released).
+    FileHovered,
+    /// The user moved a hovered file off the window without releasing,
+    /// or pressed Escape. Window-level event (`event.target` is
+    /// `None`) — apps clear any drop-zone affordance state regardless
+    /// of which keyed leaf was previously highlighted.
+    FileHoverCancelled,
+    /// A file was dropped on the window. `event.path` carries the
+    /// path; multi-file drops fire one event per file. `event.target`
+    /// is the keyed leaf at the drop position, or `None` if the drop
+    /// landed outside any keyed surface — apps that want a global drop
+    /// target match on `target.is_none()` or treat unrouted events as
+    /// hits to a single window-level upload sink.
+    FileDropped,
 }
 
 /// Per-frame, read-only context for [`App::build`].

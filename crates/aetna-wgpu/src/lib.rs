@@ -725,6 +725,37 @@ impl Runner {
         self.core.pointer_left()
     }
 
+    /// File is being dragged over the window. Hosts call this from
+    /// `winit::WindowEvent::HoveredFile` (one call per file). Returns
+    /// the `FileHovered` event routed to the keyed leaf at the cursor
+    /// (or window-level if outside any keyed surface).
+    pub fn file_hovered(
+        &mut self,
+        path: std::path::PathBuf,
+        x: f32,
+        y: f32,
+    ) -> Vec<aetna_core::UiEvent> {
+        self.core.file_hovered(path, x, y)
+    }
+
+    /// File hover ended without a drop — hosts call this from
+    /// `winit::WindowEvent::HoveredFileCancelled`. Window-level event
+    /// (not routed); apps clear any drop-zone affordance.
+    pub fn file_hover_cancelled(&mut self) -> Vec<aetna_core::UiEvent> {
+        self.core.file_hover_cancelled()
+    }
+
+    /// File was dropped on the window. Hosts call this from
+    /// `winit::WindowEvent::DroppedFile` (one call per file).
+    pub fn file_dropped(
+        &mut self,
+        path: std::path::PathBuf,
+        x: f32,
+        y: f32,
+    ) -> Vec<aetna_core::UiEvent> {
+        self.core.file_dropped(path, x, y)
+    }
+
     /// Mouse button down at `(x, y)` (logical px) for the given
     /// `button`. For `Primary`, records the pressed key for press-
     /// visual feedback, updates focus, and returns a `PointerDown`

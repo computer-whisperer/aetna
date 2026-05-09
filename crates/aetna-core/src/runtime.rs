@@ -277,6 +277,7 @@ impl RunnerCore {
                     selection: None,
                     modifiers,
                     click_count: 0,
+                    path: None,
                     kind: UiEventKind::PointerLeave,
                 });
             }
@@ -290,6 +291,7 @@ impl RunnerCore {
                     selection: None,
                     modifiers,
                     click_count: 0,
+                    path: None,
                     kind: UiEventKind::PointerEnter,
                 });
             }
@@ -339,6 +341,7 @@ impl RunnerCore {
                 selection: None,
                 modifiers,
                 click_count: 0,
+                path: None,
                 kind: UiEventKind::Drag,
             });
         }
@@ -377,10 +380,89 @@ impl RunnerCore {
                 selection: None,
                 modifiers,
                 click_count: 0,
+                path: None,
                 kind: UiEventKind::PointerLeave,
             });
         }
         out
+    }
+
+    /// A file is being dragged over the window at logical-pixel
+    /// coordinates `(x, y)`. Hosts call this from
+    /// `WindowEvent::HoveredFile`. Hit-tests at the cursor position and
+    /// emits a `FileHovered` event routed to the keyed leaf at that
+    /// point (or window-level when the cursor is over no keyed
+    /// surface). Multi-file drags fire one event per file — winit
+    /// reports each file separately and the host forwards each call
+    /// into this method.
+    ///
+    /// The hover state is *not* tracked across files; apps that want
+    /// to count active hovered files do so themselves between
+    /// `FileHovered` and the eventual `FileHoverCancelled` /
+    /// `FileDropped`.
+    pub fn file_hovered(&mut self, path: std::path::PathBuf, x: f32, y: f32) -> Vec<UiEvent> {
+        self.ui_state.pointer_pos = Some((x, y));
+        let target = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
+        let key = target.as_ref().map(|t| t.key.clone());
+        vec![UiEvent {
+            key,
+            target,
+            pointer: Some((x, y)),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: self.ui_state.modifiers,
+            click_count: 0,
+            path: Some(path),
+            kind: UiEventKind::FileHovered,
+        }]
+    }
+
+    /// The user moved a hovered file off the window without dropping
+    /// (or pressed Escape). Window-level event — not routed to any
+    /// keyed leaf, since winit doesn't tell us which file was being
+    /// dragged. Apps clear any drop-zone affordance state.
+    pub fn file_hover_cancelled(&mut self) -> Vec<UiEvent> {
+        vec![UiEvent {
+            key: None,
+            target: None,
+            pointer: self.ui_state.pointer_pos,
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: self.ui_state.modifiers,
+            click_count: 0,
+            path: None,
+            kind: UiEventKind::FileHoverCancelled,
+        }]
+    }
+
+    /// A file was dropped on the window at logical-pixel coordinates
+    /// `(x, y)`. Hosts call this from `WindowEvent::DroppedFile`.
+    /// Same routing as [`Self::file_hovered`] — keyed leaf at the drop
+    /// point, or window-level. One event per file.
+    pub fn file_dropped(&mut self, path: std::path::PathBuf, x: f32, y: f32) -> Vec<UiEvent> {
+        self.ui_state.pointer_pos = Some((x, y));
+        let target = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| hit_test::hit_test_target(t, &self.ui_state, (x, y)));
+        let key = target.as_ref().map(|t| t.key.clone());
+        vec![UiEvent {
+            key,
+            target,
+            pointer: Some((x, y)),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: self.ui_state.modifiers,
+            click_count: 0,
+            path: Some(path),
+            kind: UiEventKind::FileDropped,
+        }]
     }
 
     /// Primary/secondary/middle pointer button pressed at `(x, y)`.
@@ -502,6 +584,7 @@ impl RunnerCore {
                 selection: None,
                 modifiers,
                 click_count,
+                path: None,
                 kind: UiEventKind::PointerDown,
             });
         }
@@ -651,6 +734,7 @@ impl RunnerCore {
                         selection: None,
                         modifiers,
                         click_count,
+                        path: None,
                         kind: UiEventKind::PointerUp,
                     });
                 }
@@ -674,6 +758,7 @@ impl RunnerCore {
                             selection: None,
                             modifiers,
                             click_count,
+                            path: None,
                             kind: UiEventKind::Click,
                         });
                     }
@@ -699,6 +784,7 @@ impl RunnerCore {
                         selection: None,
                         modifiers,
                         click_count: 1,
+                        path: None,
                         kind,
                     });
                 }
@@ -851,6 +937,7 @@ impl RunnerCore {
             selection: None,
             modifiers,
             click_count: 0,
+            path: None,
             kind: UiEventKind::TextInput,
         })
     }
@@ -1312,6 +1399,7 @@ fn selection_event(
         selection: Some(new_sel),
         modifiers,
         click_count: 0,
+        path: None,
     }
 }
 
@@ -1989,6 +2077,57 @@ mod tests {
     }
 
     #[test]
+    fn file_dropped_routes_to_keyed_leaf_at_pointer() {
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let path = std::path::PathBuf::from("/tmp/screenshot.png");
+        let events = core.file_dropped(path.clone(), btn.x + 4.0, btn.y + 4.0);
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.kind, UiEventKind::FileDropped);
+        assert_eq!(event.key.as_deref(), Some("btn"));
+        assert_eq!(event.path.as_deref(), Some(path.as_path()));
+        assert_eq!(event.pointer, Some((btn.x + 4.0, btn.y + 4.0)));
+    }
+
+    #[test]
+    fn file_dropped_outside_keyed_surface_emits_window_level_event() {
+        let mut core = lay_out_input_tree(false);
+        // Drop in the padding band — outside any keyed leaf.
+        let path = std::path::PathBuf::from("/tmp/screenshot.png");
+        let events = core.file_dropped(path.clone(), 1.0, 1.0);
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.kind, UiEventKind::FileDropped);
+        assert!(
+            event.target.is_none(),
+            "drop outside any keyed surface routes window-level",
+        );
+        assert!(event.key.is_none());
+        // Path still flows through so a global drop sink can pick it up.
+        assert_eq!(event.path.as_deref(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn file_hovered_then_cancelled_pair() {
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let path = std::path::PathBuf::from("/tmp/a.png");
+
+        let hover = core.file_hovered(path.clone(), btn.x + 4.0, btn.y + 4.0);
+        assert_eq!(hover.len(), 1);
+        assert_eq!(hover[0].kind, UiEventKind::FileHovered);
+        assert_eq!(hover[0].key.as_deref(), Some("btn"));
+        assert_eq!(hover[0].path.as_deref(), Some(path.as_path()));
+
+        let cancel = core.file_hover_cancelled();
+        assert_eq!(cancel.len(), 1);
+        assert_eq!(cancel[0].kind, UiEventKind::FileHoverCancelled);
+        assert!(cancel[0].target.is_none());
+        assert!(cancel[0].path.is_none());
+    }
+
+    #[test]
     fn build_cx_hover_accessors_default_off_without_state() {
         use crate::Theme;
         let theme = Theme::default();
@@ -2351,6 +2490,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 0,
+            path: None,
             kind: UiEventKind::KeyDown,
         };
 

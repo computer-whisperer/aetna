@@ -692,6 +692,28 @@ impl Runner {
         self.core.pointer_left()
     }
 
+    pub fn file_hovered(
+        &mut self,
+        path: std::path::PathBuf,
+        x: f32,
+        y: f32,
+    ) -> Vec<aetna_core::UiEvent> {
+        self.core.file_hovered(path, x, y)
+    }
+
+    pub fn file_hover_cancelled(&mut self) -> Vec<aetna_core::UiEvent> {
+        self.core.file_hover_cancelled()
+    }
+
+    pub fn file_dropped(
+        &mut self,
+        path: std::path::PathBuf,
+        x: f32,
+        y: f32,
+    ) -> Vec<aetna_core::UiEvent> {
+        self.core.file_dropped(path, x, y)
+    }
+
     pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
         self.core.pointer_down(x, y, button)
     }

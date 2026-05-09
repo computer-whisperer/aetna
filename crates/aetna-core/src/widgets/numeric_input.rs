@@ -288,6 +288,7 @@ mod tests {
     /// the numeric-character-filter tests.
     fn text_event(target_key: &str, text: &str) -> UiEvent {
         UiEvent {
+            path: None,
             key: Some(target_key.to_string()),
             target: Some(UiTarget {
                 key: target_key.to_string(),

@@ -513,6 +513,37 @@ mod web_entry {
                     gfx.window.request_redraw();
                 }
 
+                // Browser drag/drop and clipboard-image plumbing rides
+                // the HTML File API rather than winit (which doesn't
+                // surface DroppedFile on wasm32). Web hosts that need
+                // file-drop support listen for `dragenter` / `drop` on
+                // the canvas via wasm-bindgen and route the resulting
+                // bytes through their own paths. The winit event arms
+                // exist for source-parity with the native hosts; on
+                // web they currently won't fire.
+                WindowEvent::HoveredFile(path) => {
+                    let (lx, ly) = self.last_pointer.unwrap_or((0.0, 0.0));
+                    for event in gfx.renderer.file_hovered(path, lx, ly) {
+                        self.app.on_event(event);
+                    }
+                    gfx.window.request_redraw();
+                }
+
+                WindowEvent::HoveredFileCancelled => {
+                    for event in gfx.renderer.file_hover_cancelled() {
+                        self.app.on_event(event);
+                    }
+                    gfx.window.request_redraw();
+                }
+
+                WindowEvent::DroppedFile(path) => {
+                    let (lx, ly) = self.last_pointer.unwrap_or((0.0, 0.0));
+                    for event in gfx.renderer.file_dropped(path, lx, ly) {
+                        self.app.on_event(event);
+                    }
+                    gfx.window.request_redraw();
+                }
+
                 WindowEvent::MouseInput { state, button, .. } => {
                     let Some(button) = pointer_button(button) else {
                         return;

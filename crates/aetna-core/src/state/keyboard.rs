@@ -50,6 +50,7 @@ impl UiState {
             selection: None,
             modifiers,
             click_count: 0,
+            path: None,
             kind: UiEventKind::Hotkey,
         })
     }
@@ -78,6 +79,7 @@ impl UiState {
             selection: None,
             modifiers,
             click_count: 0,
+            path: None,
             kind: UiEventKind::KeyDown,
         })
     }
@@ -132,6 +134,7 @@ impl UiState {
             selection: None,
             modifiers,
             click_count: 0,
+            path: None,
             kind,
         })
     }

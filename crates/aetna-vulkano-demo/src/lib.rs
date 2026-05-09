@@ -265,6 +265,29 @@ impl<A: App> ApplicationHandler for Host<A> {
                 rcx.window.request_redraw();
             }
 
+            WindowEvent::HoveredFile(path) => {
+                let (lx, ly) = self.last_pointer.unwrap_or((0.0, 0.0));
+                for event in rcx.runner.file_hovered(path, lx, ly) {
+                    self.app.on_event(event);
+                }
+                rcx.window.request_redraw();
+            }
+
+            WindowEvent::HoveredFileCancelled => {
+                for event in rcx.runner.file_hover_cancelled() {
+                    self.app.on_event(event);
+                }
+                rcx.window.request_redraw();
+            }
+
+            WindowEvent::DroppedFile(path) => {
+                let (lx, ly) = self.last_pointer.unwrap_or((0.0, 0.0));
+                for event in rcx.runner.file_dropped(path, lx, ly) {
+                    self.app.on_event(event);
+                }
+                rcx.window.request_redraw();
+            }
+
             WindowEvent::MouseInput { state, button, .. } => {
                 let Some(button) = pointer_button(button) else {
                     return;

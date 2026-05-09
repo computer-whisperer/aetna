@@ -253,6 +253,7 @@ mod tests {
 
     fn key_event(key: &str, ui_key: UiKey) -> UiEvent {
         UiEvent {
+            path: None,
             key: Some(key.to_string()),
             target: Some(UiTarget {
                 key: key.to_string(),
@@ -424,6 +425,7 @@ mod tests {
 
     fn pointer_event(key: &str, kind: UiEventKind, rect: Rect, x: f32) -> UiEvent {
         UiEvent {
+            path: None,
             key: Some(key.to_string()),
             target: Some(UiTarget {
                 key: key.to_string(),

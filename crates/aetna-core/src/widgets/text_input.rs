@@ -685,6 +685,29 @@ pub enum ClipboardKind {
 ///     None => { text_input::apply_event(&mut value, &mut sel, &event); }
 /// }
 /// ```
+///
+/// # Image paste
+///
+/// Apps that accept image paste (chat clients, image viewers, paint
+/// apps) handle the `Paste` branch themselves and call their
+/// clipboard backend's image API before falling through to
+/// `get_text`. With `arboard`:
+///
+/// ```ignore
+/// Some(ClipboardKind::Paste) => {
+///     if let Ok(img) = clipboard.get_image() {
+///         // img.bytes is RGBA8; wrap in `Image::from_rgba8(...)`
+///         // and stash on app state for `image()` widget rendering.
+///         self.attachments.push(decode_clipboard_image(img));
+///     } else if let Ok(text) = clipboard.get_text() {
+///         text_input::replace_selection(&mut value, &mut sel, &text);
+///     }
+/// }
+/// ```
+///
+/// No new aetna API is needed for image paste — the dispatch shape
+/// mirrors the text path. File-drop input rides a different channel:
+/// see [`crate::UiEventKind::FileDropped`].
 pub fn clipboard_request(event: &UiEvent) -> Option<ClipboardKind> {
     clipboard_request_for(event, &TextInputOpts::default())
 }
@@ -917,6 +940,7 @@ mod tests {
 
     fn ev_text_with_mods(s: &str, modifiers: KeyModifiers) -> UiEvent {
         UiEvent {
+            path: None,
             key: None,
             target: None,
             pointer: None,
@@ -935,6 +959,7 @@ mod tests {
 
     fn ev_key_with_mods(key: UiKey, modifiers: KeyModifiers) -> UiEvent {
         UiEvent {
+            path: None,
             key: None,
             target: None,
             pointer: None,
@@ -962,6 +987,7 @@ mod tests {
         click_count: u8,
     ) -> UiEvent {
         UiEvent {
+            path: None,
             key: Some(target.key.clone()),
             target: Some(target),
             pointer: Some(pointer),
@@ -976,6 +1002,7 @@ mod tests {
 
     fn ev_drag(target: UiTarget, pointer: (f32, f32)) -> UiEvent {
         UiEvent {
+            path: None,
             key: Some(target.key.clone()),
             target: Some(target),
             pointer: Some(pointer),
@@ -1649,6 +1676,7 @@ mod tests {
         let mut value = String::from("hello");
         let mut sel = TextSelection::range(0, 5);
         let click = UiEvent {
+            path: None,
             key: Some("ti".into()),
             target: Some(ti_target()),
             pointer: Some((ti_target().rect.x + 1.0, ti_target().rect.y + 18.0)),

@@ -182,6 +182,7 @@ mod tests {
 
     fn text_input_event(key: &str, txt: &str) -> UiEvent {
         UiEvent {
+            path: None,
             key: Some(key.to_string()),
             target: Some(UiTarget {
                 key: key.to_string(),
@@ -200,6 +201,7 @@ mod tests {
 
     fn backspace_event(key: &str) -> UiEvent {
         UiEvent {
+            path: None,
             key: Some(key.to_string()),
             target: Some(UiTarget {
                 key: key.to_string(),

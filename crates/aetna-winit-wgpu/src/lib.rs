@@ -485,6 +485,33 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         gfx.window.request_redraw();
                     }
 
+                    WindowEvent::HoveredFile(path) => {
+                        // File hover routes at the current pointer
+                        // position; winit keeps firing CursorMoved
+                        // alongside the file events so `last_pointer`
+                        // tracks the drag in real time.
+                        let (lx, ly) = self.last_pointer.unwrap_or((0.0, 0.0));
+                        for event in gfx.renderer.file_hovered(path, lx, ly) {
+                            self.app.on_event(event);
+                        }
+                        gfx.window.request_redraw();
+                    }
+
+                    WindowEvent::HoveredFileCancelled => {
+                        for event in gfx.renderer.file_hover_cancelled() {
+                            self.app.on_event(event);
+                        }
+                        gfx.window.request_redraw();
+                    }
+
+                    WindowEvent::DroppedFile(path) => {
+                        let (lx, ly) = self.last_pointer.unwrap_or((0.0, 0.0));
+                        for event in gfx.renderer.file_dropped(path, lx, ly) {
+                            self.app.on_event(event);
+                        }
+                        gfx.window.request_redraw();
+                    }
+
                     WindowEvent::MouseInput { state, button, .. } => {
                         let Some(button) = pointer_button(button) else {
                             return;
@@ -605,8 +632,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
 
                         WinitWgpuApp::before_build(&mut self.app);
                         let theme = self.app.theme();
-                        let cx = aetna_core::BuildCx::new(&theme)
-                            .with_ui_state(gfx.renderer.ui_state());
+                        let cx =
+                            aetna_core::BuildCx::new(&theme).with_ui_state(gfx.renderer.ui_state());
                         let mut tree = self.app.build(&cx);
                         let palette = theme.palette().clone();
                         gfx.renderer.set_theme(theme);
