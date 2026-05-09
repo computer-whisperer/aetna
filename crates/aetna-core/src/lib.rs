@@ -173,11 +173,13 @@ pub use widgets::form::{
     field_row, form, form_control, form_description, form_item, form_label, form_message,
     form_section,
 };
+pub use widgets::input_otp::input_otp;
 pub use widgets::item::{
     item, item_actions, item_content, item_description, item_footer, item_group, item_header,
     item_media, item_media_icon, item_separator, item_title,
 };
 pub use widgets::list::{bullet_list, numbered_list};
+pub use widgets::numeric_input::{NumericInputOpts, numeric_input};
 pub use widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use widgets::pagination::{
     pagination, pagination_content, pagination_ellipsis, pagination_item, pagination_link,

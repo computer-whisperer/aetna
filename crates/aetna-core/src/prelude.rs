@@ -90,11 +90,13 @@ pub use crate::widgets::form::{
     field_row, form, form_control, form_description, form_item, form_label, form_message,
     form_section,
 };
+pub use crate::widgets::input_otp::{self, input_otp};
 pub use crate::widgets::item::{
     self, item, item_actions, item_content, item_description, item_footer, item_group, item_header,
     item_media, item_media_icon, item_separator, item_title,
 };
 pub use crate::widgets::list::{bullet_list, numbered_list};
+pub use crate::widgets::numeric_input::{self, NumericInputOpts, numeric_input};
 pub use crate::widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use crate::widgets::pagination::{
     self, pagination, pagination_content, pagination_ellipsis, pagination_item, pagination_link,
