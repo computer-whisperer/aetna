@@ -70,9 +70,11 @@ mod image;
 mod instance;
 mod msaa;
 mod pipeline;
+mod surface;
 mod text;
 
 pub use crate::msaa::MsaaTarget;
+pub use crate::surface::{WgpuAppTexture, app_texture};
 
 use std::collections::{HashMap, HashSet};
 // `web_time::Instant` is API-identical to `std::time::Instant` on
@@ -98,6 +100,7 @@ pub use aetna_core::runtime::{PointerMove, PrepareResult, PrepareTimings};
 
 use crate::icon::IconPaint;
 use crate::image::ImagePaint;
+use crate::surface::SurfacePaint;
 use crate::instance::set_scissor;
 use crate::pipeline::{FrameUniforms, build_quad_pipeline};
 use crate::text::TextPaint;
@@ -145,6 +148,7 @@ pub struct Runner {
     icon_paint: IconPaint,
     // stock::image resources — per-image texture cache + instance buf.
     image_paint: ImagePaint,
+    surface_paint: SurfacePaint,
 
     /// Lazily-allocated snapshot of the color target, sized to match
     /// the current target on each `render()`. Backdrop-sampling
@@ -173,6 +177,7 @@ struct PaintRecorder<'a> {
     text: &'a mut TextPaint,
     icons: &'a mut IconPaint,
     images: &'a mut ImagePaint,
+    surfaces: &'a mut SurfacePaint,
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
 }
@@ -254,6 +259,18 @@ impl TextRecorder for PaintRecorder<'_> {
     ) -> std::ops::Range<usize> {
         self.images
             .record(self.device, self.queue, rect, scissor, image, tint, radius)
+    }
+
+    fn record_app_texture(
+        &mut self,
+        rect: Rect,
+        scissor: Option<PhysicalScissor>,
+        texture: &aetna_core::surface::AppTexture,
+        alpha: aetna_core::surface::SurfaceAlpha,
+        _scale_factor: f32,
+    ) -> std::ops::Range<usize> {
+        self.surfaces
+            .record(self.device, rect, scissor, texture, alpha)
     }
 }
 
@@ -429,6 +446,8 @@ impl Runner {
         let text_paint = TextPaint::new(device, target_format, sample_count, &frame_bind_layout);
         let icon_paint = IconPaint::new(device, target_format, sample_count, &frame_bind_layout);
         let image_paint = ImagePaint::new(device, target_format, sample_count, &frame_bind_layout);
+        let surface_paint =
+            SurfacePaint::new(device, target_format, sample_count, &frame_bind_layout);
 
         let mut core = RunnerCore::new();
         core.quad_scratch = Vec::with_capacity(INITIAL_INSTANCE_CAPACITY);
@@ -451,6 +470,7 @@ impl Runner {
             text_paint,
             icon_paint,
             image_paint,
+            surface_paint,
             snapshot: None,
             backdrop_bind_group: None,
             start_time: Instant::now(),
@@ -629,12 +649,14 @@ impl Runner {
         self.text_paint.frame_begin();
         self.icon_paint.frame_begin();
         self.image_paint.frame_begin();
+        self.surface_paint.frame_begin();
         let pipelines = &self.pipelines;
         let backdrop_shaders = &self.backdrop_shaders;
         let mut recorder = PaintRecorder {
             text: &mut self.text_paint,
             icons: &mut self.icon_paint,
             images: &mut self.image_paint,
+            surfaces: &mut self.surface_paint,
             device,
             queue,
         };
@@ -674,6 +696,7 @@ impl Runner {
         self.text_paint.flush(device, queue);
         self.icon_paint.flush(device, queue);
         self.image_paint.flush(device, queue);
+        self.surface_paint.flush(device, queue);
         // Pin time to 0 in Settled mode so headless fixtures rendering
         // a time-driven shader (e.g. stock::spinner) stay byte-identical
         // run-to-run, the same way `Animation::settle()` makes the
@@ -1129,6 +1152,16 @@ impl Runner {
                     pass.set_bind_group(1, self.image_paint.bind_group_for_run(run), &[]);
                     pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
                     pass.set_vertex_buffer(1, self.image_paint.instance_buf().slice(..));
+                    pass.draw(0..4, run.first..run.first + run.count);
+                }
+                PaintItem::AppTexture(index) => {
+                    let run = self.surface_paint.run(index);
+                    set_scissor(pass, run.scissor, full);
+                    pass.set_pipeline(self.surface_paint.pipeline_for(run.alpha));
+                    pass.set_bind_group(0, &self.quad_bind_group, &[]);
+                    pass.set_bind_group(1, self.surface_paint.bind_group_for_run(run), &[]);
+                    pass.set_vertex_buffer(0, self.quad_vbo.slice(..));
+                    pass.set_vertex_buffer(1, self.surface_paint.instance_buf().slice(..));
                     pass.draw(0..4, run.first..run.first + run.count);
                 }
                 PaintItem::BackdropSnapshot => {
