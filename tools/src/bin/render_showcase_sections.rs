@@ -51,25 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
     std::fs::create_dir_all(&out_dir)?;
 
-    for section in [
-        Section::Counter,
-        Section::List,
-        Section::Palette,
-        Section::Picker,
-        Section::Settings,
-        Section::Forms,
-        Section::Inputs,
-        Section::Tabs,
-        Section::EditorTabs,
-        Section::Split,
-        Section::Glass,
-        Section::Surfaces,
-        Section::Toasts,
-        Section::Images,
-        Section::Icons,
-        Section::Prose,
-        Section::Markdown,
-    ] {
+    for section in Section::ALL {
         let msaa = MsaaTarget::new(&device, format, extent, sample_count);
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("aetna_wgpu::tools::showcase_sections::target"),
@@ -203,11 +185,13 @@ fn section_slug(s: Section) -> &'static str {
         Section::Settings => "settings",
         Section::Forms => "forms",
         Section::Inputs => "inputs",
+        Section::Toggles => "toggles",
         Section::Tabs => "tabs",
         Section::EditorTabs => "editor-tabs",
         Section::Split => "split",
         Section::Glass => "glass",
         Section::Surfaces => "surfaces",
+        Section::Alerts => "alerts",
         Section::Toasts => "toasts",
         Section::Images => "images",
         Section::Icons => "icons",

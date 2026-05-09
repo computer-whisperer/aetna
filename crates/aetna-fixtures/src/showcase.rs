@@ -23,6 +23,7 @@
 //! minimal-fixture proof points alongside this. Showcase is the
 //! integration view; they're the unit views.
 
+use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use aetna_core::prelude::*;
@@ -100,11 +101,13 @@ pub enum Section {
     Settings,
     Forms,
     Inputs,
+    Toggles,
     Tabs,
     EditorTabs,
     Split,
     Glass,
     Surfaces,
+    Alerts,
     Toasts,
     Images,
     Icons,
@@ -123,11 +126,13 @@ impl Section {
             Section::Settings => "Settings",
             Section::Forms => "Forms",
             Section::Inputs => "Inputs",
+            Section::Toggles => "Toggles",
             Section::Tabs => "Tabs",
             Section::EditorTabs => "Editor tabs",
             Section::Split => "Split",
             Section::Glass => "Glass",
             Section::Surfaces => "Surfaces",
+            Section::Alerts => "Alerts",
             Section::Toasts => "Toasts",
             Section::Images => "Images",
             Section::Icons => "Icons",
@@ -146,11 +151,13 @@ impl Section {
             Section::Settings => "nav-settings",
             Section::Forms => "nav-forms",
             Section::Inputs => "nav-inputs",
+            Section::Toggles => "nav-toggles",
             Section::Tabs => "nav-tabs",
             Section::EditorTabs => "nav-editor-tabs",
             Section::Split => "nav-split",
             Section::Glass => "nav-glass",
             Section::Surfaces => "nav-surfaces",
+            Section::Alerts => "nav-alerts",
             Section::Toasts => "nav-toasts",
             Section::Images => "nav-images",
             Section::Icons => "nav-icons",
@@ -159,7 +166,7 @@ impl Section {
         }
     }
 
-    const ALL: [Section; 18] = [
+    pub const ALL: [Section; 20] = [
         Section::Counter,
         Section::List,
         Section::Items,
@@ -168,11 +175,13 @@ impl Section {
         Section::Settings,
         Section::Forms,
         Section::Inputs,
+        Section::Toggles,
         Section::Tabs,
         Section::EditorTabs,
         Section::Split,
         Section::Glass,
         Section::Surfaces,
+        Section::Alerts,
         Section::Toasts,
         Section::Images,
         Section::Icons,
@@ -278,6 +287,33 @@ impl Default for InputsState {
             selection: Selection::default(),
             region: "us-east".into(),
             region_open: false,
+        }
+    }
+}
+
+struct TogglesState {
+    /// Standalone toggle: soft-wrap long lines.
+    wrap: bool,
+    /// Single-select group: which view layout is active.
+    view: String,
+    /// Multi-select group: which filters are on. Compared against
+    /// each option's value via `HashSet::contains`.
+    filters: HashSet<String>,
+}
+
+impl Default for TogglesState {
+    fn default() -> Self {
+        // Defaults that show all three flavors in non-degenerate
+        // states when the section renders headlessly: standalone is
+        // pressed, single-select picks a non-first option, multi-select
+        // has two of three on so both pressed-and-not visuals appear.
+        let mut filters = HashSet::new();
+        filters.insert("open".into());
+        filters.insert("draft".into());
+        Self {
+            wrap: true,
+            view: "grid".into(),
+            filters,
         }
     }
 }
@@ -402,6 +438,7 @@ pub struct Showcase {
     picker: PickerState,
     forms: FormsState,
     inputs: InputsState,
+    toggles: TogglesState,
     tabs: TabsState,
     editor_tabs: EditorTabsState,
     split: SplitState,
@@ -498,11 +535,13 @@ impl App for Showcase {
             Section::Settings => {} // static fixture, no events
             Section::Forms => forms_on_event(&mut self.forms, event),
             Section::Inputs => inputs_on_event(&mut self.inputs, event),
+            Section::Toggles => toggles_on_event(&mut self.toggles, event),
             Section::Tabs => tabs_on_event(&mut self.tabs, event),
             Section::EditorTabs => editor_tabs_on_event(&mut self.editor_tabs, event),
             Section::Split => split_on_event(&mut self.split, event),
             Section::Glass => glass_on_event(&mut self.glass, event),
             Section::Surfaces => {} // static fixture, no events
+            Section::Alerts => {}   // static fixture, no events
             Section::Toasts => toasts_on_event(&mut self.toasts, event),
             Section::Images => {}   // static fixture, no events
             Section::Icons => {}    // static fixture, no events
@@ -587,6 +626,7 @@ fn content(app: &Showcase) -> El {
         Section::Settings => settings_view(),
         Section::Forms => forms_view(&app.forms),
         Section::Inputs => inputs_view(&app.inputs),
+        Section::Toggles => toggles_view(&app.toggles),
         Section::Tabs => tabs_view(&app.tabs),
         Section::EditorTabs => editor_tabs_view(&app.editor_tabs),
         Section::Split => split_view(&app.split),
@@ -596,6 +636,7 @@ fn content(app: &Showcase) -> El {
                 .height(Size::Fill(1.0));
         }
         Section::Surfaces => surfaces_view(),
+        Section::Alerts => alerts_view(),
         Section::Toasts => toasts_view(&app.toasts),
         Section::Images => images_view(),
         Section::Icons => icons_view(),
@@ -1448,6 +1489,87 @@ fn inputs_on_event(state: &mut InputsState, e: UiEvent) {
     }
 }
 
+// ---- Toggles section ----
+//
+// All three toggle flavors side-by-side: standalone bool, single-select
+// group (panel-less segmented selector), and multi-select group (filter
+// chips). Each lives in its own titled card so the routed-key
+// conventions (`{key}` vs `{key}:toggle:{value}`) are obvious from the
+// fixture dump.
+
+const TOGGLES_VIEW_OPTIONS: &[(&str, &str)] =
+    &[("list", "List"), ("grid", "Grid"), ("kanban", "Kanban")];
+
+const TOGGLES_FILTER_OPTIONS: &[(&str, &str)] =
+    &[("open", "Open"), ("draft", "Draft"), ("merged", "Merged")];
+
+fn toggles_view(state: &TogglesState) -> El {
+    let standalone = titled_card(
+        "Standalone toggle",
+        [
+            paragraph(
+                "A single bool. `Click` flips it; the app folds the event back \
+                 with `toggle::apply_event_pressed`.",
+            )
+            .muted(),
+            toggle("toggles-wrap", state.wrap, "Wrap long lines"),
+        ],
+    );
+
+    let single = titled_card(
+        "Single-select group",
+        [
+            paragraph(
+                "Mutually exclusive — picks a value, like a panel-less \
+                 `tabs_list`. Folds via `toggle::apply_event_single`.",
+            )
+            .muted(),
+            toggle_group(
+                "toggles-view",
+                &state.view,
+                TOGGLES_VIEW_OPTIONS.iter().copied(),
+            ),
+        ],
+    );
+
+    let multi = titled_card(
+        "Multi-select group",
+        [
+            paragraph(
+                "Each value flips independently — filter chips, formatting \
+                 toolbars (B / I / U). Folds via `toggle::apply_event_multi`.",
+            )
+            .muted(),
+            toggle_group_multi(
+                "toggles-filters",
+                &state.filters,
+                TOGGLES_FILTER_OPTIONS.iter().copied(),
+            ),
+        ],
+    );
+
+    column([
+        h1("Toggles"),
+        scroll([standalone, single, multi])
+            .key("toggles-scroll")
+            .height(Size::Fill(1.0))
+            .padding(Sides::xy(0.0, tokens::SPACE_2))
+            .gap(tokens::SPACE_4),
+    ])
+    .gap(tokens::SPACE_4)
+    .height(Size::Fill(1.0))
+}
+
+fn toggles_on_event(state: &mut TogglesState, e: UiEvent) {
+    if toggle::apply_event_pressed(&mut state.wrap, &e, "toggles-wrap") {
+        return;
+    }
+    if toggle::apply_event_single(&mut state.view, &e, "toggles-view", |s| Some(s.to_string())) {
+        return;
+    }
+    let _ = toggle::apply_event_multi(&mut state.filters, &e, "toggles-filters");
+}
+
 // ---- Tabs section ----
 //
 // `tabs_list` driving a panel swap, plus a `dropdown` popover anchored
@@ -2172,6 +2294,54 @@ fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {
         .gap(tokens::SPACE_1)
         .width(Size::Fill(1.0))
         .height(Size::Fixed(140.0))
+}
+
+// ---- Alerts section ----
+//
+// Static fixture covering every status modifier the alert widget
+// supports. All five sit in a column so the destructive / warning /
+// info / success / muted variants are visually comparable in one view.
+
+fn alerts_view() -> El {
+    column([
+        h1("Alerts"),
+        paragraph(
+            "Bordered callout. Apply a status modifier to the root for the \
+             colored variants — `.destructive()`, `.warning()`, `.info()`, \
+             `.success()`, or `.muted()`.",
+        )
+        .muted(),
+        alert([
+            alert_title("Heads up"),
+            alert_description("Default alert: card surface, neutral border."),
+        ]),
+        alert([
+            alert_title("New comment"),
+            alert_description("Info: friendly nudge, non-destructive."),
+        ])
+        .info(),
+        alert([
+            alert_title("Saved"),
+            alert_description("Success: a positive confirmation."),
+        ])
+        .success(),
+        alert([
+            alert_title("Disk almost full"),
+            alert_description("Warning: action recommended but not required."),
+        ])
+        .warning(),
+        alert([
+            alert_title("Could not delete repository"),
+            alert_description("Destructive: a failure or destructive consequence."),
+        ])
+        .destructive(),
+        alert([
+            alert_title("Background task running"),
+            alert_description("Muted: low-emphasis status, deprioritized chrome."),
+        ])
+        .muted(),
+    ])
+    .gap(tokens::SPACE_3)
 }
 
 // ---- Toasts section ----

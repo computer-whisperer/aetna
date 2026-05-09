@@ -19,25 +19,7 @@ fn main() -> std::io::Result<()> {
     let viewport = Rect::new(0.0, 0.0, 900.0, 640.0);
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../crates/aetna-fixtures/out");
 
-    for section in [
-        Section::Counter,
-        Section::List,
-        Section::Palette,
-        Section::Picker,
-        Section::Settings,
-        Section::Forms,
-        Section::Inputs,
-        Section::Tabs,
-        Section::EditorTabs,
-        Section::Split,
-        Section::Glass,
-        Section::Surfaces,
-        Section::Toasts,
-        Section::Images,
-        Section::Icons,
-        Section::Prose,
-        Section::Markdown,
-    ] {
+    for section in Section::ALL {
         let mut app = Showcase::with_section(section);
         app.before_build();
         let theme = app.theme();
@@ -74,11 +56,13 @@ fn section_slug(s: Section) -> &'static str {
         Section::Settings => "settings",
         Section::Forms => "forms",
         Section::Inputs => "inputs",
+        Section::Toggles => "toggles",
         Section::Tabs => "tabs",
         Section::EditorTabs => "editor-tabs",
         Section::Split => "split",
         Section::Glass => "glass",
         Section::Surfaces => "surfaces",
+        Section::Alerts => "alerts",
         Section::Toasts => "toasts",
         Section::Images => "images",
         Section::Icons => "icons",
