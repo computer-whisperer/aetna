@@ -126,7 +126,10 @@ pub enum DrawOp {
     /// it samples the existing texture identified by `texture` during
     /// paint, keying its bind-group cache on
     /// [`crate::surface::AppTextureId`]. `rect` is the resolved widget
-    /// box; the texture fills it 1:1 (no per-rect projection in 0.3.x).
+    /// box; the full texture is sampled across that rect with
+    /// bilinear filtering — texture dimensions and rect dimensions
+    /// are independent and a mismatched aspect ratio stretches the
+    /// content. `ImageFit`-style projection is a future enhancement.
     /// `alpha` selects the blend path. SVG bundle output emits a
     /// placeholder rect labelled with the texture's id.
     AppTexture {

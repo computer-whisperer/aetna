@@ -9,6 +9,18 @@
 //! shader model: 3D viewports, video frames, externally rasterised
 //! canvases. The widget that displays one is [`crate::tree::surface`].
 //!
+//! # Sizing contract
+//!
+//! The source texture's pixel dimensions are **independent of the
+//! rendered size**. `surface()` samples the full texture across its
+//! resolved layout rect with bilinear filtering — mismatched aspect
+//! ratios stretch the content. 0.3.x ships only this fill-the-rect
+//! projection; `ImageFit`-style modes are a future enhancement. See
+//! [`crate::tree::surface`] for sizing strategies (pixel-accurate,
+//! viewport-driven re-allocation, aspect-ratio wrappers).
+//!
+//! # Backend dispatch
+//!
 //! Backend-neutral: [`AppTexture`] is an `Arc<dyn AppTextureBackend>`,
 //! and each Aetna backend (`aetna-wgpu`, `aetna-vulkano`) supplies its
 //! own concrete impl plus a constructor (e.g. `aetna_wgpu::app_texture`).

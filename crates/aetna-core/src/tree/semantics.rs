@@ -31,6 +31,11 @@ pub enum Kind {
     /// by [`crate::surface::AppTexture`] and the [`crate::tree::surface`]
     /// builder; the backend samples the texture during paint instead
     /// of uploading pixels.
+    ///
+    /// The texture stretches across the resolved rect with bilinear
+    /// filtering — source pixel dimensions and rendered size are
+    /// independent. See [`crate::tree::surface`] for the full sizing /
+    /// aspect-ratio contract.
     Surface,
     /// Escape hatch for app-defined components.
     Custom(&'static str),

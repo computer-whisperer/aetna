@@ -150,8 +150,11 @@ pub fn view(animated_surface: Option<&AppTexture>) -> El {
             "Animated surface (app-owned GPU texture)",
             "`surface(AppTexture)` composites pixels the app writes each frame — \
              3D viewports, video, animated images. The host writes a procedural \
-             frame to a 96×96 RGBA8 texture in `WinitWgpuApp::before_paint`; \
-             Aetna samples it during paint, no upload, no extra render pass.",
+             frame to a 96×96 RGBA8 source texture in `WinitWgpuApp::before_paint`; \
+             Aetna samples it across each tile's resolved rect with bilinear \
+             filtering, so the small source stretches to fill the cell — source \
+             pixel dimensions and rendered size are independent. Three tiles, \
+             three `SurfaceAlpha` modes, one shared texture.",
             [animated_surface_demo(animated_surface)],
         ),
         section_card(

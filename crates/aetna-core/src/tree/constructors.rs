@@ -283,13 +283,36 @@ pub fn image(img: impl Into<Image>) -> El {
 
 /// An app-owned-texture surface. Aetna composites the texture into
 /// the paint stream at the El's resolved rect — no upload, no per-frame
-/// copy. The default size hugs the texture's pixel dimensions; set
+/// copy. The default size matches the texture's pixel dimensions; set
 /// [`El::width`] / [`El::height`] (or `.fill_size()`) for an explicit
 /// box.
 ///
-/// The widget participates in layout, scissor, scrolling, hit-test, and
-/// z-order like any other El: siblings declared before this one paint
-/// underneath, siblings after paint on top.
+/// # Sizing and the source/display relationship
+///
+/// The texture's pixel dimensions are **independent of the rendered
+/// size**. The widget always samples the full source texture across
+/// its entire resolved rect with bilinear filtering — if the rect's
+/// aspect ratio differs from the texture's, the texture stretches.
+/// 0.3.x ships only this fill-the-rect projection; `ImageFit`-style
+/// modes (Contain / Cover / None) are a future enhancement.
+///
+/// Practical consequences for app authors:
+/// - For pixel-accurate display, size the widget to the texture's
+///   pixel dimensions (the default constructor does this for you).
+/// - For a 3D viewport or video frame, size the widget to whatever
+///   layout dictates; the app should re-allocate its texture to
+///   match the resolved rect to avoid resampling cost. Read the
+///   layout rect via `UiState::rect_of_key(...)` after `prepare()`
+///   and re-allocate before the next frame.
+/// - To preserve aspect ratio, wrap the surface in a fixed-aspect
+///   layout container (e.g. a column with `Size::Fixed` width and
+///   matching height).
+///
+/// # z-order, scissor, hit-test
+///
+/// The widget participates in layout, scissor, scrolling, hit-test,
+/// and z-order like any other El: siblings declared before this one
+/// paint underneath, siblings after paint on top.
 ///
 /// ```ignore
 /// // Pseudocode — the AppTexture comes from a backend constructor.
