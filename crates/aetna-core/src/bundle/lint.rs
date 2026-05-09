@@ -78,6 +78,20 @@ pub enum FindingKind {
     /// `fill=CARD + stroke=BORDER + width=SIDEBAR_WIDTH` without a Panel
     /// surface role ⇒ `sidebar()`).
     ReinventedWidget,
+    /// A focusable node's `paint_overflow` band (the focus-ring band)
+    /// would render obscured at runtime — either because the nearest
+    /// clipping ancestor's scissor cuts it, or because a later-painted
+    /// sibling's rect overlaps the bleed region and paints on top.
+    ///
+    /// Common fixes:
+    ///
+    /// - **Clipped:** give the clipping ancestor (or an intermediate
+    ///   container) padding ≥ `tokens::RING_WIDTH` on the clipped
+    ///   side so the band lives inside the scissor.
+    /// - **Occluded:** add gap between the focusable element and the
+    ///   neighbor (≥ `tokens::RING_WIDTH`), or restructure so the
+    ///   neighbor doesn't sit on the focusable element's edge.
+    FocusRingObscured,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -122,7 +136,15 @@ impl LintReport {
 pub fn lint(root: &El, ui_state: &UiState) -> LintReport {
     let mut r = LintReport::default();
     let mut seen_ids: std::collections::BTreeMap<String, usize> = Default::default();
-    walk(root, None, None, ui_state, &mut r, &mut seen_ids);
+    walk(
+        root,
+        None,
+        None,
+        ClipCtx::None,
+        ui_state,
+        &mut r,
+        &mut seen_ids,
+    );
     for (id, n) in seen_ids {
         if n > 1 {
             r.findings.push(Finding {
@@ -140,10 +162,30 @@ fn is_from_user(source: Source) -> bool {
     !source.from_library
 }
 
+/// Clipping context propagated through `walk`. Carries the nearest
+/// clipping ancestor's scissor rect and, for scrollable ancestors,
+/// the axis along which content can be scrolled into view (clipping
+/// on that axis is benign — focus rings on partially-clipped rows
+/// become visible after auto-scroll-on-focus).
+#[derive(Clone, Copy)]
+enum ClipCtx {
+    None,
+    /// Non-scrolling clip — the rect cuts on every side.
+    Static(Rect),
+    /// Scrolling clip — the rect cuts on the cross axis only;
+    /// `scroll_axis` records the axis where overflow becomes scroll
+    /// (Column = vertical, Row = horizontal).
+    Scrolling {
+        rect: Rect,
+        scroll_axis: Axis,
+    },
+}
+
 fn walk(
     n: &El,
     parent_kind: Option<&Kind>,
     parent_blame: Option<Source>,
+    nearest_clip: ClipCtx,
     ui_state: &UiState,
     r: &mut LintReport,
     seen: &mut std::collections::BTreeMap<String, usize>,
@@ -379,7 +421,27 @@ fn walk(
     let suppress_overflow = n.scrollable
         || matches!(n.kind, Kind::Inlines)
         || matches!(n.kind, Kind::Custom("toast_stack"));
-    for c in &n.children {
+
+    // Update the nearest-clipping-ancestor rect for descendants. The
+    // scissor in `draw_ops` uses `inner_painted_rect` (the layout
+    // rect, no padding inset, no overflow outset), so this rect is
+    // the right bound to compare descendant ring bands against.
+    // Scrollable clips suppress clipping findings on the scroll axis
+    // (auto-scroll-on-focus reveals partially-clipped rows there).
+    let child_clip = if n.clip {
+        if n.scrollable {
+            ClipCtx::Scrolling {
+                rect: computed,
+                scroll_axis: n.axis,
+            }
+        } else {
+            ClipCtx::Static(computed)
+        }
+    } else {
+        nearest_clip
+    };
+
+    for (child_idx, c) in n.children.iter().enumerate() {
         let from_user_child = is_from_user(c.source);
         let child_blame = if from_user_child {
             Some(c.source)
@@ -406,8 +468,161 @@ fn walk(
                 ),
             });
         }
-        walk(c, Some(&n.kind), child_blame, ui_state, r, seen);
+
+        // Focus-ring obscurement: only meaningful for focusable nodes
+        // that reserve a paint_overflow band (the band is where the
+        // ring renders in the stock-shader path).
+        if from_user_child
+            && c.focusable
+            && has_paint_overflow(c.paint_overflow)
+            && let Some(blame) = child_blame
+        {
+            check_focus_ring_obscured(
+                c,
+                c_rect,
+                child_clip,
+                &n.children[child_idx + 1..],
+                ui_state,
+                r,
+                blame,
+            );
+        }
+
+        walk(c, Some(&n.kind), child_blame, child_clip, ui_state, r, seen);
     }
+}
+
+fn has_paint_overflow(s: Sides) -> bool {
+    s.left > 0.0 || s.right > 0.0 || s.top > 0.0 || s.bottom > 0.0
+}
+
+fn check_focus_ring_obscured(
+    n: &El,
+    n_rect: Rect,
+    nearest_clip: ClipCtx,
+    later_siblings: &[El],
+    ui_state: &UiState,
+    r: &mut LintReport,
+    blame: Source,
+) {
+    let band = n_rect.outset(n.paint_overflow);
+
+    // 1. Clipped by ancestor scissor. For scrollable clips, only the
+    // cross axis is checked — the scroll axis can bring partially
+    // clipped rows into view on focus.
+    let (clip_rect, check_horiz, check_vert) = match nearest_clip {
+        ClipCtx::None => (None, false, false),
+        ClipCtx::Static(rect) => (Some(rect), true, true),
+        ClipCtx::Scrolling { rect, scroll_axis } => match scroll_axis {
+            Axis::Column => (Some(rect), true, false),
+            Axis::Row => (Some(rect), false, true),
+            Axis::Overlay => (Some(rect), true, true),
+        },
+    };
+    if let Some(clip) = clip_rect {
+        let dx_left = if check_horiz {
+            (clip.x - band.x).max(0.0)
+        } else {
+            0.0
+        };
+        let dx_right = if check_horiz {
+            (band.right() - clip.right()).max(0.0)
+        } else {
+            0.0
+        };
+        let dy_top = if check_vert {
+            (clip.y - band.y).max(0.0)
+        } else {
+            0.0
+        };
+        let dy_bottom = if check_vert {
+            (band.bottom() - clip.bottom()).max(0.0)
+        } else {
+            0.0
+        };
+        if dx_left + dx_right + dy_top + dy_bottom > 0.5 {
+            r.findings.push(Finding {
+                kind: FindingKind::FocusRingObscured,
+                node_id: n.computed_id.clone(),
+                source: blame,
+                message: format!(
+                    "focus ring band clipped by ancestor scissor (L={dx_left:.0} R={dx_right:.0} T={dy_top:.0} B={dy_bottom:.0}) — give a clipping ancestor padding ≥ tokens::RING_WIDTH on the clipped side",
+                ),
+            });
+        }
+    }
+
+    // 2. Occluded by a later-painted sibling whose rect overlaps the
+    // bleed band on a side where the focusable reserves overflow.
+    // Skip overlay parents (siblings are intentionally stacked).
+    for sib in later_siblings {
+        let sib_rect = ui_state.rect(&sib.computed_id);
+        if let Some(side) = bleed_occlusion(n_rect, n.paint_overflow, sib_rect)
+            && paints_pixels(sib)
+        {
+            r.findings.push(Finding {
+                kind: FindingKind::FocusRingObscured,
+                node_id: n.computed_id.clone(),
+                source: blame,
+                message: format!(
+                    "focus ring band occluded on the {side} edge by later-painted sibling {sib_id} — increase gap to ≥ tokens::RING_WIDTH or restructure so the neighbor doesn't sit on the edge",
+                    sib_id = sib.computed_id,
+                ),
+            });
+            // First occluder is enough — don't double-report.
+            break;
+        }
+    }
+}
+
+/// True if `n` paints visible pixels (so it can occlude a sibling's
+/// focus ring band). Pure structural columns/rows with no fill/
+/// stroke/text/image/shadow don't occlude.
+fn paints_pixels(n: &El) -> bool {
+    n.fill.is_some()
+        || n.stroke.is_some()
+        || n.image.is_some()
+        || n.icon.is_some()
+        || n.shadow > 0.0
+        || n.text.is_some()
+        || !matches!(n.surface_role, SurfaceRole::None)
+}
+
+/// Whichever side of `n_rect`'s `paint_overflow` band `sib_rect`
+/// intersects (above the EPS adjacency threshold). `EPS` keeps a
+/// sibling whose edge merely touches the focusable's edge (gap = 0)
+/// from triggering — touching is adjacency, not yet occlusion.
+fn bleed_occlusion(n_rect: Rect, overflow: Sides, sib_rect: Rect) -> Option<&'static str> {
+    const EPS: f32 = 0.5;
+    let bands: [(&'static str, Rect); 4] = [
+        (
+            "top",
+            Rect::new(n_rect.x, n_rect.y - overflow.top, n_rect.w, overflow.top),
+        ),
+        (
+            "bottom",
+            Rect::new(n_rect.x, n_rect.bottom(), n_rect.w, overflow.bottom),
+        ),
+        (
+            "left",
+            Rect::new(n_rect.x - overflow.left, n_rect.y, overflow.left, n_rect.h),
+        ),
+        (
+            "right",
+            Rect::new(n_rect.right(), n_rect.y, overflow.right, n_rect.h),
+        ),
+    ];
+    for (side, band) in bands {
+        if band.w <= 0.0 || band.h <= 0.0 {
+            continue;
+        }
+        let iw = band.right().min(sib_rect.right()) - band.x.max(sib_rect.x);
+        let ih = band.bottom().min(sib_rect.bottom()) - band.y.max(sib_rect.y);
+        if iw > EPS && ih > EPS {
+            return Some(side);
+        }
+    }
+    None
 }
 
 fn lint_row_alignment(
@@ -1133,6 +1348,200 @@ mod tests {
                 .findings
                 .iter()
                 .any(|f| f.kind == FindingKind::MissingSurfaceFill),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn focus_ring_lint_fires_when_input_clipped_on_scroll_cross_axis() {
+        // The original bug: a focusable text input flush at the left
+        // edge of a vertical-scroll viewport gets its ring scissored.
+        let selection = crate::selection::Selection::default();
+        let mut root = crate::tree::scroll([crate::tree::column([
+            crate::widgets::text_input::text_input("", &selection, "field"),
+        ])])
+        .width(Size::Fixed(300.0))
+        .height(Size::Fixed(120.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 120.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            report.findings.iter().any(|f| {
+                f.kind == FindingKind::FocusRingObscured
+                    && f.message.contains("clipped")
+                    && (f.message.contains("L=2") || f.message.contains("R=2"))
+            }),
+            "expected a FocusRingObscured clipping finding (L=2 or R=2)\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn focus_ring_lint_silenced_when_scroll_supplies_horizontal_slack() {
+        // Same shape, but the scroll's content is wrapped so the input
+        // sits inset by RING_WIDTH on each horizontal edge. No finding.
+        let selection = crate::selection::Selection::default();
+        let mut root =
+            crate::tree::scroll(
+                [crate::tree::column([crate::widgets::text_input::text_input(
+                    "", &selection, "field",
+                )])
+                .padding(Sides::xy(crate::tokens::RING_WIDTH, 0.0))],
+            )
+            .width(Size::Fixed(300.0))
+            .height(Size::Fixed(120.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 120.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::FocusRingObscured),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn focus_ring_lint_skips_clipping_on_scroll_axis() {
+        // Tall content that runs past a vertical scroll's bottom edge
+        // is fine — auto-scroll-on-focus brings the focused row into
+        // view. The lint must not fire on the scroll axis.
+        let selection = crate::selection::Selection::default();
+        let mut root = crate::tree::scroll([crate::tree::column([
+            // Big top filler so the input lands well below the viewport.
+            crate::tree::column(Vec::<El>::new())
+                .width(Size::Fill(1.0))
+                .height(Size::Fixed(200.0)),
+            crate::widgets::text_input::text_input("", &selection, "field"),
+        ])
+        .padding(Sides::xy(crate::tokens::RING_WIDTH, 0.0))])
+        .width(Size::Fixed(300.0))
+        .height(Size::Fixed(120.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 120.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::FocusRingObscured),
+            "expected no FocusRingObscured finding for a row clipped on the scroll axis\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn focus_ring_lint_fires_on_static_clip_in_any_direction() {
+        // A non-scrolling clipping container (an ordinary clipped card)
+        // doesn't auto-reveal anything, so all four sides count.
+        let selection = crate::selection::Selection::default();
+        let mut root = crate::tree::column([crate::widgets::text_input::text_input(
+            "", &selection, "field",
+        )])
+        .clip()
+        .width(Size::Fixed(300.0))
+        .height(Size::Fixed(120.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 120.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            report.findings.iter().any(|f| {
+                f.kind == FindingKind::FocusRingObscured && f.message.contains("clipped")
+            }),
+            "expected a static-clip FocusRingObscured finding\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn focus_ring_lint_fires_on_painted_later_sibling_overlap() {
+        // Focusable on the left, a card-like sibling immediately to
+        // the right at gap=0. The card paints fill+stroke, so the
+        // focusable's right ring band gets occluded.
+        let selection = crate::selection::Selection::default();
+        let mut root = crate::tree::row([
+            crate::widgets::text_input::text_input("", &selection, "field"),
+            crate::tree::column([crate::text("neighbor")])
+                .fill(crate::tokens::CARD)
+                .stroke(crate::tokens::BORDER)
+                .width(Size::Fixed(80.0))
+                .height(Size::Fixed(32.0)),
+        ])
+        .gap(0.0)
+        .width(Size::Fixed(400.0))
+        .height(Size::Fixed(32.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 60.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            report.findings.iter().any(|f| {
+                f.kind == FindingKind::FocusRingObscured
+                    && f.message.contains("occluded")
+                    && f.message.contains("right")
+            }),
+            "expected an occlusion finding on the right edge\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn focus_ring_lint_ignores_unpainted_structural_sibling() {
+        // A structural column with no fill/stroke/text shouldn't be
+        // counted as an occluder — it draws no pixels.
+        let selection = crate::selection::Selection::default();
+        let mut root = crate::tree::row([
+            crate::widgets::text_input::text_input("", &selection, "field"),
+            crate::tree::column(Vec::<El>::new())
+                .width(Size::Fixed(80.0))
+                .height(Size::Fixed(32.0)),
+        ])
+        .gap(0.0)
+        .width(Size::Fixed(400.0))
+        .height(Size::Fixed(32.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 60.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::FocusRingObscured),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn focus_ring_lint_is_quiet_inside_form_after_padding_fix() {
+        // Regression: with form()'s default RING_WIDTH horizontal
+        // padding, a text input flush inside a scroll/form chain
+        // doesn't trip the clipping lint.
+        let selection = crate::selection::Selection::default();
+        let mut root = crate::tree::scroll([crate::widgets::form::form([
+            crate::widgets::form::form_item([crate::widgets::form::form_control(
+                crate::widgets::text_input::text_input("", &selection, "field"),
+            )]),
+        ])])
+        .width(Size::Fixed(300.0))
+        .height(Size::Fixed(120.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 120.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::FocusRingObscured),
             "{}",
             report.text()
         );

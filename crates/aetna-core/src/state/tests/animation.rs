@@ -170,6 +170,37 @@ fn focus_ring_lights_up_on_always_show_focus_ring_widgets_even_without_focus_vis
 }
 
 #[test]
+fn focus_ring_stays_on_when_focused_node_is_also_hovered() {
+    // Regression: hovering a focused element used to overwrite its
+    // resolved `state` from Focus to Hover (Hover wins in
+    // `apply_to_state`), and `FocusRingAlpha`'s target gated on
+    // `state == Focus`, so the ring fell off the moment the cursor
+    // entered. The `alpha_follows_focused_ancestor` chain dragged
+    // the text-input caret to invisible with it. Focus envelope must
+    // be independent of hover/press.
+    let selection = crate::selection::Selection::default();
+    let mut tree = column([row([crate::widgets::text_input::text_input(
+        "", &selection, "field",
+    )])])
+    .padding(20.0);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+    state.set_animation_mode(AnimationMode::Settled);
+
+    let field = target(&tree, &state, "field");
+    state.focused = Some(field.clone());
+    state.hovered = Some(field);
+    state.apply_to_state();
+    state.tick_visual_animations(&mut tree, Instant::now());
+
+    assert_eq!(
+        envelope_for(&tree, &state, "field", EnvelopeKind::FocusRing),
+        Some(1.0),
+        "focus ring must stay on while the focused node is also the hover target",
+    );
+}
+
+#[test]
 fn app_fill_settles_to_new_value_in_settled_mode() {
     // .animate(SPRING_STANDARD) on a node whose fill changes
     // between rebuilds. Settled mode should produce the new fill

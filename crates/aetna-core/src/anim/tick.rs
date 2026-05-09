@@ -244,7 +244,13 @@ fn compute_target(
             },
         )),
         AnimProp::FocusRingAlpha => Some(AnimValue::Float(
-            if matches!(state, InteractionState::Focus)
+            // Focus ring is independent of hover / press: a focused node
+            // that is also hovered keeps `state = Hover` (Hover wins
+            // over Focus in `apply_to_state`), but the ring should still
+            // be on. Read `focused` straight from the hot targets so
+            // the ring's envelope doesn't fall off when the cursor
+            // enters the focused element.
+            if hot.focused == Some(n.computed_id.as_str())
                 && (focus_visible || n.always_show_focus_ring)
             {
                 1.0
