@@ -106,8 +106,22 @@ pub fn apply_event(value: &mut String, key: &str, length: usize, event: &UiEvent
             let Some(text) = event.text.as_deref() else {
                 return false;
             };
+            // winit emits TextInput alongside named-key / shortcut
+            // KeyDowns: `"\u{8}"` for Backspace, `"\u{1b}"` for Escape,
+            // `"\r"`/`"\n"` for Enter, `"\t"` for Tab. The KeyDown arm
+            // already handles Backspace; without these filters that
+            // control character lands in the value as an unprintable
+            // box, which (a) looks like an empty cell on most fonts and
+            // (b) blocks further deletion because `value.chars().count()`
+            // never decreases. Same shape `text_input::apply_event` uses.
+            if (event.modifiers.ctrl && !event.modifiers.alt) || event.modifiers.logo {
+                return false;
+            }
             let mut changed = false;
             for ch in text.chars() {
+                if ch.is_control() {
+                    continue;
+                }
                 if value.chars().count() >= length {
                     break;
                 }
@@ -281,6 +295,64 @@ mod tests {
             &text_input_event("other", "x"),
         ));
         assert_eq!(value, "");
+    }
+
+    #[test]
+    fn text_input_drops_control_chars_so_backspace_doesnt_self_insert() {
+        // Regression: winit fires TextInput("\u{8}") *alongside* the
+        // KeyDown(Backspace) event. Without the control-char filter,
+        // the OTP's apply_event would (a) pop on KeyDown and then
+        // (b) re-append `\u{8}` on TextInput, leaving an unprintable
+        // box in the last cell that further Backspaces can't clear.
+        let mut value = String::from("123");
+        // Step 1: KeyDown(Backspace) pops the last char.
+        assert!(apply_event(&mut value, "code", 6, &backspace_event("code")));
+        assert_eq!(value, "12");
+        // Step 2: TextInput("\u{8}") that winit also emits should be
+        // dropped, not appended.
+        let mut bs_text = text_input_event("code", "\u{8}");
+        assert!(!apply_event(&mut value, "code", 6, &bs_text));
+        assert_eq!(value, "12", "control char should not be inserted");
+        // Other control chars (Enter, Tab, Escape) are also filtered.
+        for ctl in ["\r", "\n", "\t", "\u{1b}", "\u{7f}"] {
+            bs_text = text_input_event("code", ctl);
+            assert!(
+                !apply_event(&mut value, "code", 6, &bs_text),
+                "control char {ctl:?} should be dropped",
+            );
+            assert_eq!(value, "12");
+        }
+    }
+
+    #[test]
+    fn text_input_drops_ctrl_modified_chars() {
+        // winit fires TextInput("c") for Ctrl+C on some platforms.
+        // The clipboard side already handled the KeyDown — we don't
+        // want the literal letter to land in the OTP value.
+        let mut value = String::new();
+        let mut ev = text_input_event("code", "c");
+        ev.modifiers = KeyModifiers {
+            ctrl: true,
+            ..KeyModifiers::default()
+        };
+        assert!(!apply_event(&mut value, "code", 6, &ev));
+        assert_eq!(value, "");
+    }
+
+    #[test]
+    fn text_input_keeps_alt_gr_chars() {
+        // AltGr is reported as Ctrl+Alt; that combination must still
+        // produce text (`@`, `€`, `[`, `]`, `{`, `}`, …). Mirrors the
+        // exemption in text_input.
+        let mut value = String::new();
+        let mut ev = text_input_event("code", "@");
+        ev.modifiers = KeyModifiers {
+            ctrl: true,
+            alt: true,
+            ..KeyModifiers::default()
+        };
+        assert!(apply_event(&mut value, "code", 6, &ev));
+        assert_eq!(value, "@");
     }
 
     #[test]
