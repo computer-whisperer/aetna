@@ -165,7 +165,8 @@ pub use widgets::dropdown_menu::{
 };
 pub use widgets::editor_tabs::{
     ActiveTabStyle, CloseVisibility, EditorTabsAction, EditorTabsConfig, editor_tab,
-    editor_tab_add_key, editor_tab_close_key, editor_tab_select_key, editor_tabs, editor_tabs_with,
+    editor_tab_add_key, editor_tab_close_key, editor_tab_select_key, editor_tab_with_leading,
+    editor_tabs, editor_tabs_leading, editor_tabs_leading_with, editor_tabs_with,
 };
 pub use widgets::form::{
     field_row, form, form_control, form_description, form_item, form_label, form_message,

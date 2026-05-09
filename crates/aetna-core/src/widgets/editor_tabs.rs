@@ -289,10 +289,33 @@ where
 /// resulting element are `{strip_key}:tab:{value}` (whole tab) and
 /// `{strip_key}:close:{value}` (the `×`). `selected` styles the tab
 /// as active.
+///
+/// To prepend a status indicator (CI dot, modified mark, brand glyph)
+/// inside the tab body, use [`editor_tab_with_leading`].
 #[track_caller]
 pub fn editor_tab(
     strip_key: &str,
     value: impl std::fmt::Display,
+    label: impl Into<String>,
+    selected: bool,
+    config: EditorTabsConfig,
+) -> El {
+    editor_tab_with_leading(strip_key, value, None, label, selected, config)
+}
+
+/// Variant of [`editor_tab`] that prepends an optional `leading`
+/// element before the label inside the tab body. Use this for status
+/// indicators (CI dot, modified mark, brand glyph) that should sit
+/// inside the tab and inherit its hover / focus envelope.
+///
+/// `leading` is rendered as the first body child, so its size and
+/// vertical alignment compose with the standard label + close-icon
+/// row. Pass `None` for the same shape as [`editor_tab`].
+#[track_caller]
+pub fn editor_tab_with_leading(
+    strip_key: &str,
+    value: impl std::fmt::Display,
+    leading: Option<El>,
     label: impl Into<String>,
     selected: bool,
     config: EditorTabsConfig,
@@ -331,7 +354,12 @@ pub fn editor_tab(
         }
     }
 
-    let body_children: Vec<El> = vec![label_el, close];
+    let mut body_children: Vec<El> = Vec::with_capacity(3);
+    if let Some(leading) = leading {
+        body_children.push(leading);
+    }
+    body_children.push(label_el);
+    body_children.push(close);
     let body = row(body_children)
         .gap(tokens::SPACE_2)
         .align(Align::Center)
@@ -377,7 +405,8 @@ pub fn editor_tab(
 
 /// An editor-tab strip with default config (lifted active tab, dimmed
 /// close icons on inactive tabs). See [`editor_tabs_with`] for
-/// flavor overrides.
+/// flavor overrides; see [`editor_tabs_leading`] when each tab needs a
+/// leading status indicator (CI dot, modified mark, brand glyph).
 #[track_caller]
 pub fn editor_tabs<I, V, L>(
     key: impl Into<String>,
@@ -407,15 +436,59 @@ where
     V: std::fmt::Display,
     L: Into<String>,
 {
+    editor_tabs_leading_with(
+        key,
+        current,
+        options.into_iter().map(|(v, l)| (v, l, None)),
+        config,
+    )
+}
+
+/// An editor-tab strip whose options carry an optional leading element
+/// per tab — typically a small status indicator (CI dot, modified
+/// mark, brand glyph) that sits inside the tab body. Default config;
+/// see [`editor_tabs_leading_with`] for explicit configuration.
+///
+/// Each option is a `(value, label, leading)` triplet; `leading: None`
+/// produces the same shape as [`editor_tabs`] for that tab.
+#[track_caller]
+pub fn editor_tabs_leading<I, V, L>(
+    key: impl Into<String>,
+    current: &impl std::fmt::Display,
+    options: I,
+) -> El
+where
+    I: IntoIterator<Item = (V, L, Option<El>)>,
+    V: std::fmt::Display,
+    L: Into<String>,
+{
+    editor_tabs_leading_with(key, current, options, EditorTabsConfig::default())
+}
+
+/// Variant of [`editor_tabs_leading`] with explicit configuration. Mirrors
+/// [`editor_tabs_with`] but accepts a `(value, label, leading)`
+/// option iterator so each tab can carry an in-body status indicator.
+#[track_caller]
+pub fn editor_tabs_leading_with<I, V, L>(
+    key: impl Into<String>,
+    current: &impl std::fmt::Display,
+    options: I,
+    config: EditorTabsConfig,
+) -> El
+where
+    I: IntoIterator<Item = (V, L, Option<El>)>,
+    V: std::fmt::Display,
+    L: Into<String>,
+{
     let caller = Location::caller();
     let key = key.into();
     let current_str = current.to_string();
 
     let mut children: Vec<El> = options
         .into_iter()
-        .map(|(value, label)| {
+        .map(|(value, label, leading)| {
             let selected = value.to_string() == current_str;
-            editor_tab(&key, value, label, selected, config).at_loc(caller)
+            editor_tab_with_leading(&key, value, leading, label, selected, config).at_loc(caller)
         })
         .collect();
 
@@ -653,6 +726,72 @@ mod tests {
         assert_eq!(strip.children.len(), 3);
         let add = strip.children.last().unwrap();
         assert_eq!(add.key.as_deref(), Some("docs:add"));
+    }
+
+    #[test]
+    fn editor_tab_with_leading_prepends_leading_inside_body() {
+        let dot = crate::tree::column([crate::widgets::text::text("●")])
+            .width(Size::Fixed(8.0))
+            .height(Size::Fixed(8.0));
+        let tab = editor_tab_with_leading(
+            "docs",
+            "readme",
+            Some(dot),
+            "README.md",
+            false,
+            EditorTabsConfig::default(),
+        );
+        // Outer is column([body]); body's children are [leading, label, close].
+        let body = &tab.children[0];
+        assert_eq!(
+            body.children.len(),
+            3,
+            "leading + label + close = 3 body children, got {}",
+            body.children.len(),
+        );
+    }
+
+    #[test]
+    fn editor_tab_with_leading_none_matches_editor_tab_shape() {
+        let plain = editor_tab(
+            "docs",
+            "readme",
+            "README.md",
+            false,
+            EditorTabsConfig::default(),
+        );
+        let leading_none = editor_tab_with_leading(
+            "docs",
+            "readme",
+            None,
+            "README.md",
+            false,
+            EditorTabsConfig::default(),
+        );
+        assert_eq!(plain.children[0].children.len(), leading_none.children[0].children.len());
+    }
+
+    #[test]
+    fn editor_tabs_leading_threads_per_tab_leading_into_each_tab() {
+        let dot = || {
+            crate::tree::column([crate::widgets::text::text("●")])
+                .width(Size::Fixed(8.0))
+                .height(Size::Fixed(8.0))
+        };
+        let strip = editor_tabs_leading(
+            "docs",
+            &"readme",
+            [
+                ("readme", "README.md", Some(dot())),
+                ("main", "main.rs", None),
+            ],
+        );
+        // Two tabs + the trailing + button.
+        assert_eq!(strip.children.len(), 3);
+        let body_with_leading = &strip.children[0].children[0];
+        let body_no_leading = &strip.children[1].children[0];
+        assert_eq!(body_with_leading.children.len(), 3);
+        assert_eq!(body_no_leading.children.len(), 2);
     }
 
     #[test]
