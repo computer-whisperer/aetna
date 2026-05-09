@@ -210,4 +210,7 @@ pub use widgets::text_area::text_area;
 pub use widgets::text_input::{
     ClipboardKind, MaskMode, TextInputOpts, TextSelection, text_input, text_input_with,
 };
+pub use widgets::toggle::{
+    ToggleAction, toggle, toggle_group, toggle_group_multi, toggle_item, toggle_option_key,
+};
 pub use widgets::toolbar::{toolbar, toolbar_description, toolbar_group, toolbar_title};

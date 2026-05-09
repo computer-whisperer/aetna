@@ -134,6 +134,9 @@ pub use crate::widgets::text_area::{self, text_area};
 pub use crate::widgets::text_input::{
     self, ClipboardKind, MaskMode, TextInputOpts, TextSelection, text_input, text_input_with,
 };
+pub use crate::widgets::toggle::{
+    self, ToggleAction, toggle, toggle_group, toggle_group_multi, toggle_item, toggle_option_key,
+};
 pub use crate::widgets::toolbar::{
     self, toolbar, toolbar_description, toolbar_group, toolbar_title,
 };

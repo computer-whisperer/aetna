@@ -42,4 +42,5 @@ pub mod tabs;
 pub mod text;
 pub mod text_area;
 pub mod text_input;
+pub mod toggle;
 pub mod toolbar;
