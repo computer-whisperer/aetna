@@ -470,8 +470,16 @@ fn emit_glyph_run(
         TextAnchor::Middle => (rect.center_x(), "middle"),
         TextAnchor::End => (rect.right(), "end"),
     };
+    // For NoWrap text we vertically center the laid-out block within
+    // its rect — buttons and badges hand us a control-height rect with
+    // a single-line label, and centering the block is what reads as
+    // "right". Using the layout's full height (rather than one
+    // line-height) keeps multi-line NoWrap text (a code block, a
+    // label that contains an embedded `\n`) flush to the top of its
+    // hugged rect instead of being shoved down by `(N-1) *
+    // line_height / 2`.
     let line_top = match wrap {
-        TextWrap::NoWrap => rect.y + ((rect.h - layout.line_height) * 0.5).max(0.0),
+        TextWrap::NoWrap => rect.y + ((rect.h - layout.height) * 0.5).max(0.0),
         TextWrap::Wrap => rect.y,
     };
     let family = if mono {
@@ -551,8 +559,11 @@ fn emit_attributed_text(
         TextAnchor::Middle => (rect.center_x(), "middle"),
         TextAnchor::End => (rect.right(), "end"),
     };
+    // Same centering shape as `emit_glyph_run`: use the full laid-out
+    // height so multi-line NoWrap attributed text stays anchored to
+    // the top of its hugged rect.
     let line_top = match wrap {
-        TextWrap::NoWrap => rect.y + ((rect.h - layout.line_height) * 0.5).max(0.0),
+        TextWrap::NoWrap => rect.y + ((rect.h - layout.height) * 0.5).max(0.0),
         TextWrap::Wrap => rect.y,
     };
     let baseline = layout

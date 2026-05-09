@@ -484,9 +484,15 @@ impl TextPaint {
         }
 
         // Layout came back in logical px (we shaped at logical size).
-        let logical_line_height = shaped.layout.line_height;
+        // For NoWrap text we vertically center the whole laid-out
+        // block — buttons / badges hand us a control-height rect with
+        // a single-line label, and centering reads as "right". Using
+        // `layout.height` (rather than one line-height) keeps
+        // multi-line NoWrap text — a code block body, a label with an
+        // embedded `\n` — flush to the top of its hugged rect instead
+        // of being pushed down by `(N-1) * line_height / 2`.
         let v_offset = match wrap {
-            TextWrap::NoWrap => ((rect.h - logical_line_height).max(0.0)) * 0.5,
+            TextWrap::NoWrap => ((rect.h - shaped.layout.height).max(0.0)) * 0.5,
             TextWrap::Wrap => 0.0,
         };
         let origin_x = rect.x;

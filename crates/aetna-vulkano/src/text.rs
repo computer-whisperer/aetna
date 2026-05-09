@@ -286,9 +286,13 @@ impl TextPaint {
         }
 
         // Layout came back in logical px (we shaped at logical size).
-        let logical_line_height = shaped.layout.line_height;
+        // Center the whole laid-out block within the rect on NoWrap so
+        // multi-line NoWrap text — a code block body, a label that
+        // contains an embedded `\n` — stays flush to the top of its
+        // hugged rect instead of being shoved down by `(N-1) *
+        // line_height / 2`.
         let v_offset = match wrap {
-            TextWrap::NoWrap => ((rect.h - logical_line_height).max(0.0)) * 0.5,
+            TextWrap::NoWrap => ((rect.h - shaped.layout.height).max(0.0)) * 0.5,
             TextWrap::Wrap => 0.0,
         };
         let origin_x = rect.x;
