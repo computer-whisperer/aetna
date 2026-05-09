@@ -108,6 +108,7 @@ pub enum Section {
     Images,
     Icons,
     Prose,
+    Markdown,
 }
 
 impl Section {
@@ -129,6 +130,7 @@ impl Section {
             Section::Images => "Images",
             Section::Icons => "Icons",
             Section::Prose => "Prose",
+            Section::Markdown => "Markdown",
         }
     }
 
@@ -150,10 +152,11 @@ impl Section {
             Section::Images => "nav-images",
             Section::Icons => "nav-icons",
             Section::Prose => "nav-prose",
+            Section::Markdown => "nav-markdown",
         }
     }
 
-    const ALL: [Section; 16] = [
+    const ALL: [Section; 17] = [
         Section::Counter,
         Section::List,
         Section::Palette,
@@ -170,6 +173,7 @@ impl Section {
         Section::Images,
         Section::Icons,
         Section::Prose,
+        Section::Markdown,
     ];
 }
 
@@ -483,8 +487,9 @@ impl App for Showcase {
             Section::Surfaces => {} // static fixture, no events
             Section::Toasts => toasts_on_event(&mut self.toasts, event),
             Section::Images => {} // static fixture, no events
-            Section::Icons => {}  // static fixture, no events
-            Section::Prose => {}  // static fixture, no events
+            Section::Icons => {}    // static fixture, no events
+            Section::Prose => {}    // static fixture, no events
+            Section::Markdown => {} // static fixture, no events
         }
     }
 
@@ -576,6 +581,7 @@ fn content(app: &Showcase) -> El {
         Section::Images => images_view(),
         Section::Icons => icons_view(),
         Section::Prose => prose_view(),
+        Section::Markdown => markdown_view(),
     };
     column([body])
         .padding(tokens::SPACE_7)
@@ -2418,6 +2424,64 @@ fn prose_view() -> El {
     .gap(tokens::SPACE_4)
     .align(Align::Start)
     .width(Size::Fill(1.0))])
+}
+
+// ---- Markdown section ----
+//
+// The same long-form vocabulary the Prose section showcases, but
+// rendered through `aetna_markdown::md` instead of hand-authored
+// widgets. Demonstrates the transformer end-to-end inside the live
+// demo: the source string is plain markdown, the rendered tree is
+// the same widget kit Prose uses.
+
+const MARKDOWN_SOURCE: &str = "\
+# Markdown
+
+`aetna_markdown::md` walks `pulldown-cmark` events into Aetna widgets — \
+the same widget kit the *Prose* section composes by hand. Inline runs \
+cover **bold**, *italic*, `inline code`, ~~strike~~, and \
+[links](https://aetna.dev), all flowing through one wrapping paragraph.
+
+## Lists
+
+- Bullet items wrap under themselves with a hanging indent.
+- Inline runs work inside items: **bold**, *italic*, `code`, \
+  [links](https://aetna.dev).
+- Nested lists live inside a composite item.
+
+## Setup
+
+1. Add `aetna-markdown` to the workspace.
+2. Pull in `pulldown-cmark` with the GFM features the project uses.
+3. Wire the transformer through the existing widget kit.
+
+## Quote
+
+> Markdown's shape is HTML's shape. Aetna's widget kit already \
+> mirrors most of that shape, so the transformer mostly hands events \
+> to existing constructors.
+
+## Fenced code
+
+```
+fn render(md: &str) -> El {
+    aetna_markdown::md(md)
+}
+```
+
+## Tables
+
+| Construct  | Maps to            |
+|------------|--------------------|
+| Heading    | `h1` / `h2` / `h3` |
+| List       | `bullet_list` / `numbered_list` |
+| Blockquote | `blockquote`       |
+| Code block | `code_block`       |
+| Table      | `table`            |
+";
+
+fn markdown_view() -> El {
+    scroll([aetna_markdown::md(MARKDOWN_SOURCE)])
 }
 
 #[cfg(test)]

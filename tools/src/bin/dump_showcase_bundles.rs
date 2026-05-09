@@ -36,6 +36,7 @@ fn main() -> std::io::Result<()> {
         Section::Images,
         Section::Icons,
         Section::Prose,
+        Section::Markdown,
     ] {
         let mut app = Showcase::with_section(section);
         app.before_build();
@@ -81,5 +82,6 @@ fn section_slug(s: Section) -> &'static str {
         Section::Images => "images",
         Section::Icons => "icons",
         Section::Prose => "prose",
+        Section::Markdown => "markdown",
     }
 }

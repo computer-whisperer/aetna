@@ -58,6 +58,7 @@ name = "aetna-fixtures"
 version = "0.3.0"
 dependencies = [
  "aetna-core",
+ "aetna-markdown",
 ]
 
 [[package]]

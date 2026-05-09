@@ -12,3 +12,4 @@ path = "src/lib.rs"
 
 [dependencies]
 aetna-core = { version = "0.3.0", path = "../aetna-core" }
+aetna-markdown = { version = "0.3.0", path = "../aetna-markdown" }
