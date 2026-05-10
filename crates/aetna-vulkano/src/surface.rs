@@ -44,7 +44,6 @@ use vulkano::{
                 AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
             },
             input_assembly::{InputAssemblyState, PrimitiveTopology},
-            multisample::MultisampleState,
             rasterization::RasterizationState,
             subpass::PipelineSubpassType,
             vertex_input::{
@@ -59,7 +58,7 @@ use vulkano::{
 };
 
 use crate::naga_compile::wgsl_to_spirv;
-use crate::pipeline::build_shared_pipeline_layout;
+use crate::pipeline::{build_shared_pipeline_layout, multisample_state};
 
 const INSTANCE_ARENA_SIZE: u64 = 32 * 1024;
 
@@ -108,9 +107,10 @@ impl SurfacePaint {
         memory_alloc: Arc<StandardMemoryAllocator>,
         descriptor_alloc: Arc<StandardDescriptorSetAllocator>,
         subpass: Subpass,
+        sample_count: u32,
     ) -> Self {
         let (pipeline_premul, pipeline_straight, pipeline_opaque) =
-            build_surface_pipelines(device.clone(), subpass);
+            build_surface_pipelines(device.clone(), subpass, sample_count);
         let sampler = Sampler::new(
             device,
             SamplerCreateInfo {
@@ -283,6 +283,7 @@ impl SurfacePaint {
 fn build_surface_pipelines(
     device: Arc<Device>,
     subpass: Subpass,
+    sample_count: u32,
 ) -> (
     Arc<GraphicsPipeline>,
     Arc<GraphicsPipeline>,
@@ -297,6 +298,7 @@ fn build_surface_pipelines(
     let premul = build_one(
         device.clone(),
         subpass.clone(),
+        sample_count,
         &module,
         "fs_premul",
         Some(premultiplied_blend()),
@@ -304,17 +306,26 @@ fn build_surface_pipelines(
     let straight = build_one(
         device.clone(),
         subpass.clone(),
+        sample_count,
         &module,
         "fs_straight",
         Some(premultiplied_blend()),
     );
-    let opaque = build_one(device, subpass, &module, "fs_opaque", Some(opaque_blend()));
+    let opaque = build_one(
+        device,
+        subpass,
+        sample_count,
+        &module,
+        "fs_opaque",
+        Some(opaque_blend()),
+    );
     (premul, straight, opaque)
 }
 
 fn build_one(
     device: Arc<Device>,
     subpass: Subpass,
+    sample_count: u32,
     module: &Arc<ShaderModule>,
     fs_entry: &'static str,
     blend: Option<AttachmentBlend>,
@@ -370,7 +381,7 @@ fn build_one(
             }),
             viewport_state: Some(ViewportState::default()),
             rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
+            multisample_state: Some(multisample_state(sample_count)),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState {

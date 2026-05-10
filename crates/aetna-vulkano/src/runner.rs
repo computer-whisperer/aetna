@@ -59,7 +59,7 @@ use vulkano::{
     device::{Device, Queue},
     format::Format,
     image::{
-        Image, ImageCreateInfo, ImageType, ImageUsage,
+        Image, ImageCreateInfo, ImageType, ImageUsage, SampleCount,
         sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode},
         view::ImageView,
     },
@@ -137,6 +137,11 @@ pub struct Runner {
     /// Per-frame descriptor set holding the freshly-allocated uniform
     /// suballocation at binding 0.
     frame_descriptor_set: Option<Arc<DescriptorSet>>,
+
+    /// MSAA samples per pixel. `1` means non-multisampled; `2/4/8/...`
+    /// require a multisampled color attachment + resolve target on the
+    /// host's framebuffer (see [`Runner::sample_count`]).
+    sample_count: u32,
 
     /// SPIR-V words cached per registered custom shader name. The
     /// pipeline itself is built lazily on first use.
@@ -299,11 +304,34 @@ impl TextRecorder for PaintRecorder<'_> {
 }
 
 impl Runner {
-    /// Create a runner. The host's swapchain must use `target_format`;
-    /// stock pipelines are built against a single-pass render pass with
-    /// a color attachment in that format. Call [`Self::render_pass`] to
-    /// get the pass back so you can build framebuffers against it.
+    /// Create a runner with MSAA off (`sample_count = 1`). The host's
+    /// swapchain must use `target_format`; stock pipelines are built
+    /// against a single-pass render pass with a color attachment in that
+    /// format. Call [`Self::render_pass`] to get the pass back so you can
+    /// build framebuffers against it.
     pub fn new(device: Arc<Device>, queue: Arc<Queue>, target_format: Format) -> Self {
+        Self::with_sample_count(device, queue, target_format, 1)
+    }
+
+    /// Like [`Self::new`], but builds all stock pipelines and the runner's
+    /// render passes with `sample_count` MSAA samples per pixel. When
+    /// `sample_count > 1`, the render pass has two attachments — a
+    /// multisampled color attachment (load+store of the MSAA pixels) and
+    /// a single-sample resolve attachment (the swapchain image) — and
+    /// the host's framebuffer must bind both in that order. Use
+    /// [`Self::sample_count`] to read the active count back when sizing
+    /// the multisampled image.
+    pub fn with_sample_count(
+        device: Arc<Device>,
+        queue: Arc<Queue>,
+        target_format: Format,
+        sample_count: u32,
+    ) -> Self {
+        assert!(
+            SampleCount::try_from(sample_count).is_ok(),
+            "aetna-vulkano: sample_count {sample_count} is not a valid Vulkan sample count \
+             (expected 1, 2, 4, 8, 16, 32, or 64)"
+        );
         let memory_alloc = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         let descriptor_alloc = Arc::new(StandardDescriptorSetAllocator::new(
             device.clone(),
@@ -315,46 +343,25 @@ impl Runner {
             Default::default(),
         ));
 
-        let render_pass = vulkano::single_pass_renderpass!(
+        // Clear at pass-begin so the host doesn't need a separate
+        // `clear_color_image` step. The host passes its own clear color
+        // via `begin_render_pass`'s `clear_values`.
+        let render_pass = build_render_pass(
             device.clone(),
-            attachments: {
-                color: {
-                    // Clear at pass-begin so the host doesn't need a
-                    // separate `clear_color_image` step. The host passes
-                    // its own clear color via `begin_render_pass`'s
-                    // `clear_values`.
-                    format: target_format,
-                    samples: 1,
-                    load_op: Clear,
-                    store_op: Store,
-                },
-            },
-            pass: {
-                color: [color],
-                depth_stencil: {},
-            },
-        )
-        .expect("aetna-vulkano: create render pass");
+            target_format,
+            sample_count,
+            /* load_op_clear: */ true,
+        );
         // Pass B (used when there's a BackdropSnapshot boundary)
         // preserves Pass A's contents — `load_op: Load`. Attachment
         // layout matches `render_pass`, so pipelines built against the
         // Clear pass are render-pass-compatible with this Load pass.
-        let load_render_pass = vulkano::single_pass_renderpass!(
+        let load_render_pass = build_render_pass(
             device.clone(),
-            attachments: {
-                color: {
-                    format: target_format,
-                    samples: 1,
-                    load_op: Load,
-                    store_op: Store,
-                },
-            },
-            pass: {
-                color: [color],
-                depth_stencil: {},
-            },
-        )
-        .expect("aetna-vulkano: create load render pass");
+            target_format,
+            sample_count,
+            /* load_op_clear: */ false,
+        );
         let subpass = Subpass::from(render_pass.clone(), 0)
             .expect("aetna-vulkano: subpass 0 of single-pass render pass");
 
@@ -362,6 +369,7 @@ impl Runner {
         let rr = build_quad_pipeline(
             device.clone(),
             subpass.clone(),
+            sample_count,
             "stock::rounded_rect",
             stock_wgsl::ROUNDED_RECT,
         );
@@ -370,6 +378,7 @@ impl Runner {
         let spinner = build_quad_pipeline(
             device.clone(),
             subpass.clone(),
+            sample_count,
             "stock::spinner",
             stock_wgsl::SPINNER,
         );
@@ -378,6 +387,7 @@ impl Runner {
         let skeleton = build_quad_pipeline(
             device.clone(),
             subpass.clone(),
+            sample_count,
             "stock::skeleton",
             stock_wgsl::SKELETON,
         );
@@ -386,6 +396,7 @@ impl Runner {
         let progress_indeterminate = build_quad_pipeline(
             device.clone(),
             subpass,
+            sample_count,
             "stock::progress_indeterminate",
             stock_wgsl::PROGRESS_INDETERMINATE,
         );
@@ -452,6 +463,7 @@ impl Runner {
             descriptor_alloc.clone(),
             cmd_alloc.clone(),
             text_subpass,
+            sample_count,
         );
         let icon_subpass =
             Subpass::from(render_pass.clone(), 0).expect("aetna-vulkano: icon subpass 0");
@@ -462,6 +474,7 @@ impl Runner {
             descriptor_alloc.clone(),
             cmd_alloc.clone(),
             icon_subpass,
+            sample_count,
         );
         let image_subpass =
             Subpass::from(render_pass.clone(), 0).expect("aetna-vulkano: image subpass 0");
@@ -472,6 +485,7 @@ impl Runner {
             descriptor_alloc.clone(),
             cmd_alloc,
             image_subpass,
+            sample_count,
         );
         let surface_subpass =
             Subpass::from(render_pass.clone(), 0).expect("aetna-vulkano: surface subpass 0");
@@ -480,6 +494,7 @@ impl Runner {
             memory_alloc.clone(),
             descriptor_alloc.clone(),
             surface_subpass,
+            sample_count,
         );
 
         // Filtering sampler bound at @group(1) @binding(1) for every
@@ -517,6 +532,7 @@ impl Runner {
             uniform_alloc,
             instance_buf: None,
             frame_descriptor_set: None,
+            sample_count,
             registered_shaders: HashMap::new(),
             backdrop_shaders: HashSet::new(),
             time_shaders: HashSet::new(),
@@ -536,8 +552,22 @@ impl Runner {
     /// The render pass pipelines are built against. The host must
     /// construct framebuffers against this pass and begin/end it around
     /// each call to [`Self::draw`].
+    ///
+    /// When [`Self::sample_count`] is greater than 1 the pass has two
+    /// attachments — a multisampled color attachment and a single-sample
+    /// resolve attachment — and the host's framebuffer must bind both
+    /// in that order.
     pub fn render_pass(&self) -> &Arc<RenderPass> {
         &self.render_pass
+    }
+
+    /// MSAA samples per pixel the runner's pipelines and render passes
+    /// were built with. `1` means non-multisampled; values above 1
+    /// indicate the host must allocate a multisampled color image and
+    /// bind it as the first framebuffer attachment (with the swapchain
+    /// image as the second, resolve attachment).
+    pub fn sample_count(&self) -> u32 {
+        self.sample_count
     }
 
     pub fn set_surface_size(&mut self, width: u32, height: u32) {
@@ -599,7 +629,8 @@ impl Runner {
         self.registered_shaders.insert(name, spirv);
 
         let subpass = Subpass::from(self.render_pass.clone(), 0).expect("aetna-vulkano: subpass 0");
-        let pipeline = build_quad_pipeline(self.device.clone(), subpass, name, wgsl);
+        let pipeline =
+            build_quad_pipeline(self.device.clone(), subpass, self.sample_count, name, wgsl);
         if samples_backdrop {
             // Capture set 1's layout from the first backdrop pipeline
             // we see. Vulkano builds pipeline layouts via reflection,
@@ -1052,13 +1083,20 @@ impl Runner {
         framebuffer: Arc<Framebuffer>,
         clear_color: Option<[f32; 4]>,
     ) {
-        let (render_pass, clear_values) = match clear_color {
+        // With MSAA on, the pass has a resolve attachment after the
+        // multisampled color attachment. Its `load_op` is `DontCare`
+        // (Pass A) / not loaded (Pass B), so the matching `clear_values`
+        // slot is `None` in both cases.
+        let (render_pass, mut clear_values) = match clear_color {
             Some(c) => (self.render_pass.clone(), vec![Some(c.into())]),
-            // Load render pass declares `load_op: Load` for its sole
+            // Load render pass declares `load_op: Load` for its color
             // attachment, so the matching `clear_values` slot must be
             // `None`.
             None => (self.load_render_pass.clone(), vec![None]),
         };
+        if self.sample_count > 1 {
+            clear_values.push(None);
+        }
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -1452,4 +1490,110 @@ impl Runner {
         });
         self.backdrop_descriptor_set = Some(set);
     }
+}
+
+/// Build the runner's render pass for a single color subpass at the
+/// requested sample count. When `sample_count == 1` the pass has one
+/// color attachment in `target_format`; when greater, a multisampled
+/// color attachment is added and its contents are resolved into a
+/// single-sample resolve attachment (also `target_format`) at end of
+/// pass. The framebuffer the host binds must match the attachment count
+/// — one view for single-sample, two views (msaa, resolve) for MSAA.
+///
+/// `load_op_clear` picks the per-frame entry behavior: `true` clears at
+/// pass-begin (Pass A, no backdrop boundary), `false` loads (Pass B,
+/// preserving Pass A's pixels through the snapshot boundary). The MSAA
+/// color attachment stores between passes so Pass B's `load_op: Load`
+/// has valid contents to resume from.
+fn build_render_pass(
+    device: Arc<Device>,
+    target_format: Format,
+    sample_count: u32,
+    load_op_clear: bool,
+) -> Arc<RenderPass> {
+    if sample_count <= 1 {
+        return if load_op_clear {
+            vulkano::single_pass_renderpass!(
+                device,
+                attachments: {
+                    color: {
+                        format: target_format,
+                        samples: 1,
+                        load_op: Clear,
+                        store_op: Store,
+                    },
+                },
+                pass: {
+                    color: [color],
+                    depth_stencil: {},
+                },
+            )
+        } else {
+            vulkano::single_pass_renderpass!(
+                device,
+                attachments: {
+                    color: {
+                        format: target_format,
+                        samples: 1,
+                        load_op: Load,
+                        store_op: Store,
+                    },
+                },
+                pass: {
+                    color: [color],
+                    depth_stencil: {},
+                },
+            )
+        }
+        .expect("aetna-vulkano: create single-sample render pass");
+    }
+
+    if load_op_clear {
+        vulkano::single_pass_renderpass!(
+            device,
+            attachments: {
+                color_msaa: {
+                    format: target_format,
+                    samples: sample_count,
+                    load_op: Clear,
+                    store_op: Store,
+                },
+                color_resolve: {
+                    format: target_format,
+                    samples: 1,
+                    load_op: DontCare,
+                    store_op: Store,
+                },
+            },
+            pass: {
+                color: [color_msaa],
+                color_resolve: [color_resolve],
+                depth_stencil: {},
+            },
+        )
+    } else {
+        vulkano::single_pass_renderpass!(
+            device,
+            attachments: {
+                color_msaa: {
+                    format: target_format,
+                    samples: sample_count,
+                    load_op: Load,
+                    store_op: Store,
+                },
+                color_resolve: {
+                    format: target_format,
+                    samples: 1,
+                    load_op: DontCare,
+                    store_op: Store,
+                },
+            },
+            pass: {
+                color: [color_msaa],
+                color_resolve: [color_resolve],
+                depth_stencil: {},
+            },
+        )
+    }
+    .expect("aetna-vulkano: create multisample render pass")
 }

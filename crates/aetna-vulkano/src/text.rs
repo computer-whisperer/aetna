@@ -63,7 +63,6 @@ use vulkano::{
                 AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
             },
             input_assembly::{InputAssemblyState, PrimitiveTopology},
-            multisample::MultisampleState,
             rasterization::RasterizationState,
             subpass::PipelineSubpassType,
             vertex_input::{
@@ -82,6 +81,7 @@ use aetna_core::paint::{PhysicalScissor, rgba_f32};
 use aetna_core::runtime::TextRecorder;
 
 use crate::naga_compile::wgsl_to_spirv;
+use crate::pipeline::multisample_state;
 
 const INSTANCE_ARENA_SIZE: u64 = 128 * 1024;
 
@@ -172,8 +172,9 @@ impl TextPaint {
         descriptor_alloc: Arc<StandardDescriptorSetAllocator>,
         cmd_alloc: Arc<StandardCommandBufferAllocator>,
         subpass: Subpass,
+        sample_count: u32,
     ) -> Self {
-        let color_pipeline = build_color_pipeline(device.clone(), subpass.clone());
+        let color_pipeline = build_color_pipeline(device.clone(), subpass.clone(), sample_count);
         let color_sampler = Sampler::new(
             device.clone(),
             SamplerCreateInfo {
@@ -200,7 +201,7 @@ impl TextPaint {
         };
         let color_instance_alloc = make_alloc();
 
-        let msdf_pipeline = build_msdf_pipeline(device.clone(), subpass.clone());
+        let msdf_pipeline = build_msdf_pipeline(device.clone(), subpass.clone(), sample_count);
         let msdf_sampler = Sampler::new(
             device.clone(),
             SamplerCreateInfo {
@@ -214,7 +215,7 @@ impl TextPaint {
         .expect("aetna-vulkano: text msdf sampler");
         let msdf_instance_alloc = make_alloc();
 
-        let highlight_pipeline = build_highlight_pipeline(device.clone(), subpass);
+        let highlight_pipeline = build_highlight_pipeline(device.clone(), subpass, sample_count);
         let highlight_instance_alloc = make_alloc();
         let _ = device;
 
@@ -908,7 +909,11 @@ fn pack_msdf_rect_bytes(page: &MsdfAtlasPage, rect: MsdfRect) -> Vec<u8> {
     bytes
 }
 
-fn build_color_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
+fn build_color_pipeline(
+    device: Arc<Device>,
+    subpass: Subpass,
+    sample_count: u32,
+) -> Arc<GraphicsPipeline> {
     let words = wgsl_to_spirv("stock::text", stock_wgsl::TEXT)
         .unwrap_or_else(|e| panic!("aetna-vulkano: text WGSL compile: {e}"));
     let module = unsafe {
@@ -972,7 +977,7 @@ fn build_color_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPi
             }),
             viewport_state: Some(ViewportState::default()),
             rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
+            multisample_state: Some(multisample_state(sample_count)),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState {
@@ -990,7 +995,11 @@ fn build_color_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPi
     .expect("aetna-vulkano: text colour GraphicsPipeline::new")
 }
 
-fn build_msdf_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
+fn build_msdf_pipeline(
+    device: Arc<Device>,
+    subpass: Subpass,
+    sample_count: u32,
+) -> Arc<GraphicsPipeline> {
     let words = wgsl_to_spirv("stock::text_msdf", stock_wgsl::TEXT_MSDF)
         .unwrap_or_else(|e| panic!("aetna-vulkano: text msdf WGSL compile: {e}"));
     let module = unsafe {
@@ -1055,7 +1064,7 @@ fn build_msdf_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPip
             }),
             viewport_state: Some(ViewportState::default()),
             rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
+            multisample_state: Some(multisample_state(sample_count)),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState {
@@ -1073,7 +1082,11 @@ fn build_msdf_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPip
     .expect("aetna-vulkano: text msdf GraphicsPipeline::new")
 }
 
-fn build_highlight_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
+fn build_highlight_pipeline(
+    device: Arc<Device>,
+    subpass: Subpass,
+    sample_count: u32,
+) -> Arc<GraphicsPipeline> {
     let words = wgsl_to_spirv("stock::text_highlight", stock_wgsl::TEXT_HIGHLIGHT)
         .unwrap_or_else(|e| panic!("aetna-vulkano: text highlight WGSL compile: {e}"));
     let module = unsafe {
@@ -1136,7 +1149,7 @@ fn build_highlight_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<Graphi
             }),
             viewport_state: Some(ViewportState::default()),
             rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
+            multisample_state: Some(multisample_state(sample_count)),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState {

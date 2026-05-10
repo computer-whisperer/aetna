@@ -62,7 +62,6 @@ use vulkano::{
                 AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
             },
             input_assembly::{InputAssemblyState, PrimitiveTopology},
-            multisample::MultisampleState,
             rasterization::RasterizationState,
             subpass::PipelineSubpassType,
             vertex_input::{
@@ -78,7 +77,7 @@ use vulkano::{
 };
 
 use crate::naga_compile::wgsl_to_spirv;
-use crate::pipeline::build_shared_pipeline_layout;
+use crate::pipeline::{build_shared_pipeline_layout, multisample_state};
 
 const TESS_VERTEX_ARENA_SIZE: u64 = 256 * 1024;
 const MSDF_INSTANCE_ARENA_SIZE: u64 = 64 * 1024;
@@ -132,22 +131,26 @@ impl IconPaint {
         descriptor_alloc: Arc<StandardDescriptorSetAllocator>,
         cmd_alloc: Arc<StandardCommandBufferAllocator>,
         subpass: Subpass,
+        sample_count: u32,
     ) -> Self {
         let flat_pipeline = build_tess_pipeline(
             device.clone(),
             subpass.clone(),
+            sample_count,
             "stock::vector",
             stock_wgsl::VECTOR,
         );
         let relief_pipeline = build_tess_pipeline(
             device.clone(),
             subpass.clone(),
+            sample_count,
             "stock::vector_relief",
             stock_wgsl::VECTOR_RELIEF,
         );
         let glass_pipeline = build_tess_pipeline(
             device.clone(),
             subpass.clone(),
+            sample_count,
             "stock::vector_glass",
             stock_wgsl::VECTOR_GLASS,
         );
@@ -162,7 +165,7 @@ impl IconPaint {
             },
         );
 
-        let msdf_pipeline = build_msdf_pipeline(device.clone(), subpass);
+        let msdf_pipeline = build_msdf_pipeline(device.clone(), subpass, sample_count);
         let msdf_sampler = Sampler::new(
             device,
             SamplerCreateInfo {
@@ -589,6 +592,7 @@ fn tess_vertex_input_state() -> VertexInputState {
 fn build_tess_pipeline(
     device: Arc<Device>,
     subpass: Subpass,
+    sample_count: u32,
     name: &str,
     wgsl: &str,
 ) -> Arc<GraphicsPipeline> {
@@ -622,7 +626,7 @@ fn build_tess_pipeline(
             }),
             viewport_state: Some(ViewportState::default()),
             rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
+            multisample_state: Some(multisample_state(sample_count)),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState {
@@ -640,7 +644,11 @@ fn build_tess_pipeline(
     .unwrap_or_else(|e| panic!("aetna-vulkano: icon GraphicsPipeline::new for `{name}`: {e:?}"))
 }
 
-fn build_msdf_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
+fn build_msdf_pipeline(
+    device: Arc<Device>,
+    subpass: Subpass,
+    sample_count: u32,
+) -> Arc<GraphicsPipeline> {
     let words = wgsl_to_spirv("stock::text_msdf (icon)", stock_wgsl::TEXT_MSDF)
         .expect("aetna-vulkano: icon msdf WGSL compile");
     let module = unsafe {
@@ -705,7 +713,7 @@ fn build_msdf_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPip
             }),
             viewport_state: Some(ViewportState::default()),
             rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
+            multisample_state: Some(multisample_state(sample_count)),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState {

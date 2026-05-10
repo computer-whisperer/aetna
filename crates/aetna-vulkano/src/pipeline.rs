@@ -9,9 +9,10 @@
 //! `inner_rect` and `vec_d` slots are simply unread.
 //!
 //! The vulkano-side wrinkle is that pipelines are tied to a render-pass
-//! subpass at construction time. The Runner owns one render pass with a
-//! single color attachment in the swapchain format, and every pipeline
-//! is built against subpass 0 of that pass.
+//! subpass at construction time. The Runner owns one render pass (single
+//! color attachment when MSAA is off, multisampled color + single-sample
+//! resolve when MSAA is on) and every pipeline is built against subpass
+//! 0 of that pass with a matching [`multisample_state`].
 
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ use bytemuck::{Pod, Zeroable};
 use vulkano::{
     device::Device,
     format::Format,
+    image::SampleCount,
     pipeline::{
         DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
         graphics::{
@@ -136,12 +138,29 @@ pub(crate) fn build_shared_pipeline_layout(
     .expect("aetna-vulkano: pipeline layout new")
 }
 
+/// Multisample state for a pipeline drawing into a render pass with
+/// `sample_count` rasterization samples. Mirrors the wgpu side's
+/// `per_sample_shading: true` default: when MSAA is on we ask the driver
+/// to evaluate the fragment shader once per sample so
+/// `@interpolate(perspective, sample)` qualifiers (`stock::rounded_rect`'s
+/// quad-AA, vector relief/glass shading) sample at their declared
+/// frequency instead of being silently downgraded to pixel-rate.
+pub(crate) fn multisample_state(sample_count: u32) -> MultisampleState {
+    let rasterization_samples = SampleCount::try_from(sample_count).unwrap_or(SampleCount::Sample1);
+    MultisampleState {
+        rasterization_samples,
+        sample_shading: if sample_count > 1 { Some(1.0) } else { None },
+        ..Default::default()
+    }
+}
+
 /// Compile WGSL → SPIR-V and build a graphics pipeline against the
 /// shared rect-shaped vertex layout, alpha blending, and the given
 /// render-pass subpass. Panics if the WGSL fails to compile.
 pub(crate) fn build_quad_pipeline(
     device: Arc<Device>,
     subpass: Subpass,
+    sample_count: u32,
     name: &str,
     wgsl: &str,
 ) -> Arc<GraphicsPipeline> {
@@ -179,7 +198,7 @@ pub(crate) fn build_quad_pipeline(
             }),
             viewport_state: Some(ViewportState::default()),
             rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
+            multisample_state: Some(multisample_state(sample_count)),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState {

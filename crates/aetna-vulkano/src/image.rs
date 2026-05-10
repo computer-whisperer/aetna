@@ -54,7 +54,6 @@ use vulkano::{
                 AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState,
             },
             input_assembly::{InputAssemblyState, PrimitiveTopology},
-            multisample::MultisampleState,
             rasterization::RasterizationState,
             subpass::PipelineSubpassType,
             vertex_input::{
@@ -70,7 +69,7 @@ use vulkano::{
 };
 
 use crate::naga_compile::wgsl_to_spirv;
-use crate::pipeline::build_shared_pipeline_layout;
+use crate::pipeline::{build_shared_pipeline_layout, multisample_state};
 
 const INSTANCE_ARENA_SIZE: u64 = 64 * 1024;
 
@@ -130,8 +129,9 @@ impl ImagePaint {
         descriptor_alloc: Arc<StandardDescriptorSetAllocator>,
         cmd_alloc: Arc<StandardCommandBufferAllocator>,
         subpass: Subpass,
+        sample_count: u32,
     ) -> Self {
-        let pipeline = build_image_pipeline(device.clone(), subpass);
+        let pipeline = build_image_pipeline(device.clone(), subpass, sample_count);
         let sampler = Sampler::new(
             device,
             SamplerCreateInfo {
@@ -369,7 +369,11 @@ impl ImagePaint {
     }
 }
 
-fn build_image_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPipeline> {
+fn build_image_pipeline(
+    device: Arc<Device>,
+    subpass: Subpass,
+    sample_count: u32,
+) -> Arc<GraphicsPipeline> {
     let words = wgsl_to_spirv("stock::image", stock_wgsl::IMAGE)
         .expect("aetna-vulkano: image WGSL compile");
     let module = unsafe {
@@ -439,7 +443,7 @@ fn build_image_pipeline(device: Arc<Device>, subpass: Subpass) -> Arc<GraphicsPi
             }),
             viewport_state: Some(ViewportState::default()),
             rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
+            multisample_state: Some(multisample_state(sample_count)),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState {
