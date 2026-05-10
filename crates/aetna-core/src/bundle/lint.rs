@@ -411,9 +411,45 @@ fn walk(
                 } else {
                     FindingKind::Overflow
                 };
+                // Shape-specific advice. A Y-only overflow on a
+                // fixed-height box where the text alone would have fit
+                // is caused by padding eating the height; "use
+                // paragraph() / wrap_text() / a wider box" is the
+                // wrong fix. The trap that produces it most often is
+                // `.padding(scalar)` going through `From<f32> for
+                // Sides` as `Sides::all(scalar)` on a control-height
+                // box where the author meant `Sides::xy(scalar, 0)`.
+                let pad_y = n.padding.top + n.padding.bottom;
+                let height_is_fixed = matches!(n.height, Size::Fixed(_));
+                let text_alone_fits_height = text_layout.height <= computed.h + 0.5;
+                let padding_eats_fixed_height = overflow_y > 0.5
+                    && overflow_x <= 0.5
+                    && pad_y > 0.0
+                    && text_alone_fits_height
+                    && height_is_fixed;
+                let cell_h = text_layout.height;
+                let box_h = computed.h;
                 let message = if kind == FindingKind::TextOverflow {
                     format!(
                         "nowrap text exceeds its box by X={overflow_x:.0}; use .ellipsis(), wrap_text(), or a wider box"
+                    )
+                } else if padding_eats_fixed_height {
+                    let inner_h = (box_h - pad_y).max(0.0);
+                    let pad_x_token = if (n.padding.left - n.padding.right).abs() < 0.5 {
+                        format!("{:.0}", n.padding.left)
+                    } else {
+                        "...".to_string()
+                    };
+                    let control_h = crate::tokens::CONTROL_HEIGHT;
+                    format!(
+                        "vertical padding ({pad_y:.0}px) makes the inner content rect ({inner_h:.0}px) shorter than the text cell ({cell_h:.0}px) on a fixed-height box ({box_h:.0}px) — \
+                         the label can't vertically center and paints into the padding band, off-center by Y={overflow_y:.0}. \
+                         Reduce vertical padding (e.g. `Sides::xy({pad_x_token}, 0.0)` — `.padding(scalar)` is `Sides::all(scalar)`, which usually isn't what you want on a control-height box) or increase height (tokens::CONTROL_HEIGHT = {control_h:.0}px)"
+                    )
+                } else if overflow_y > 0.5 && overflow_x <= 0.5 {
+                    format!(
+                        "text cell ({cell_h:.0}px) exceeds box height ({box_h:.0}px) by Y={overflow_y:.0}; \
+                         increase height, reduce text size, or use paragraph()/wrap_text() with fewer lines"
                     )
                 } else {
                     format!(
@@ -1085,6 +1121,100 @@ mod tests {
                 .any(|f| f.kind == FindingKind::TextOverflow && f.message.contains("Size::Hug")),
             "{}",
             report.text()
+        );
+    }
+
+    #[test]
+    fn padding_eats_fixed_height_button_reports_padding_advice() {
+        // `.padding(scalar)` goes through `From<f32> for Sides` as
+        // `Sides::all(scalar)` — so on a 30px-tall button with
+        // `.padding(SPACE_2)` the vertical padding totals 16, leaving
+        // only 14px of inner height for a 20px Label cell. The
+        // v-center step clamps the negative slack to 0 and the text
+        // paints into the padding band (visibly bottom-leaning, in
+        // this case 8px above + 2px below). Message must blame the
+        // padding (or the height override), not recommend
+        // `paragraph()` / `wrap_text()` / a wider box.
+        let root = crate::row([crate::button("Resume")
+            .height(Size::Fixed(30.0))
+            .padding(crate::tokens::SPACE_2)]);
+
+        let report = lint_one(root);
+
+        let finding = report
+            .findings
+            .iter()
+            .find(|f| f.kind == FindingKind::Overflow)
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected an Overflow finding for the padding-eats-height shape\n{}",
+                    report.text()
+                )
+            });
+        assert!(
+            finding.message.contains("vertical padding")
+                && finding.message.contains("Sides::xy"),
+            "expected padding-y advice, got:\n{}\n{}",
+            finding.message,
+            report.text(),
+        );
+        assert!(
+            !finding.message.contains("paragraph()") && !finding.message.contains("wrap_text()"),
+            "padding-eats-height case should not recommend paragraph/wrap_text:\n{}",
+            finding.message,
+        );
+    }
+
+    #[test]
+    fn padding_eats_fixed_height_y_only_does_not_fire_when_height_is_hug() {
+        // Counter-case: with `Size::Hug` the box grows to fit; padding
+        // can't "eat" a hugged height so there's no off-center symptom.
+        // Don't pin the user to a non-issue.
+        let root = crate::row([crate::text("Resume").padding(crate::tokens::SPACE_2)]);
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::Overflow || f.kind == FindingKind::TextOverflow),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn text_taller_than_fixed_height_without_padding_reports_height_advice() {
+        // Different shape: no padding-y, but the text cell itself is
+        // taller than the box (e.g. body text size in a too-short
+        // chip). The fix is the height (or text size), not the
+        // padding. Make sure the lint message reflects that.
+        let root = crate::row([crate::text("body")
+            .width(Size::Fixed(80.0))
+            .height(Size::Fixed(12.0))]);
+
+        let report = lint_one(root);
+
+        let finding = report
+            .findings
+            .iter()
+            .find(|f| f.kind == FindingKind::Overflow)
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected an Overflow finding for text-taller-than-box\n{}",
+                    report.text()
+                )
+            });
+        assert!(
+            finding.message.contains("exceeds box height") && finding.message.contains("height"),
+            "expected height-advice message, got:\n{}",
+            finding.message,
+        );
+        assert!(
+            !finding.message.contains("vertical padding"),
+            "no-padding case should not blame padding:\n{}",
+            finding.message,
         );
     }
 
