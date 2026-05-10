@@ -21,7 +21,7 @@ use crate::shader::{ShaderHandle, UniformBlock};
 use crate::svg_icon::IconSource;
 use crate::text::atlas::RunStyle;
 use crate::text::metrics::TextLayout;
-use crate::tree::{Color, FontFamily, FontWeight, Rect, TextWrap};
+use crate::tree::{Color, Corners, FontFamily, FontWeight, Rect, TextWrap};
 use crate::vector::VectorRenderMode;
 
 /// One paint operation in the laid-out frame.
@@ -119,7 +119,7 @@ pub enum DrawOp {
         scissor: Option<Rect>,
         image: Image,
         tint: Option<Color>,
-        radius: f32,
+        radius: Corners,
         fit: ImageFit,
     },
     /// An app-owned GPU texture composited into the paint stream.

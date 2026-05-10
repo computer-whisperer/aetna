@@ -49,8 +49,11 @@ pub struct QuadInstance {
     /// Vertex shader reads at `@location(3)`.
     pub slot_b: [f32; 4],
     /// `vec_c` slot — for stock::rounded_rect, this is
-    /// `(stroke_width, radius, shadow, focus_width)`. Vertex shader
-    /// reads at `@location(4)`.
+    /// `(stroke_width, max_radius, shadow, focus_width)`. `max_radius`
+    /// is the largest of the four per-corner radii (in `slot_e`); it
+    /// stays here so custom shaders that read scalar `slot_c.y` as
+    /// the radius keep working when corners are uniform. Vertex
+    /// shader reads at `@location(4)`.
     pub slot_c: [f32; 4],
     /// Layout rect (xy = top-left px, zw = size px). SDF shaders use
     /// this so the rect outline stays anchored to layout bounds even
@@ -64,6 +67,11 @@ pub struct QuadInstance {
     /// the node isn't focused or isn't focusable. Vertex shader reads
     /// at `@location(6)`.
     pub slot_d: [f32; 4],
+    /// `vec_e` slot — for stock::rounded_rect, this is per-corner
+    /// radii in `(tl, tr, br, bl)` order (logical px). Custom shaders
+    /// that don't care about per-corner shapes can ignore this slot.
+    /// Vertex shader reads at `@location(7)`.
+    pub slot_e: [f32; 4],
 }
 
 /// One line-segment primitive in a vector icon. The instance renders a
@@ -232,31 +240,43 @@ pub fn pack_instance(rect: Rect, shader: ShaderHandle, uniforms: &UniformBlock) 
         .unwrap_or(rect_arr);
 
     match shader {
-        ShaderHandle::Stock(StockShader::RoundedRect) => QuadInstance {
-            rect: rect_arr,
-            inner_rect,
-            slot_a: uniforms
-                .get("fill")
-                .and_then(as_color)
-                .map(rgba_f32)
-                .unwrap_or([0.0; 4]),
-            slot_b: uniforms
-                .get("stroke")
-                .and_then(as_color)
-                .map(rgba_f32)
-                .unwrap_or([0.0; 4]),
-            slot_c: [
-                uniforms.get("stroke_width").and_then(as_f32).unwrap_or(0.0),
-                uniforms.get("radius").and_then(as_f32).unwrap_or(0.0),
-                uniforms.get("shadow").and_then(as_f32).unwrap_or(0.0),
-                uniforms.get("focus_width").and_then(as_f32).unwrap_or(0.0),
-            ],
-            slot_d: uniforms
-                .get("focus_color")
-                .and_then(as_color)
-                .map(rgba_f32)
-                .unwrap_or([0.0; 4]),
-        },
+        ShaderHandle::Stock(StockShader::RoundedRect) => {
+            let radii = uniforms.get("radii").map(value_to_vec4);
+            // Fall back to the scalar `radius` uniform when no
+            // per-corner block was inserted (custom callers, focus
+            // ring band, etc.). Either path produces a valid
+            // four-corner instance — callers that only set scalar
+            // `radius` get uniform corners.
+            let scalar_radius = uniforms.get("radius").and_then(as_f32).unwrap_or(0.0);
+            let radii = radii.unwrap_or([scalar_radius; 4]);
+            let max_radius = radii[0].max(radii[1]).max(radii[2]).max(radii[3]);
+            QuadInstance {
+                rect: rect_arr,
+                inner_rect,
+                slot_a: uniforms
+                    .get("fill")
+                    .and_then(as_color)
+                    .map(rgba_f32)
+                    .unwrap_or([0.0; 4]),
+                slot_b: uniforms
+                    .get("stroke")
+                    .and_then(as_color)
+                    .map(rgba_f32)
+                    .unwrap_or([0.0; 4]),
+                slot_c: [
+                    uniforms.get("stroke_width").and_then(as_f32).unwrap_or(0.0),
+                    max_radius,
+                    uniforms.get("shadow").and_then(as_f32).unwrap_or(0.0),
+                    uniforms.get("focus_width").and_then(as_f32).unwrap_or(0.0),
+                ],
+                slot_d: uniforms
+                    .get("focus_color")
+                    .and_then(as_color)
+                    .map(rgba_f32)
+                    .unwrap_or([0.0; 4]),
+                slot_e: radii,
+            }
+        }
         _ => QuadInstance {
             rect: rect_arr,
             inner_rect,
@@ -264,6 +284,7 @@ pub fn pack_instance(rect: Rect, shader: ShaderHandle, uniforms: &UniformBlock) 
             slot_b: uniforms.get("vec_b").map(value_to_vec4).unwrap_or([0.0; 4]),
             slot_c: uniforms.get("vec_c").map(value_to_vec4).unwrap_or([0.0; 4]),
             slot_d: uniforms.get("vec_d").map(value_to_vec4).unwrap_or([0.0; 4]),
+            slot_e: uniforms.get("vec_e").map(value_to_vec4).unwrap_or([0.0; 4]),
         },
     }
 }
@@ -344,13 +365,43 @@ mod tests {
             inst.inner_rect, inst.rect,
             "no inner_rect uniform → fall back to painted rect"
         );
-        assert_eq!(inst.slot_c[1], 8.0, "radius in slot_c.y");
+        assert_eq!(
+            inst.slot_c[1], 8.0,
+            "max corner radius in slot_c.y (uniform corners derived from scalar `radius` uniform)"
+        );
+        assert_eq!(
+            inst.slot_e,
+            [8.0, 8.0, 8.0, 8.0],
+            "scalar `radius` uniform fills all four corners on slot_e"
+        );
         assert_eq!(
             inst.slot_c[3],
             tokens::RING_WIDTH,
             "focus_width in slot_c.w"
         );
         assert!(inst.slot_d[3] > 0.0, "focus_color alpha should be visible");
+    }
+
+    #[test]
+    fn per_corner_radii_uniform_routes_to_slot_e() {
+        // The `radii` uniform overrides the scalar `radius` for the
+        // SDF, while `slot_c.y` carries the max corner so custom
+        // shaders that read scalar `slot_c.y` still see the right
+        // shape silhouette.
+        let mut uniforms = UniformBlock::new();
+        uniforms.insert("fill", UniformValue::Color(Color::rgba(40, 40, 40, 255)));
+        // Top-rounded only — the strip-on-card shape.
+        uniforms.insert("radii", UniformValue::Vec4([12.0, 12.0, 0.0, 0.0]));
+        uniforms.insert("radius", UniformValue::F32(12.0));
+
+        let inst = pack_instance(
+            Rect::new(0.0, 0.0, 100.0, 40.0),
+            ShaderHandle::Stock(StockShader::RoundedRect),
+            &uniforms,
+        );
+
+        assert_eq!(inst.slot_e, [12.0, 12.0, 0.0, 0.0]);
+        assert_eq!(inst.slot_c[1], 12.0, "max corner radius -> slot_c.y");
     }
 
     #[test]

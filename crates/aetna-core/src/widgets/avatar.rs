@@ -90,7 +90,7 @@ mod tests {
         assert_eq!(a.font_weight, FontWeight::Semibold);
         assert_eq!(a.width, Size::Fixed(DEFAULT_AVATAR_SIZE));
         assert_eq!(a.height, Size::Fixed(DEFAULT_AVATAR_SIZE));
-        assert_eq!(a.radius, tokens::RADIUS_PILL);
+        assert_eq!(a.radius, crate::tree::Corners::all(tokens::RADIUS_PILL));
         assert_eq!(a.fill, Some(tokens::ACCENT));
     }
 

@@ -22,7 +22,7 @@ use std::sync::Arc;
 use aetna_core::image::Image as RasterImage;
 use aetna_core::paint::{PhysicalScissor, rgba_f32};
 use aetna_core::shader::stock_wgsl;
-use aetna_core::tree::{Color, Rect};
+use aetna_core::tree::{Color, Corners, Rect};
 use bytemuck::{Pod, Zeroable};
 use smallvec::smallvec;
 use vulkano::{
@@ -184,7 +184,7 @@ impl ImagePaint {
         scissor: Option<PhysicalScissor>,
         image: &RasterImage,
         tint: Option<Color>,
-        radius: f32,
+        radius: Corners,
     ) -> Range<usize> {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             let start = self.runs.len();
@@ -196,7 +196,12 @@ impl ImagePaint {
         let instance = ImageInstance {
             rect: [rect.x, rect.y, rect.w, rect.h],
             tint: tint_rgba,
-            params: [radius.max(0.0), 0.0, 0.0, 0.0],
+            params: [
+                radius.tl.max(0.0),
+                radius.tr.max(0.0),
+                radius.br.max(0.0),
+                radius.bl.max(0.0),
+            ],
             uv: [0.0, 0.0, 1.0, 1.0],
         };
         let first = self.instances.len() as u32;

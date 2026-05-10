@@ -1936,7 +1936,7 @@ pub trait TextRecorder {
         _scissor: Option<PhysicalScissor>,
         _image: &crate::image::Image,
         _tint: Option<Color>,
-        _radius: f32,
+        _radius: crate::tree::Corners,
         _fit: crate::image::ImageFit,
         _scale_factor: f32,
     ) -> Range<usize> {

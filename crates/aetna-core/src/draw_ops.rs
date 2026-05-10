@@ -329,7 +329,13 @@ fn push_node(
             uniforms.insert("stroke", UniformValue::Color(opaque(c, opacity)));
             uniforms.insert("stroke_width", UniformValue::F32(n.stroke_width));
         }
-        uniforms.insert("radius", UniformValue::F32(n.radius));
+        // `radius` carries the max corner so custom shaders that read
+        // a scalar uniform see the same shape as before. Per-corner
+        // values go on `radii` (tl, tr, br, bl) — stock::rounded_rect
+        // and stock::image read this for the SDF; SVG bundle output
+        // emits a `<path>` when corners differ, `<rect rx>` otherwise.
+        uniforms.insert("radius", UniformValue::F32(n.radius.max()));
+        uniforms.insert("radii", UniformValue::Vec4(n.radius.to_array()));
         if n.shadow > 0.0 {
             uniforms.insert("shadow", UniformValue::F32(n.shadow));
         }
@@ -922,7 +928,10 @@ fn apply_state(
         stroke = stroke.map(|c| c.mix(c.darken(tokens::PRESS_DARKEN), press));
         text_color = text_color.map(|c| c.mix(c.darken(tokens::PRESS_DARKEN * 0.5), press));
     }
-    if n.fill.is_none() && (hover > 0.0 || press > 0.0) && (n.radius > 0.0 || n.stroke.is_some()) {
+    if n.fill.is_none()
+        && (hover > 0.0 || press > 0.0)
+        && (n.radius.any_nonzero() || n.stroke.is_some())
+    {
         let alpha = (hover * tokens::STATE_FILL_HOVER_ALPHA
             + press * tokens::STATE_FILL_PRESS_ALPHA)
             .clamp(0.0, 1.0);
@@ -1597,7 +1606,7 @@ mod tests {
         // surface affordance of its own.
         let layout_only = El::new(Kind::Custom("slider")).focusable();
         assert!(layout_only.fill.is_none());
-        assert_eq!(layout_only.radius, 0.0);
+        assert_eq!(layout_only.radius, crate::tree::Corners::ZERO);
         assert!(layout_only.stroke.is_none());
 
         let (rest_fill, ..) = apply_state(

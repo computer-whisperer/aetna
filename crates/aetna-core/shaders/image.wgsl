@@ -6,9 +6,11 @@
 // backends rebind group(1) when the source image changes between
 // runs (one bind group per cached `Image::content_hash`).
 //
-// `params.x` is the corner radius in logical pixels — non-zero values
-// fade alpha out via a rounded-rect SDF so authors can drop image
-// corner masks without separately compositing.
+// `params` carries per-corner radii (tl, tr, br, bl) in logical
+// pixels — non-zero values fade alpha out via a rounded-rect SDF so
+// authors can drop image corner masks without separately
+// compositing. Authors that want a uniform radius write the same
+// value to all four lanes.
 //
 // `tint.rgb * tint.a` multiplies the sampled colour. When the El had
 // no `image_tint`, the recorder writes `(1,1,1,1)` and sampling is
@@ -32,7 +34,7 @@ struct VertexInput {
 struct InstanceInput {
     @location(1) rect:   vec4<f32>,  // xy = top-left logical px, zw = size logical px
     @location(2) tint:   vec4<f32>,  // rgba 0..1 (linear). (1,1,1,1) = no tint
-    @location(3) params: vec4<f32>,  // x = radius (logical px), yzw reserved
+    @location(3) params: vec4<f32>,  // per-corner radii (tl, tr, br, bl) logical px
     @location(4) uv:     vec4<f32>,  // xy = uv top-left 0..1, zw = uv size 0..1
 };
 
@@ -65,22 +67,31 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     return out;
 }
 
-// Signed distance to a centred rounded box; same shape stock::rounded_rect uses.
-fn sdf_rounded_box(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
-    let q = abs(p) - b + vec2<f32>(r, r);
-    return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0, 0.0))) - r;
+// Signed distance to a centred rounded box with per-corner radii
+// (`tl, tr, br, bl`). Same convention as stock::rounded_rect's
+// `sdf_rounded_box`. Each corner's radius is clamped to half the
+// shorter side by the caller so the SDF stays well-formed when an
+// author asks for radii larger than the rect.
+fn sdf_rounded_box(p: vec2<f32>, b: vec2<f32>, r: vec4<f32>) -> f32 {
+    // Pick the radius for the quadrant `p` lies in — top corners on
+    // y<0, right corners on x>0. (`r` is `(tl, tr, br, bl)`.)
+    let r_top = select(r.x, r.y, p.x > 0.0);  // tl or tr
+    let r_bot = select(r.w, r.z, p.x > 0.0);  // bl or br
+    let rd    = select(r_bot, r_top, p.y < 0.0);
+    let q = abs(p) - b + vec2<f32>(rd, rd);
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0, 0.0))) - rd;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let sampled = textureSample(image_tex, image_smp, in.uv);
 
-    // Rounded-corner coverage — clamp the requested radius to half the
+    // Rounded-corner coverage — clamp every corner radius to half the
     // shorter side and let the SDF carry AA across the boundary.
     let half_size = in.rect_size * 0.5;
     let centred = in.local_px - half_size;
     let max_r = min(half_size.x, half_size.y);
-    let r = clamp(in.params.x, 0.0, max_r);
+    let r = clamp(in.params, vec4<f32>(0.0), vec4<f32>(max_r));
     let d = sdf_rounded_box(centred, half_size, r);
     // 1 logical-pixel-wide AA band, scaled to physical pixels at flush.
     let aa = max(fwidth(d), 1e-4);

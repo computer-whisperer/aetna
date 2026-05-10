@@ -52,7 +52,7 @@ where
                 row.height = Size::Fixed(36.0);
             }
             if !row.explicit_radius {
-                row.radius = 0.0;
+                row.radius = crate::tree::Corners::ZERO;
             }
         }
     }

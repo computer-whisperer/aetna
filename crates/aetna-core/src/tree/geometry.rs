@@ -132,3 +132,173 @@ impl From<f32> for Sides {
         Sides::all(v)
     }
 }
+
+/// Per-corner radius values, in logical pixels.
+///
+/// `radius` is authored as a single scalar in the common case
+/// (`.radius(tokens::RADIUS_MD)` works via [`From<f32>`]). Per-corner
+/// shapes are built with [`Corners::top`], [`Corners::bottom`],
+/// [`Corners::left`], [`Corners::right`], or by constructing the
+/// struct directly. The painter clamps each corner to half the shorter
+/// side, so over-large values render as a pill on that corner.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Corners {
+    pub tl: f32,
+    pub tr: f32,
+    pub br: f32,
+    pub bl: f32,
+}
+
+impl Corners {
+    pub const ZERO: Self = Self::all(0.0);
+
+    pub const fn all(r: f32) -> Self {
+        Self {
+            tl: r,
+            tr: r,
+            br: r,
+            bl: r,
+        }
+    }
+
+    /// Round the top two corners (`tl`, `tr`); leave `bl` / `br` at 0.
+    /// Use this on a header strip nested in a rounded card so the
+    /// strip's top corners follow the card's curve.
+    pub const fn top(r: f32) -> Self {
+        Self {
+            tl: r,
+            tr: r,
+            br: 0.0,
+            bl: 0.0,
+        }
+    }
+
+    /// Round the bottom two corners (`bl`, `br`); leave `tl` / `tr` at 0.
+    pub const fn bottom(r: f32) -> Self {
+        Self {
+            tl: 0.0,
+            tr: 0.0,
+            br: r,
+            bl: r,
+        }
+    }
+
+    /// Round the left two corners (`tl`, `bl`); leave `tr` / `br` at 0.
+    pub const fn left(r: f32) -> Self {
+        Self {
+            tl: r,
+            tr: 0.0,
+            br: 0.0,
+            bl: r,
+        }
+    }
+
+    /// Round the right two corners (`tr`, `br`); leave `tl` / `bl` at 0.
+    pub const fn right(r: f32) -> Self {
+        Self {
+            tl: 0.0,
+            tr: r,
+            br: r,
+            bl: 0.0,
+        }
+    }
+
+    /// True when every corner has the same radius. The painter takes
+    /// a fast path on uniform corners, and SVG bundle output emits
+    /// `<rect rx>` rather than a `<path>`.
+    pub fn is_uniform(self) -> bool {
+        self.tl == self.tr && self.tr == self.br && self.br == self.bl
+    }
+
+    /// True when at least one corner has a non-zero radius.
+    pub fn any_nonzero(self) -> bool {
+        self.tl > 0.0 || self.tr > 0.0 || self.br > 0.0 || self.bl > 0.0
+    }
+
+    /// Largest of the four corner radii. The painter uses this for
+    /// shadow / focus-ring SDF approximation, where "loosely the
+    /// silhouette of the rounded shape" is enough.
+    pub fn max(self) -> f32 {
+        self.tl.max(self.tr).max(self.br).max(self.bl)
+    }
+
+    /// Pack as a `[f32; 4]` in `(tl, tr, br, bl)` order — the layout the
+    /// shader's `slot_e` instance attribute expects.
+    pub fn to_array(self) -> [f32; 4] {
+        [self.tl, self.tr, self.br, self.bl]
+    }
+}
+
+impl From<f32> for Corners {
+    fn from(r: f32) -> Self {
+        Corners::all(r)
+    }
+}
+
+#[cfg(test)]
+mod corners_tests {
+    use super::*;
+
+    #[test]
+    fn shorthand_constructors_only_round_their_named_corners() {
+        let top = Corners::top(8.0);
+        assert_eq!(
+            top,
+            Corners {
+                tl: 8.0,
+                tr: 8.0,
+                br: 0.0,
+                bl: 0.0
+            }
+        );
+
+        let bottom = Corners::bottom(8.0);
+        assert_eq!(
+            bottom,
+            Corners {
+                tl: 0.0,
+                tr: 0.0,
+                br: 8.0,
+                bl: 8.0
+            }
+        );
+
+        let left = Corners::left(8.0);
+        assert_eq!(
+            left,
+            Corners {
+                tl: 8.0,
+                tr: 0.0,
+                br: 0.0,
+                bl: 8.0
+            }
+        );
+
+        let right = Corners::right(8.0);
+        assert_eq!(
+            right,
+            Corners {
+                tl: 0.0,
+                tr: 8.0,
+                br: 8.0,
+                bl: 0.0
+            }
+        );
+    }
+
+    #[test]
+    fn is_uniform_is_true_only_when_all_four_corners_match() {
+        assert!(Corners::all(8.0).is_uniform());
+        assert!(Corners::ZERO.is_uniform());
+        assert!(!Corners::top(8.0).is_uniform());
+    }
+
+    #[test]
+    fn from_f32_produces_uniform_corners_for_back_compat() {
+        // Existing call sites do `.radius(tokens::RADIUS_MD)` against
+        // an f32; the chainable accepts `impl Into<Corners>` and the
+        // float promotes to uniform corners.
+        let c: Corners = 12.0_f32.into();
+        assert_eq!(c, Corners::all(12.0));
+    }
+}

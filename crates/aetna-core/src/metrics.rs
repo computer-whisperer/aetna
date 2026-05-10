@@ -309,7 +309,7 @@ fn apply_control(el: &mut El, metrics: ControlMetrics) {
         el.padding = Sides::xy(metrics.padding_x, 0.0);
     }
     if !el.explicit_radius {
-        el.radius = metrics.radius;
+        el.radius = crate::tree::Corners::all(metrics.radius);
     }
     if !el.explicit_gap {
         el.gap = metrics.gap;
@@ -567,7 +567,11 @@ mod tests {
             assert_eq!(el.padding, Sides::zero(), "role {role:?} stamped padding");
             assert_eq!(el.gap, 0.0, "role {role:?} stamped gap");
             assert_eq!(el.height, Size::Hug, "role {role:?} stamped height");
-            assert_eq!(el.radius, 0.0, "role {role:?} stamped radius");
+            assert_eq!(
+                el.radius,
+                crate::tree::Corners::ZERO,
+                "role {role:?} stamped radius"
+            );
         }
     }
 

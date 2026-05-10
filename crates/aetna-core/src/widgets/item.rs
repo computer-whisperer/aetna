@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(row.axis, Axis::Overlay);
         assert_eq!(row.align, Align::Stretch);
         assert_eq!(row.width, Size::Fill(1.0));
-        assert_eq!(row.radius, tokens::RADIUS_MD);
+        assert_eq!(row.radius, crate::tree::Corners::all(tokens::RADIUS_MD));
         assert!(row.focusable);
         assert_eq!(row.cursor, Some(Cursor::Pointer));
         assert_eq!(row.fill, None, "default item rests transparent");

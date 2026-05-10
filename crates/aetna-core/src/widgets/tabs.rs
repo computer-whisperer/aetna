@@ -583,7 +583,7 @@ mod tests {
             [("account", "Account"), ("settings", "Settings")],
         );
         assert_eq!(list.fill, Some(tokens::MUTED));
-        assert_eq!(list.radius, tokens::RADIUS_MD);
+        assert_eq!(list.radius, crate::tree::Corners::all(tokens::RADIUS_MD));
         // Row axis with a small gap so triggers are visually distinct.
         assert_eq!(list.axis, Axis::Row);
         // The list itself is not focusable or keyed — only its

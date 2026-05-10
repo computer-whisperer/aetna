@@ -166,7 +166,12 @@ pub struct El {
     pub dim_fill: Option<Color>,
     pub stroke: Option<Color>,
     pub stroke_width: f32,
-    pub radius: f32,
+    /// Corner radii in logical pixels. Authored as a scalar in the
+    /// common case (`.radius(tokens::RADIUS_MD)` works via
+    /// [`Corners::from`]); per-corner shapes use [`Corners::top`],
+    /// [`Corners::bottom`], etc. The painter clamps each corner to
+    /// half the shorter side.
+    pub radius: super::geometry::Corners,
     pub shadow: f32,
     pub surface_role: SurfaceRole,
     /// Permit this element to paint outside its layout bounds. The

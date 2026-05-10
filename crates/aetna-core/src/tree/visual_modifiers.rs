@@ -5,7 +5,7 @@ use crate::shader::ShaderBinding;
 use crate::style::StyleProfile;
 
 use super::color::Color;
-use super::geometry::Sides;
+use super::geometry::{Corners, Sides};
 use super::node::El;
 use super::semantics::SurfaceRole;
 
@@ -37,8 +37,13 @@ impl El {
         self
     }
 
-    pub fn radius(mut self, r: f32) -> Self {
-        self.radius = r;
+    /// Set the element's corner radii. A scalar (e.g.
+    /// `.radius(tokens::RADIUS_MD)`) sets all four corners uniformly
+    /// via [`Corners::from`]; pass [`Corners::top`] / [`Corners::bottom`]
+    /// / [`Corners::left`] / [`Corners::right`], or a directly-built
+    /// [`Corners`], to round only a subset of corners.
+    pub fn radius(mut self, r: impl Into<Corners>) -> Self {
+        self.radius = r.into();
         self.explicit_radius = true;
         self
     }
@@ -153,8 +158,8 @@ impl El {
         self
     }
 
-    pub(crate) fn default_radius(mut self, r: f32) -> Self {
-        self.radius = r;
+    pub(crate) fn default_radius(mut self, r: impl Into<Corners>) -> Self {
+        self.radius = r.into();
         self.explicit_radius = false;
         self
     }

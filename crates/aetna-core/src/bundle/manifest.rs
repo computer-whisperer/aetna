@@ -237,7 +237,7 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                 };
                 let _ = write!(
                     s,
-                    "Image  src={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} natural=({}x{}) fit={fit:?} tint={tint_str} radius={radius:.1}",
+                    "Image  src={:<24} rect=({:.0},{:.0},{:.0},{:.0}) id={id} natural=({}x{}) fit={fit:?} tint={tint_str} radius=({:.1},{:.1},{:.1},{:.1})",
                     image.label(),
                     rect.x,
                     rect.y,
@@ -245,6 +245,10 @@ pub fn draw_ops_text(ops: &[DrawOp]) -> String {
                     rect.h,
                     image.width(),
                     image.height(),
+                    radius.tl,
+                    radius.tr,
+                    radius.br,
+                    radius.bl,
                 );
                 if let Some(sci) = scissor {
                     write_scissor(&mut s, *sci);

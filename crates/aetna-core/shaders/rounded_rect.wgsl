@@ -30,9 +30,14 @@ struct InstanceInput {
     @location(1) rect:        vec4<f32>,  // painted rect: xy = top-left px, zw = size px
     @location(2) fill:        vec4<f32>,  // rgba 0..1
     @location(3) stroke:      vec4<f32>,  // rgba 0..1
-    @location(4) params:      vec4<f32>,  // x=stroke_width, y=radius, z=shadow, w=focus_width
+    // params.y carries the *max* corner radius for back-compat with
+    // custom shaders that read scalar `params.y` as the radius. The
+    // actual SDF reads per-corner radii from `radii` below; for
+    // shadow + focus-ring SDF the scalar max is good enough.
+    @location(4) params:      vec4<f32>,  // x=stroke_width, y=max_radius, z=shadow, w=focus_width
     @location(5) inner_rect:  vec4<f32>,  // layout rect (== rect when no paint_overflow)
     @location(6) focus_color: vec4<f32>,  // rgba 0..1, alpha already eased
+    @location(7) radii:       vec4<f32>,  // per-corner radii (tl, tr, br, bl) in logical px
 };
 
 struct VertexOutput {
@@ -49,6 +54,7 @@ struct VertexOutput {
     @location(4)      stroke: vec4<f32>,
     @location(5)      params: vec4<f32>,
     @location(6)      focus_color: vec4<f32>,
+    @location(7)      radii: vec4<f32>,
 };
 
 @vertex
@@ -70,14 +76,23 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.stroke = inst.stroke;
     out.params = inst.params;
     out.focus_color = inst.focus_color;
+    out.radii = inst.radii;
     return out;
 }
 
-// SDF for a centered rounded box. Returns signed distance: negative
-// inside, zero on the boundary, positive outside.
-fn sdf_rounded_box(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
-    let q = abs(p) - b + vec2<f32>(r, r);
-    return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0, 0.0))) - r;
+// SDF for a centered rounded box with per-corner radii
+// (`tl, tr, br, bl`). Picks the radius for the quadrant `p` lies in:
+// top corners on y<0, right corners on x>0. The caller clamps each
+// corner radius to half the shorter side so the SDF stays well-formed
+// when an author asks for radii larger than the rect.
+//
+// Same convention as `image.wgsl` so the two stock shaders agree.
+fn sdf_rounded_box(p: vec2<f32>, b: vec2<f32>, r: vec4<f32>) -> f32 {
+    let r_top = select(r.x, r.y, p.x > 0.0);  // tl or tr
+    let r_bot = select(r.w, r.z, p.x > 0.0);  // bl or br
+    let rd    = select(r_bot, r_top, p.y < 0.0);
+    let q = abs(p) - b + vec2<f32>(rd, rd);
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0, 0.0))) - rd;
 }
 
 // Sample-rate shading is requested via `@interpolate(perspective,
@@ -90,13 +105,16 @@ fn sdf_rounded_box(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let stroke_width = in.params.x;
-    let radius = min(in.params.y, min(in.inner_half_size.x, in.inner_half_size.y));
+    // Per-corner radii clamped to half the shorter side so the SDF
+    // stays well-formed for arbitrary author input.
+    let max_r = min(in.inner_half_size.x, in.inner_half_size.y);
+    let radii = clamp(in.radii, vec4<f32>(0.0), vec4<f32>(max_r));
     let shadow_blur = in.params.z;
     let focus_width = in.params.w;
 
     // Pixel position relative to the inner (layout) rect's centre.
     let local_px = in.pos_px - in.inner_center;
-    let d = sdf_rounded_box(local_px, in.inner_half_size, radius);
+    let d = sdf_rounded_box(local_px, in.inner_half_size, radii);
 
     // Anti-aliasing width derived from screen-space derivatives. Use the
     // L2 norm of the SDF gradient (not fwidth's L1) so the AA band is the
@@ -119,7 +137,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (shadow_blur > 0.0) {
         let shadow_dy = shadow_blur * 0.5;
         let shadow_local = local_px - vec2<f32>(0.0, shadow_dy);
-        let shadow_d = sdf_rounded_box(shadow_local, in.inner_half_size, radius);
+        let shadow_d = sdf_rounded_box(shadow_local, in.inner_half_size, radii);
         let shadow_alpha = (1.0 - smoothstep(-shadow_blur, shadow_blur, shadow_d)) * 0.30;
         color = vec4<f32>(0.0, 0.0, 0.0, shadow_alpha);
     }

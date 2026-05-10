@@ -6,7 +6,7 @@
 use crate::image::ImageFit;
 use crate::style::StyleProfile;
 
-use super::geometry::Sides;
+use super::geometry::{Corners, Sides};
 use super::layout_types::{Align, Axis, Justify, Size};
 use super::node::El;
 use super::semantics::{Kind, Source, SurfaceRole};
@@ -49,7 +49,7 @@ impl Default for El {
             dim_fill: None,
             stroke: None,
             stroke_width: 0.0,
-            radius: 0.0,
+            radius: Corners::ZERO,
             shadow: 0.0,
             surface_role: SurfaceRole::None,
             paint_overflow: Sides::zero(),

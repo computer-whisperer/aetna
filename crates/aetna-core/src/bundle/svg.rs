@@ -256,7 +256,13 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
             let fill = uniforms.get("fill").and_then(as_color);
             let stroke = uniforms.get("stroke").and_then(as_color);
             let stroke_w = uniforms.get("stroke_width").and_then(as_f32).unwrap_or(0.0);
-            let radius = uniforms.get("radius").and_then(as_f32).unwrap_or(0.0);
+            // Per-corner radii take precedence over the scalar `radius`
+            // uniform; if neither is set, every corner is 0.
+            let scalar_radius = uniforms.get("radius").and_then(as_f32).unwrap_or(0.0);
+            let radii = uniforms
+                .get("radii")
+                .and_then(as_vec4)
+                .unwrap_or([scalar_radius; 4]);
             let shadow = uniforms.get("shadow").and_then(as_f32).unwrap_or(0.0);
             let focus_color = uniforms.get("focus_color").and_then(as_color);
             let focus_width = uniforms.get("focus_width").and_then(as_f32).unwrap_or(0.0);
@@ -268,7 +274,15 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
                 .and_then(as_vec4)
                 .map(|v| Rect::new(v[0], v[1], v[2], v[3]))
                 .unwrap_or(rect);
-            let r = radius.min(inner.w * 0.5).min(inner.h * 0.5).max(0.0);
+            let max_r_clamp = (inner.w * 0.5).min(inner.h * 0.5).max(0.0);
+            let radii = [
+                radii[0].clamp(0.0, max_r_clamp),
+                radii[1].clamp(0.0, max_r_clamp),
+                radii[2].clamp(0.0, max_r_clamp),
+                radii[3].clamp(0.0, max_r_clamp),
+            ];
+            let uniform_corners =
+                radii[0] == radii[1] && radii[1] == radii[2] && radii[2] == radii[3];
             let fill_attr = match fill {
                 Some(c) => format!(r#" fill="{}""#, color_svg(c)),
                 None => r#" fill="none""#.to_string(),
@@ -282,39 +296,78 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
                 None => String::new(),
             };
             let filter = shadow_filter(shadow);
-            let _ = writeln!(
-                s,
-                r#"<rect data-node="{}" data-shader="stock::rounded_rect" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}"{}{}{} />"#,
-                esc(id),
-                inner.x,
-                inner.y,
-                inner.w,
-                inner.h,
-                r,
-                fill_attr,
-                stroke_attr,
-                filter
-            );
+            if uniform_corners {
+                let _ = writeln!(
+                    s,
+                    r#"<rect data-node="{}" data-shader="stock::rounded_rect" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}"{}{}{} />"#,
+                    esc(id),
+                    inner.x,
+                    inner.y,
+                    inner.w,
+                    inner.h,
+                    radii[0],
+                    fill_attr,
+                    stroke_attr,
+                    filter
+                );
+            } else {
+                let _ = writeln!(
+                    s,
+                    r#"<path data-node="{}" data-shader="stock::rounded_rect" d="{}"{}{}{} />"#,
+                    esc(id),
+                    rounded_rect_path(inner, radii),
+                    fill_attr,
+                    stroke_attr,
+                    filter
+                );
+            }
             // Focus ring rides on the same quad: emit a stroke-only
-            // overlay rect just outside the inner border when the
-            // focus uniforms are set.
+            // overlay just outside the inner border when the focus
+            // uniforms are set. Per-corner ring corners track the
+            // corresponding inner radii (offset outward by half the
+            // ring width).
             if focus_width > 0.0
                 && let Some(fc) = focus_color
                 && fc.a > 0
             {
-                let ring_r = (r + focus_width * 0.5).max(0.0);
-                let _ = writeln!(
-                    s,
-                    r#"<rect data-node="{}.ring" data-shader="stock::rounded_rect" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="none" stroke="{}" stroke-width="{:.2}" />"#,
-                    esc(id),
+                let ring_inner = Rect::new(
                     inner.x - focus_width * 0.5,
                     inner.y - focus_width * 0.5,
                     inner.w + focus_width,
                     inner.h + focus_width,
-                    ring_r,
-                    color_svg(fc),
-                    focus_width
                 );
+                let ring_radii = [
+                    (radii[0] + focus_width * 0.5).max(0.0),
+                    (radii[1] + focus_width * 0.5).max(0.0),
+                    (radii[2] + focus_width * 0.5).max(0.0),
+                    (radii[3] + focus_width * 0.5).max(0.0),
+                ];
+                let ring_uniform = ring_radii[0] == ring_radii[1]
+                    && ring_radii[1] == ring_radii[2]
+                    && ring_radii[2] == ring_radii[3];
+                if ring_uniform {
+                    let _ = writeln!(
+                        s,
+                        r#"<rect data-node="{}.ring" data-shader="stock::rounded_rect" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="{:.2}" fill="none" stroke="{}" stroke-width="{:.2}" />"#,
+                        esc(id),
+                        ring_inner.x,
+                        ring_inner.y,
+                        ring_inner.w,
+                        ring_inner.h,
+                        ring_radii[0],
+                        color_svg(fc),
+                        focus_width
+                    );
+                } else {
+                    let _ = writeln!(
+                        s,
+                        r#"<path data-node="{}.ring" data-shader="stock::rounded_rect" d="{}" fill="none" stroke="{}" stroke-width="{:.2}" />"#,
+                        esc(id),
+                        rounded_rect_path(ring_inner, ring_radii),
+                        color_svg(fc),
+                        focus_width
+                    );
+                }
             }
         }
         ShaderHandle::Stock(StockShader::SolidQuad) => {
@@ -917,6 +970,65 @@ const SHADOW_DEFS: &str = r##"<defs>
 </defs>
 "##;
 
+/// Build an SVG `path` `d` attribute for a rectangle with per-corner
+/// radii in `(tl, tr, br, bl)` order. SVG's `<rect rx>` only models a
+/// uniform corner radius; per-corner shapes go through this path.
+/// Each corner radius is assumed to already be clamped to half the
+/// shorter side.
+fn rounded_rect_path(rect: Rect, radii: [f32; 4]) -> String {
+    let (x, y, w, h) = (rect.x, rect.y, rect.w, rect.h);
+    let (tl, tr, br, bl) = (radii[0], radii[1], radii[2], radii[3]);
+    let mut d = String::new();
+    use std::fmt::Write;
+    let _ = write!(&mut d, "M {:.2} {:.2}", x + tl, y);
+    let _ = write!(&mut d, " H {:.2}", x + w - tr);
+    if tr > 0.0 {
+        let _ = write!(
+            &mut d,
+            " A {:.2} {:.2} 0 0 1 {:.2} {:.2}",
+            tr,
+            tr,
+            x + w,
+            y + tr
+        );
+    }
+    let _ = write!(&mut d, " V {:.2}", y + h - br);
+    if br > 0.0 {
+        let _ = write!(
+            &mut d,
+            " A {:.2} {:.2} 0 0 1 {:.2} {:.2}",
+            br,
+            br,
+            x + w - br,
+            y + h
+        );
+    }
+    let _ = write!(&mut d, " H {:.2}", x + bl);
+    if bl > 0.0 {
+        let _ = write!(
+            &mut d,
+            " A {:.2} {:.2} 0 0 1 {:.2} {:.2}",
+            bl,
+            bl,
+            x,
+            y + h - bl
+        );
+    }
+    let _ = write!(&mut d, " V {:.2}", y + tl);
+    if tl > 0.0 {
+        let _ = write!(
+            &mut d,
+            " A {:.2} {:.2} 0 0 1 {:.2} {:.2}",
+            tl,
+            tl,
+            x + tl,
+            y
+        );
+    }
+    d.push_str(" Z");
+    d
+}
+
 fn shadow_filter(shadow: f32) -> &'static str {
     if shadow >= 16.0 {
         r#" filter="url(#shadow-lg)""#
@@ -1009,6 +1121,43 @@ mod tests {
         assert!(
             svg.contains(r#"<path"#),
             "spinner_with_track should emit an arc <path>, got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn rounded_rect_with_uniform_corners_emits_rect_with_rx() {
+        use crate::tree::Corners;
+        let el = crate::tree::column::<_, crate::tree::El>([])
+            .width(crate::tree::Size::Fixed(40.0))
+            .height(crate::tree::Size::Fixed(40.0))
+            .fill(Color::rgb(255, 0, 0))
+            .radius(Corners::all(8.0));
+        let svg = render(el);
+        assert!(
+            svg.contains(r#"<rect"#) && svg.contains(r#"rx="8.00""#),
+            "uniform corners should emit `<rect rx>`, got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn rounded_rect_with_non_uniform_corners_emits_path_with_per_corner_arcs() {
+        use crate::tree::Corners;
+        // Top-rounded card-header strip: the artifact-fixing shape.
+        let el = crate::tree::column::<_, crate::tree::El>([])
+            .width(crate::tree::Size::Fixed(40.0))
+            .height(crate::tree::Size::Fixed(40.0))
+            .fill(Color::rgb(255, 0, 0))
+            .radius(Corners::top(8.0));
+        let svg = render(el);
+        assert!(
+            svg.contains(r#"<path"#) && svg.contains(r#"data-shader="stock::rounded_rect""#),
+            "non-uniform corners should emit `<path>` for the rounded-rect node, got:\n{svg}"
+        );
+        // Two arcs (the two non-zero top corners), no arc on bottom corners.
+        let arc_count = svg.matches(" A 8.00 8.00 ").count();
+        assert_eq!(
+            arc_count, 2,
+            "top-rounded shape should emit exactly two 8px arcs, got:\n{svg}"
         );
     }
 

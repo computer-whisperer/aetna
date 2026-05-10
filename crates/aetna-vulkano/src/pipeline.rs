@@ -60,7 +60,7 @@ pub(crate) struct FrameUniforms {
 ///
 /// Binding 0 = the unit-quad corner UVs (4 vertices, `[f32; 2]` each,
 /// drawn as a triangle strip). Binding 1 = the instance buffer of
-/// `QuadInstance` (6 × `vec4<f32>` per instance at locations 1..=6).
+/// `QuadInstance` (7 × `vec4<f32>` per instance at locations 1..=7).
 fn vertex_input_state() -> VertexInputState {
     let bind_vertex = VertexInputBindingDescription {
         stride: (2 * std::mem::size_of::<f32>()) as u32,
@@ -94,8 +94,10 @@ fn vertex_input_state() -> VertexInputState {
         .attribute(4, attr(1, 48, Format::R32G32B32A32_SFLOAT))
         // location 5 — inner_rect (binding 1, offset 64) — layout rect (NEW)
         .attribute(5, attr(1, 64, Format::R32G32B32A32_SFLOAT))
-        // location 6 — vec_d / focus_color (binding 1, offset 80) (NEW)
+        // location 6 — vec_d / focus_color (binding 1, offset 80)
         .attribute(6, attr(1, 80, Format::R32G32B32A32_SFLOAT))
+        // location 7 — vec_e / per-corner radii (binding 1, offset 96)
+        .attribute(7, attr(1, 96, Format::R32G32B32A32_SFLOAT))
 }
 
 /// Build a pipeline layout from reflection, then broaden every set-0

@@ -132,8 +132,14 @@ mod tests {
             "fill uses caller's color"
         );
         // Both rounded pills so the bar reads as one piece.
-        assert_eq!(p.children[0].radius, tokens::RADIUS_PILL);
-        assert_eq!(p.children[1].radius, tokens::RADIUS_PILL);
+        assert_eq!(
+            p.children[0].radius,
+            crate::tree::Corners::all(tokens::RADIUS_PILL)
+        );
+        assert_eq!(
+            p.children[1].radius,
+            crate::tree::Corners::all(tokens::RADIUS_PILL)
+        );
     }
 
     #[test]

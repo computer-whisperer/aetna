@@ -260,7 +260,7 @@ impl TextRecorder for PaintRecorder<'_> {
         scissor: Option<PhysicalScissor>,
         image: &aetna_core::image::Image,
         tint: Option<Color>,
-        radius: f32,
+        radius: aetna_core::tree::Corners,
         _fit: aetna_core::image::ImageFit,
         _scale_factor: f32,
     ) -> std::ops::Range<usize> {

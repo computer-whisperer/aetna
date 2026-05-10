@@ -148,7 +148,7 @@ mod tests {
         let side = sheet_content(SheetSide::Right, [sheet_title("Settings")]);
         assert_eq!(side.width, Size::Fixed(360.0));
         assert_eq!(side.height, Size::Fill(1.0));
-        assert_eq!(side.radius, 0.0);
+        assert_eq!(side.radius, crate::tree::Corners::ZERO);
 
         let bottom = sheet_content(SheetSide::Bottom, [sheet_title("Activity")]);
         assert_eq!(bottom.width, Size::Fill(1.0));

@@ -43,7 +43,7 @@ pub use constructors::{
     column, divider, hard_break, image, row, scroll, spacer, stack, surface, text_runs, vector,
     virtual_list, virtual_list_dyn,
 };
-pub use geometry::{Rect, Sides};
+pub use geometry::{Corners, Rect, Sides};
 pub use icon_name::IconName;
 pub use identity::HoverAlpha;
 pub use layout_types::{Align, Axis, Justify, Size};

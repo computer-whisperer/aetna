@@ -49,10 +49,10 @@ pub use crate::theme::Theme;
 pub use crate::toast::{Toast, ToastLevel, ToastSpec};
 pub use crate::tokens;
 pub use crate::tree::{
-    Align, Axis, Color, El, FontFamily, FontWeight, HoverAlpha, IconName, InteractionState,
-    Justify, Kind, Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole,
-    TextWrap, column, divider, hard_break, image, row, scroll, spacer, stack, surface, text_runs,
-    vector, virtual_list, virtual_list_dyn,
+    Align, Axis, Color, Corners, El, FontFamily, FontWeight, HoverAlpha, IconName,
+    InteractionState, Justify, Kind, Rect, Sides, Size, Source, SurfaceRole, TextAlign,
+    TextOverflow, TextRole, TextWrap, column, divider, hard_break, image, row, scroll, spacer,
+    stack, surface, text_runs, vector, virtual_list, virtual_list_dyn,
 };
 pub use crate::vector::VectorRenderMode;
 pub use crate::vector::{

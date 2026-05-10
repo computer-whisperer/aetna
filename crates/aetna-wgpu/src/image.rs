@@ -22,7 +22,7 @@ use std::ops::Range;
 use aetna_core::image::Image;
 use aetna_core::paint::{PhysicalScissor, rgba_f32};
 use aetna_core::shader::stock_wgsl;
-use aetna_core::tree::{Color, Rect};
+use aetna_core::tree::{Color, Corners, Rect};
 
 use bytemuck::{Pod, Zeroable};
 
@@ -31,7 +31,7 @@ const INITIAL_INSTANCE_CAPACITY: usize = 32;
 const IMAGE_INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
     1 => Float32x4, // rect (xy = top-left logical px, zw = size)
     2 => Float32x4, // tint linear rgba — (1,1,1,1) when no app tint
-    3 => Float32x4, // params (x = radius logical px, yzw reserved)
+    3 => Float32x4, // params = per-corner radii (tl, tr, br, bl) in logical px
     4 => Float32x4, // uv subrect (always (0,0,1,1) for v1; reserved for atlasing)
 ];
 
@@ -230,7 +230,7 @@ impl ImagePaint {
         scissor: Option<PhysicalScissor>,
         image: &Image,
         tint: Option<Color>,
-        radius: f32,
+        radius: Corners,
     ) -> Range<usize> {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             let start = self.runs.len();
@@ -242,7 +242,12 @@ impl ImagePaint {
         let instance = ImageInstance {
             rect: [rect.x, rect.y, rect.w, rect.h],
             tint: tint_rgba,
-            params: [radius.max(0.0), 0.0, 0.0, 0.0],
+            params: [
+                radius.tl.max(0.0),
+                radius.tr.max(0.0),
+                radius.br.max(0.0),
+                radius.bl.max(0.0),
+            ],
             uv: [0.0, 0.0, 1.0, 1.0],
         };
         let first = self.instances.len() as u32;

@@ -161,7 +161,7 @@ mod tests {
         assert_eq!(track.fill, Some(tokens::INPUT));
         assert_eq!(thumb.fill, Some(tokens::FOREGROUND));
         // Track stays a pill regardless of state.
-        assert_eq!(track.radius, tokens::RADIUS_PILL);
+        assert_eq!(track.radius, crate::tree::Corners::all(tokens::RADIUS_PILL));
     }
 
     #[test]

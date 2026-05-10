@@ -123,10 +123,10 @@ pub use text::metrics::{
 };
 pub use theme::Theme;
 pub use tree::{
-    Align, Axis, Color, El, FontFamily, FontWeight, IconName, InteractionState, Justify, Kind,
-    Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap, column,
-    divider, hard_break, row, scroll, spacer, stack, surface, text_runs, vector, virtual_list,
-    virtual_list_dyn,
+    Align, Axis, Color, Corners, El, FontFamily, FontWeight, IconName, InteractionState, Justify,
+    Kind, Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap,
+    column, divider, hard_break, row, scroll, spacer, stack, surface, text_runs, vector,
+    virtual_list, virtual_list_dyn,
 };
 pub use vector::{IconMaterial, VectorRenderMode};
 // Vector path / mesh tessellation types are internal-tooling surface.

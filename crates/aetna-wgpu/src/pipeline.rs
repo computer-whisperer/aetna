@@ -39,16 +39,17 @@ pub(crate) struct FrameUniforms {
 /// Per-instance vertex attributes — must match the shared
 /// `InstanceInput` struct in `shaders/rounded_rect.wgsl` and any
 /// registered custom shader. Order matches `aetna_core::paint::QuadInstance`
-/// field order so byte offsets line up. The legacy locations 1..=4 are
-/// preserved for backward compat; `inner_rect` and `vec_d` slot in at
-/// the end so custom shaders that only declare 1..=4 keep working.
-const INSTANCE_ATTRS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
+/// field order so byte offsets line up. Locations 1..=6 are the
+/// legacy slots (custom shaders that only declare 1..=N keep working);
+/// location 7 carries per-corner radii.
+const INSTANCE_ATTRS: [wgpu::VertexAttribute; 7] = wgpu::vertex_attr_array![
     1 => Float32x4,  // rect (xy=topleft px, zw=size px) — painted rect
     2 => Float32x4,  // vec_a (stock::rounded_rect: fill)
     3 => Float32x4,  // vec_b (stock::rounded_rect: stroke)
-    4 => Float32x4,  // vec_c (stock::rounded_rect: stroke_width, radius, shadow, focus_width)
-    5 => Float32x4,  // inner_rect (xy=topleft px, zw=size px) — layout rect (NEW)
-    6 => Float32x4,  // vec_d (stock::rounded_rect: focus_color rgba, alpha eased) (NEW)
+    4 => Float32x4,  // vec_c (stock::rounded_rect: stroke_width, max_radius, shadow, focus_width)
+    5 => Float32x4,  // inner_rect (xy=topleft px, zw=size px) — layout rect
+    6 => Float32x4,  // vec_d (stock::rounded_rect: focus_color rgba, alpha eased)
+    7 => Float32x4,  // vec_e (stock::rounded_rect: per-corner radii tl, tr, br, bl)
 ];
 
 pub(crate) fn build_quad_pipeline(
