@@ -88,18 +88,18 @@ use crate::widgets::text_input::{TextSelection, replace_selection};
 /// shape (typical for forms).
 #[track_caller]
 pub fn text_area(value: &str, selection: &Selection, key: &str) -> El {
-    build_text_area(value, selection.within(key)).key(key)
+    build_text_area(key, value, selection.within(key)).key(key)
 }
 
 #[track_caller]
-fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
+fn build_text_area(key: &str, value: &str, view: Option<TextSelection>) -> El {
     let selection = view.unwrap_or_default();
     let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
     let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     let lo = anchor.min(head);
     let hi = anchor.max(head);
 
-    let mut children: Vec<El> = Vec::with_capacity(8);
+    let mut content_children: Vec<El> = Vec::with_capacity(8);
 
     // Selection bands (one per visual line covered by the selection).
     // We use `None` for the wrap width here so the layout matches the
@@ -114,7 +114,7 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
     let geometry = text_area_geometry(value);
     let rects = geometry.selection_rects(lo, hi);
     for (rx, ry, rw, rh) in rects {
-        children.push(
+        content_children.push(
             El::new(Kind::Custom("text_area_selection"))
                 .style_profile(StyleProfile::Solid)
                 .fill(tokens::SELECTION_BG)
@@ -127,9 +127,11 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
     }
 
     // The value rendered as one wrapped, shaped run. Hug height so the
-    // container can grow to fit; Fill width so cosmic-text wraps to
-    // the available width.
-    children.push(
+    // inner content column grows to fit; Fill width so cosmic-text
+    // wraps to the available width. When the outer text_area is given
+    // a fixed height smaller than this content, the surrounding scroll
+    // viewport clips and lets the user wheel through the overflow.
+    content_children.push(
         text(value)
             .wrap_text()
             .width(Size::Fill(1.0))
@@ -141,13 +143,48 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
     // `text_input::build_text_input` for the rationale.
     if view.is_some() {
         let (caret_x, caret_y) = geometry.caret_xy(head);
-        children.push(
+        content_children.push(
             caret_bar()
                 .translate(caret_x, caret_y)
                 .alpha_follows_focused_ancestor()
                 .blink_when_focused(),
         );
     }
+
+    // Inner overlay groups the bands + text + caret so paint-time
+    // `translate` on bands/caret resolves against the same origin as
+    // the text leaf's content rect. Hug height so the column its
+    // wrapped in measures the real content extent (the scroll
+    // viewport's max_offset depends on this).
+    let inner = El::new(Kind::Custom("text_area_content"))
+        .axis(Axis::Overlay)
+        .align(Align::Start)
+        .justify(Justify::Start)
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+        .children(content_children);
+
+    // Scroll viewport wraps the content. Provides clip + wheel +
+    // scrollbar. Height Fill(1.0) makes it match the outer's content
+    // rect — when the outer is `Size::Hug` (default), the scroll
+    // hugs the inner content and no scrolling happens; when the
+    // outer is `Size::Fixed(h)` for forms, the scroll viewport is
+    // clamped to h and the inner content can overflow.
+    //
+    // Intentionally *unkeyed*: keys make a node a hit-test target,
+    // which would steal pointer events from the outer text_area
+    // (the outer carries `.focusable() .capture_keys()` and routes
+    // by its own key). Offset persistence comes from the scroll's
+    // computed_id, which stays stable as long as the scroll remains
+    // the only child of text_area — the current shape and the one
+    // we intend to keep.
+    //
+    // Unused while no `.key()` is set, but retained for the
+    // upcoming `ScrollRequest::EnsureVisible` helper so the
+    // resolver can recognize the request by the outer text_area's
+    // key without needing the inner computed_id.
+    let _ = key;
+    let viewport = crate::tree::scroll([inner]);
 
     El::new(Kind::Custom("text_area"))
         .at_loc(Location::caller())
@@ -163,14 +200,17 @@ fn build_text_area(value: &str, view: Option<TextSelection>) -> El {
         .fill(tokens::MUTED)
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_MD)
-        .axis(Axis::Overlay)
-        .align(Align::Start)
+        // Single child (the scroll viewport); a Column with stretch
+        // alignment makes it fill the content rect cleanly.
+        .axis(Axis::Column)
+        .align(Align::Stretch)
         .justify(Justify::Start)
         .width(Size::Fill(1.0))
         .height(Size::Hug)
         .default_padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
-        .children(children)
+        .child(viewport)
 }
+
 
 fn caret_bar() -> El {
     El::new(Kind::Custom("text_area_caret"))
@@ -737,11 +777,92 @@ mod tests {
     }
 
     #[test]
-    fn renders_as_overlay_with_capture_keys_and_focus_ring() {
+    fn pointer_hit_routes_to_outer_text_area_not_inner_scroll() {
+        // Critical invariant: keys make a node a hit-test target, so
+        // if the inner scroll accidentally gained a key, pointer
+        // events would route to the scroll instead of the outer
+        // text_area — breaking `apply_event` (which checks
+        // `e.target_key() == Some("ta")`). Lock in that clicks land
+        // on the outer key.
+        let mut root = super::text_area("body\nwith\nlines", &Selection::default(), TEST_KEY)
+            .height(Size::Fixed(60.0))
+            .width(Size::Fixed(200.0));
+        let mut ui_state = crate::state::UiState::new();
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 200.0, 60.0));
+        // Click roughly in the middle of the field — well inside the
+        // surface and inside the scroll viewport.
+        let hit = crate::hit_test::hit_test(&root, &ui_state, (100.0, 30.0));
+        assert_eq!(hit.as_deref(), Some(TEST_KEY));
+    }
+
+    #[test]
+    fn fixed_height_with_overflow_clips_glyph_run_to_inner_scroll_viewport() {
+        // Regression: before stage 1, the text leaf's cosmic-text
+        // layout would paint all wrapped lines outside the
+        // text_area's surface rect because the outer container
+        // didn't clip and there was no scroll viewport in between.
+        // Now the inner `scroll(...)` sets `own_scissor` on its
+        // descendants — the glyph run's scissor must lie inside the
+        // text_area's content rect.
+        //
+        // We use a long single-line string (no `\n`) so cosmic-text
+        // soft-wraps it into many visual rows that obviously exceed
+        // the 48 px viewport. Then we read the GlyphRun's scissor
+        // from the laid-out draw ops and assert it matches the
+        // scroll viewport, not the text leaf's intrinsic full
+        // height.
+        let long = "lorem ipsum dolor sit amet ".repeat(40);
+        let mut root = super::text_area(&long, &Selection::default(), TEST_KEY)
+            .height(Size::Fixed(48.0))
+            .width(Size::Fixed(200.0));
+        let mut ui_state = crate::state::UiState::new();
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 200.0, 48.0));
+
+        let ops = crate::draw_ops::draw_ops(&root, &ui_state);
+        let glyph_scissor = ops
+            .iter()
+            .find_map(|op| {
+                if let crate::DrawOp::GlyphRun { scissor, .. } = op {
+                    *scissor
+                } else {
+                    None
+                }
+            })
+            .expect("text_area should emit a GlyphRun for the value");
+
+        // The glyph scissor must be no taller than the text_area's
+        // fixed height — if it were the inner content's intrinsic
+        // height, it would exceed 48 (many wrapped lines).
+        assert!(
+            glyph_scissor.h <= 48.0 + 0.5,
+            "glyph scissor h={} should be clipped to the outer 48 px content area",
+            glyph_scissor.h
+        );
+    }
+
+    #[test]
+    fn renders_as_focusable_capture_keys_surface_wrapping_scroll() {
         let el = text_area("foo\nbar", TextSelection::caret(0));
         assert!(matches!(el.kind, Kind::Custom("text_area")));
         assert!(el.focusable);
         assert!(el.capture_keys);
-        assert!(matches!(el.axis, Axis::Overlay));
+        // Outer is now a column with a single scroll viewport child;
+        // the overlay axis lives one level deeper on the content
+        // wrapper that hosts the selection bands + text + caret.
+        assert!(matches!(el.axis, Axis::Column));
+        assert_eq!(el.children.len(), 1, "outer wraps the scroll viewport");
+        let scroll = &el.children[0];
+        assert!(matches!(scroll.kind, Kind::Scroll));
+        assert!(scroll.scrollable);
+        // Inner scroll must be unkeyed so the outer text_area
+        // remains the hit-test target for pointer events; offset
+        // persistence comes from the computed_id, which is stable
+        // as long as the scroll stays the sole child of text_area.
+        assert!(scroll.key.is_none());
+        let content = scroll
+            .children
+            .first()
+            .expect("scroll has the overlay content child");
+        assert!(matches!(content.axis, Axis::Overlay));
     }
 }
