@@ -37,16 +37,13 @@ pub struct VectorAsset {
 /// `currentColor` paint, so backends use the colour-aware vector path.
 /// `Mask` treats the asset as coverage geometry and applies one caller-
 /// supplied colour, which lets backends use their MSDF atlas path.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum VectorRenderMode {
+    #[default]
     Painted,
-    Mask { color: Color },
-}
-
-impl Default for VectorRenderMode {
-    fn default() -> Self {
-        Self::Painted
-    }
+    Mask {
+        color: Color,
+    },
 }
 
 impl VectorRenderMode {
