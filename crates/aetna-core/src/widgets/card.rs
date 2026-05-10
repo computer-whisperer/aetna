@@ -38,6 +38,13 @@
 //! diff/hunk frames — is `card_header([...]).fill(tokens::MUTED)`; do
 //! not hand-roll the strip as a `row(...).fill(MUTED).stroke(BORDER)`
 //! sibling of the body.
+//!
+//! The metrics pass propagates the card's top-corner radii onto a
+//! leading `card_header` that has a fill (and symmetric for a trailing
+//! `card_footer`) so the strip follows the card's curve instead of
+//! poking flat corners through it. Author-set `.radius(...)` on the
+//! slot wins; explicit `.padding(...)` on the card itself disables
+//! inheritance since the slot is no longer flush with the card edge.
 
 use std::panic::Location;
 

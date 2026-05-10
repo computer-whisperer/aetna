@@ -153,17 +153,26 @@ impl ThemeMetrics {
                     .unwrap_or(self.default_component_size);
                 apply_badge(el, badge_metrics(size));
             }
-            Some(
-                MetricsRole::Card
-                | MetricsRole::CardHeader
-                | MetricsRole::CardContent
-                | MetricsRole::CardFooter,
-            ) => {
+            Some(MetricsRole::Card) => {
                 // Card surfaces do not participate in the metrics-driven
                 // density override. Padding, gap, and radius are baked
                 // into the constructors in `widgets/card.rs` (shadcn's
                 // stock recipe). Override per-call with `.padding(...)`,
                 // `.pt(...)` / `.px(...)` / etc.
+                //
+                // What the metrics pass *does* do for a card: propagate
+                // the card's top corner radii onto a leading
+                // `card_header` child's *fill* (and symmetric for a
+                // trailing `card_footer`). Without this, a
+                // `card_header([...]).fill(MUTED)` strip paints sharp
+                // top corners that poke past the card's rounded curve;
+                // see `propagate_card_corner_radii`.
+                propagate_card_corner_radii(el);
+            }
+            Some(MetricsRole::CardHeader | MetricsRole::CardContent | MetricsRole::CardFooter) => {
+                // See above: padding / gap / radius baked into the
+                // constructors. Corner-radii inheritance is stamped by
+                // the parent `Card` branch above.
             }
             Some(
                 MetricsRole::Form
@@ -420,6 +429,59 @@ fn apply_single_axis_height(el: &mut El, height: f32) {
     }
 }
 
+/// Propagate the parent card's top/bottom corner radii onto a leading
+/// `card_header` / trailing `card_footer` child whose `.fill(...)` would
+/// otherwise paint sharp corners over the card's rounded curve.
+///
+/// Triggers only when:
+/// - The card has a non-zero corner radius (the only case the strip
+///   pokes through).
+/// - The card has zero padding on the corresponding edge (the slot's
+///   own padding is inside it; the slot's outer rect is the card's
+///   inner rect). If the card has top padding, the header's top is
+///   inset from the card edge — no leak, no inheritance.
+/// - The slot has `.fill(...)` set. A no-fill `card_header` doesn't
+///   draw anything in the corner band, so corner inheritance would be
+///   invisible (and could surprise authors who later add stroke).
+/// - The slot has no explicit `.radius(...)` — author overrides win.
+///
+/// Top inherits from `card.radius.tl` / `tr`; bottom from `bl` / `br`.
+/// The matching opposite corners are zeroed so the strip's interior
+/// edge stays straight against the body slot.
+fn propagate_card_corner_radii(card: &mut El) {
+    if !card.radius.any_nonzero() || card.children.is_empty() {
+        return;
+    }
+    let card_radius = card.radius;
+    let pad_top = card.padding.top;
+    let pad_bottom = card.padding.bottom;
+    let last_idx = card.children.len() - 1;
+    for (idx, child) in card.children.iter_mut().enumerate() {
+        if child.fill.is_none() || child.explicit_radius {
+            continue;
+        }
+        match child.metrics_role {
+            Some(MetricsRole::CardHeader) if idx == 0 && pad_top == 0.0 => {
+                child.radius = crate::tree::Corners {
+                    tl: card_radius.tl,
+                    tr: card_radius.tr,
+                    br: 0.0,
+                    bl: 0.0,
+                };
+            }
+            Some(MetricsRole::CardFooter) if idx == last_idx && pad_bottom == 0.0 => {
+                child.radius = crate::tree::Corners {
+                    tl: 0.0,
+                    tr: 0.0,
+                    br: card_radius.br,
+                    bl: card_radius.bl,
+                };
+            }
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,6 +551,102 @@ mod tests {
                 bottom: tokens::SPACE_6,
             }
         );
+    }
+
+    #[test]
+    fn card_header_with_fill_inherits_card_top_corner_radii() {
+        use crate::tree::Corners;
+        use crate::{card, card_content, card_header, text};
+        // The canonical "tinted strip" recipe blessed by the
+        // `card_header` doc comment. Without inheritance the strip
+        // paints sharp top corners that poke past the card's curve.
+        let mut tree = card([
+            card_header([text("Header")]).fill(tokens::MUTED),
+            card_content([text("Body")]),
+        ]);
+        ThemeMetrics::default().apply_to_tree(&mut tree);
+
+        assert_eq!(
+            tree.children[0].radius,
+            Corners {
+                tl: tokens::RADIUS_LG,
+                tr: tokens::RADIUS_LG,
+                br: 0.0,
+                bl: 0.0,
+            },
+            "header strip should adopt the card's top corner radii"
+        );
+        // Body slot has no fill → no inheritance, no surprise.
+        assert_eq!(tree.children[1].radius, Corners::ZERO);
+    }
+
+    #[test]
+    fn card_footer_with_fill_inherits_card_bottom_corner_radii() {
+        use crate::tree::Corners;
+        use crate::{card, card_content, card_footer, text};
+        let mut tree = card([
+            card_content([text("Body")]),
+            card_footer([text("Footer")]).fill(tokens::MUTED),
+        ]);
+        ThemeMetrics::default().apply_to_tree(&mut tree);
+
+        let footer = tree.children.last().expect("footer slot");
+        assert_eq!(
+            footer.radius,
+            Corners {
+                tl: 0.0,
+                tr: 0.0,
+                br: tokens::RADIUS_LG,
+                bl: tokens::RADIUS_LG,
+            }
+        );
+    }
+
+    #[test]
+    fn card_header_explicit_radius_wins_over_inheritance() {
+        use crate::tree::Corners;
+        use crate::{card, card_content, card_header, text};
+        let mut tree = card([
+            card_header([text("Header")])
+                .fill(tokens::MUTED)
+                .radius(Corners::ZERO),
+            card_content([text("Body")]),
+        ]);
+        ThemeMetrics::default().apply_to_tree(&mut tree);
+
+        assert_eq!(
+            tree.children[0].radius,
+            Corners::ZERO,
+            "author override must win over auto-inheritance"
+        );
+    }
+
+    #[test]
+    fn card_header_without_fill_does_not_inherit() {
+        use crate::tree::Corners;
+        use crate::{card, card_content, card_header, text};
+        let mut tree = card([card_header([text("Header")]), card_content([text("Body")])]);
+        ThemeMetrics::default().apply_to_tree(&mut tree);
+        assert_eq!(
+            tree.children[0].radius,
+            Corners::ZERO,
+            "no fill means no corner stackup to fix"
+        );
+    }
+
+    #[test]
+    fn card_with_top_padding_skips_header_inheritance() {
+        use crate::tree::Corners;
+        use crate::{card, card_content, card_header, text};
+        // Explicit padding on the card insets the header from the
+        // card's edge, so there's no corner stackup to inherit away.
+        let mut tree = card([
+            card_header([text("Header")]).fill(tokens::MUTED),
+            card_content([text("Body")]),
+        ])
+        .padding(tokens::SPACE_2);
+        ThemeMetrics::default().apply_to_tree(&mut tree);
+        assert_eq!(tree.children[0].radius, Corners::ZERO);
     }
 
     #[test]

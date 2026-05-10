@@ -125,6 +125,23 @@ pub enum FindingKind {
     /// here" with "I'm declaring a click/focus target," and is
     /// usually not what you want.
     DeadTooltip,
+    /// A filled child paints into a rounded ancestor's corner-curve
+    /// area without rounding its own matching corner. The child's
+    /// flat-cornered fill obscures the parent's curve and stroke,
+    /// producing the "sharp corner superimposed on a radiused
+    /// container" artifact.
+    ///
+    /// The canonical recipe (`card_header([...]).fill(MUTED)` inside
+    /// `card([...])`) is auto-fixed by the metrics pass — see
+    /// [`crate::metrics`]. This lint catches hand-rolled cases:
+    /// reinvented cards with reinvented headers, custom inspector
+    /// frames, accordion-like containers, etc.
+    ///
+    /// Fix: set the matching corner radii on the child
+    /// (`.radius(Corners::top(N))` for a header strip,
+    /// `Corners::bottom(N)` for a footer), or add padding to the
+    /// parent so the child is inset from the curve.
+    CornerStackup,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -601,6 +618,21 @@ fn walk(
             });
         }
 
+        // Corner stackup: a filled child paints into a rounded
+        // parent's corner-curve area, obscuring the parent's stroke
+        // and curve with a flat corner. The canonical card_header /
+        // card_footer recipe is auto-fixed by `metrics`; this check
+        // catches the same pattern in hand-rolled containers. Gated
+        // on the child being from user code so library widgets that
+        // legitimately paint in corner regions don't trip it.
+        if from_user_child
+            && c.fill.is_some()
+            && n.radius.any_nonzero()
+            && let Some(blame) = child_blame
+        {
+            check_corner_stackup(n, computed, c, c_rect, r, blame);
+        }
+
         if from_user_child
             && c.focusable
             && let Some(blame) = child_blame
@@ -639,6 +671,99 @@ fn walk(
 
 fn has_paint_overflow(s: Sides) -> bool {
     s.left > 0.0 || s.right > 0.0 || s.top > 0.0 || s.bottom > 0.0
+}
+
+/// Detect the corner-stackup pattern: a filled child whose rect
+/// overlaps one of a rounded parent's corner-curve boxes without
+/// matching that corner's radius. Mirrors the geometric test the
+/// painter actually performs — the parent's rounded-rect SDF leaves
+/// the `r×r` square at each rounded corner partially transparent, and
+/// a child fill that overlaps that square paints sharp corners over
+/// the parent's curve and stroke.
+fn check_corner_stackup(
+    parent: &El,
+    parent_rect: Rect,
+    child: &El,
+    child_rect: Rect,
+    r: &mut LintReport,
+    blame: Source,
+) {
+    let pr = parent.radius;
+    let cr = child.radius;
+    // (parent_radius, child_radius, corner-curve box in parent space)
+    let tl = (
+        pr.tl,
+        cr.tl,
+        Rect::new(parent_rect.x, parent_rect.y, pr.tl, pr.tl),
+    );
+    let tr = (
+        pr.tr,
+        cr.tr,
+        Rect::new(
+            parent_rect.x + parent_rect.w - pr.tr,
+            parent_rect.y,
+            pr.tr,
+            pr.tr,
+        ),
+    );
+    let br = (
+        pr.br,
+        cr.br,
+        Rect::new(
+            parent_rect.x + parent_rect.w - pr.br,
+            parent_rect.y + parent_rect.h - pr.br,
+            pr.br,
+            pr.br,
+        ),
+    );
+    let bl = (
+        pr.bl,
+        cr.bl,
+        Rect::new(
+            parent_rect.x,
+            parent_rect.y + parent_rect.h - pr.bl,
+            pr.bl,
+            pr.bl,
+        ),
+    );
+    let leaks_at = |(p_r, c_r, corner_box): (f32, f32, Rect)| -> bool {
+        if p_r <= 0.5 || c_r + 0.5 >= p_r {
+            return false;
+        }
+        match child_rect.intersect(corner_box) {
+            Some(overlap) => overlap.w >= 0.5 && overlap.h >= 0.5,
+            None => false,
+        }
+    };
+    let (leak_tl, leak_tr, leak_br, leak_bl) =
+        (leaks_at(tl), leaks_at(tr), leaks_at(br), leaks_at(bl));
+    if !(leak_tl || leak_tr || leak_br || leak_bl) {
+        return;
+    }
+    let (descriptor, helper) = match (leak_tl, leak_tr, leak_br, leak_bl) {
+        (true, true, false, false) => ("the parent's top corners", "Corners::top(...)"),
+        (false, false, true, true) => ("the parent's bottom corners", "Corners::bottom(...)"),
+        (true, false, false, true) => ("the parent's left corners", "Corners::left(...)"),
+        (false, true, true, false) => ("the parent's right corners", "Corners::right(...)"),
+        (true, true, true, true) => ("the parent's corners", "Corners::all(...)"),
+        // Single corner or any L-shape: author picks the matching field set.
+        _ => (
+            "a parent corner",
+            "Corners { tl, tr, br, bl } with the matching corner set",
+        ),
+    };
+    r.findings.push(Finding {
+        kind: FindingKind::CornerStackup,
+        node_id: child.computed_id.clone(),
+        source: blame,
+        message: format!(
+            "filled child paints into {descriptor} (rounded parent, max radius={pr_max:.0}) — \
+             the flat corners obscure the parent's curve and stroke. \
+             Set `.radius({helper})` on the child so its corners follow the parent's curve, \
+             or add padding to the parent so the child is inset from the curve.",
+            pr_max = pr.max(),
+        ),
+    });
 }
 
 fn check_focus_ring_obscured(
@@ -2125,6 +2250,123 @@ mod tests {
                 .iter()
                 .any(|f| f.kind == FindingKind::FocusRingObscured),
             "{}",
+            report.text()
+        );
+    }
+
+    /// Like [`lint_one`] but runs the metrics pass first, so canonical
+    /// recipes that depend on auto-defaults (card_header corner
+    /// inheritance, control heights, etc.) reach lint in their settled
+    /// shape.
+    fn lint_one_with_metrics(mut root: El) -> LintReport {
+        crate::metrics::ThemeMetrics::default().apply_to_tree(&mut root);
+        let mut ui_state = UiState::new();
+        layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 200.0, 120.0));
+        lint(&root, &ui_state)
+    }
+
+    #[test]
+    fn handrolled_rounded_container_with_flat_filled_header_reports_corner_stackup() {
+        // The hand-rolled equivalent of `card([card_header(...).fill(MUTED), ...])`.
+        // Metrics-pass corner inheritance doesn't apply here (no
+        // MetricsRole::Card on the parent), so the lint must fire.
+        let parent = crate::column([
+            crate::row([crate::text("Header")])
+                .fill(crate::tokens::MUTED)
+                .width(Size::Fill(1.0))
+                .height(Size::Fixed(24.0)),
+            crate::row([crate::text("Body")])
+                .width(Size::Fill(1.0))
+                .height(Size::Fixed(60.0)),
+        ])
+        .fill(crate::tokens::CARD)
+        .stroke(crate::tokens::BORDER)
+        .radius(crate::tokens::RADIUS_LG)
+        .width(Size::Fixed(160.0))
+        .height(Size::Fixed(96.0));
+
+        let report = lint_one(parent);
+
+        let found = report
+            .findings
+            .iter()
+            .find(|f| f.kind == FindingKind::CornerStackup);
+        let found =
+            found.unwrap_or_else(|| panic!("expected CornerStackup, got:\n{}", report.text()));
+        assert!(
+            found.message.contains("Corners::top"),
+            "top-strip leak should suggest Corners::top, got: {}",
+            found.message
+        );
+    }
+
+    #[test]
+    fn handrolled_rounded_container_with_inset_child_does_not_report_corner_stackup() {
+        // Parent has padding; the child is inset from the curve area.
+        let parent = crate::column([crate::row([crate::text("Header")])
+            .fill(crate::tokens::MUTED)
+            .width(Size::Fill(1.0))
+            .height(Size::Fixed(24.0))])
+        .fill(crate::tokens::CARD)
+        .stroke(crate::tokens::BORDER)
+        .radius(crate::tokens::RADIUS_LG)
+        .padding(Sides::all(crate::tokens::RADIUS_LG))
+        .width(Size::Fixed(160.0))
+        .height(Size::Fixed(96.0));
+
+        let report = lint_one(parent);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::CornerStackup),
+            "inset child should not trip the lint, got:\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn handrolled_rounded_container_with_matching_corners_does_not_report_corner_stackup() {
+        let parent = crate::column([crate::row([crate::text("Header")])
+            .fill(crate::tokens::MUTED)
+            .radius(Corners::top(crate::tokens::RADIUS_LG))
+            .width(Size::Fill(1.0))
+            .height(Size::Fixed(24.0))])
+        .fill(crate::tokens::CARD)
+        .stroke(crate::tokens::BORDER)
+        .radius(crate::tokens::RADIUS_LG)
+        .width(Size::Fixed(160.0))
+        .height(Size::Fixed(96.0));
+
+        let report = lint_one(parent);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::CornerStackup),
+            "matching corners should not trip the lint, got:\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn canonical_card_recipe_does_not_report_corner_stackup_after_metrics() {
+        // A + B together: the canonical recipe lands in lint with
+        // corners already stamped, so the lint stays quiet.
+        let root = crate::widgets::card::card([
+            crate::widgets::card::card_header([crate::text("Header")]).fill(crate::tokens::MUTED),
+            crate::widgets::card::card_content([crate::text("Body")]),
+        ])
+        .width(Size::Fixed(180.0))
+        .height(Size::Fixed(110.0));
+
+        let report = lint_one_with_metrics(root);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::CornerStackup),
+            "canonical card_header(...).fill(...) recipe should be quiet after metrics pass, got:\n{}",
             report.text()
         );
     }
