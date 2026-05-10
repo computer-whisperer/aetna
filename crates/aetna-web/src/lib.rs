@@ -297,6 +297,14 @@ mod web_entry {
         last_frame_at: Option<Instant>,
         /// Counts redraws actually rendered.
         frame_index: u64,
+        /// Physical canvas size used by the most recent full
+        /// [`Runner::prepare`] call. The repaint dispatcher requires
+        /// this to match the current `gfx.config` size before taking
+        /// the paint-only path: the cached `DrawOp` list was laid out
+        /// against this size, so a `ResizeObserver` fire that updated
+        /// `gfx.config` since must force a fresh layout rather than
+        /// painting stale geometry to the new viewport.
+        last_prepared_size: Option<(u32, u32)>,
         /// Adapter backend tag, captured at adapter selection time.
         /// `Rc<RefCell>` because the surface is created in an async
         /// task that finishes after `Host::new`; the cell is read
@@ -348,6 +356,7 @@ mod web_entry {
                 next_trigger: FrameTrigger::Initial,
                 last_frame_at: None,
                 frame_index: 0,
+                last_prepared_size: None,
                 backend: Rc::new(RefCell::new("?")),
                 _resize_closure: None,
                 _resize_observer: None,
@@ -869,38 +878,12 @@ mod web_entry {
                         ..Default::default()
                     });
 
-                    // Snapshot the diagnostic info for this frame. The
-                    // showcase reads this through `cx.diagnostics()` and
-                    // renders an overlay; non-Showcase apps ignore it.
                     let last_frame_dt = self
                         .last_frame_at
                         .map(|t| frame_start.duration_since(t))
                         .unwrap_or(std::time::Duration::ZERO);
                     self.last_frame_at = Some(frame_start);
                     let trigger = std::mem::take(&mut self.next_trigger);
-                    self.frame_index = self.frame_index.wrapping_add(1);
-                    let diagnostics = HostDiagnostics {
-                        backend: *self.backend.borrow(),
-                        surface_size: (gfx.config.width, gfx.config.height),
-                        scale_factor: gfx.window.scale_factor() as f32,
-                        msaa_samples: SAMPLE_COUNT,
-                        frame_index: self.frame_index,
-                        last_frame_dt,
-                        trigger,
-                    };
-
-                    self.app.before_build();
-                    let theme = self.app.theme();
-                    let cx = BuildCx::new(&theme)
-                        .with_ui_state(gfx.renderer.ui_state())
-                        .with_diagnostics(&diagnostics);
-                    let mut tree = self.app.build(&cx);
-                    let palette = theme.palette().clone();
-                    gfx.renderer.set_theme(theme);
-                    gfx.renderer.set_hotkeys(self.app.hotkeys());
-                    gfx.renderer.set_selection(self.app.selection());
-                    let t_after_build = Instant::now();
-
                     let scale_factor = gfx.window.scale_factor() as f32;
                     let viewport_rect = Rect::new(
                         0.0,
@@ -908,24 +891,75 @@ mod web_entry {
                         gfx.config.width as f32 / scale_factor,
                         gfx.config.height as f32 / scale_factor,
                     );
-                    let prepare = gfx.renderer.prepare(
-                        &gfx.device,
-                        &gfx.queue,
-                        &mut tree,
-                        viewport_rect,
-                        scale_factor,
-                    );
-                    let t_after_prepare = Instant::now();
+                    let current_size = (gfx.config.width, gfx.config.height);
+                    // Paint-only path: a time-driven shader's deadline
+                    // fired and nothing else has changed since the last
+                    // full prepare — skip rebuild + layout and reuse the
+                    // cached ops via `repaint`. The size guard catches
+                    // ResizeObserver fires that updated `gfx.config`
+                    // since the last prepare without setting a trigger.
+                    let paint_only = trigger == FrameTrigger::ShaderPaint
+                        && Some(current_size) == self.last_prepared_size;
 
-                    // Forward the resolved cursor to the canvas. winit's
-                    // web backend turns set_cursor(CursorIcon::...) into
-                    // canvas.style.cursor = "..." — same plumbing as
-                    // native, just with a CSS string at the end.
-                    let cursor = gfx.renderer.ui_state().cursor(&tree);
-                    if cursor != self.last_cursor {
-                        gfx.window.set_cursor(winit_cursor(cursor));
-                        self.last_cursor = cursor;
-                    }
+                    let (prepare, palette, t_after_build, t_after_prepare) = if paint_only {
+                        // No build pass: reuse the renderer's already-set
+                        // theme palette and skip diagnostics / frame_index
+                        // bump. Apps reading `cx.diagnostics()` see the
+                        // overlay update only on layout frames, which is
+                        // the documented contract for paint-only.
+                        let palette = gfx.renderer.theme().palette().clone();
+                        let t_after_build = Instant::now();
+                        let prepare = gfx.renderer.repaint(
+                            &gfx.device,
+                            &gfx.queue,
+                            viewport_rect,
+                            scale_factor,
+                        );
+                        let t_after_prepare = Instant::now();
+                        (prepare, palette, t_after_build, t_after_prepare)
+                    } else {
+                        self.frame_index = self.frame_index.wrapping_add(1);
+                        let diagnostics = HostDiagnostics {
+                            backend: *self.backend.borrow(),
+                            surface_size: (gfx.config.width, gfx.config.height),
+                            scale_factor,
+                            msaa_samples: SAMPLE_COUNT,
+                            frame_index: self.frame_index,
+                            last_frame_dt,
+                            trigger,
+                        };
+                        self.app.before_build();
+                        let theme = self.app.theme();
+                        let cx = BuildCx::new(&theme)
+                            .with_ui_state(gfx.renderer.ui_state())
+                            .with_diagnostics(&diagnostics);
+                        let mut tree = self.app.build(&cx);
+                        let palette = theme.palette().clone();
+                        gfx.renderer.set_theme(theme);
+                        gfx.renderer.set_hotkeys(self.app.hotkeys());
+                        gfx.renderer.set_selection(self.app.selection());
+                        let t_after_build = Instant::now();
+                        let prepare = gfx.renderer.prepare(
+                            &gfx.device,
+                            &gfx.queue,
+                            &mut tree,
+                            viewport_rect,
+                            scale_factor,
+                        );
+                        let t_after_prepare = Instant::now();
+
+                        // Cursor resolution depends on the laid-out tree
+                        // and the hovered key derived from layout ids,
+                        // so it only updates on the full-prepare path.
+                        // Paint-only frames inherit the previous cursor.
+                        let cursor = gfx.renderer.ui_state().cursor(&tree);
+                        if cursor != self.last_cursor {
+                            gfx.window.set_cursor(winit_cursor(cursor));
+                            self.last_cursor = cursor;
+                        }
+                        self.last_prepared_size = Some(current_size);
+                        (prepare, palette, t_after_build, t_after_prepare)
+                    };
 
                     let mut encoder =
                         gfx.device
@@ -958,8 +992,22 @@ mod web_entry {
                         prepare.timings,
                     );
 
-                    if prepare.needs_redraw {
+                    // Two-lane scheduling: a layout-driven signal
+                    // (animation settling, widget redraw_within,
+                    // tooltip / toast pending) takes precedence over a
+                    // paint-only signal — both arrive immediately
+                    // because the browser raf loop has no deadline
+                    // parking, but the trigger encodes which path the
+                    // next frame should take. On a paint-only frame
+                    // `repaint` reports `next_layout_redraw_in = None`
+                    // (it didn't re-evaluate), so the layout deadline
+                    // can only fall through if the prior full prepare
+                    // already cleared it.
+                    if prepare.next_layout_redraw_in.is_some() {
                         self.next_trigger = FrameTrigger::Animation;
+                        gfx.window.request_redraw();
+                    } else if prepare.next_paint_redraw_in.is_some() {
+                        self.next_trigger = FrameTrigger::ShaderPaint;
                         gfx.window.request_redraw();
                     }
                     let _ = self.viewport;
