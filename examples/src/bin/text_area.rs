@@ -41,6 +41,11 @@ struct Notes {
     /// Last text written to the Linux primary selection — see the
     /// matching field on the `text_input` example.
     last_primary: String,
+    /// Set when an event moved the caret; consumed by
+    /// `drain_scroll_requests` to push a single
+    /// `ScrollRequest::EnsureVisible` so keyboard navigation past
+    /// the visible region scrolls the body back to the caret.
+    scroll_caret_into_view: bool,
 }
 
 impl Default for Notes {
@@ -50,6 +55,7 @@ impl Default for Notes {
             selection: Selection::default(),
             clipboard: arboard::Clipboard::new().ok(),
             last_primary: String::new(),
+            scroll_caret_into_view: false,
         }
     }
 }
@@ -107,6 +113,15 @@ impl App for Notes {
         self.selection.clone()
     }
 
+    fn drain_scroll_requests(&mut self) -> Vec<aetna_core::scroll::ScrollRequest> {
+        if !std::mem::take(&mut self.scroll_caret_into_view) {
+            return Vec::new();
+        }
+        text_area::caret_scroll_request_for(&self.body, &self.selection, BODY_KEY)
+            .into_iter()
+            .collect()
+    }
+
     fn on_event(&mut self, event: UiEvent) {
         if event.kind == UiEventKind::SelectionChanged
             && let Some(sel) = event.selection.as_ref()
@@ -148,6 +163,7 @@ impl App for Notes {
                         head: SelectionPoint::new(BODY_KEY, local.head),
                     });
                 }
+                self.scroll_caret_into_view = true;
             }
             return;
         }
@@ -158,6 +174,11 @@ impl App for Notes {
             &event,
             self.clipboard.as_mut(),
         );
+        // Any body-targeted event might have moved the caret —
+        // request caret-into-view for the next drain. The runtime
+        // resolver no-ops if the caret is already visible, so a
+        // pointer click that doesn't move the head is harmless.
+        self.scroll_caret_into_view = true;
         self.sync_primary();
     }
 }

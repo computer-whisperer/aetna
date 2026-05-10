@@ -236,6 +236,55 @@ fn text_area_geometry(value: &str) -> TextGeometry<'_> {
     )
 }
 
+/// Build a [`ScrollRequest::EnsureVisible`] that keeps the caret of
+/// the text_area keyed `key` inside its scroll viewport. Returns
+/// `None` when the global selection doesn't currently live in this
+/// area (typing in another field shouldn't move us).
+///
+/// Apps call this from [`crate::event::App::drain_scroll_requests`],
+/// typically gated by a "selection just moved" flag set during
+/// [`apply_event`]:
+///
+/// ```ignore
+/// fn on_event(&mut self, e: UiEvent) {
+///     if e.target_key() == Some("body")
+///         && text_area::apply_event(&mut self.body, &mut self.selection, "body", &e)
+///     {
+///         self.scroll_caret_into_view = true;
+///     }
+/// }
+///
+/// fn drain_scroll_requests(&mut self) -> Vec<ScrollRequest> {
+///     if std::mem::take(&mut self.scroll_caret_into_view) {
+///         text_area::caret_scroll_request_for(&self.body, &self.selection, "body")
+///             .into_iter()
+///             .collect()
+///     } else {
+///         Vec::new()
+///     }
+/// }
+/// ```
+///
+/// The runtime's resolver no-ops if the caret is already inside the
+/// visible region, so calling this more often than necessary is
+/// cheap; *don't* push it every frame though — that would snap the
+/// scroll back after a manual wheel that moved the caret offscreen.
+pub fn caret_scroll_request_for(
+    value: &str,
+    selection: &Selection,
+    key: &str,
+) -> Option<crate::scroll::ScrollRequest> {
+    let view = selection.within(key)?;
+    let head = clamp_to_char_boundary(value, view.head.min(value.len()));
+    let geometry = text_area_geometry(value);
+    let (_, caret_y) = geometry.caret_xy(head);
+    Some(crate::scroll::ScrollRequest::ensure_visible(
+        key,
+        caret_y,
+        line_height_px(),
+    ))
+}
+
 /// Fold a routed [`UiEvent`] into `value` and the global
 /// [`Selection`]. Returns `true` when either was mutated.
 ///
@@ -774,6 +823,117 @@ mod tests {
         };
         assert!(!apply_event(&mut value, &mut sel, &ev));
         assert_eq!(value, "first\nsecond");
+    }
+
+    #[test]
+    fn caret_scroll_request_brings_offscreen_caret_into_view() {
+        // Regression for stage 2 of the rework: caret-into-view via
+        // `ScrollRequest::EnsureVisible`. We build a tall multi-line
+        // value so the inner scroll has plenty of overflow, anchor
+        // the caret way past the bottom, then push the request the
+        // way an app's `drain_scroll_requests` would, and assert the
+        // inner scroll's offset shifted to expose the caret line.
+        let value = (0..40).map(|i| format!("line {i}\n")).collect::<String>();
+        let mut sel = Selection::default();
+        // Caret near the end of the body, in the bottom third.
+        let caret_byte = clamp_to_char_boundary(&value, value.len() - 1);
+        sel.range = Some(SelectionRange {
+            anchor: SelectionPoint::new(TEST_KEY, caret_byte),
+            head: SelectionPoint::new(TEST_KEY, caret_byte),
+        });
+        let mut root = super::text_area(&value, &sel, TEST_KEY)
+            .height(Size::Fixed(80.0))
+            .width(Size::Fixed(240.0));
+
+        let req = caret_scroll_request_for(&value, &sel, TEST_KEY)
+            .expect("selection lives in this area → request emitted");
+        let mut ui_state = crate::state::UiState::new();
+        ui_state.push_scroll_requests(vec![req]);
+
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 240.0, 80.0));
+
+        // Find the inner scroll's computed_id (it's the sole child
+        // of the outer text_area) and read its offset.
+        let scroll_id = &root.children[0].computed_id;
+        let offset = ui_state.scroll_offset(scroll_id);
+        assert!(
+            offset > 0.0,
+            "EnsureVisible should have shifted the scroll past 0 to expose the caret; got {offset}"
+        );
+        let metrics = ui_state
+            .scroll
+            .metrics
+            .get(scroll_id)
+            .expect("metrics written for scroll");
+        // The offset must keep the caret line within the viewport —
+        // it should sit between `offset` and `offset + viewport_h`.
+        let line_h = line_height_px();
+        let caret_y = text_area_geometry(&value).caret_xy(caret_byte).1;
+        assert!(
+            caret_y >= offset && caret_y + line_h <= offset + metrics.viewport_h + 0.5,
+            "caret y={caret_y} not inside viewport [{offset}, {}]; line_h={line_h}",
+            offset + metrics.viewport_h
+        );
+    }
+
+    #[test]
+    fn caret_scroll_request_returns_none_when_selection_lives_elsewhere() {
+        // When the global selection points at another widget's key,
+        // we mustn't generate a scroll-into-view for this area —
+        // typing in widget A shouldn't pull widget B's scroll back to
+        // its caret.
+        let mut sel = Selection::default();
+        sel.range = Some(SelectionRange {
+            anchor: SelectionPoint::new("other", 0),
+            head: SelectionPoint::new("other", 0),
+        });
+        assert!(caret_scroll_request_for("hello\nworld", &sel, TEST_KEY).is_none());
+    }
+
+    #[test]
+    fn ensure_visible_skips_when_caret_already_inside_viewport() {
+        // The resolver must be idempotent when the caret already
+        // lives in the visible region — otherwise pushing the
+        // request every frame would snap the scroll back to the
+        // caret after a manual wheel.
+        let value = (0..40).map(|i| format!("line {i}\n")).collect::<String>();
+        let mut sel = Selection::default();
+        // Caret on the first line (always in view at offset 0).
+        sel.range = Some(SelectionRange {
+            anchor: SelectionPoint::new(TEST_KEY, 0),
+            head: SelectionPoint::new(TEST_KEY, 0),
+        });
+        let mut root = super::text_area(&value, &sel, TEST_KEY)
+            .height(Size::Fixed(80.0))
+            .width(Size::Fixed(240.0));
+        let mut ui_state = crate::state::UiState::new();
+        // Pre-set an offset that pushes the caret offscreen — a
+        // wheel-scroll would leave the system in this state.
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 240.0, 80.0));
+        let scroll_id = root.children[0].computed_id.clone();
+        ui_state.scroll.offsets.insert(scroll_id.clone(), 300.0);
+        // Re-emit the request. Caret is at y=0, viewport is [300,
+        // 380]. The resolver must scroll back to expose y=0 —
+        // that's the "above viewport" branch, which DOES override.
+        let req = caret_scroll_request_for(&value, &sel, TEST_KEY).unwrap();
+        ui_state.push_scroll_requests(vec![req]);
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 240.0, 80.0));
+        let after = ui_state.scroll_offset(&scroll_id);
+        assert!(
+            after <= 1.0,
+            "caret above viewport → scroll snaps up to expose it; got {after}"
+        );
+
+        // Now caret IS in the visible region after layout; emit the
+        // request again and confirm offset is unchanged (idempotent).
+        let req2 = caret_scroll_request_for(&value, &sel, TEST_KEY).unwrap();
+        ui_state.push_scroll_requests(vec![req2]);
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 240.0, 80.0));
+        let after2 = ui_state.scroll_offset(&scroll_id);
+        assert_eq!(
+            after, after2,
+            "caret already visible → resolver must leave the offset alone"
+        );
     }
 
     #[test]

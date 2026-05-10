@@ -466,14 +466,22 @@ fn resolve_scroll_requests<F>(
     };
     let pending = std::mem::take(&mut ui_state.scroll.pending_requests);
     let (matched, remaining): (Vec<ScrollRequest>, Vec<ScrollRequest>) =
-        pending.into_iter().partition(|req| req.list_key == key);
+        pending.into_iter().partition(|req| match req {
+            ScrollRequest::ToRow { list_key, .. } => list_key == key,
+            // EnsureVisible isn't a virtual-list-row request; let the
+            // non-virtual scroll resolver pick it up downstream.
+            ScrollRequest::EnsureVisible { .. } => false,
+        });
     ui_state.scroll.pending_requests = remaining;
 
     for req in matched {
-        if req.row >= count {
+        let ScrollRequest::ToRow { row, align, .. } = req else {
+            continue;
+        };
+        if row >= count {
             continue;
         }
-        let (row_top, row_h) = row_extent(req.row);
+        let (row_top, row_h) = row_extent(row);
         let row_bottom = row_top + row_h;
         let viewport_h = inner.h;
         let current = ui_state
@@ -482,7 +490,7 @@ fn resolve_scroll_requests<F>(
             .get(&node.computed_id)
             .copied()
             .unwrap_or(0.0);
-        let new_offset = match req.align {
+        let new_offset = match align {
             ScrollAlignment::Start => row_top,
             ScrollAlignment::End => row_bottom - viewport_h,
             ScrollAlignment::Center => row_top + (row_h - viewport_h) / 2.0,
@@ -635,11 +643,10 @@ fn layout_virtual_dynamic(
     // pay a per-frame HashMap clone for an operation that fires
     // maybe once a minute.
     let has_request = node.key.as_deref().is_some_and(|k| {
-        ui_state
-            .scroll
-            .pending_requests
-            .iter()
-            .any(|r| r.list_key == k)
+        ui_state.scroll.pending_requests.iter().any(|r| match r {
+            ScrollRequest::ToRow { list_key, .. } => list_key == k,
+            ScrollRequest::EnsureVisible { .. } => false,
+        })
     });
     if has_request {
         // Snapshot the cache so the closure can read it while
@@ -780,6 +787,16 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
         .fold(f32::NEG_INFINITY, f32::max);
     let content_h = (content_bottom - inner.y).max(0.0);
     let max_offset = (content_h - inner.h).max(0.0);
+
+    // Resolve any matching `ScrollRequest::EnsureVisible` against
+    // this scroll BEFORE reading the stored offset, so the request's
+    // chosen offset wins (and gets clamped below, just like
+    // wheel-driven offsets do). A request matches when the node
+    // keyed `container_key` is an ancestor of this scroll —
+    // `key_index` resolves the key to a computed_id and a
+    // prefix-match on `node.computed_id` tells us we're inside.
+    resolve_ensure_visible_for_scroll(node, inner, content_h, ui_state);
+
     let stored = ui_state
         .scroll
         .offsets
@@ -806,6 +823,97 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
     );
 
     write_thumb_rect(node, inner, content_h, max_offset, clamped, ui_state);
+}
+
+/// Walk pending `ScrollRequest::EnsureVisible` requests and pop any
+/// whose `container_key` resolves to an ancestor of `node`. For each
+/// match, write a stored offset that brings the request's content-
+/// space `y..y+h` range into the viewport using minimal-displacement
+/// semantics (top edge if above, bottom edge if below, leave alone if
+/// already inside). The clamp + shift downstream of this call ensures
+/// the resulting offset stays inside `[0, max_offset]`.
+///
+/// Matching is by computed-id prefix on the keyed ancestor — a
+/// scroll is "inside" the keyed widget when its id starts with the
+/// ancestor's id followed by `.`, the same rule used by
+/// [`crate::state::query::target_in_subtree`].
+fn resolve_ensure_visible_for_scroll(
+    node: &El,
+    inner: Rect,
+    content_h: f32,
+    ui_state: &mut UiState,
+) {
+    if ui_state.scroll.pending_requests.is_empty() {
+        return;
+    }
+    let pending = std::mem::take(&mut ui_state.scroll.pending_requests);
+    let mut remaining: Vec<ScrollRequest> = Vec::with_capacity(pending.len());
+    for req in pending {
+        let ScrollRequest::EnsureVisible {
+            container_key,
+            y,
+            h,
+        } = &req
+        else {
+            remaining.push(req);
+            continue;
+        };
+        let Some(ancestor_id) = ui_state.layout.key_index.get(container_key) else {
+            // Container hasn't been laid out yet (or its key isn't
+            // in this tree). Keep the request for a future frame —
+            // dropped at end-of-frame like row requests for
+            // missing lists.
+            remaining.push(req);
+            continue;
+        };
+        // Match this scroll only if it sits inside the keyed widget.
+        // Same prefix rule as `target_in_subtree`.
+        let inside = node.computed_id == *ancestor_id
+            || node
+                .computed_id
+                .strip_prefix(ancestor_id.as_str())
+                .is_some_and(|rest| rest.starts_with('.'));
+        if !inside {
+            remaining.push(req);
+            continue;
+        }
+        let current = ui_state
+            .scroll
+            .offsets
+            .get(&node.computed_id)
+            .copied()
+            .unwrap_or(0.0);
+        let target_top = *y;
+        let target_bottom = *y + *h;
+        let viewport_h = inner.h;
+        // Minimal-displacement: if the range is fully visible, no
+        // change. If it's above the viewport top, scroll up to it.
+        // If it's below the viewport bottom, scroll just enough to
+        // expose the bottom edge — but never less than 0 or more
+        // than `content_h - viewport_h` (the clamp downstream will
+        // do that anyway).
+        let new_offset = if target_top < current {
+            target_top
+        } else if target_bottom > current + viewport_h {
+            target_bottom - viewport_h
+        } else {
+            // Already visible: don't override an in-progress
+            // manual scroll just because the caret happens to be
+            // mid-viewport. Skip this request without disturbing
+            // the offset.
+            continue;
+        };
+        // Clamp against the live content extent so we don't write
+        // a wildly-out-of-range offset when the request races a
+        // layout pass that hasn't yet measured all rows.
+        let max = (content_h - viewport_h).max(0.0);
+        let new_offset = new_offset.clamp(0.0, max);
+        ui_state
+            .scroll
+            .offsets
+            .insert(node.computed_id.clone(), new_offset);
+    }
+    ui_state.scroll.pending_requests = remaining;
 }
 
 /// Compute and store the scrollbar thumb + track rects for `node`
