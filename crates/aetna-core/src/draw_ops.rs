@@ -533,11 +533,13 @@ fn push_node(
         let dest = n.image_fit.project(image.width(), image.height(), inner);
         // Always clip image draws to the El's content rect so `Cover`
         // / `None` overflow is cropped without forcing every author to
-        // call `.clip()`. The clamp respects any inherited scissor.
-        let scissor = match own_scissor {
-            Some(s) => s.intersect(inner),
-            None => Some(inner),
-        };
+        // call `.clip()`. The clamp respects any inherited scissor —
+        // when the El's `inner` is fully outside an ancestor clip,
+        // `intersect_scissor` produces `Some(Rect::zero)` and the
+        // renderer drops the draw (a bare `s.intersect(inner)` would
+        // hand back `None`, which downstream means "no scissor" and
+        // would paint the image full-bleed past the ancestor clip).
+        let scissor = intersect_scissor(own_scissor, inner);
         let tint = n.image_tint.map(|c| opaque(c, opacity));
         out.push(DrawOp::Image {
             id: n.computed_id.clone(),
@@ -557,11 +559,11 @@ fn push_node(
         // Always clip surface draws to the El's content rect so
         // `Cover` / `None` overflow and any out-of-bounds
         // `surface_transform` is cropped without forcing every author
-        // to call `.clip()`. The clamp respects any inherited scissor.
-        let scissor = match own_scissor {
-            Some(s) => s.intersect(inner),
-            None => Some(inner),
-        };
+        // to call `.clip()`. The clamp respects any inherited scissor;
+        // see the matching block on the image branch above for why
+        // this goes through `intersect_scissor` rather than a bare
+        // `s.intersect(inner)`.
+        let scissor = intersect_scissor(own_scissor, inner);
         out.push(DrawOp::AppTexture {
             id: n.computed_id.clone(),
             rect: dest,
@@ -575,10 +577,9 @@ fn push_node(
 
     if let Some(asset) = &n.vector_source {
         let inner = inner_painted_rect.inset(n.padding);
-        let scissor = match own_scissor {
-            Some(s) => s.intersect(inner),
-            None => Some(inner),
-        };
+        // See the image branch above for the empty-intersection
+        // rationale behind `intersect_scissor`.
+        let scissor = intersect_scissor(own_scissor, inner);
         out.push(DrawOp::Vector {
             id: n.computed_id.clone(),
             rect: inner,
@@ -1863,6 +1864,58 @@ mod tests {
         let s = scissor.expect("image draw op carries a scissor");
         assert!((s.w - 400.0).abs() < 1e-3, "scissor.w = {}", s.w);
         assert!((s.h - 400.0).abs() < 1e-3, "scissor.h = {}", s.h);
+    }
+
+    #[test]
+    fn image_fully_outside_inherited_clip_emits_zero_scissor_not_none() {
+        // Regression: an image El whose computed rect falls fully
+        // outside an ancestor `clip()` must not paint past the clip.
+        // The previous open-coded `s.intersect(inner)` returned `None`
+        // when the rects didn't overlap, and `scissor: None` is
+        // interpreted downstream as "no scissor" — so the image
+        // painted full-bleed against the framebuffer instead of being
+        // dropped. The fix routes through `intersect_scissor`, which
+        // hands back `Some(Rect::zero)` and lets the renderer skip
+        // the draw via its `phys.w == 0 || phys.h == 0` guard.
+        //
+        // Repro: a clipped row whose first child (Fixed 150) pushes
+        // the second image child entirely past the row's right edge.
+        let pixels = vec![0u8; 10 * 10 * 4];
+        let img = crate::image::Image::from_rgba8(10, 10, pixels);
+        // Wrap the clipped row in a column so the layout entry point
+        // doesn't paste the viewport rect onto the row itself —
+        // `layout()` forces the root rect to the viewport regardless
+        // of the El's stated width/height, which collapses the
+        // overflow we want to repro.
+        let mut root = crate::column([crate::row([
+            crate::column(Vec::<El>::new())
+                .width(Size::Fixed(150.0))
+                .height(Size::Fixed(50.0)),
+            crate::tree::image(img)
+                .width(Size::Fixed(60.0))
+                .height(Size::Fixed(50.0)),
+        ])
+        .width(Size::Fixed(100.0))
+        .height(Size::Fixed(100.0))
+        .clip()]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+        let ops = draw_ops(&root, &state);
+        let DrawOp::Image { scissor, .. } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::Image { .. }))
+            .expect("image El still emits a DrawOp::Image when fully clipped")
+        else {
+            unreachable!()
+        };
+        let s = scissor.expect(
+            "scissor must be Some(_) so the renderer drops the draw — \
+             None would let it paint past the ancestor clip",
+        );
+        assert!(
+            s.w <= 0.0 || s.h <= 0.0,
+            "image fully outside ancestor clip must yield a zero-sized scissor, got {s:?}",
+        );
     }
 
     #[test]
