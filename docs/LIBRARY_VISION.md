@@ -136,7 +136,11 @@ with whatever pipeline it owns.
 The intended publishable set is:
 
 - `aetna-fonts`
+  - split font asset crates such as `aetna-fonts-inter`,
+    `aetna-fonts-jetbrains-mono`, `aetna-fonts-emoji`,
+    `aetna-fonts-symbols`, and `aetna-fonts-roboto`
 - `aetna-core`
+- `aetna-markdown`
 - `aetna-wgpu`
 - `aetna-winit-wgpu`
 - `aetna-vulkano`

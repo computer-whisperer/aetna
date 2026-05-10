@@ -31,6 +31,8 @@ Aetna lives under `crates/`, with runnable cross-crate examples in the workspace
 | Crate | Role |
 |---|---|
 | `aetna-core` | Backend-agnostic core. Tree (`El`), layout, draw-op IR, stock shaders + custom-shader binding, animation primitives, hit-test, focus, hotkeys, lint + bundle artifacts. Plus the cross-backend paint primitives (`paint::QuadInstance` + paint-stream batching) and `runtime::RunnerCore` (the interaction half every backend `Runner` composes). No backend deps. |
+| `aetna-fonts` + font asset crates | Published bundled font layer. `aetna-fonts` exposes feature flags for Inter, JetBrains Mono, emoji, symbols/math fallback, and Roboto; sibling crates hold the actual font bytes so each uploaded crate stays under crates.io's package-size cap. |
+| `aetna-markdown` | Published markdown-to-`El` transformer over `pulldown-cmark`, with optional pure-Rust syntax highlighting. The `Showcase` imports it through `aetna-fixtures`, but downstream apps can use it directly. |
 | `aetna-wgpu` | wgpu pipelines + per-page atlas textures + `Runner` shell. Wraps a shared `RunnerCore` from `aetna-core` for interaction state, paint-stream scratch, and the `pointer_*`/`key_down`/`set_hotkeys` surface; only GPU resources and the wgpu-flavoured `prepare()` GPU upload + `draw()` are backend-specific. |
 | `aetna-fixtures` | Workspace-private backend-neutral showcase apps and render fixtures (`HeroDemo`, `Showcase`, icon gallery, text-quality matrix, liquid-glass lab). No windowing or GPU setup; examples, web, tools, and backend parity crates import the same fixtures for parity. Not a public dependency target. |
 | `aetna-winit-wgpu` | Optional batteries-included native desktop host for simple winit + wgpu apps. Owns window/surface setup, MSAA target management, input mapping, IME forwarding, redraw-on-animation, plus opt-in host cadence / `before_build` hooks for live external state. Custom hosts can bypass it and call `aetna-wgpu::Runner` directly. |
@@ -151,6 +153,8 @@ crates/
   aetna-vulkano-demo/            vulkano demo harness + backend parity bins
   aetna-web/                     workspace-private wasm browser entry point
   aetna-fonts/                   bundled Inter + JetBrains Mono + emoji/symbol faces (Roboto opt-in)
+  aetna-fonts-*/                 split published font asset crates
+  aetna-markdown/                markdown to El transformer
 examples/                        interactive cross-crate examples (`aetna-examples`)
 tools/                           Rust diagnostics (`aetna-tools`) plus helper scripts
 ```

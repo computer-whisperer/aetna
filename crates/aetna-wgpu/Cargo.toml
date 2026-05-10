@@ -1,6 +1,6 @@
 [package]
 name = "aetna-wgpu"
-version = "0.3.0"
+version = "0.3.1"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -17,7 +17,7 @@ categories = ["gui", "rendering"]
 path = "src/lib.rs"
 
 [dependencies]
-aetna-core = { version = "0.3.0", path = "../aetna-core" }
+aetna-core = { version = "0.3.1", path = "../aetna-core" }
 wgpu = "29"
 bytemuck = { version = "1.21", features = ["derive"] }
 cosmic-text = "0.19"
@@ -34,6 +34,6 @@ web-time = "1"
 wgpu = { version = "29", features = ["fragile-send-sync-non-atomic-wasm"] }
 
 [dev-dependencies]
-aetna-fixtures = { version = "0.3.0", path = "../aetna-fixtures" }
+aetna-fixtures = { version = "0.3.1", path = "../aetna-fixtures" }
 png = "0.18"
 pollster = "0.4"
