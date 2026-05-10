@@ -26,8 +26,9 @@ use vulkano::{
         physical::PhysicalDeviceType,
     },
     format::{Format, NumericFormat},
-    image::{Image, ImageUsage, view::ImageView},
+    image::{Image, ImageCreateInfo, ImageType, ImageUsage, SampleCount, view::ImageView},
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
+    memory::allocator::{AllocationCreateInfo, StandardMemoryAllocator},
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass},
     swapchain::{
         Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo, acquire_next_image,
@@ -104,6 +105,12 @@ type InitRunner = Box<dyn FnOnce(&mut Runner)>;
 /// one stalls the surface.
 const RESIZE_DEBOUNCE: Duration = Duration::from_millis(100);
 
+/// MSAA samples per pixel for the host's color attachment. Matches
+/// `aetna-winit-wgpu`'s default. Set to `1` to disable MSAA — the host
+/// then skips the multisampled image and binds only the swapchain image
+/// per framebuffer.
+const DEFAULT_SAMPLE_COUNT: u32 = 4;
+
 struct Host<A: App> {
     title: &'static str,
     viewport: Rect,
@@ -122,6 +129,12 @@ struct RenderContext {
     swapchain: Arc<Swapchain>,
     framebuffers: Vec<Arc<Framebuffer>>,
     cmd_alloc: Arc<StandardCommandBufferAllocator>,
+    memory_alloc: Arc<StandardMemoryAllocator>,
+    /// Multisampled color attachment shared by every framebuffer when
+    /// `runner.sample_count() > 1`. Reused across frames — submissions
+    /// serialize on `previous_frame_end` so the GPU only touches it from
+    /// one frame at a time. `None` when MSAA is disabled.
+    msaa_image: Option<Arc<ImageView>>,
     runner: Runner,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swapchain: bool,
@@ -192,7 +205,12 @@ impl<A: App> ApplicationHandler for Host<A> {
 
         let (swapchain, images, image_format) = create_swapchain(&device, surface, &window);
 
-        let mut runner = Runner::new(device.clone(), queue.clone(), image_format);
+        let mut runner = Runner::with_sample_count(
+            device.clone(),
+            queue.clone(),
+            image_format,
+            DEFAULT_SAMPLE_COUNT,
+        );
         runner.set_theme(self.app.theme());
         let extent: [u32; 2] = window.inner_size().into();
         runner.set_surface_size(extent[0], extent[1]);
@@ -206,7 +224,14 @@ impl<A: App> ApplicationHandler for Host<A> {
             init(&mut runner);
         }
 
-        let framebuffers = build_framebuffers(&images, runner.render_pass());
+        let memory_alloc = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
+        let msaa_image = build_msaa_image(
+            &memory_alloc,
+            image_format,
+            swapchain_extent(&swapchain),
+            runner.sample_count(),
+        );
+        let framebuffers = build_framebuffers(&images, runner.render_pass(), msaa_image.as_ref());
 
         let cmd_alloc = Arc::new(StandardCommandBufferAllocator::new(
             device.clone(),
@@ -222,6 +247,8 @@ impl<A: App> ApplicationHandler for Host<A> {
             swapchain,
             framebuffers,
             cmd_alloc,
+            memory_alloc,
+            msaa_image,
             runner,
             previous_frame_end,
             recreate_swapchain: false,
@@ -388,7 +415,17 @@ impl<A: App> ApplicationHandler for Host<A> {
                         })
                         .expect("recreate swapchain");
                     rcx.swapchain = new_swapchain;
-                    rcx.framebuffers = build_framebuffers(&new_images, rcx.runner.render_pass());
+                    rcx.msaa_image = build_msaa_image(
+                        &rcx.memory_alloc,
+                        rcx.swapchain.image_format(),
+                        swapchain_extent(&rcx.swapchain),
+                        rcx.runner.sample_count(),
+                    );
+                    rcx.framebuffers = build_framebuffers(
+                        &new_images,
+                        rcx.runner.render_pass(),
+                        rcx.msaa_image.as_ref(),
+                    );
                     rcx.runner.set_surface_size(extent[0], extent[1]);
                     rcx.recreate_swapchain = false;
                 }
@@ -446,7 +483,13 @@ impl<A: App> ApplicationHandler for Host<A> {
                 // the old `begin_render_pass + draw + end_render_pass`
                 // path.
                 let framebuffer = rcx.framebuffers[image_index as usize].clone();
-                let target_image = framebuffer.attachments()[0].image().clone();
+                // With MSAA the last attachment is the single-sample
+                // resolve target (the swapchain image); without MSAA
+                // there's only one attachment. Either way the *last*
+                // one is what `Runner::render` should treat as the
+                // post-resolve target it can copy into the snapshot.
+                let attachments = framebuffer.attachments();
+                let target_image = attachments[attachments.len() - 1].image().clone();
                 rcx.runner.render(
                     &mut builder,
                     framebuffer,
@@ -550,9 +593,15 @@ fn create_swapchain(
             image_extent: window.inner_size().into(),
             // TRANSFER_SRC is required so `Runner::render` can copy the
             // post-Pass-A surface into the runner's snapshot image
-            // mid-frame for backdrop-sampling shaders. Cost is minimal
-            // — most surfaces already advertise it.
-            image_usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_SRC,
+            // mid-frame for backdrop-sampling shaders. TRANSFER_DST is
+            // needed under MSAA: vulkano's `single_pass_renderpass!`
+            // macro picks `ImageLayout::TransferDstOptimal` for the
+            // resolve attachment, and that layout requires the flag on
+            // the underlying image. Cost is minimal — most swapchain
+            // surfaces already advertise both.
+            image_usage: ImageUsage::COLOR_ATTACHMENT
+                | ImageUsage::TRANSFER_SRC
+                | ImageUsage::TRANSFER_DST,
             composite_alpha: surface_caps
                 .supported_composite_alpha
                 .into_iter()
@@ -568,21 +617,69 @@ fn create_swapchain(
 fn build_framebuffers(
     images: &[Arc<Image>],
     render_pass: &Arc<RenderPass>,
+    msaa_image: Option<&Arc<ImageView>>,
 ) -> Vec<Arc<Framebuffer>> {
     images
         .iter()
         .map(|image| {
             let view = ImageView::new_default(image.clone()).expect("image view");
+            // Render-pass attachment order from `Runner::render_pass()`:
+            // - single-sample: `[color]` — just the swapchain view.
+            // - MSAA: `[color_msaa, color_resolve]` — multisampled view
+            //   first, swapchain view second (the resolve target).
+            let attachments: Vec<Arc<ImageView>> = match msaa_image {
+                Some(msaa) => vec![msaa.clone(), view],
+                None => vec![view],
+            };
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![view],
+                    attachments,
                     ..Default::default()
                 },
             )
             .expect("framebuffer")
         })
         .collect()
+}
+
+/// Allocate a multisampled color image sized to the swapchain and wrap
+/// it in a default view. Returns `None` when `sample_count == 1` —
+/// callers then build single-attachment framebuffers without MSAA.
+fn build_msaa_image(
+    memory_alloc: &Arc<StandardMemoryAllocator>,
+    format: Format,
+    extent: [u32; 3],
+    sample_count: u32,
+) -> Option<Arc<ImageView>> {
+    if sample_count <= 1 {
+        return None;
+    }
+    let samples = SampleCount::try_from(sample_count).expect("supported MSAA sample count");
+    let image = Image::new(
+        memory_alloc.clone(),
+        ImageCreateInfo {
+            image_type: ImageType::Dim2d,
+            format,
+            extent,
+            samples,
+            // Not `TRANSIENT_ATTACHMENT`: with a backdrop-snapshot
+            // boundary the runner needs the MSAA contents to persist
+            // between Pass A's end (`store_op: Store`) and Pass B's
+            // start (`load_op: Load`), which lazily-allocated transient
+            // attachments cannot guarantee.
+            usage: ImageUsage::COLOR_ATTACHMENT,
+            ..Default::default()
+        },
+        AllocationCreateInfo::default(),
+    )
+    .expect("aetna-vulkano-demo: MSAA color image");
+    Some(ImageView::new_default(image).expect("aetna-vulkano-demo: MSAA image view"))
+}
+
+fn swapchain_extent(swapchain: &Arc<Swapchain>) -> [u32; 3] {
+    let [w, h] = swapchain.image_extent();
+    [w, h, 1]
 }
 
 fn map_key(key: &Key) -> Option<UiKey> {

@@ -26,7 +26,7 @@ use vulkano::{
     },
     device::{Device, DeviceCreateInfo, QueueCreateInfo, QueueFlags},
     format::Format,
-    image::{Image, ImageCreateInfo, ImageType, ImageUsage, view::ImageView},
+    image::{Image, ImageCreateInfo, ImageType, ImageUsage, SampleCount, view::ImageView},
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     render_pass::{Framebuffer, FramebufferCreateInfo},
@@ -95,7 +95,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             image_type: ImageType::Dim2d,
             format,
             extent: [width, height, 1],
-            usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_SRC,
+            // TRANSFER_DST is required under MSAA: vulkano's
+            // `single_pass_renderpass!` macro picks `TransferDstOptimal`
+            // for the resolve attachment's layout.
+            usage: ImageUsage::COLOR_ATTACHMENT
+                | ImageUsage::TRANSFER_SRC
+                | ImageUsage::TRANSFER_DST,
             ..Default::default()
         },
         AllocationCreateInfo {
@@ -105,14 +110,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let view = ImageView::new_default(target.clone())?;
 
-    let mut renderer = Runner::new(device.clone(), queue.clone(), format);
+    let sample_count: u32 = 4;
+    let mut renderer =
+        Runner::with_sample_count(device.clone(), queue.clone(), format, sample_count);
     renderer.set_surface_size(width, height);
     renderer.set_animation_mode(AnimationMode::Settled);
+
+    let msaa_image = Image::new(
+        memory_alloc.clone(),
+        ImageCreateInfo {
+            image_type: ImageType::Dim2d,
+            format,
+            extent: [width, height, 1],
+            samples: SampleCount::try_from(sample_count).expect("valid MSAA sample count"),
+            usage: ImageUsage::COLOR_ATTACHMENT,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+            ..Default::default()
+        },
+    )?;
+    let msaa_view = ImageView::new_default(msaa_image)?;
 
     let framebuffer = Framebuffer::new(
         renderer.render_pass().clone(),
         FramebufferCreateInfo {
-            attachments: vec![view],
+            attachments: vec![msaa_view, view],
             ..Default::default()
         },
     )?;
