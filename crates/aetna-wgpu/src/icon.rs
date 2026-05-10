@@ -43,12 +43,11 @@ use bytemuck::{Pod, Zeroable};
 const INITIAL_VERTEX_CAPACITY: usize = 1024;
 const INITIAL_INSTANCE_CAPACITY: usize = 256;
 
-const TESS_VERTEX_ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+const TESS_VERTEX_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
     0 => Float32x2, // position in logical px
     1 => Float32x2, // local SVG/viewBox coordinate
     2 => Float32x4, // linear rgba
     3 => Float32x4, // vector metadata
-    4 => Float32x2, // aa (analytic-AA fringe normal in logical px; (0,0) for solid verts)
 ];
 
 const MSDF_INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![

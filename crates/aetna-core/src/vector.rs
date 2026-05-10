@@ -624,13 +624,6 @@ pub struct VectorMeshVertex {
     /// Reserved for material shaders: x = path index, y = primitive
     /// kind (0 fill, 1 stroke), z/w reserved.
     pub meta: [f32; 4],
-    /// Analytic-AA extrusion: a unit normal in logical px (zero for
-    /// solid interior verts). The vertex shader extrudes the position
-    /// by `aa * (1 / scale_factor)` so the fringe stays one **physical**
-    /// pixel wide regardless of icon render size, and emits a
-    /// per-vertex coverage of 1 for `aa == 0` and 0 for nonzero `aa` so
-    /// the fragment interpolates a smooth 1-px alpha ramp at the edge.
-    pub aa: [f32; 2],
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -736,63 +729,10 @@ pub fn append_vector_asset_mesh(
                         &sampler,
                         path_index,
                         VectorPrimitiveKind::Fill,
-                        [0.0, 0.0],
                     )
                 }),
             );
             append_indexed(&geometry, out);
-
-            // Analytic-AA fringe: a thin band centred on the fill
-            // boundary. Inner verts (path side) carry `aa = 0` so they
-            // sit exactly on the fill edge with full coverage; outer
-            // verts carry the unit normal so the vertex shader extrudes
-            // them by 1 physical pixel and they fade to zero coverage.
-            // The fragment alpha-interpolates between the two. Inside
-            // the fill the band overlaps existing fill triangles, which
-            // are already fully covered — alpha-blending leaves them at
-            // 1, so the only visible effect is the outward fade.
-            let mut fringe: VertexBuffers<VectorMeshVertex, u16> = VertexBuffers::new();
-            // Width=1 logical unit puts the stroke verts ±0.5 px from
-            // the path; we rebase them onto the path inside the
-            // constructor so the geometry is anchored at the fill edge,
-            // and reuse the unit normal for shader-side extrusion.
-            let fringe_options = StrokeOptions::tolerance(options.tolerance)
-                .with_line_width(1.0)
-                .with_line_cap(LineCap::Butt)
-                .with_line_join(LineJoin::Miter)
-                .with_miter_limit(4.0);
-            let _ = StrokeTessellator::new().tessellate_path(
-                &path,
-                &fringe_options,
-                &mut BuffersBuilder::new(&mut fringe, |v: StrokeVertex<'_, '_>| {
-                    let position = v.position();
-                    let normal = v.normal();
-                    let side_sign = match v.side() {
-                        lyon_tessellation::Side::Negative => -1.0_f32,
-                        lyon_tessellation::Side::Positive => 1.0_f32,
-                    };
-                    // Move the stroke vert back to the fill boundary.
-                    let path_pos = lyon_tessellation::math::point(
-                        position.x - side_sign * normal.x * 0.5,
-                        position.y - side_sign * normal.y * 0.5,
-                    );
-                    let aa = match v.side() {
-                        lyon_tessellation::Side::Negative => [0.0, 0.0],
-                        lyon_tessellation::Side::Positive => [normal.x, normal.y],
-                    };
-                    make_mesh_vertex_sampled(
-                        path_pos,
-                        options.rect,
-                        [vx, vy],
-                        [sx, sy],
-                        &sampler,
-                        path_index,
-                        VectorPrimitiveKind::Fill,
-                        aa,
-                    )
-                }),
-            );
-            append_indexed(&fringe, out);
         }
 
         if let Some(stroke) = vector_path.stroke {
@@ -835,7 +775,6 @@ pub fn append_vector_asset_mesh(
                         &sampler,
                         path_index,
                         VectorPrimitiveKind::Stroke,
-                        [0.0, 0.0],
                     )
                 }),
             );
@@ -1170,7 +1109,6 @@ fn map_mesh_point(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn make_mesh_vertex_sampled(
     p: lyon_tessellation::math::Point,
     rect: crate::tree::Rect,
@@ -1179,7 +1117,6 @@ fn make_mesh_vertex_sampled(
     sampler: &ColorSampler<'_>,
     path_index: usize,
     kind: VectorPrimitiveKind,
-    aa: [f32; 2],
 ) -> VectorMeshVertex {
     let local = [
         view_origin[0] + (p.x - rect.x) / scale[0].max(f32::EPSILON),
@@ -1198,7 +1135,6 @@ fn make_mesh_vertex_sampled(
             0.0,
             0.0,
         ],
-        aa,
     }
 }
 

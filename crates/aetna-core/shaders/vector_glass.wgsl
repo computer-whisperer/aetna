@@ -13,7 +13,6 @@ struct VertexInput {
     @location(1) local: vec2<f32>,
     @location(2) color: vec4<f32>,
     @location(3) data: vec4<f32>,
-    @location(4) aa: vec2<f32>,
 };
 
 struct VertexOutput {
@@ -21,16 +20,13 @@ struct VertexOutput {
     @location(0) color: vec4<f32>,
     @location(1) local: vec2<f32>,
     @location(2) data: vec4<f32>,
-    @location(3) coverage: f32,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
-    let px_in_logical = 1.0 / max(frame.scale_factor, 0.001);
-    let pos_extruded = in.pos_px + in.aa * px_in_logical;
     let clip = vec4<f32>(
-        pos_extruded.x / frame.viewport.x * 2.0 - 1.0,
-        1.0 - pos_extruded.y / frame.viewport.y * 2.0,
+        in.pos_px.x / frame.viewport.x * 2.0 - 1.0,
+        1.0 - in.pos_px.y / frame.viewport.y * 2.0,
         0.0,
         1.0,
     );
@@ -40,7 +36,6 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.color = in.color;
     out.local = in.local;
     out.data = in.data;
-    out.coverage = select(0.0, 1.0, all(in.aa == vec2<f32>(0.0, 0.0)));
     return out;
 }
 
@@ -60,6 +55,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     rgb = rgb + vec3<f32>(0.06, 0.08, 0.10) * smoothstep(0.62, 1.0, edge);
     rgb = clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0));
 
-    let alpha = in.color.a * (0.82 + 0.18 * top) * in.coverage;
+    let alpha = in.color.a * (0.82 + 0.18 * top);
     return vec4<f32>(rgb * alpha, alpha);
 }

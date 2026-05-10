@@ -586,7 +586,6 @@ fn tess_vertex_input_state() -> VertexInputState {
         .attribute(1, attr(8, Format::R32G32_SFLOAT))
         .attribute(2, attr(16, Format::R32G32B32A32_SFLOAT))
         .attribute(3, attr(32, Format::R32G32B32A32_SFLOAT))
-        .attribute(4, attr(48, Format::R32G32_SFLOAT))
 }
 
 fn build_tess_pipeline(
