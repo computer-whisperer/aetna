@@ -18,11 +18,13 @@
 //! desktop window, or a backend runner such as `aetna-wgpu::Runner` for
 //! custom host integration.
 
+pub mod hero;
 pub mod icon_gallery;
 pub mod liquid_glass_lab;
 pub mod showcase;
 pub mod text_quality;
 
+pub use hero::HeroDemo;
 pub use icon_gallery::{GlassIconGallery, IconGallery, ReliefIconGallery};
 pub use liquid_glass_lab::LiquidGlassLab;
 pub use showcase::Showcase;

@@ -1,8 +1,8 @@
 # Aetna
 
-![Aetna showcase — Settings section, rendered headlessly through the wgpu backend](assets/showcase_settings.png)
+![Aetna hero demo — release console rendered headlessly through the wgpu backend](assets/aetna_hero.png)
 
-A thin UI rendering library that can insert into an existing Vulkan or wgpu renderer rather than owning the device, queue, or swapchain. The core/backends don't replace the host's renderer; they share its pass. For simple desktop apps, the workspace also ships an optional winit + wgpu host crate that packages the common window/surface loop. The name echoes the API it sits on — Vulkan is named for Vulcan, the Roman smith-god, and Mt. Aetna is the volcano where his forge stood.
+Aetna is a thin GPU UI rendering library that can insert into an existing Vulkan or wgpu renderer rather than owning the device, queue, or swapchain. The core/backends don't replace the host's renderer; they share its pass. For simple desktop apps, the workspace also ships an optional winit + wgpu host crate that packages the common window/surface loop. The name echoes the API it sits on — Vulkan is named for Vulcan, the Roman smith-god, and Mt. Aetna is the volcano where his forge stood.
 
 Aetna is shaped around how **an LLM** authors UI, not how a human web developer does. The thesis: when the author is a model, the load-bearing constraints flip — vocabulary parity with the training distribution matters more than configurability, the *minimum* output should be the *correct* output, and the visual ceiling is set by what shaders the model can write, not by what the framework's CSS-shaped surface exposes.
 
@@ -13,6 +13,17 @@ Two architecture notes live under `docs/` — read these before reviewing. They 
 
 Open work is tracked in [`TODO.md`](TODO.md).
 
+## Hero demo
+
+The lead image is a headless wgpu render of `aetna_fixtures::HeroDemo`, a backend-neutral app fixture composed from the same public `App` + widget surface that downstream apps use. It is intentionally a real operational UI rather than a widget catalog: sidebar, cards, badges, progress, command chrome, vector paths, and dense text all sharing one scene.
+
+```bash
+cargo run -p aetna-examples --bin hero        # interactive native demo
+cargo run -p aetna-tools --bin render_hero   # regenerates assets/aetna_hero.png
+```
+
+The `Showcase` fixture remains the exhaustive coverage browser for every widget and system feature; the hero demo is the polished "best of Aetna" snapshot.
+
 ## Workspace shape
 
 Aetna lives under `crates/`, with runnable cross-crate examples in the workspace `examples/` package:
@@ -21,7 +32,7 @@ Aetna lives under `crates/`, with runnable cross-crate examples in the workspace
 |---|---|
 | `aetna-core` | Backend-agnostic core. Tree (`El`), layout, draw-op IR, stock shaders + custom-shader binding, animation primitives, hit-test, focus, hotkeys, lint + bundle artifacts. Plus the cross-backend paint primitives (`paint::QuadInstance` + paint-stream batching) and `runtime::RunnerCore` (the interaction half every backend `Runner` composes). No backend deps. |
 | `aetna-wgpu` | wgpu pipelines + per-page atlas textures + `Runner` shell. Wraps a shared `RunnerCore` from `aetna-core` for interaction state, paint-stream scratch, and the `pointer_*`/`key_down`/`set_hotkeys` surface; only GPU resources and the wgpu-flavoured `prepare()` GPU upload + `draw()` are backend-specific. |
-| `aetna-fixtures` | Workspace-private backend-neutral showcase apps and render fixtures (`Showcase`, icon gallery, text-quality matrix, liquid-glass lab). No windowing or GPU setup; examples, web, tools, and backend parity crates import the same fixtures for parity. Not a public dependency target. |
+| `aetna-fixtures` | Workspace-private backend-neutral showcase apps and render fixtures (`HeroDemo`, `Showcase`, icon gallery, text-quality matrix, liquid-glass lab). No windowing or GPU setup; examples, web, tools, and backend parity crates import the same fixtures for parity. Not a public dependency target. |
 | `aetna-winit-wgpu` | Optional batteries-included native desktop host for simple winit + wgpu apps. Owns window/surface setup, MSAA target management, input mapping, IME forwarding, redraw-on-animation, plus opt-in host cadence / `before_build` hooks for live external state. Custom hosts can bypass it and call `aetna-wgpu::Runner` directly. |
 | `aetna-examples` | Workspace examples package (`examples/`). User-facing interactive examples that intentionally pull multiple crates: `aetna-core` + `aetna-winit-wgpu`, plus `aetna-fixtures` or native helpers where needed. |
 | `aetna-web` | Workspace-private wasm browser entry point. `crate-type = ["cdylib", "rlib"]`; re-exports `aetna_fixtures::Showcase` and ships a `#[wasm_bindgen(start)] start_web()` that opens a wgpu surface against an `<canvas id="aetna_canvas">` and drives the same backend-neutral App impl that native demos use. |
@@ -77,7 +88,7 @@ ships with the published `aetna-core` crate. Read it on
 
 ## Gallery
 
-Every image below is a headless render of `Showcase::with_section(...)` through `aetna-wgpu::Runner`, regenerated with `cargo run -p aetna-tools --bin render_showcase_sections`.
+The hero shot above is the app-shaped demo. Every image below is a headless render of `Showcase::with_section(...)` through `aetna-wgpu::Runner`, regenerated with `cargo run -p aetna-tools --bin render_showcase_sections`.
 
 | Form primitives | Backdrop sampling | Animated palette |
 |---|---|---|
@@ -147,6 +158,7 @@ tools/                           Rust diagnostics (`aetna-tools`) plus helper sc
 ## Try it locally
 
 ```bash
+cargo run -p aetna-examples --bin hero                # polished release-console demo (wgpu)
 cargo run -p aetna-examples --bin showcase            # the canonical interactive demo (wgpu)
 cargo run -p aetna-examples --bin counter             # smallest interactive
 cargo run -p aetna-examples --bin <name>              # text_input, text_area, popover, tabs, tooltip,
@@ -155,6 +167,7 @@ cargo run -p aetna-examples --bin <name>              # text_input, text_area, p
                                                       # circular_layout, custom_paint, ...
 cargo run -p aetna-core --example <name>              # headless SVG / tree / draw_ops dump for any
                                                       # fixture under crates/aetna-core/examples/
+cargo run -p aetna-tools --bin render_hero            # regenerate assets/aetna_hero.png
 cargo run -p aetna-tools --bin dump_showcase_bundles  # CPU-only artifact dump for the full Showcase
 cargo run -p aetna-tools --bin render_liquid_glass    # backdrop-sampling acceptance test
 cargo run -p aetna-vulkano-demo --bin showcase        # same Showcase through the vulkano backend
