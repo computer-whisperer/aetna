@@ -23,8 +23,8 @@ pub use crate::bundle::manifest::{draw_ops_text, shader_manifest};
 pub use crate::bundle::svg::svg_from_ops;
 pub use crate::cursor::Cursor;
 pub use crate::event::{
-    App, AppShader, BuildCx, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind,
-    UiKey, UiTarget,
+    App, AppShader, BuildCx, FrameTrigger, HostDiagnostics, KeyChord, KeyModifiers, KeyPress,
+    PointerButton, UiEvent, UiEventKind, UiKey, UiTarget,
 };
 pub use crate::icons::{all_icon_names, icon};
 pub use crate::image::{Image, ImageFit};

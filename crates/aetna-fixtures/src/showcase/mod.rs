@@ -11,6 +11,7 @@ use aetna_core::prelude::*;
 pub mod animation;
 pub mod booleans;
 pub mod buttons;
+pub mod diagnostics;
 pub mod forms;
 pub mod hotkeys;
 pub mod layout;
@@ -248,7 +249,7 @@ impl Showcase {
 }
 
 impl App for Showcase {
-    fn build(&self, _cx: &BuildCx) -> El {
+    fn build(&self, cx: &BuildCx) -> El {
         let theme = self.theme();
         let body = match self.section {
             Section::Palette => palette::view(theme.palette()),
@@ -268,7 +269,15 @@ impl App for Showcase {
             Section::Animation => animation::view(&self.animation),
             Section::Hotkeys => hotkeys::view(&self.hotkeys),
         };
-        let (main, layers) = shell::frame(self, body);
+        let (main, mut layers) = shell::frame(self, body);
+        // Mount the diagnostic overlay on top of every page when the
+        // host attached a `HostDiagnostics`. Hosts that opt out (the
+        // headless render bins, vulkano-demo, anything that doesn't
+        // call `BuildCx::with_diagnostics`) get the showcase exactly
+        // as before — no overlay, no extra widgets in the tree.
+        if let Some(diag) = cx.diagnostics() {
+            layers.push(Some(diagnostics::layer(diag)));
+        }
         overlay_root(main, layers)
     }
 

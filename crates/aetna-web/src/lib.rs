@@ -51,7 +51,10 @@ mod web_entry {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    use aetna_core::{App, BuildCx, Cursor, KeyModifiers, Palette, PointerButton, Rect, UiKey};
+    use aetna_core::{
+        App, BuildCx, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, Palette, PointerButton,
+        Rect, UiKey,
+    };
     use aetna_wgpu::{MsaaTarget, PrepareTimings, Runner};
 
     const SAMPLE_COUNT: u32 = 4;
@@ -172,12 +175,31 @@ mod web_entry {
 
     const CANVAS_ID: &str = "aetna_canvas";
 
+    /// Wire the global `tracing` subscriber to `tracing-wasm`, which
+    /// emits `performance.mark` / `performance.measure` calls for every
+    /// span. Open DevTools → Performance, hit Record, exercise the UI;
+    /// each span shows up as a labeled User Timing measure in the
+    /// flamegraph (`prepare::layout`, `paint::text::shape_runs`, etc).
+    /// Defaults are fine — span events go to console.log, measures get
+    /// written, and the subscriber only sees enabled spans (no extra
+    /// filter wiring needed on top of the `profiling` feature).
+    #[cfg(feature = "profiling")]
+    fn install_profiling_subscriber() {
+        tracing_wasm::set_as_global_default();
+    }
+
     #[wasm_bindgen(start)]
     pub fn start_web() {
         // Surface panics in the browser console with a stack trace —
         // without this hook a wasm panic dies silently as `unreachable`.
         console_error_panic_hook::set_once();
         let _ = console_log::init_with_level(log::Level::Info);
+        // When built with `--features profiling`, route every
+        // `profile_span!` call to the browser's User Timing API so spans
+        // show up as named measures in DevTools → Performance alongside
+        // the page's own frame/script work. Off-builds compile this away.
+        #[cfg(feature = "profiling")]
+        install_profiling_subscriber();
 
         let event_loop = EventLoop::new().expect("EventLoop::new");
         let host = Host::<Showcase>::new(VIEWPORT, Showcase::new());
@@ -200,15 +222,11 @@ mod web_entry {
             .expect("#aetna_canvas is not a canvas")
     }
 
-    /// Resize the canvas's drawing buffer to match its CSS-laid-out
-    /// box at the device pixel ratio, then forward the same physical
-    /// size to winit so `inner_size()` and the canvas attributes stay
-    /// in lockstep. Without this the canvas defaults to 300×150 device
-    /// pixels regardless of CSS — the swapchain ends up tiny + stretched
-    /// and Firefox's WebGPU backend fails the first present with
-    /// "Not enough memory left" because the surface texture and the
-    /// canvas drawing buffer disagree.
-    fn sync_canvas_to_css(canvas: &web_sys::HtmlCanvasElement, window: &Window) {
+    /// Read the canvas's CSS-laid-out box at the device pixel ratio.
+    /// Returned size is what the swapchain backing buffer should match;
+    /// callers pass it to `apply_canvas_size` to actually reconfigure
+    /// the surface.
+    fn measure_canvas(canvas: &web_sys::HtmlCanvasElement) -> (u32, u32) {
         let dpr = web_sys::window()
             .map(|w| w.device_pixel_ratio())
             .unwrap_or(1.0)
@@ -217,13 +235,38 @@ mod web_entry {
         let css_h = canvas.client_height().max(1) as f64;
         let phys_w = (css_w * dpr).round() as u32;
         let phys_h = (css_h * dpr).round() as u32;
+        (phys_w, phys_h)
+    }
+
+    /// Set the canvas's drawing buffer to `(phys_w, phys_h)` and
+    /// reconfigure the surface + MSAA target to match. Called once at
+    /// initial setup and on every ResizeObserver fire afterward.
+    ///
+    /// We bypass winit's `request_inner_size` round-trip — the web
+    /// backend doesn't reliably translate it into a `Resized` event, so
+    /// canvas resizes mid-session were leaving the swapchain stretched
+    /// at the original size until the page reloaded. Doing the
+    /// reconfigure inline keeps the surface in lockstep with the
+    /// canvas.
+    fn apply_canvas_size(
+        canvas: &web_sys::HtmlCanvasElement,
+        gfx: &mut Gfx,
+        phys_w: u32,
+        phys_h: u32,
+    ) {
         canvas.set_width(phys_w);
         canvas.set_height(phys_h);
-        // Tell winit too, so window.inner_size() agrees. The web
-        // backend treats request_inner_size as authoritative and
-        // updates the canvas drawing buffer / fires Resized; we
-        // already set the buffer above so the values match.
-        let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(phys_w, phys_h));
+        if gfx.config.width == phys_w && gfx.config.height == phys_h {
+            return;
+        }
+        gfx.config.width = phys_w;
+        gfx.config.height = phys_h;
+        gfx.surface.configure(&gfx.device, &gfx.config);
+        gfx.renderer.set_surface_size(phys_w, phys_h);
+        let extent = surface_extent(&gfx.config);
+        if !gfx.msaa.matches(extent) {
+            gfx.msaa = MsaaTarget::new(&gfx.device, gfx.render_format, extent, SAMPLE_COUNT);
+        }
     }
 
     /// Mirrors the native winit + wgpu host shape, but with browser
@@ -242,6 +285,30 @@ mod web_entry {
         /// browser's CSS cursor; we cache to avoid resetting the same
         /// string each frame.
         last_cursor: Cursor,
+        /// Reason the next redraw is being requested. Each event handler
+        /// that calls `request_redraw` sets this beforehand; the
+        /// RedrawRequested arm consumes it once and snapshots it into
+        /// [`HostDiagnostics::trigger`]. Defaults back to `Other` after
+        /// each consume — safe fallback for redraws the host can't
+        /// attribute (e.g. the post-async-setup `request_redraw`).
+        next_trigger: FrameTrigger,
+        /// Wall clock at the start of the previous redraw; diff with
+        /// the next frame's start gives `last_frame_dt`.
+        last_frame_at: Option<Instant>,
+        /// Counts redraws actually rendered.
+        frame_index: u64,
+        /// Adapter backend tag, captured at adapter selection time.
+        /// `Rc<RefCell>` because the surface is created in an async
+        /// task that finishes after `Host::new`; the cell is read
+        /// each frame in the RedrawRequested arm.
+        backend: Rc<RefCell<&'static str>>,
+        /// Held for its drop side-effects: the JS callback object
+        /// that ResizeObserver fires. Dropping this disconnects the
+        /// observer.
+        _resize_closure: Option<Closure<dyn FnMut()>>,
+        /// The observer itself; held alongside the closure so its
+        /// JS-side observation outlives this frame.
+        _resize_observer: Option<web_sys::ResizeObserver>,
     }
 
     struct Gfx {
@@ -252,6 +319,12 @@ mod web_entry {
         config: wgpu::SurfaceConfiguration,
         renderer: Runner,
         msaa: MsaaTarget,
+        /// Format used for render-target views and pipelines. May
+        /// differ from `config.format` when we re-view a linear
+        /// swapchain texture as sRGB (Chromium WebGPU path) — the
+        /// swapchain stores `Rgba8Unorm`, but every view is
+        /// `Rgba8UnormSrgb` so the hardware encodes on write.
+        render_format: wgpu::TextureFormat,
     }
 
     fn surface_extent(config: &wgpu::SurfaceConfiguration) -> wgpu::Extent3d {
@@ -272,7 +345,42 @@ mod web_entry {
                 modifiers: KeyModifiers::default(),
                 stats: FrameStats::default(),
                 last_cursor: Cursor::Default,
+                next_trigger: FrameTrigger::Initial,
+                last_frame_at: None,
+                frame_index: 0,
+                backend: Rc::new(RefCell::new("?")),
+                _resize_closure: None,
+                _resize_observer: None,
             }
+        }
+    }
+
+    fn backend_label(backend: wgpu::Backend) -> &'static str {
+        match backend {
+            wgpu::Backend::Vulkan => "Vulkan",
+            wgpu::Backend::Metal => "Metal",
+            wgpu::Backend::Dx12 => "DX12",
+            wgpu::Backend::Gl => "WebGL2",
+            wgpu::Backend::BrowserWebGpu => "WebGPU",
+            wgpu::Backend::Noop => "noop",
+        }
+    }
+
+    /// sRGB-tagged view-format sibling for a linear `*8Unorm` swapchain
+    /// format. Used to recover gamma-correct output on Chromium's WebGPU
+    /// surface: the swapchain offers only linear formats there, so we
+    /// declare the sRGB form as a view format and render through that —
+    /// hardware applies the sRGB encode on store and the compositor
+    /// reads gamma-correct pixels. Returns `None` for formats that have
+    /// no sRGB sibling (e.g. `Rgba16Float`, where the float storage is
+    /// already linear-precision-correct), in which case the caller
+    /// keeps the chosen format unchanged.
+    fn srgb_view_of(format: wgpu::TextureFormat) -> Option<wgpu::TextureFormat> {
+        use wgpu::TextureFormat as F;
+        match format {
+            F::Rgba8Unorm => Some(F::Rgba8UnormSrgb),
+            F::Bgra8Unorm => Some(F::Bgra8UnormSrgb),
+            _ => None,
         }
     }
 
@@ -290,8 +398,9 @@ mod web_entry {
             // we read it from CSS. Letting winit pick from the canvas
             // attributes (default 300×150 if unset, otherwise whatever
             // the host page declared) keeps inner_size() and the
-            // canvas backing buffer in lockstep — and Resized events
-            // fire when CSS later resizes the canvas.
+            // canvas backing buffer in lockstep. The ResizeObserver
+            // installed below carries the canvas through later layout
+            // changes; we don't depend on winit dispatching `Resized`.
             let attrs = Window::default_attributes().with_canvas(Some(canvas.clone()));
             let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
@@ -301,8 +410,45 @@ mod web_entry {
             // swapchain ends up tiny and stretched, and Firefox's
             // WebGPU backend fails the first present with "not enough
             // memory left" because the surface texture and the canvas
-            // drawing buffer disagree.
-            sync_canvas_to_css(&canvas, &window);
+            // drawing buffer disagree. winit's `Window::inner_size()`
+            // reads canvas.width/canvas.height on the web backend, so
+            // setting them here is what the async surface setup picks
+            // up for the initial swap-chain dimensions.
+            let (initial_w, initial_h) = measure_canvas(&canvas);
+            canvas.set_width(initial_w);
+            canvas.set_height(initial_h);
+
+            // Keep the canvas backing buffer tracking its CSS box
+            // size for the lifetime of the page. ResizeObserver fires
+            // once on observe() with the initial size, then again
+            // every time the canvas's content rect changes. We bypass
+            // winit's `request_inner_size` round-trip — its web
+            // backend doesn't reliably translate that into a
+            // `Resized` event, which left the swapchain stretched
+            // mid-session — and reconfigure the surface directly via
+            // `apply_canvas_size`. Until the async surface setup
+            // completes we just keep canvas.width/height in sync so
+            // the eventual `inner_size()` read picks up the latest.
+            let canvas_for_observer = canvas.clone();
+            let window_for_observer = window.clone();
+            let gfx_for_observer = self.gfx.clone();
+            let resize_closure: Closure<dyn FnMut()> = Closure::new(move || {
+                let (phys_w, phys_h) = measure_canvas(&canvas_for_observer);
+                let mut gfx_borrow = gfx_for_observer.borrow_mut();
+                if let Some(gfx) = gfx_borrow.as_mut() {
+                    apply_canvas_size(&canvas_for_observer, gfx, phys_w, phys_h);
+                } else {
+                    canvas_for_observer.set_width(phys_w);
+                    canvas_for_observer.set_height(phys_h);
+                }
+                drop(gfx_borrow);
+                window_for_observer.request_redraw();
+            });
+            let observer = web_sys::ResizeObserver::new(resize_closure.as_ref().unchecked_ref())
+                .expect("ResizeObserver::new failed");
+            observer.observe(&canvas);
+            self._resize_closure = Some(resize_closure);
+            self._resize_observer = Some(observer);
 
             // Allow both browser backends. wgpu prefers WebGPU when
             // available (Chrome/Edge stable) and falls back to WebGL2
@@ -342,6 +488,7 @@ mod web_entry {
             let shaders = self.app.shaders();
             let theme = self.app.theme();
             let gfx_slot = self.gfx.clone();
+            let backend_slot = self.backend.clone();
             let window_for_async = window.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let adapter = instance
@@ -352,6 +499,22 @@ mod web_entry {
                     })
                     .await
                     .expect("no compatible adapter");
+
+                // Log the adapter we actually got. `Backends::BROWSER_WEBGPU
+                // | Backends::GL` silently falls back to WebGL2 if the
+                // browser's WebGPU init fails, and WebGL2 frames cost
+                // an order of magnitude more GPU time than WebGPU on
+                // the same scene — so this is the first thing to check
+                // when investigating "why is it slow on the web".
+                let info = adapter.get_info();
+                log::info!(
+                    "aetna-web: adapter selected — backend={:?} name={:?} driver={:?} device_type={:?}",
+                    info.backend,
+                    info.name,
+                    info.driver,
+                    info.device_type,
+                );
+                *backend_slot.borrow_mut() = backend_label(info.backend);
 
                 // Per-sample MSAA shading is a downlevel cap. WebGL2
                 // (GLES 3.0) and most browser WebGPU adapters don't
@@ -397,6 +560,33 @@ mod web_entry {
                     .copied()
                     .find(|f| f.is_srgb())
                     .unwrap_or(surface_caps.formats[0]);
+                // Decide the render-target view format. If the chosen
+                // swapchain format is already sRGB-tagged (native, most
+                // browsers' WebGL2 surfaces), this collapses to the
+                // same format. Chromium's WebGPU surface offers only
+                // linear formats — `Rgba8Unorm`, `Bgra8Unorm`,
+                // `Rgba16Float` — so without this fix-up our shaders'
+                // linear writes hit the compositor uncorrected and the
+                // page renders 2.2-gamma's worth darker than native.
+                // The trick: keep the swapchain format as `Rgba8Unorm`
+                // (storage), declare `Rgba8UnormSrgb` as a view format,
+                // and create every render-target view through that. The
+                // hardware applies the sRGB encode on store. WebGPU
+                // explicitly permits this view-format reinterpretation
+                // because the two formats differ only in the sRGB flag.
+                let render_format = srgb_view_of(format).unwrap_or(format);
+                let view_formats = if render_format != format {
+                    vec![render_format]
+                } else {
+                    Vec::new()
+                };
+                log::info!(
+                    "aetna-web: surface format {:?} (sRGB? {}) → render view {:?}; offered {:?}",
+                    format,
+                    format.is_srgb(),
+                    render_format,
+                    surface_caps.formats,
+                );
                 // Single source of truth for the swapchain size:
                 // winit's inner_size() in physical pixels. Same value
                 // that the native winit + wgpu host uses; matches what
@@ -437,13 +627,18 @@ mod web_entry {
                     height: inner.height.max(1),
                     present_mode,
                     alpha_mode: surface_caps.alpha_modes[0],
-                    view_formats: vec![],
+                    view_formats,
                     desired_maximum_frame_latency: 2,
                 };
                 surface.configure(&device, &config);
 
-                let mut renderer =
-                    Runner::with_caps(&device, &queue, format, SAMPLE_COUNT, per_sample_shading);
+                let mut renderer = Runner::with_caps(
+                    &device,
+                    &queue,
+                    render_format,
+                    SAMPLE_COUNT,
+                    per_sample_shading,
+                );
                 renderer.set_theme(theme);
                 renderer.set_surface_size(config.width, config.height);
                 // Register every shader the App declared. If the
@@ -464,7 +659,12 @@ mod web_entry {
                     );
                 }
 
-                let msaa = MsaaTarget::new(&device, format, surface_extent(&config), SAMPLE_COUNT);
+                let msaa = MsaaTarget::new(
+                    &device,
+                    render_format,
+                    surface_extent(&config),
+                    SAMPLE_COUNT,
+                );
                 *gfx_slot.borrow_mut() = Some(Gfx {
                     window: window_for_async.clone(),
                     surface,
@@ -473,6 +673,7 @@ mod web_entry {
                     config,
                     renderer,
                     msaa,
+                    render_format,
                 });
                 let _ = viewport;
                 window_for_async.request_redraw();
@@ -506,8 +707,9 @@ mod web_entry {
                     let extent = surface_extent(&gfx.config);
                     if !gfx.msaa.matches(extent) {
                         gfx.msaa =
-                            MsaaTarget::new(&gfx.device, gfx.config.format, extent, SAMPLE_COUNT);
+                            MsaaTarget::new(&gfx.device, gfx.render_format, extent, SAMPLE_COUNT);
                     }
+                    self.next_trigger = FrameTrigger::Resize;
                     gfx.window.request_redraw();
                 }
 
@@ -520,6 +722,7 @@ mod web_entry {
                         self.app.on_event(event);
                     }
                     if moved.needs_redraw {
+                        self.next_trigger = FrameTrigger::Pointer;
                         gfx.window.request_redraw();
                     }
                 }
@@ -529,6 +732,7 @@ mod web_entry {
                     for event in gfx.renderer.pointer_left() {
                         self.app.on_event(event);
                     }
+                    self.next_trigger = FrameTrigger::Pointer;
                     gfx.window.request_redraw();
                 }
 
@@ -545,6 +749,7 @@ mod web_entry {
                     for event in gfx.renderer.file_hovered(path, lx, ly) {
                         self.app.on_event(event);
                     }
+                    self.next_trigger = FrameTrigger::Pointer;
                     gfx.window.request_redraw();
                 }
 
@@ -552,6 +757,7 @@ mod web_entry {
                     for event in gfx.renderer.file_hover_cancelled() {
                         self.app.on_event(event);
                     }
+                    self.next_trigger = FrameTrigger::Pointer;
                     gfx.window.request_redraw();
                 }
 
@@ -560,6 +766,7 @@ mod web_entry {
                     for event in gfx.renderer.file_dropped(path, lx, ly) {
                         self.app.on_event(event);
                     }
+                    self.next_trigger = FrameTrigger::Pointer;
                     gfx.window.request_redraw();
                 }
 
@@ -575,12 +782,14 @@ mod web_entry {
                             for event in gfx.renderer.pointer_down(lx, ly, button) {
                                 self.app.on_event(event);
                             }
+                            self.next_trigger = FrameTrigger::Pointer;
                             gfx.window.request_redraw();
                         }
                         ElementState::Released => {
                             for event in gfx.renderer.pointer_up(lx, ly, button) {
                                 self.app.on_event(event);
                             }
+                            self.next_trigger = FrameTrigger::Pointer;
                             gfx.window.request_redraw();
                         }
                     }
@@ -595,6 +804,7 @@ mod web_entry {
                         MouseScrollDelta::PixelDelta(p) => -(p.y as f32) / scale,
                     };
                     if gfx.renderer.pointer_wheel(lx, ly, dy) {
+                        self.next_trigger = FrameTrigger::Pointer;
                         gfx.window.request_redraw();
                     }
                 }
@@ -623,12 +833,14 @@ mod web_entry {
                     {
                         self.app.on_event(event);
                     }
+                    self.next_trigger = FrameTrigger::Keyboard;
                     gfx.window.request_redraw();
                 }
                 WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
                     if let Some(event) = gfx.renderer.text_input(text) {
                         self.app.on_event(event);
                     }
+                    self.next_trigger = FrameTrigger::Keyboard;
                     gfx.window.request_redraw();
                 }
 
@@ -647,13 +859,41 @@ mod web_entry {
                             return;
                         }
                     };
-                    let view = frame
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
+                    // Render through the sRGB view format (see
+                    // `srgb_view_of` and the surface configuration step
+                    // for why). When the swapchain is already sRGB this
+                    // collapses to the storage format and the view is
+                    // identical to `..Default::default()`.
+                    let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+                        format: Some(gfx.render_format),
+                        ..Default::default()
+                    });
+
+                    // Snapshot the diagnostic info for this frame. The
+                    // showcase reads this through `cx.diagnostics()` and
+                    // renders an overlay; non-Showcase apps ignore it.
+                    let last_frame_dt = self
+                        .last_frame_at
+                        .map(|t| frame_start.duration_since(t))
+                        .unwrap_or(std::time::Duration::ZERO);
+                    self.last_frame_at = Some(frame_start);
+                    let trigger = std::mem::take(&mut self.next_trigger);
+                    self.frame_index = self.frame_index.wrapping_add(1);
+                    let diagnostics = HostDiagnostics {
+                        backend: *self.backend.borrow(),
+                        surface_size: (gfx.config.width, gfx.config.height),
+                        scale_factor: gfx.window.scale_factor() as f32,
+                        msaa_samples: SAMPLE_COUNT,
+                        frame_index: self.frame_index,
+                        last_frame_dt,
+                        trigger,
+                    };
 
                     self.app.before_build();
                     let theme = self.app.theme();
-                    let cx = BuildCx::new(&theme).with_ui_state(gfx.renderer.ui_state());
+                    let cx = BuildCx::new(&theme)
+                        .with_ui_state(gfx.renderer.ui_state())
+                        .with_diagnostics(&diagnostics);
                     let mut tree = self.app.build(&cx);
                     let palette = theme.palette().clone();
                     gfx.renderer.set_theme(theme);
@@ -719,6 +959,7 @@ mod web_entry {
                     );
 
                     if prepare.needs_redraw {
+                        self.next_trigger = FrameTrigger::Animation;
                         gfx.window.request_redraw();
                     }
                     let _ = self.viewport;

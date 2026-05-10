@@ -23,6 +23,19 @@ aetna-fixtures = { version = "0.3.1", path = "../aetna-fixtures" }
 wgpu = "29"
 winit = "0.30"
 
+[features]
+# Forwards to `aetna-core/profiling` + `aetna-wgpu/profiling` so all
+# `profile_span!` calls compile in. The wasm subscriber
+# (`tracing-wasm`, declared in the wasm32 target table below) emits
+# each span to the browser's User Timing API, where they show up as
+# named measures in DevTools → Performance. Build with
+# `wasm-pack build --target web crates/aetna-web --features profiling`.
+profiling = [
+    "dep:tracing-wasm",
+    "aetna-core/profiling",
+    "aetna-wgpu/profiling",
+]
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # wasm-bindgen is the FFI bridge wasm-pack consumes.
 wasm-bindgen = "0.2"
@@ -39,8 +52,20 @@ web-sys = { version = "0.3", features = [
     "Document",
     "Element",
     "HtmlCanvasElement",
+    # ResizeObserver re-syncs the canvas backing buffer to its CSS
+    # box size whenever the layout changes (window resize, devtools
+    # toggle, css media-query crossing, etc). Without this the
+    # canvas's drawing buffer is whatever we set it to on first
+    # paint and the surface ends up stretched until the page reloads.
+    "ResizeObserver",
     "Window",
 ] }
 # Browser wgpu backends — workspace's plain `wgpu = "29"` only enables
 # native backends.
 wgpu = { version = "29", features = ["webgl"] }
+# Optional — bridges the `tracing` events the `profiling` feature lights
+# up to the browser's User Timing API (`performance.mark` /
+# `performance.measure`). Each span shows up as a named measure in
+# DevTools → Performance. Off in release; pulled in only when this
+# crate's `profiling` feature is on.
+tracing-wasm = { version = "0.2", optional = true }

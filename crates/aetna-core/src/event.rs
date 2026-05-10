@@ -487,6 +487,96 @@ pub enum UiEventKind {
 pub struct BuildCx<'a> {
     theme: &'a crate::Theme,
     ui_state: Option<&'a crate::state::UiState>,
+    diagnostics: Option<&'a HostDiagnostics>,
+}
+
+/// Why the current frame is being built. Hosts set this before each
+/// `request_redraw` so apps that surface a diagnostic overlay can show
+/// what kind of input is driving the redraw cadence.
+///
+/// `Other` is the conservative default: it covers redraws the host
+/// can't attribute (idle redraws driven by external `request_redraw`
+/// callers, the initial paint, etc.). Specific variants narrow the
+/// reason when the host can.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum FrameTrigger {
+    /// Host can't attribute the redraw to a specific cause.
+    #[default]
+    Other,
+    /// Initial paint after surface configuration.
+    Initial,
+    /// Surface resize / DPI change.
+    Resize,
+    /// Pointer move, button, or wheel.
+    Pointer,
+    /// Keyboard / IME input.
+    Keyboard,
+    /// Inside-out animation deadline elapsed (one of the visible
+    /// widgets asked for a future frame via `redraw_within`).
+    Animation,
+    /// Periodic host-config cadence (`HostConfig::redraw_interval`).
+    Periodic,
+}
+
+impl FrameTrigger {
+    /// Short, fixed-width tag for diagnostic overlays.
+    pub fn label(self) -> &'static str {
+        match self {
+            FrameTrigger::Other => "other",
+            FrameTrigger::Initial => "initial",
+            FrameTrigger::Resize => "resize",
+            FrameTrigger::Pointer => "pointer",
+            FrameTrigger::Keyboard => "keyboard",
+            FrameTrigger::Animation => "animation",
+            FrameTrigger::Periodic => "periodic",
+        }
+    }
+}
+
+/// Per-frame diagnostic snapshot the host hands the app via
+/// [`BuildCx::diagnostics`]. Apps that surface a debug overlay (e.g.
+/// the showcase status block) read this each build to display the
+/// active backend, frame cadence, and what triggered the redraw.
+///
+/// Hosts populate every field they can; `backend` is a static string
+/// (`"WebGPU"`, `"Vulkan"`, `"Metal"`, `"DX12"`, `"GL"`) so the app
+/// doesn't need to depend on `wgpu` to read it. Time fields use
+/// `std::time::Duration`, which works on both native and wasm32 — only
+/// `Instant::now()` is the wasm-incompatible piece, and that stays on
+/// the host side.
+#[derive(Clone, Debug)]
+pub struct HostDiagnostics {
+    /// Render backend in human-readable form.
+    pub backend: &'static str,
+    /// Current surface size in physical pixels.
+    pub surface_size: (u32, u32),
+    /// Display scale factor (`physical / logical`).
+    pub scale_factor: f32,
+    /// Active MSAA sample count (1 = MSAA off).
+    pub msaa_samples: u32,
+    /// Frame counter; increments every redraw the host actually
+    /// renders. Useful for verifying that an animated source is
+    /// progressing.
+    pub frame_index: u64,
+    /// Wall-clock time between this redraw and the previous one.
+    /// `Duration::ZERO` for the first frame (no prior frame).
+    pub last_frame_dt: std::time::Duration,
+    /// Why the host triggered this frame.
+    pub trigger: FrameTrigger,
+}
+
+impl Default for HostDiagnostics {
+    fn default() -> Self {
+        Self {
+            backend: "?",
+            surface_size: (0, 0),
+            scale_factor: 1.0,
+            msaa_samples: 1,
+            frame_index: 0,
+            last_frame_dt: std::time::Duration::ZERO,
+            trigger: FrameTrigger::default(),
+        }
+    }
 }
 
 impl<'a> BuildCx<'a> {
@@ -500,6 +590,7 @@ impl<'a> BuildCx<'a> {
         Self {
             theme,
             ui_state: None,
+            diagnostics: None,
         }
     }
 
@@ -511,6 +602,22 @@ impl<'a> BuildCx<'a> {
     pub fn with_ui_state(mut self, ui_state: &'a crate::state::UiState) -> Self {
         self.ui_state = Some(ui_state);
         self
+    }
+
+    /// Attach a [`HostDiagnostics`] snapshot for this frame. Hosts call
+    /// this when they want apps to surface debug overlays (e.g. the
+    /// showcase status block); apps that don't read `diagnostics()`
+    /// pay nothing for it. Headless render paths leave it `None`.
+    pub fn with_diagnostics(mut self, diagnostics: &'a HostDiagnostics) -> Self {
+        self.diagnostics = Some(diagnostics);
+        self
+    }
+
+    /// Per-frame diagnostic snapshot from the host (backend, frame
+    /// cadence, trigger reason, etc.), or `None` when the host did
+    /// not attach one. Apps display this in optional debug overlays.
+    pub fn diagnostics(&self) -> Option<&HostDiagnostics> {
+        self.diagnostics
     }
 
     /// The active runtime theme for this frame.

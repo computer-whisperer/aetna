@@ -41,7 +41,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use aetna_core::{App, Cursor, KeyModifiers, PointerButton, Rect, UiKey};
+use aetna_core::{
+    App, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, PointerButton, Rect, UiKey,
+};
 use aetna_wgpu::{MsaaTarget, Runner};
 
 const DEFAULT_SAMPLE_COUNT: u32 = 4;
@@ -253,6 +255,10 @@ fn run_host<A: WinitWgpuApp + 'static>(
         last_cursor: Cursor::Default,
         pending_resize: None,
         next_inside_out_redraw: None,
+        next_trigger: FrameTrigger::Initial,
+        last_frame_at: None,
+        frame_index: 0,
+        backend: "?",
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -287,6 +293,21 @@ struct Host<A: WinitWgpuApp> {
     /// `request_redraw` once `now >= t`. Cleared after firing — the
     /// next prepare re-derives it.
     next_inside_out_redraw: Option<Instant>,
+    /// Reason the next redraw is being requested. Each event handler
+    /// that calls `request_redraw` sets this beforehand; RedrawRequested
+    /// consumes it and resets to `Other`. Drives [`HostDiagnostics::trigger`]
+    /// for apps that surface a debug overlay.
+    next_trigger: FrameTrigger,
+    /// Wall clock at the start of the previous redraw. Diff with the
+    /// next frame's start gives `last_frame_dt`.
+    last_frame_at: Option<Instant>,
+    /// Counts redraws actually rendered (not requested). Surfaced via
+    /// [`HostDiagnostics::frame_index`].
+    frame_index: u64,
+    /// Adapter backend tag (`"Vulkan"`, `"Metal"`, `"DX12"`, `"GL"`,
+    /// `"WebGPU"`). Captured once at adapter selection and surfaced in
+    /// the diagnostic overlay.
+    backend: &'static str,
 }
 
 struct Gfx {
@@ -337,6 +358,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             force_fallback_adapter: false,
         }))
         .expect("no compatible adapter");
+        self.backend = backend_label(adapter.get_info().backend);
 
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("aetna_winit_wgpu::device"),
@@ -493,6 +515,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             return;
                         }
                         self.pending_resize = Some(PhysicalSize::new(w, h));
+                        self.next_trigger = FrameTrigger::Resize;
                         gfx.window.request_redraw();
                     }
 
@@ -511,6 +534,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         // (hovered identity, scrollbar drag, drag
                         // event), per `PointerMove`.
                         if moved.needs_redraw {
+                            self.next_trigger = FrameTrigger::Pointer;
                             gfx.window.request_redraw();
                         }
                     }
@@ -520,6 +544,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         for event in gfx.renderer.pointer_left() {
                             self.app.on_event(event);
                         }
+                        self.next_trigger = FrameTrigger::Pointer;
                         gfx.window.request_redraw();
                     }
 
@@ -532,6 +557,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         for event in gfx.renderer.file_hovered(path, lx, ly) {
                             self.app.on_event(event);
                         }
+                        self.next_trigger = FrameTrigger::Pointer;
                         gfx.window.request_redraw();
                     }
 
@@ -539,6 +565,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         for event in gfx.renderer.file_hover_cancelled() {
                             self.app.on_event(event);
                         }
+                        self.next_trigger = FrameTrigger::Pointer;
                         gfx.window.request_redraw();
                     }
 
@@ -547,6 +574,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         for event in gfx.renderer.file_dropped(path, lx, ly) {
                             self.app.on_event(event);
                         }
+                        self.next_trigger = FrameTrigger::Pointer;
                         gfx.window.request_redraw();
                     }
 
@@ -562,12 +590,14 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                 for event in gfx.renderer.pointer_down(lx, ly, button) {
                                     self.app.on_event(event);
                                 }
+                                self.next_trigger = FrameTrigger::Pointer;
                                 gfx.window.request_redraw();
                             }
                             ElementState::Released => {
                                 for event in gfx.renderer.pointer_up(lx, ly, button) {
                                     self.app.on_event(event);
                                 }
+                                self.next_trigger = FrameTrigger::Pointer;
                                 gfx.window.request_redraw();
                             }
                         }
@@ -585,6 +615,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             MouseScrollDelta::PixelDelta(p) => -(p.y as f32) / scale,
                         };
                         if gfx.renderer.pointer_wheel(lx, ly, dy) {
+                            self.next_trigger = FrameTrigger::Pointer;
                             gfx.window.request_redraw();
                         }
                     }
@@ -619,12 +650,14 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         {
                             self.app.on_event(event);
                         }
+                        self.next_trigger = FrameTrigger::Keyboard;
                         gfx.window.request_redraw();
                     }
                     WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
                         if let Some(event) = gfx.renderer.text_input(text) {
                             self.app.on_event(event);
                         }
+                        self.next_trigger = FrameTrigger::Keyboard;
                         gfx.window.request_redraw();
                     }
 
@@ -673,13 +706,37 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         // 3D viewports, video frames) push pixels to
                         // the queue here, before paint records draws
                         // that sample those textures.
+                        // Snapshot diagnostics for this frame: trigger
+                        // (consumed once — next defaults back to Other),
+                        // wall-clock since previous frame, surface size,
+                        // backend tag. Apps read this via `cx.diagnostics()`.
+                        let frame_start = Instant::now();
+                        let last_frame_dt = self
+                            .last_frame_at
+                            .map(|t| frame_start.duration_since(t))
+                            .unwrap_or(Duration::ZERO);
+                        self.last_frame_at = Some(frame_start);
+                        let trigger = std::mem::take(&mut self.next_trigger);
+                        let scale_factor = gfx.window.scale_factor() as f32;
+                        let msaa_samples = gfx.msaa.as_ref().map(|m| m.sample_count).unwrap_or(1);
+                        self.frame_index = self.frame_index.wrapping_add(1);
+                        let diagnostics = HostDiagnostics {
+                            backend: self.backend,
+                            surface_size: (gfx.config.width, gfx.config.height),
+                            scale_factor,
+                            msaa_samples,
+                            frame_index: self.frame_index,
+                            last_frame_dt,
+                            trigger,
+                        };
                         let (mut tree, palette, scale_factor, viewport) = {
                             aetna_core::profile_span!("frame::build");
                             self.app.before_paint(&gfx.queue);
                             WinitWgpuApp::before_build(&mut self.app);
                             let theme = self.app.theme();
                             let cx = aetna_core::BuildCx::new(&theme)
-                                .with_ui_state(gfx.renderer.ui_state());
+                                .with_ui_state(gfx.renderer.ui_state())
+                                .with_diagnostics(&diagnostics);
                             let tree = self.app.build(&cx);
                             let palette = theme.palette().clone();
                             gfx.renderer.set_theme(theme);
@@ -695,7 +752,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             gfx.renderer.push_toasts(self.app.drain_toasts());
                             // Window is configured at physical size; layout works
                             // in logical pixels so divide by the OS-reported scale.
-                            let scale_factor = gfx.window.scale_factor() as f32;
+                            // (Reuses the outer `scale_factor` already snapshotted
+                            // for diagnostics so they agree to the bit.)
                             let viewport = Rect::new(
                                 0.0,
                                 0.0,
@@ -764,6 +822,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             }
                             Some(d) if d.is_zero() => {
                                 self.next_inside_out_redraw = None;
+                                self.next_trigger = FrameTrigger::Animation;
                                 gfx.window.request_redraw();
                             }
                             Some(d) => {
@@ -795,6 +854,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                 .next_periodic_redraw
                 .get_or_insert_with(|| now + interval);
             if now >= *next {
+                self.next_trigger = FrameTrigger::Periodic;
                 gfx.window.request_redraw();
                 *next = now + interval;
             }
@@ -807,6 +867,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
         let mut wake_up = self.next_periodic_redraw;
         if let Some(t) = self.next_inside_out_redraw {
             if now >= t {
+                self.next_trigger = FrameTrigger::Animation;
                 gfx.window.request_redraw();
                 self.next_inside_out_redraw = None;
             } else {
@@ -898,6 +959,22 @@ fn bg_color(palette: &aetna_core::Palette) -> wgpu::Color {
         g: srgb_to_linear(c.g as f64 / 255.0),
         b: srgb_to_linear(c.b as f64 / 255.0),
         a: c.a as f64 / 255.0,
+    }
+}
+
+/// Stable, human-readable tag for the wgpu backend in use. Surfaced to
+/// apps via [`HostDiagnostics::backend`]; the showcase's debug overlay
+/// renders this as-is. `BrowserWebGpu` is collapsed to `"WebGPU"` on
+/// the assumption that browser-side telemetry already says "Chromium"
+/// or "Firefox" elsewhere.
+fn backend_label(backend: wgpu::Backend) -> &'static str {
+    match backend {
+        wgpu::Backend::Vulkan => "Vulkan",
+        wgpu::Backend::Metal => "Metal",
+        wgpu::Backend::Dx12 => "DX12",
+        wgpu::Backend::Gl => "GL",
+        wgpu::Backend::BrowserWebGpu => "WebGPU",
+        wgpu::Backend::Noop => "noop",
     }
 }
 

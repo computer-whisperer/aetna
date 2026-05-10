@@ -87,8 +87,8 @@ pub use bundle::svg::svg_from_ops;
 pub use cursor::Cursor;
 pub use draw_ops::{draw_ops, draw_ops_with_theme};
 pub use event::{
-    App, AppShader, BuildCx, KeyChord, KeyModifiers, KeyPress, PointerButton, UiEvent, UiEventKind,
-    UiKey, UiTarget,
+    App, AppShader, BuildCx, FrameTrigger, HostDiagnostics, KeyChord, KeyModifiers, KeyPress,
+    PointerButton, UiEvent, UiEventKind, UiKey, UiTarget,
 };
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
