@@ -759,9 +759,7 @@ impl TextPaint {
     /// rasterizations × ~200µs each ≈ 40ms one-time cost.
     pub fn warm_default_glyphs(&mut self) {
         const FAMILIES: &[FontFamily] = &[FontFamily::Inter, FontFamily::JetBrainsMono];
-        let chars: Vec<char> = (0x20u32..=0x7Eu32)
-            .filter_map(char::from_u32)
-            .collect();
+        let chars: Vec<char> = (0x20u32..=0x7Eu32).filter_map(char::from_u32).collect();
         self.warm_msdf_for_chars(&chars, FAMILIES);
     }
 
@@ -774,15 +772,11 @@ impl TextPaint {
     pub fn warm_msdf_for_chars(&mut self, chars: &[char], families: &[FontFamily]) {
         for family in families {
             let name = family.family_name();
-            let font_id = self
-                .atlas
-                .font_system()
-                .db()
-                .query(&fontdb::Query {
-                    families: &[fontdb::Family::Name(name)],
-                    weight: fontdb::Weight::NORMAL,
-                    ..fontdb::Query::default()
-                });
+            let font_id = self.atlas.font_system().db().query(&fontdb::Query {
+                families: &[fontdb::Family::Name(name)],
+                weight: fontdb::Weight::NORMAL,
+                ..fontdb::Query::default()
+            });
             let Some(font_id) = font_id else { continue };
             let face_index = self
                 .atlas

@@ -243,7 +243,9 @@ fn install_profiling() -> Result<Option<tracing_chrome::FlushGuard>, Box<dyn std
         .include_args(true)
         .build();
     tracing_subscriber::registry().with(chrome_layer).init();
-    eprintln!("aetna-showcase: tracing chrome JSON → {path} (load in chrome://tracing or perfetto)");
+    eprintln!(
+        "aetna-showcase: tracing chrome JSON → {path} (load in chrome://tracing or perfetto)"
+    );
     Ok(Some(guard))
 }
 

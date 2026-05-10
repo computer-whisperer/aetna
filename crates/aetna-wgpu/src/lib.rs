@@ -780,9 +780,7 @@ impl Runner {
             // spring/tween path deterministic for SVG/PNG snapshots.
             let time = match self.core.ui_state().animation_mode() {
                 aetna_core::AnimationMode::Settled => 0.0,
-                aetna_core::AnimationMode::Live => {
-                    (Instant::now() - self.start_time).as_secs_f32()
-                }
+                aetna_core::AnimationMode::Live => (Instant::now() - self.start_time).as_secs_f32(),
             };
             let frame = FrameUniforms {
                 viewport: [viewport.w, viewport.h],

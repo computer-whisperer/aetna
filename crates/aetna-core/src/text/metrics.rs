@@ -324,8 +324,16 @@ pub fn layout_text_with_line_height_and_family(
     if let Some(cached) = SHAPE_CACHE.with_borrow_mut(|c| c.get(&key).cloned()) {
         return cached;
     }
-    let layout =
-        layout_text_uncached(text, size, line_height, family, weight, mono, wrap, available_width);
+    let layout = layout_text_uncached(
+        text,
+        size,
+        line_height,
+        family,
+        weight,
+        mono,
+        wrap,
+        available_width,
+    );
     SHAPE_CACHE.with_borrow_mut(|c| {
         c.put(key, layout.clone());
     });

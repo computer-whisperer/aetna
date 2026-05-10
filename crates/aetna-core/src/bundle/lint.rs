@@ -939,8 +939,7 @@ mod tests {
             report
                 .findings
                 .iter()
-                .any(|f| f.kind == FindingKind::TextOverflow
-                    && f.message.contains("Size::Hug")),
+                .any(|f| f.kind == FindingKind::TextOverflow && f.message.contains("Size::Hug")),
             "expected dead-ellipsis finding pointing at Hug text\n{}",
             report.text()
         );
@@ -990,8 +989,7 @@ mod tests {
             !report
                 .findings
                 .iter()
-                .any(|f| f.kind == FindingKind::TextOverflow
-                    && f.message.contains("Size::Hug")),
+                .any(|f| f.kind == FindingKind::TextOverflow && f.message.contains("Size::Hug")),
             "{}",
             report.text()
         );
