@@ -512,8 +512,15 @@ pub enum FrameTrigger {
     /// Keyboard / IME input.
     Keyboard,
     /// Inside-out animation deadline elapsed (one of the visible
-    /// widgets asked for a future frame via `redraw_within`).
+    /// widgets asked for a future frame via `redraw_within`, or a
+    /// visual animation is still settling). Drives the layout-path
+    /// (full rebuild + prepare).
     Animation,
+    /// Time-driven shader deadline elapsed (e.g. stock spinner /
+    /// skeleton / progress-indeterminate, or a custom shader
+    /// registered with `samples_time=true`). Drives the paint-only
+    /// path: `frame.time` advances but layout state is unchanged.
+    ShaderPaint,
     /// Periodic host-config cadence (`HostConfig::redraw_interval`).
     Periodic,
 }
@@ -528,6 +535,7 @@ impl FrameTrigger {
             FrameTrigger::Pointer => "pointer",
             FrameTrigger::Keyboard => "keyboard",
             FrameTrigger::Animation => "animation",
+            FrameTrigger::ShaderPaint => "shader-paint",
             FrameTrigger::Periodic => "periodic",
         }
     }

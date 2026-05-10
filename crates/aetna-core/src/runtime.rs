@@ -79,24 +79,45 @@ const SCROLL_PAGE_OVERLAP: f32 = 24.0;
 
 /// Reported back from each backend's `prepare(...)` per frame.
 ///
-/// `needs_redraw` keeps the bool surface for the simple "any redraw
-/// needed?" check most hosts have used historically. New callers
-/// should prefer [`Self::next_redraw_in`], which carries the
-/// inside-out deadline aggregated across visible widgets — apps mark
-/// individual Els with [`crate::tree::El::redraw_within`] and Aetna
-/// folds them into a single `Some(min(d))` for the host. `None` means
-/// "no widget is asking for a future frame; idle until the next input
-/// event."
+/// Two redraw deadlines:
 ///
-/// `needs_redraw` is true whenever `next_redraw_in.is_some()` plus the
-/// pre-existing in-flight signals (visual animations still settling,
-/// tooltip / toast fades pending). Hosts that want sub-frame precision
-/// schedule a `WaitUntil(now + d)` from `next_redraw_in`; hosts that
-/// just want "another frame please" can keep reading `needs_redraw`.
+/// - [`Self::next_layout_redraw_in`] — the next frame that needs a
+///   full rebuild + layout pass. Driven by widget
+///   [`crate::tree::El::redraw_within`] requests, animations still
+///   settling, and pending tooltip / toast fades. The host must call
+///   the backend's full `prepare(...)` (build → layout → paint →
+///   render) when this elapses.
+/// - [`Self::next_paint_redraw_in`] — the next frame a time-driven
+///   shader needs but layout state is unchanged (e.g. spinner /
+///   skeleton / progress-indeterminate / `samples_time=true` custom
+///   shaders). The host can call the backend's lighter `repaint(...)`
+///   path which reuses the cached `DrawOp` list, advances
+///   `frame.time`, and skips rebuild + layout. Skipping the layout
+///   path is only safe when no input has been processed since the
+///   last full prepare; hosts must upgrade to the full path on any
+///   input event.
+///
+/// Legacy aggregates [`Self::needs_redraw`] and [`Self::next_redraw_in`]
+/// fold both lanes (OR / `min`) for hosts that don't want to split paths.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PrepareResult {
+    /// Legacy "any redraw needed?" — OR of `next_layout_redraw_in.is_some()`
+    /// and `next_paint_redraw_in.is_some()`, plus animation-settling /
+    /// tooltip-pending bools the runtime tracks internally.
     pub needs_redraw: bool,
+    /// Legacy combined deadline — `min(next_layout_redraw_in,
+    /// next_paint_redraw_in)`. Hosts that don't distinguish layout
+    /// from paint-only redraws can keep reading this.
     pub next_redraw_in: Option<std::time::Duration>,
+    /// Tightest deadline among signals that need a full rebuild +
+    /// layout: widget `redraw_within`, animations still settling,
+    /// tooltip / toast pending. `Some(ZERO)` for "now."
+    pub next_layout_redraw_in: Option<std::time::Duration>,
+    /// Tightest deadline among time-driven shaders. The host can
+    /// service this with a paint-only frame (reuse cached ops, just
+    /// advance `frame.time`). `Some(ZERO)` for "every frame" (the
+    /// default for `is_continuous()` shaders today).
+    pub next_paint_redraw_in: Option<std::time::Duration>,
     pub timings: PrepareTimings,
 }
 
@@ -120,6 +141,19 @@ pub struct PointerMove {
     /// warrant a redraw — hovered identity changed, scrollbar drag
     /// updated a scroll offset, or `events` is non-empty.
     pub needs_redraw: bool,
+}
+
+/// What [`RunnerCore::prepare_layout`] returns: the resolved
+/// [`DrawOp`] list plus the redraw deadlines split into two lanes (see
+/// [`PrepareResult`] for the lane semantics).
+///
+/// Wrapped in a struct so additions (new redraw signals, lane
+/// metadata) don't churn every backend's `prepare` call site.
+pub struct LayoutPrepared {
+    pub ops: Vec<DrawOp>,
+    pub needs_redraw: bool,
+    pub next_layout_redraw_in: Option<std::time::Duration>,
+    pub next_paint_redraw_in: Option<std::time::Duration>,
 }
 
 /// Per-stage CPU timing inside each backend's `prepare`. Cheap to
@@ -161,6 +195,14 @@ pub struct RunnerCore {
     pub runs: Vec<InstanceRun>,
     pub paint_items: Vec<PaintItem>,
 
+    /// Cached [`DrawOp`] list, reused by [`Self::prepare_paint_cached`]
+    /// for paint-only frames (time-driven shader animation when layout
+    /// state is unchanged — only `frame.time` advances). Backends are
+    /// expected to overwrite this with the ops returned from
+    /// [`Self::prepare_layout`] once they're done with the frame's
+    /// `prepare_paint` call.
+    pub last_ops: Vec<DrawOp>,
+
     /// Physical viewport size in pixels. Backends use this for `draw()`
     /// scissor binding (logical scissors get projected into this space
     /// inside `prepare_paint`).
@@ -190,6 +232,7 @@ impl RunnerCore {
             quad_scratch: Vec::new(),
             runs: Vec::new(),
             paint_items: Vec::new(),
+            last_ops: Vec::new(),
             viewport_px: (1, 1),
             surface_size_override: None,
             theme: Theme::default(),
@@ -1022,7 +1065,7 @@ impl RunnerCore {
         scale_factor: f32,
         timings: &mut PrepareTimings,
         samples_time: F,
-    ) -> (Vec<DrawOp>, bool, Option<std::time::Duration>)
+    ) -> LayoutPrepared
     where
         F: Fn(&ShaderHandle) -> bool,
     {
@@ -1097,38 +1140,89 @@ impl RunnerCore {
         let t_after_draw_ops = Instant::now();
         timings.layout = t_after_layout - t0;
         timings.draw_ops = t_after_draw_ops - t_after_layout;
-        // Time-driven shaders (e.g. stock::spinner, custom shaders
-        // registered with `samples_time=true`) keep the host loop
-        // ticking even when no animation is settling. Scanning the
-        // resolved op list once per frame is cheap and keeps the
-        // signal local to the shader: no per-El opt-in required.
-        let shader_needs_redraw = ops.iter().any(|op| op_is_continuous(op, &samples_time));
 
-        // Inside-out redraw deadlines: walk the El tree and aggregate
-        // `redraw_within` across visible widgets (rect ∩ viewport and
-        // inherited clip scissors).
+        // Two-lane deadline split:
+        //
+        // - **Layout lane**: signals that require a rebuild + layout
+        //   pass to render correctly on the next frame. Animation
+        //   settling, tooltip / toast pending, and widget
+        //   `redraw_within` requests all change the El tree's visual
+        //   state at their deadline.
+        // - **Paint lane**: time-driven shaders (stock continuous, or
+        //   `samples_time=true` custom). The El tree is unchanged; only
+        //   `frame.time` needs to advance. Hosts that want to skip
+        //   layout for these can run a paint-only frame via
+        //   [`Self::prepare_paint_cached`] + [`Self::last_ops`].
+        //
+        // Bool-shaped layout signals (animations settling, tooltip /
+        // toast pending) map to `Duration::ZERO`. The widget
+        // `redraw_within` aggregate is folded in via `min`.
+        let shader_needs_redraw = ops.iter().any(|op| op_is_continuous(op, &samples_time));
         let widget_redraw =
             aggregate_redraw_within(root, viewport, &self.ui_state.layout.computed_rects);
 
-        // The legacy `needs_redraw` bool ORs every signal that asks
-        // for "another frame." The new `next_redraw_in` carries the
-        // tightest deadline among the inside-out widget requests,
-        // mapping bool-shaped signals (animations settling,
-        // samples_time shaders) to `Duration::ZERO` so the host can
-        // schedule any request through the same path.
-        let immediate = needs_redraw || shader_needs_redraw;
-        if shader_needs_redraw {
-            needs_redraw = true;
-        }
-        let next_redraw_in = match (immediate, widget_redraw) {
+        let next_layout_redraw_in = match (needs_redraw, widget_redraw) {
             (true, Some(d)) => Some(d.min(std::time::Duration::ZERO)),
             (true, None) => Some(std::time::Duration::ZERO),
             (false, d) => d,
         };
-        if next_redraw_in.is_some() {
+        let next_paint_redraw_in = if shader_needs_redraw {
+            Some(std::time::Duration::ZERO)
+        } else {
+            None
+        };
+        if next_layout_redraw_in.is_some() || next_paint_redraw_in.is_some() {
             needs_redraw = true;
         }
-        (ops, needs_redraw, next_redraw_in)
+
+        // Ops are returned by value (not cached on `self`) so the
+        // caller can borrow them into the per-frame `prepare_paint`
+        // without also locking `&mut self`. The wrapper hands them
+        // back to `self.last_ops` after paint — see [`Self::last_ops`].
+        LayoutPrepared {
+            ops,
+            needs_redraw,
+            next_layout_redraw_in,
+            next_paint_redraw_in,
+        }
+    }
+
+    /// Run [`Self::prepare_paint`] against the cached
+    /// [`Self::last_ops`] from the most recent
+    /// [`Self::prepare_layout`] call. Used by hosts that service a
+    /// paint-only redraw (driven by
+    /// [`PrepareResult::next_paint_redraw_in`]) without re-running
+    /// build + layout.
+    ///
+    /// The caller is responsible for the same paint-time invariants as
+    /// [`Self::prepare_paint`]: call `text.frame_begin()` first, and
+    /// ensure no input has been processed since the last
+    /// `prepare_layout` (otherwise hover / press state is stale and a
+    /// full prepare is required instead).
+    pub fn prepare_paint_cached<F1, F2>(
+        &mut self,
+        is_registered: F1,
+        samples_backdrop: F2,
+        text: &mut dyn TextRecorder,
+        scale_factor: f32,
+        timings: &mut PrepareTimings,
+    ) where
+        F1: Fn(&ShaderHandle) -> bool,
+        F2: Fn(&ShaderHandle) -> bool,
+    {
+        // `prepare_paint` only touches `self.{quad_scratch, runs,
+        // paint_items}`, not `self.last_ops`, but the borrow checker
+        // can't see that — split-borrow via `mem::take` + restore.
+        let ops = std::mem::take(&mut self.last_ops);
+        self.prepare_paint(
+            &ops,
+            is_registered,
+            samples_backdrop,
+            text,
+            scale_factor,
+            timings,
+        );
+        self.last_ops = ops;
     }
 
     /// Standard "no custom time-driven shaders" closure for
@@ -1137,6 +1231,27 @@ impl RunnerCore {
     /// self-report via `is_continuous()` participate in the scan.
     pub fn no_time_shaders(_shader: &ShaderHandle) -> bool {
         false
+    }
+
+    /// Re-evaluate the paint-lane deadline against the currently-cached
+    /// [`Self::last_ops`]. Used by backends serving a paint-only frame
+    /// (`repaint(...)`) so they can re-arm
+    /// [`PrepareResult::next_paint_redraw_in`] without re-running
+    /// `prepare_layout`. Returns `Some(Duration::ZERO)` when any cached
+    /// op still binds a continuous shader.
+    pub fn scan_continuous_shaders<F>(&self, samples_time: F) -> Option<std::time::Duration>
+    where
+        F: Fn(&ShaderHandle) -> bool,
+    {
+        let any = self
+            .last_ops
+            .iter()
+            .any(|op| op_is_continuous(op, &samples_time));
+        if any {
+            Some(std::time::Duration::ZERO)
+        } else {
+            None
+        }
     }
 
     /// Walk the resolved `DrawOp` list, packing quads into
@@ -2012,7 +2127,7 @@ mod tests {
         let mut tree = crate::column([spinner()]);
         let mut core = RunnerCore::new();
         let mut t = PrepareTimings::default();
-        let (_ops, needs_redraw, _) = core.prepare_layout(
+        let LayoutPrepared { needs_redraw, .. } = core.prepare_layout(
             &mut tree,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             1.0,
@@ -2030,7 +2145,10 @@ mod tests {
         let mut bare = crate::column([crate::widgets::text::text("idle")]);
         let mut core2 = RunnerCore::new();
         let mut t2 = PrepareTimings::default();
-        let (_ops2, needs_redraw2, _) = core2.prepare_layout(
+        let LayoutPrepared {
+            needs_redraw: needs_redraw2,
+            ..
+        } = core2.prepare_layout(
             &mut bare,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             1.0,
@@ -2055,7 +2173,9 @@ mod tests {
         let mut core = RunnerCore::new();
         let mut t = PrepareTimings::default();
 
-        let (_ops, idle, _) = core.prepare_layout(
+        let LayoutPrepared {
+            needs_redraw: idle, ..
+        } = core.prepare_layout(
             &mut tree,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             1.0,
@@ -2068,7 +2188,10 @@ mod tests {
         );
 
         let mut t2 = PrepareTimings::default();
-        let (_ops, animated, _) = core.prepare_layout(
+        let LayoutPrepared {
+            needs_redraw: animated,
+            ..
+        } = core.prepare_layout(
             &mut tree,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             1.0,
@@ -2098,7 +2221,11 @@ mod tests {
         ]);
         let mut core = RunnerCore::new();
         let mut t = PrepareTimings::default();
-        let (_ops, needs_redraw, next) = core.prepare_layout(
+        let LayoutPrepared {
+            needs_redraw,
+            next_layout_redraw_in,
+            ..
+        } = core.prepare_layout(
             &mut tree,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             1.0,
@@ -2107,9 +2234,9 @@ mod tests {
         );
         assert!(needs_redraw, "redraw_within must lift the legacy bool");
         assert_eq!(
-            next,
+            next_layout_redraw_in,
             Some(Duration::from_millis(16)),
-            "tightest visible deadline wins",
+            "tightest visible deadline wins, on the layout lane",
         );
     }
 
@@ -2130,7 +2257,10 @@ mod tests {
         ]);
         let mut core = RunnerCore::new();
         let mut t = PrepareTimings::default();
-        let (_ops, _needs, next) = core.prepare_layout(
+        let LayoutPrepared {
+            next_layout_redraw_in,
+            ..
+        } = core.prepare_layout(
             &mut tree,
             Rect::new(0.0, 0.0, 100.0, 100.0),
             1.0,
@@ -2138,7 +2268,7 @@ mod tests {
             RunnerCore::no_time_shaders,
         );
         assert_eq!(
-            next, None,
+            next_layout_redraw_in, None,
             "off-screen redraw_within must not contribute to the aggregate",
         );
     }
@@ -2166,7 +2296,10 @@ mod tests {
 
         let mut core = RunnerCore::new();
         let mut t = PrepareTimings::default();
-        let (_ops, _needs, next) = core.prepare_layout(
+        let LayoutPrepared {
+            next_layout_redraw_in,
+            ..
+        } = core.prepare_layout(
             &mut tree,
             Rect::new(0.0, 0.0, 100.0, 100.0),
             1.0,
@@ -2174,7 +2307,7 @@ mod tests {
             RunnerCore::no_time_shaders,
         );
         assert_eq!(
-            next, None,
+            next_layout_redraw_in, None,
             "redraw_within inside an inherited clip but outside the clip rect must not contribute",
         );
     }

@@ -74,7 +74,7 @@ use aetna_core::runtime::{RecordedPaint, RunnerCore, TextRecorder};
 use aetna_core::text::atlas::RunStyle;
 use aetna_core::tree::{Color, TextWrap};
 
-pub use aetna_core::runtime::{PointerMove, PrepareResult, PrepareTimings};
+pub use aetna_core::runtime::{LayoutPrepared, PointerMove, PrepareResult, PrepareTimings};
 
 use crate::icon::IconPaint;
 use crate::image::ImagePaint;
@@ -654,18 +654,23 @@ impl Runner {
         // `samples_time=true` keeps the host loop ticking even when
         // no animation is settling.
         let time_shaders = &self.time_shaders;
-        let (ops, needs_redraw, next_redraw_in) =
-            self.core
-                .prepare_layout(
-                    root,
-                    viewport,
-                    scale_factor,
-                    &mut timings,
-                    |handle| match handle {
-                        ShaderHandle::Custom(name) => time_shaders.contains(name),
-                        ShaderHandle::Stock(_) => false,
-                    },
-                );
+        let LayoutPrepared {
+            ops,
+            needs_redraw,
+            next_layout_redraw_in,
+            next_paint_redraw_in,
+        } = self
+            .core
+            .prepare_layout(
+                root,
+                viewport,
+                scale_factor,
+                &mut timings,
+                |handle| match handle {
+                    ShaderHandle::Custom(name) => time_shaders.contains(name),
+                    ShaderHandle::Stock(_) => false,
+                },
+            );
 
         self.text_paint.frame_begin();
         self.icon_paint.frame_begin();
@@ -757,9 +762,108 @@ impl Runner {
 
         self.core.snapshot(root, &mut timings);
 
+        // Move resolved ops into the core's cache so a subsequent
+        // paint-only frame ([`Self::repaint`]) can reuse them.
+        self.core.last_ops = ops;
+
+        let next_redraw_in = match (next_layout_redraw_in, next_paint_redraw_in) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(d), None) | (None, Some(d)) => Some(d),
+            (None, None) => None,
+        };
         PrepareResult {
             needs_redraw,
             next_redraw_in,
+            next_layout_redraw_in,
+            next_paint_redraw_in,
+            timings,
+        }
+    }
+
+    /// Paint-only frame against the cached ops from the most recent
+    /// [`Self::prepare`] call. Skips rebuild + layout + draw_ops +
+    /// snapshot — only `frame.time` advances. See the wgpu
+    /// `Renderer::repaint` doc for the host-side invariants (no input
+    /// since last full prepare; same viewport / scale).
+    pub fn repaint(&mut self, viewport: Rect, scale_factor: f32) -> PrepareResult {
+        let mut timings = PrepareTimings::default();
+
+        self.text_paint.frame_begin();
+        self.icon_paint.frame_begin();
+        self.image_paint.frame_begin();
+        self.surface_paint.frame_begin();
+        let pipelines = &self.pipelines;
+        let backdrop_shaders = &self.backdrop_shaders;
+        let mut recorder = PaintRecorder {
+            text: &mut self.text_paint,
+            icons: &mut self.icon_paint,
+            images: &mut self.image_paint,
+            surfaces: &mut self.surface_paint,
+        };
+        self.core.prepare_paint_cached(
+            |shader| pipelines.contains_key(shader),
+            |shader| match shader {
+                ShaderHandle::Custom(name) => backdrop_shaders.contains(name),
+                ShaderHandle::Stock(_) => false,
+            },
+            &mut recorder,
+            scale_factor,
+            &mut timings,
+        );
+
+        let t_paint_end = Instant::now();
+        if !self.core.quad_scratch.is_empty() {
+            let buf = self
+                .instance_alloc
+                .allocate_slice::<QuadInstance>(self.core.quad_scratch.len() as u64)
+                .expect("aetna-vulkano: instance suballocate");
+            buf.write()
+                .expect("aetna-vulkano: instance suballocation write")
+                .copy_from_slice(&self.core.quad_scratch);
+            self.instance_buf = Some(buf);
+        } else {
+            self.instance_buf = None;
+        }
+        self.text_paint.flush();
+        self.icon_paint.flush();
+        self.image_paint.flush();
+        self.surface_paint.flush();
+        {
+            let buf = self
+                .uniform_alloc
+                .allocate_sized::<FrameUniforms>()
+                .expect("aetna-vulkano: frame uniform suballocate");
+            let time = match self.core.ui_state().animation_mode() {
+                aetna_core::AnimationMode::Settled => 0.0,
+                aetna_core::AnimationMode::Live => (Instant::now() - self.start_time).as_secs_f32(),
+            };
+            *buf.write()
+                .expect("aetna-vulkano: frame uniform suballocation write") = FrameUniforms {
+                viewport: [viewport.w, viewport.h],
+                time,
+                scale_factor,
+            };
+            let set = DescriptorSet::new(
+                self.descriptor_alloc.clone(),
+                self.frame_set_layout.clone(),
+                [WriteDescriptorSet::buffer(0, buf)],
+                [],
+            )
+            .expect("aetna-vulkano: per-frame descriptor set");
+            self.frame_descriptor_set = Some(set);
+        }
+        timings.gpu_upload = Instant::now() - t_paint_end;
+
+        let time_shaders = &self.time_shaders;
+        let next_paint_redraw_in = self.core.scan_continuous_shaders(|handle| match handle {
+            ShaderHandle::Custom(name) => time_shaders.contains(name),
+            ShaderHandle::Stock(_) => false,
+        });
+        PrepareResult {
+            needs_redraw: next_paint_redraw_in.is_some(),
+            next_redraw_in: next_paint_redraw_in,
+            next_layout_redraw_in: None,
+            next_paint_redraw_in,
             timings,
         }
     }

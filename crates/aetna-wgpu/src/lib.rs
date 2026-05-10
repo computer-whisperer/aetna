@@ -96,7 +96,7 @@ use aetna_core::tree::{Color, El, Rect, TextWrap};
 use aetna_core::vector::IconMaterial;
 
 pub use aetna_core::paint::PaintItem;
-pub use aetna_core::runtime::{PointerMove, PrepareResult, PrepareTimings};
+pub use aetna_core::runtime::{LayoutPrepared, PointerMove, PrepareResult, PrepareTimings};
 
 use crate::icon::IconPaint;
 use crate::image::ImagePaint;
@@ -702,18 +702,23 @@ impl Runner {
         // shader registered with `samples_time=true` keeps the host
         // loop ticking even when no animation is settling.
         let time_shaders = &self.time_shaders;
-        let (ops, needs_redraw, next_redraw_in) =
-            self.core
-                .prepare_layout(
-                    root,
-                    viewport,
-                    scale_factor,
-                    &mut timings,
-                    |handle| match handle {
-                        ShaderHandle::Custom(name) => time_shaders.contains(name),
-                        ShaderHandle::Stock(_) => false,
-                    },
-                );
+        let LayoutPrepared {
+            ops,
+            needs_redraw,
+            next_layout_redraw_in,
+            next_paint_redraw_in,
+        } = self
+            .core
+            .prepare_layout(
+                root,
+                viewport,
+                scale_factor,
+                &mut timings,
+                |handle| match handle {
+                    ShaderHandle::Custom(name) => time_shaders.contains(name),
+                    ShaderHandle::Stock(_) => false,
+                },
+            );
 
         // Paint stream: pack quads, record text, preserve z-order. The
         // closure is the wgpu-specific "is this shader registered?"
@@ -794,9 +799,130 @@ impl Runner {
         // Snapshot the laid-out tree for next-frame hit-testing.
         self.core.snapshot(root, &mut timings);
 
+        // Move resolved ops into the core's cache so a subsequent
+        // paint-only frame can reuse them without re-running layout.
+        self.core.last_ops = ops;
+
+        let next_redraw_in = match (next_layout_redraw_in, next_paint_redraw_in) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(d), None) | (None, Some(d)) => Some(d),
+            (None, None) => None,
+        };
         PrepareResult {
             needs_redraw,
             next_redraw_in,
+            next_layout_redraw_in,
+            next_paint_redraw_in,
+            timings,
+        }
+    }
+
+    /// Paint-only frame: rerun [`RunnerCore::prepare_paint_cached`] +
+    /// GPU upload + frame-uniform write against the cached ops from
+    /// the most recent [`Self::prepare`] call. Skips rebuild + layout
+    /// + draw_ops + snapshot — only `frame.time` advances.
+    ///
+    /// Hosts call this when [`PrepareResult::next_paint_redraw_in`]
+    /// fires (a time-driven shader needs another frame) and no input
+    /// has been processed since the last full prepare. Input always
+    /// upgrades to the full `prepare(...)` path.
+    ///
+    /// `viewport` and `scale_factor` must match the values passed to
+    /// the most recent `prepare(...)` — a resize must go through the
+    /// full layout path. Returns the same shape of [`PrepareResult`]
+    /// for diagnostic continuity, with both deadlines re-computed
+    /// from the cached signals: `next_layout_redraw_in` is `None` (we
+    /// didn't re-evaluate), and `next_paint_redraw_in` is whatever
+    /// the cached ops still report. The host owns the layout
+    /// deadline across paint-only frames.
+    pub fn repaint(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        viewport: Rect,
+        scale_factor: f32,
+    ) -> PrepareResult {
+        let mut timings = PrepareTimings::default();
+
+        self.text_paint.frame_begin();
+        self.icon_paint.frame_begin();
+        self.image_paint.frame_begin();
+        self.surface_paint.frame_begin();
+        let pipelines = &self.pipelines;
+        let backdrop_shaders = &self.backdrop_shaders;
+        let mut recorder = PaintRecorder {
+            text: &mut self.text_paint,
+            icons: &mut self.icon_paint,
+            images: &mut self.image_paint,
+            surfaces: &mut self.surface_paint,
+            device,
+            queue,
+        };
+        self.core.prepare_paint_cached(
+            |shader| pipelines.contains_key(shader),
+            |shader| match shader {
+                ShaderHandle::Custom(name) => backdrop_shaders.contains(name),
+                ShaderHandle::Stock(_) => false,
+            },
+            &mut recorder,
+            scale_factor,
+            &mut timings,
+        );
+
+        // Same GPU-upload block as prepare(); time advances even though
+        // ops are unchanged so time-driven shaders animate.
+        {
+            aetna_core::profile_span!("repaint::gpu_upload");
+            let t_paint_end = Instant::now();
+            if self.core.quad_scratch.len() > self.instance_capacity {
+                let new_cap = self.core.quad_scratch.len().next_power_of_two();
+                self.instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("aetna_wgpu::instance_buf (resized)"),
+                    size: (new_cap * std::mem::size_of::<QuadInstance>()) as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                self.instance_capacity = new_cap;
+            }
+            if !self.core.quad_scratch.is_empty() {
+                queue.write_buffer(
+                    &self.instance_buf,
+                    0,
+                    bytemuck::cast_slice(&self.core.quad_scratch),
+                );
+            }
+            self.text_paint.flush(device, queue);
+            self.icon_paint.flush(device, queue);
+            self.image_paint.flush(device, queue);
+            self.surface_paint.flush(device, queue);
+            let time = match self.core.ui_state().animation_mode() {
+                AnimationMode::Settled => 0.0,
+                AnimationMode::Live => (Instant::now() - self.start_time).as_secs_f32(),
+            };
+            let frame = FrameUniforms {
+                viewport: [viewport.w, viewport.h],
+                time,
+                scale_factor,
+            };
+            queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
+            timings.gpu_upload = Instant::now() - t_paint_end;
+        }
+
+        // Re-evaluate the paint lane against the cached ops so the host
+        // can re-arm the deadline. Cheap (one scan over already-resolved
+        // ops). The layout lane is left as `None`: we didn't re-run
+        // `prepare_layout`, so we have no fresh signal to report — the
+        // host's previously-set layout deadline still stands.
+        let time_shaders = &self.time_shaders;
+        let next_paint_redraw_in = self.core.scan_continuous_shaders(|handle| match handle {
+            ShaderHandle::Custom(name) => time_shaders.contains(name),
+            ShaderHandle::Stock(_) => false,
+        });
+        PrepareResult {
+            needs_redraw: next_paint_redraw_in.is_some(),
+            next_redraw_in: next_paint_redraw_in,
+            next_layout_redraw_in: None,
+            next_paint_redraw_in,
             timings,
         }
     }

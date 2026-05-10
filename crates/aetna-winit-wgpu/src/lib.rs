@@ -254,7 +254,8 @@ fn run_host<A: WinitWgpuApp + 'static>(
         next_periodic_redraw: None,
         last_cursor: Cursor::Default,
         pending_resize: None,
-        next_inside_out_redraw: None,
+        next_layout_redraw: None,
+        next_paint_redraw: None,
         next_trigger: FrameTrigger::Initial,
         last_frame_at: None,
         frame_index: 0,
@@ -287,12 +288,19 @@ struct Host<A: WinitWgpuApp> {
     /// instead of once per event keeps the window content from
     /// trailing the cursor.
     pending_resize: Option<PhysicalSize<u32>>,
-    /// Wall-clock deadline for the next inside-out redraw, derived from
-    /// the most recent `prepare.next_redraw_in`. `None` means no
-    /// widget is asking for a future frame; `Some(t)` means fire
-    /// `request_redraw` once `now >= t`. Cleared after firing — the
-    /// next prepare re-derives it.
-    next_inside_out_redraw: Option<Instant>,
+    /// Wall-clock deadline for the next redraw that needs a full
+    /// rebuild + layout pass — animations settling, widget
+    /// `redraw_within` requests, pending tooltip / toast fades.
+    /// Derived from `prepare.next_layout_redraw_in`. `None` means no
+    /// layout-driven future frame is pending. Cleared after firing.
+    next_layout_redraw: Option<Instant>,
+    /// Wall-clock deadline for the next paint-only redraw — a
+    /// time-driven shader (spinner / skeleton / progress / custom
+    /// `samples_time=true`) needs another frame but layout state is
+    /// unchanged. Serviced via `Renderer::repaint`, which reuses the
+    /// cached ops and only advances `frame.time`. Derived from
+    /// `prepare.next_paint_redraw_in`. Cleared after firing.
+    next_paint_redraw: Option<Instant>,
     /// Reason the next redraw is being requested. Each event handler
     /// that calls `request_redraw` sets this beforehand; RedrawRequested
     /// consumes it and resets to `Other`. Drives [`HostDiagnostics::trigger`]
@@ -718,71 +726,85 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         self.last_frame_at = Some(frame_start);
                         let trigger = std::mem::take(&mut self.next_trigger);
                         let scale_factor = gfx.window.scale_factor() as f32;
-                        let msaa_samples = gfx.msaa.as_ref().map(|m| m.sample_count).unwrap_or(1);
-                        self.frame_index = self.frame_index.wrapping_add(1);
-                        let diagnostics = HostDiagnostics {
-                            backend: self.backend,
-                            surface_size: (gfx.config.width, gfx.config.height),
-                            scale_factor,
-                            msaa_samples,
-                            frame_index: self.frame_index,
-                            last_frame_dt,
-                            trigger,
-                        };
-                        let (mut tree, palette, scale_factor, viewport) = {
-                            aetna_core::profile_span!("frame::build");
-                            self.app.before_paint(&gfx.queue);
-                            WinitWgpuApp::before_build(&mut self.app);
-                            let theme = self.app.theme();
-                            let cx = aetna_core::BuildCx::new(&theme)
-                                .with_ui_state(gfx.renderer.ui_state())
-                                .with_diagnostics(&diagnostics);
-                            let tree = self.app.build(&cx);
-                            let palette = theme.palette().clone();
-                            gfx.renderer.set_theme(theme);
-                            // Snapshot hotkeys alongside build() so the chord list
-                            // reflects current state (apps can return different
-                            // hotkeys per mode, e.g. `j/k` only in list view).
-                            gfx.renderer.set_hotkeys(self.app.hotkeys());
-                            gfx.renderer.set_selection(self.app.selection());
-                            // Drain any toasts the app accumulated since
-                            // the last frame and queue them onto the
-                            // runtime's toast stack. The synthesize pass
-                            // inside `prepare` then renders the layer.
-                            gfx.renderer.push_toasts(self.app.drain_toasts());
-                            // Window is configured at physical size; layout works
-                            // in logical pixels so divide by the OS-reported scale.
-                            // (Reuses the outer `scale_factor` already snapshotted
-                            // for diagnostics so they agree to the bit.)
-                            let viewport = Rect::new(
-                                0.0,
-                                0.0,
-                                gfx.config.width as f32 / scale_factor,
-                                gfx.config.height as f32 / scale_factor,
-                            );
-                            (tree, palette, scale_factor, viewport)
-                        };
-                        let prepare = {
-                            aetna_core::profile_span!("frame::prepare");
-                            gfx.renderer.prepare(
+                        let viewport = Rect::new(
+                            0.0,
+                            0.0,
+                            gfx.config.width as f32 / scale_factor,
+                            gfx.config.height as f32 / scale_factor,
+                        );
+                        // Paint-only path: a time-driven shader's deadline
+                        // fired but no input / layout signal is queued for
+                        // this frame, so we skip rebuild + layout and reuse
+                        // the cached ops. `pending_resize` was applied above
+                        // and would have set `Resize` instead — but defend
+                        // against trigger-overwrite races by also requiring
+                        // it to be empty here.
+                        let paint_only =
+                            trigger == FrameTrigger::ShaderPaint && self.pending_resize.is_none();
+
+                        let (prepare, palette) = if paint_only {
+                            aetna_core::profile_span!("frame::repaint");
+                            // No build pass on paint-only frames — reuse
+                            // the renderer's already-set theme palette
+                            // (set on the prior full prepare).
+                            let palette = gfx.renderer.theme().palette().clone();
+                            let prepare = gfx.renderer.repaint(
                                 &gfx.device,
                                 &gfx.queue,
-                                &mut tree,
                                 viewport,
                                 scale_factor,
-                            )
+                            );
+                            (prepare, palette)
+                        } else {
+                            let msaa_samples =
+                                gfx.msaa.as_ref().map(|m| m.sample_count).unwrap_or(1);
+                            self.frame_index = self.frame_index.wrapping_add(1);
+                            let diagnostics = HostDiagnostics {
+                                backend: self.backend,
+                                surface_size: (gfx.config.width, gfx.config.height),
+                                scale_factor,
+                                msaa_samples,
+                                frame_index: self.frame_index,
+                                last_frame_dt,
+                                trigger,
+                            };
+                            let (mut tree, palette) = {
+                                aetna_core::profile_span!("frame::build");
+                                self.app.before_paint(&gfx.queue);
+                                WinitWgpuApp::before_build(&mut self.app);
+                                let theme = self.app.theme();
+                                let palette = theme.palette().clone();
+                                let cx = aetna_core::BuildCx::new(&theme)
+                                    .with_ui_state(gfx.renderer.ui_state())
+                                    .with_diagnostics(&diagnostics);
+                                let tree = self.app.build(&cx);
+                                gfx.renderer.set_theme(theme);
+                                gfx.renderer.set_hotkeys(self.app.hotkeys());
+                                gfx.renderer.set_selection(self.app.selection());
+                                gfx.renderer.push_toasts(self.app.drain_toasts());
+                                (tree, palette)
+                            };
+                            let prepare = {
+                                aetna_core::profile_span!("frame::prepare");
+                                gfx.renderer.prepare(
+                                    &gfx.device,
+                                    &gfx.queue,
+                                    &mut tree,
+                                    viewport,
+                                    scale_factor,
+                                )
+                            };
+                            // Cursor resolution depends on the laid-out tree
+                            // and the hovered key derived from layout ids,
+                            // so it only updates on the full-prepare path.
+                            // Paint-only frames inherit the previous cursor.
+                            let cursor = gfx.renderer.ui_state().cursor(&tree);
+                            if cursor != self.last_cursor {
+                                gfx.window.set_cursor(winit_cursor(cursor));
+                                self.last_cursor = cursor;
+                            }
+                            (prepare, palette)
                         };
-
-                        // Resolve the pointer cursor against the laid-out
-                        // tree (computed_ids are now valid) and push it to
-                        // the window when it changes. Doing this after
-                        // prepare means hover / press transitions show up
-                        // on the same frame as the visual update.
-                        let cursor = gfx.renderer.ui_state().cursor(&tree);
-                        if cursor != self.last_cursor {
-                            gfx.window.set_cursor(winit_cursor(cursor));
-                            self.last_cursor = cursor;
-                        }
 
                         {
                             aetna_core::profile_span!("frame::submit");
@@ -808,26 +830,48 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             frame.present();
                         }
 
-                        // Inside-out redraw scheduling: Aetna folds
-                        // every visible widget's `redraw_within`
-                        // request — plus its own continuous-redraw
-                        // signals (animations, samples_time shaders)
-                        // — into one deadline. We fire ASAP for
-                        // zero-deadline requests; for non-zero we
-                        // park the wake-up time and let
-                        // `about_to_wait` set the control flow.
-                        match prepare.next_redraw_in {
-                            None => {
-                                self.next_inside_out_redraw = None;
+                        // Two-lane redraw scheduling: split widget /
+                        // animation deadlines (require rebuild +
+                        // layout) from time-driven shader deadlines
+                        // (paint-only is sufficient). Each lane parks
+                        // its own wake-up; `about_to_wait` chooses the
+                        // earlier and `RedrawRequested` dispatches to
+                        // either the full prepare path or the
+                        // paint-only `repaint` path based on which
+                        // deadline fired (input handlers naturally
+                        // upgrade to full by overwriting the trigger).
+                        //
+                        // On a paint-only frame, only the paint lane
+                        // is updated — `repaint` deliberately reports
+                        // `next_layout_redraw_in = None` because it
+                        // didn't re-evaluate that signal, so we leave
+                        // the host's previously-parked layout
+                        // deadline alone.
+                        let now = Instant::now();
+                        if !paint_only {
+                            match prepare.next_layout_redraw_in {
+                                None => self.next_layout_redraw = None,
+                                Some(d) if d.is_zero() => {
+                                    self.next_layout_redraw = None;
+                                    self.next_trigger = FrameTrigger::Animation;
+                                    gfx.window.request_redraw();
+                                }
+                                Some(d) => self.next_layout_redraw = Some(now + d),
                             }
+                        }
+                        match prepare.next_paint_redraw_in {
+                            None => self.next_paint_redraw = None,
                             Some(d) if d.is_zero() => {
-                                self.next_inside_out_redraw = None;
-                                self.next_trigger = FrameTrigger::Animation;
+                                // Don't override an Animation trigger
+                                // we already set above — layout takes
+                                // precedence when both fire this turn.
+                                self.next_paint_redraw = None;
+                                if !matches!(self.next_trigger, FrameTrigger::Animation) {
+                                    self.next_trigger = FrameTrigger::ShaderPaint;
+                                }
                                 gfx.window.request_redraw();
                             }
-                            Some(d) => {
-                                self.next_inside_out_redraw = Some(Instant::now() + d);
-                            }
+                            Some(d) => self.next_paint_redraw = Some(now + d),
                         }
                     }
                     _ => {}
@@ -860,16 +904,35 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             }
         }
 
-        // Pick the earlier of the inside-out deadline and the
-        // periodic-config wake-up. If both fire by `now`, fire and
-        // clear the inside-out one (the periodic one self-advances
-        // above).
+        // Pick the earlier wake-up across all three sources: the
+        // periodic-config knob, the layout deadline (rebuild + full
+        // prepare), and the paint deadline (paint-only via repaint).
+        // If a deadline has already passed, fire `request_redraw` and
+        // clear it; the dispatcher in RedrawRequested reads the
+        // trigger to decide layout vs paint-only path.
         let mut wake_up = self.next_periodic_redraw;
-        if let Some(t) = self.next_inside_out_redraw {
+        if let Some(t) = self.next_layout_redraw {
             if now >= t {
                 self.next_trigger = FrameTrigger::Animation;
                 gfx.window.request_redraw();
-                self.next_inside_out_redraw = None;
+                self.next_layout_redraw = None;
+            } else {
+                wake_up = Some(match wake_up {
+                    Some(p) => p.min(t),
+                    None => t,
+                });
+            }
+        }
+        if let Some(t) = self.next_paint_redraw {
+            if now >= t {
+                // Layout always wins: if a layout redraw is also queued
+                // for this turn, take that path and let it re-derive
+                // the paint deadline from the fresh prepare.
+                if !matches!(self.next_trigger, FrameTrigger::Animation) {
+                    self.next_trigger = FrameTrigger::ShaderPaint;
+                }
+                gfx.window.request_redraw();
+                self.next_paint_redraw = None;
             } else {
                 wake_up = Some(match wake_up {
                     Some(p) => p.min(t),
