@@ -422,6 +422,18 @@ fn walk(
         || matches!(n.kind, Kind::Inlines)
         || matches!(n.kind, Kind::Custom("toast_stack"));
 
+    // Dead-ellipsis detection: when this parent's flex layout overran
+    // on its main axis, any `Size::Hug` child with `NoWrap + Ellipsis`
+    // has a dead truncation chain. `layout::main_size_of` returns
+    // `MainSize::Resolved(intrinsic)` for `Size::Hug`, so the child's
+    // rect width on the main axis always equals its natural content
+    // width — and that's the exact value `draw_ops` passes as the
+    // budget to `ellipsize_text_with_family`. Without a constrained
+    // rect the truncation branch never trims a glyph. We compute
+    // overrun once per parent and flag matching children below.
+    let parent_main_overran =
+        !suppress_overflow && flex_main_axis_overflowed(n, computed, ui_state);
+
     // Update the nearest-clipping-ancestor rect for descendants. The
     // scissor in `draw_ops` uses `inner_painted_rect` (the layout
     // rect, no padding inset, no overflow outset), so this rect is
@@ -466,6 +478,33 @@ fn walk(
                     "child overflows parent {parent_id} by L={dx_left:.0} R={dx_right:.0} T={dy_top:.0} B={dy_bottom:.0}",
                     parent_id = n.computed_id,
                 ),
+            });
+        }
+
+        // Dead `.ellipsis()` chain on a Hug child of an overran flex
+        // parent (see comment on `parent_main_overran` above). Point
+        // at the text directly so the user knows which fix to make:
+        // the existing per-child Overflow finding fires on the
+        // *displaced* sibling, not on the offending Hug text.
+        let main_axis_is_hug = match n.axis {
+            Axis::Row => matches!(c.width, Size::Hug),
+            Axis::Column => matches!(c.height, Size::Hug),
+            Axis::Overlay => false,
+        };
+        if parent_main_overran
+            && main_axis_is_hug
+            && c.text.is_some()
+            && c.text_wrap == TextWrap::NoWrap
+            && c.text_overflow == TextOverflow::Ellipsis
+            && let Some(blame) = child_blame
+        {
+            r.findings.push(Finding {
+                kind: FindingKind::TextOverflow,
+                node_id: c.computed_id.clone(),
+                source: blame,
+                message:
+                    ".ellipsis() has no effect on Size::Hug text — Hug forces the rect to the intrinsic content width, so the truncation budget equals the content and no glyph is ever trimmed. Set Size::Fill(_) or Size::Fixed(_) on the text or on a wrapping container so the layout can constrain the rect."
+                        .to_string(),
             });
         }
 
@@ -788,6 +827,38 @@ fn rect_contains(parent: Rect, child: Rect, tol: f32) -> bool {
         && child.bottom() <= parent.bottom() + tol
 }
 
+/// True when a Row/Column parent's children, summed along the parent's
+/// main axis (plus gaps), exceed the parent's padded inner extent —
+/// i.e. the layout pass overran. Mirrors the `consumed > main_extent`
+/// shape from `layout::layout_axis`. Overlay parents have no main-axis
+/// packing, so overrun is meaningless there.
+fn flex_main_axis_overflowed(parent: &El, parent_rect: Rect, ui_state: &UiState) -> bool {
+    let n = parent.children.len();
+    if n == 0 {
+        return false;
+    }
+    let inner = parent_rect.inset(parent.padding);
+    let inner_main = match parent.axis {
+        Axis::Row => inner.w,
+        Axis::Column => inner.h,
+        Axis::Overlay => return false,
+    };
+    let total_gap = parent.gap * n.saturating_sub(1) as f32;
+    let consumed: f32 = parent
+        .children
+        .iter()
+        .map(|c| {
+            let r = ui_state.rect(&c.computed_id);
+            match parent.axis {
+                Axis::Row => r.w,
+                Axis::Column => r.h,
+                Axis::Overlay => 0.0,
+            }
+        })
+        .sum();
+    consumed + total_gap > inner_main + 0.5
+}
+
 fn short_path(p: &str) -> String {
     let parts: Vec<&str> = p.split(['/', '\\']).collect();
     if parts.len() >= 2 {
@@ -839,6 +910,88 @@ mod tests {
                 .findings
                 .iter()
                 .any(|finding| finding.kind == FindingKind::TextOverflow),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn hug_ellipsis_in_overflowing_row_reports_dead_chain_issue_19() {
+        // Repro for #19: a `text(...).ellipsis()` (default Hug width)
+        // inside a flex row whose children's intrinsics sum past the
+        // row's allocated width. `Size::Hug` makes the layout pass
+        // resolve `main_size = intrinsic`, so the rect's width equals
+        // the natural text width — and that's the budget passed to
+        // `ellipsize_text_with_family`. The truncation branch never
+        // trims a glyph and the chain is silent dead code. The lint
+        // must point at the offending text node directly.
+        let row = crate::row([
+            crate::text("short_label"),
+            crate::text("a long descriptive body that should truncate but cannot").ellipsis(),
+            crate::text("right_side_metadata"),
+        ])
+        .width(Size::Fixed(160.0))
+        .height(Size::Fixed(20.0));
+
+        let report = lint_one(row);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::TextOverflow
+                    && f.message.contains("Size::Hug")),
+            "expected dead-ellipsis finding pointing at Hug text\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn hug_ellipsis_in_non_overflowing_row_is_quiet() {
+        // The lint targets the failure mode (parent overran + dead
+        // chain), not the chain itself. When the row has room for all
+        // children, `text(...).ellipsis()` with default Hug is just
+        // harmless extra metadata — don't lint it.
+        let row = crate::row([crate::text("ok").ellipsis()])
+            .width(Size::Fixed(160.0))
+            .height(Size::Fixed(20.0));
+
+        let report = lint_one(row);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::TextOverflow),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn fill_ellipsis_in_overflowing_row_is_quiet() {
+        // Counter-test: when the user has chosen `Size::Fill(_)` on
+        // the ellipsis text, the chain is live (layout actually
+        // constrains the rect), so even if other children push the
+        // row over, the dead-chain lint must not fire on this node.
+        let row = crate::row([
+            crate::text("short_label"),
+            crate::text("a long descriptive body that should truncate but cannot")
+                .width(Size::Fill(1.0))
+                .ellipsis(),
+            crate::text("right_side_metadata"),
+        ])
+        .width(Size::Fixed(160.0))
+        .height(Size::Fixed(20.0));
+
+        let report = lint_one(row);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::TextOverflow
+                    && f.message.contains("Size::Hug")),
             "{}",
             report.text()
         );
