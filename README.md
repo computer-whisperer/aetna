@@ -179,8 +179,9 @@ cargo test --workspace --lib                          # ~200 unit tests
 ```
 
 `tools/build_web.sh --serve` builds the wasm browser entry point and
-serves it at `http://127.0.0.1:8080/assets/index.html` — same `Showcase`
-`App` impl, run through the WebGPU canvas binding.
+serves it at `http://127.0.0.1:8083/` — same `Showcase` `App` impl, run
+through the WebGPU canvas binding. Released versions are also published
+to GitHub Pages by `.github/workflows/pages.yml`.
 
 ## Per-app artifact dumps
 

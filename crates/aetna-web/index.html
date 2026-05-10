@@ -28,7 +28,7 @@
          same id. -->
     <canvas id="aetna_canvas"></canvas>
     <script type="module">
-        import init from '/pkg/aetna_web.js';
+        import init from './pkg/aetna_web.js';
         init().catch(err => {
             console.error('failed to start aetna-web:', err);
             document.body.innerHTML =

@@ -17,8 +17,8 @@
 //!   reusable native host lives in `aetna-winit-wgpu`, with
 //!   `aetna-examples` providing the demo binary.
 //!
-//! The package includes `assets/index.html` as a minimal browser
-//! harness for the generated wasm bundle.
+//! The package includes `index.html` as a minimal browser harness for
+//! the generated wasm bundle (sibling to the wasm-pack `pkg/` output).
 //!
 //! Runtime parity check: both targets render the same fixture, accept
 //! click + hover + scroll + keyboard input, and exercise the live
@@ -210,8 +210,8 @@ mod web_entry {
     }
 
     /// Locate the `<canvas id="aetna_canvas">` element in the host
-    /// page. The HTML harness in `assets/index.html` embeds one;
-    /// other host pages can mount their own as long as the id matches.
+    /// page. The HTML harness in `index.html` embeds one; other host
+    /// pages can mount their own as long as the id matches.
     fn locate_canvas() -> web_sys::HtmlCanvasElement {
         let window = web_sys::window().expect("no window");
         let document = window.document().expect("no document");

@@ -1,0 +1,73 @@
+name: pages
+
+# Builds the aetna-web wasm bundle and deploys the showcase to GitHub
+# Pages. Fires on each published GitHub Release; `workflow_dispatch`
+# also lets you redeploy manually (handy while shaking out kinks before
+# the next tag).
+#
+# One-time setup: in the repo's Settings → Pages, set "Build and
+# deployment" → Source to "GitHub Actions". Without that, deploy-pages
+# fails the first run.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages serves a single site, so newer deploys should win — but don't
+# cancel one in flight; the deploy step is fast and cancelling mid-upload
+# can leave the site half-updated.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build wasm bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Prebuilt wasm-pack binary; `cargo install wasm-pack` from source
+      # is several minutes on a clean cache.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Build aetna-web (release)
+        run: wasm-pack build crates/aetna-web --target web --release
+
+      # Pages serves whatever's at the artifact root. The harness
+      # imports `./pkg/aetna_web.js` relative to index.html, so we
+      # stage the two as siblings.
+      - name: Stage publish directory
+        run: |
+          mkdir -p _site
+          cp crates/aetna-web/index.html _site/
+          cp -r crates/aetna-web/pkg _site/pkg
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

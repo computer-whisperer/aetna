@@ -2,9 +2,9 @@
 #
 # Build the aetna-web wasm bundle and (optionally) serve it locally.
 #
-# Output lands in crates/aetna-web/pkg/ — the same path the
-# assets/index.html script tag imports from (`/pkg/aetna_web.js` when
-# the static server's root is crates/aetna-web/).
+# Output lands in crates/aetna-web/pkg/ — sibling to crates/aetna-web/index.html,
+# which imports `./pkg/aetna_web.js` (relative, so the same file works whether
+# served from the crate root locally or under a GitHub Pages subpath).
 #
 # Usage:
 #   tools/build_web.sh             # release build (default — dev wasm is too
@@ -51,7 +51,7 @@ echo "==> wasm bundle written to crates/aetna-web/pkg/"
 
 if [[ "$SERVE" -eq 1 ]]; then
     echo "==> serving crates/aetna-web/ on http://127.0.0.1:8083/"
-    echo "    open http://127.0.0.1:8083/assets/index.html"
+    echo "    open http://127.0.0.1:8083/index.html"
     cd "$REPO_ROOT/crates/aetna-web"
     exec python3 -m http.server 8083
 fi
