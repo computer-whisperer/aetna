@@ -9,7 +9,7 @@
 //! (hover lighten / press darken / focus mix) all build on this.
 
 /// A color (RGBA8) optionally tagged with the theme token it came from.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Color {
     pub r: u8,
     pub g: u8,

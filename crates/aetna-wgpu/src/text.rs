@@ -458,14 +458,18 @@ impl TextPaint {
             .iter()
             .map(|(text, style)| (text.as_str(), style.clone()))
             .collect();
-        let shaped = self.atlas.shape_runs_with_line_height(
-            &runs_ref,
-            size,
-            line_height,
-            wrap,
-            anchor,
-            avail,
-        );
+        let shaped = {
+            aetna_core::profile_span!("paint::text::shape_runs");
+            self.atlas.shape_runs_with_line_height(
+                &runs_ref,
+                size,
+                line_height,
+                wrap,
+                anchor,
+                avail,
+            )
+        };
+        aetna_core::profile_span!("paint::text::emit_shaped");
         self.emit_shaped_glyphs(rect, scissor, &shaped, wrap, scale_factor)
     }
 

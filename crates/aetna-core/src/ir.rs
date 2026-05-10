@@ -158,7 +158,7 @@ pub enum DrawOp {
     BackdropSnapshot,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextAnchor {
     Start,
     Middle,

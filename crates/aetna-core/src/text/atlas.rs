@@ -50,11 +50,13 @@
 //! is for paint only.
 
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 
 use cosmic_text::{
     Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style, Weight, Wrap, fontdb,
 };
+use lru::LruCache;
 use swash::scale::image::{Content as SwashContent, Image as SwashImage};
 use swash::scale::{Render, ScaleContext, Source as SwashSource, StrikeWith};
 
@@ -159,7 +161,7 @@ pub struct DecorationRect {
 /// Per-run styling for attributed text shaping. Used by
 /// [`GlyphAtlas::shape_and_rasterize_runs`] to compose styled runs into
 /// one cosmic-text buffer with rich attributes.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RunStyle {
     pub family: FontFamily,
     /// Monospace face used when [`Self::mono`] is set. Independent of
@@ -353,7 +355,35 @@ pub struct GlyphAtlas {
     /// implement explicit per-codepoint stack walking if cosmic-text's
     /// implicit fallback proves inadequate).
     default_family_stack: Vec<String>,
+    /// LRU cache of cosmic-text shaping output keyed by all inputs to
+    /// `shape_runs_inner`. Sibling to the `metrics::SHAPE_CACHE` for
+    /// the layout-side `TextLayout` cache, but living *here* because
+    /// the atlas owns its own `FontSystem` separate from metrics' —
+    /// glyph IDs in [`ShapedRun`] are bound to *this* `font_system`'s
+    /// `fontdb::ID`s. Only the non-rasterizing path
+    /// (`shape_runs_with_line_height`) hits the cache;
+    /// `shape_and_rasterize_runs` has atlas-mutation side effects we
+    /// can't replay from a cached value, so it bypasses.
+    shape_cache: LruCache<ShapeRunKey, ShapedRun>,
 }
+
+/// Cache key for [`GlyphAtlas::shape_runs_inner`]. Captures every
+/// input that influences the produced [`ShapedRun`]; floats are stored
+/// as `to_bits` so they participate in `Hash` / `Eq` directly.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct ShapeRunKey {
+    runs: Vec<(Box<str>, RunStyle)>,
+    size_bits: u32,
+    line_h_bits: u32,
+    wrap: TextWrap,
+    anchor: TextAnchor,
+    available_width_bits: Option<u32>,
+}
+
+/// Bounded — see `metrics::SHAPE_CACHE_CAPACITY` for the matching
+/// rationale. The atlas is owned by the backend, so the cache lives on
+/// the atlas instance rather than thread-local.
+const SHAPE_RUN_CACHE_CAPACITY: usize = 1024;
 
 #[derive(Copy, Clone)]
 struct ShapeRunOptions {
@@ -385,6 +415,7 @@ impl GlyphAtlas {
             map: HashMap::new(),
             color_font_cache: HashMap::new(),
             default_family_stack: vec![DEFAULT_SANS_FAMILY.to_string()],
+            shape_cache: LruCache::new(NonZeroUsize::new(SHAPE_RUN_CACHE_CAPACITY).unwrap()),
         }
     }
 
@@ -586,6 +617,51 @@ impl GlyphAtlas {
     }
 
     fn shape_runs_inner(
+        &mut self,
+        runs: &[(&str, RunStyle)],
+        size: f32,
+        options: ShapeRunOptions,
+    ) -> ShapedRun {
+        let ShapeRunOptions {
+            line_h,
+            wrap,
+            anchor,
+            available_width,
+            rasterize_into_color_atlas,
+        } = options;
+        // Cache by full shaping inputs. Most UI text is re-shaped every
+        // frame with identical params (label text, size, family, weight,
+        // color); without this, paint repeats cosmic shape work that
+        // doesn't change frame-to-frame. Sibling to
+        // `metrics::SHAPE_CACHE`. We only cache the non-rasterizing
+        // path — `rasterize_into_color_atlas == true` mutates the
+        // color-bitmap atlas as a side effect of shaping, and a cache
+        // hit can't replay those mutations. The other path (used for
+        // attributed inlines that bake colour glyphs alongside shape)
+        // doesn't dominate frames, so leaving it uncached is fine.
+        if !rasterize_into_color_atlas {
+            let key = ShapeRunKey {
+                runs: runs
+                    .iter()
+                    .map(|(text, style)| (Box::from(*text), style.clone()))
+                    .collect(),
+                size_bits: size.to_bits(),
+                line_h_bits: line_h.to_bits(),
+                wrap,
+                anchor,
+                available_width_bits: available_width.map(f32::to_bits),
+            };
+            if let Some(cached) = self.shape_cache.get(&key).cloned() {
+                return cached;
+            }
+            let shaped = self.shape_runs_compute(runs, size, options);
+            self.shape_cache.put(key, shaped.clone());
+            return shaped;
+        }
+        self.shape_runs_compute(runs, size, options)
+    }
+
+    fn shape_runs_compute(
         &mut self,
         runs: &[(&str, RunStyle)],
         size: f32,
