@@ -122,6 +122,50 @@ impl Sides {
         }
     }
 
+    /// Left-only padding — sets `left` to `v`, leaves the other three
+    /// at `0`. Mirrors Tailwind's `pl-N` and [`Corners::left`].
+    pub const fn left(v: f32) -> Self {
+        Self {
+            left: v,
+            right: 0.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Right-only padding — sets `right` to `v`, leaves the other three
+    /// at `0`. Mirrors Tailwind's `pr-N` and [`Corners::right`].
+    pub const fn right(v: f32) -> Self {
+        Self {
+            left: 0.0,
+            right: v,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Top-only padding — sets `top` to `v`, leaves the other three
+    /// at `0`. Mirrors Tailwind's `pt-N` and [`Corners::top`].
+    pub const fn top(v: f32) -> Self {
+        Self {
+            left: 0.0,
+            right: 0.0,
+            top: v,
+            bottom: 0.0,
+        }
+    }
+
+    /// Bottom-only padding — sets `bottom` to `v`, leaves the other
+    /// three at `0`. Mirrors Tailwind's `pb-N` and [`Corners::bottom`].
+    pub const fn bottom(v: f32) -> Self {
+        Self {
+            left: 0.0,
+            right: 0.0,
+            top: 0.0,
+            bottom: v,
+        }
+    }
+
     pub const fn zero() -> Self {
         Self::all(0.0)
     }

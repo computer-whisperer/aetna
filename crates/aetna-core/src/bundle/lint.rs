@@ -551,6 +551,10 @@ fn walk(
     // Overflow: child rect extends past parent. Scrollable parents
     // overflow their content on the main axis by design — that's the
     // whole point — so don't flag children of a scroll viewport.
+    // `clip=true` is the general "this container handles overflow by
+    // visually truncating" signal — text_input clips its inner group,
+    // diff split halves clip at the half boundary, code blocks clip
+    // long lines, etc. Author intent here is explicit, so suppress.
     // Inlines parents intentionally zero-size their children (the
     // paragraph paints them as one AttributedText), so per-child rect
     // checks would always fire — suppress. The runtime-synthesized
@@ -559,6 +563,7 @@ fn walk(
     // children naturally extend past the layer's bounds — also
     // suppress.
     let suppress_overflow = n.scrollable
+        || n.clip
         || matches!(n.kind, Kind::Inlines)
         || matches!(n.kind, Kind::Custom("toast_stack"));
 
