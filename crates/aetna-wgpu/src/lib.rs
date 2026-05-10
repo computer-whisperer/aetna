@@ -733,44 +733,51 @@ impl Runner {
 
         // GPU upload — wgpu-specific. Resize the instance buffer if
         // needed, then write quad_scratch + frame uniforms + flush text
-        // atlas dirty regions.
-        let t_paint_end = Instant::now();
-        if self.core.quad_scratch.len() > self.instance_capacity {
-            let new_cap = self.core.quad_scratch.len().next_power_of_two();
-            self.instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("aetna_wgpu::instance_buf (resized)"),
-                size: (new_cap * std::mem::size_of::<QuadInstance>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            self.instance_capacity = new_cap;
+        // atlas dirty regions. Wrapped in its own scope so the
+        // `prepare::gpu_upload` span doesn't bleed into the subsequent
+        // `snapshot` call (which carries its own span).
+        {
+            aetna_core::profile_span!("prepare::gpu_upload");
+            let t_paint_end = Instant::now();
+            if self.core.quad_scratch.len() > self.instance_capacity {
+                let new_cap = self.core.quad_scratch.len().next_power_of_two();
+                self.instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("aetna_wgpu::instance_buf (resized)"),
+                    size: (new_cap * std::mem::size_of::<QuadInstance>()) as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                self.instance_capacity = new_cap;
+            }
+            if !self.core.quad_scratch.is_empty() {
+                queue.write_buffer(
+                    &self.instance_buf,
+                    0,
+                    bytemuck::cast_slice(&self.core.quad_scratch),
+                );
+            }
+            self.text_paint.flush(device, queue);
+            self.icon_paint.flush(device, queue);
+            self.image_paint.flush(device, queue);
+            self.surface_paint.flush(device, queue);
+            // Pin time to 0 in Settled mode so headless fixtures rendering
+            // a time-driven shader (e.g. stock::spinner) stay byte-identical
+            // run-to-run, the same way `Animation::settle()` makes the
+            // spring/tween path deterministic for SVG/PNG snapshots.
+            let time = match self.core.ui_state().animation_mode() {
+                aetna_core::AnimationMode::Settled => 0.0,
+                aetna_core::AnimationMode::Live => {
+                    (Instant::now() - self.start_time).as_secs_f32()
+                }
+            };
+            let frame = FrameUniforms {
+                viewport: [viewport.w, viewport.h],
+                time,
+                scale_factor,
+            };
+            queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
+            timings.gpu_upload = Instant::now() - t_paint_end;
         }
-        if !self.core.quad_scratch.is_empty() {
-            queue.write_buffer(
-                &self.instance_buf,
-                0,
-                bytemuck::cast_slice(&self.core.quad_scratch),
-            );
-        }
-        self.text_paint.flush(device, queue);
-        self.icon_paint.flush(device, queue);
-        self.image_paint.flush(device, queue);
-        self.surface_paint.flush(device, queue);
-        // Pin time to 0 in Settled mode so headless fixtures rendering
-        // a time-driven shader (e.g. stock::spinner) stay byte-identical
-        // run-to-run, the same way `Animation::settle()` makes the
-        // spring/tween path deterministic for SVG/PNG snapshots.
-        let time = match self.core.ui_state().animation_mode() {
-            aetna_core::AnimationMode::Settled => 0.0,
-            aetna_core::AnimationMode::Live => (Instant::now() - self.start_time).as_secs_f32(),
-        };
-        let frame = FrameUniforms {
-            viewport: [viewport.w, viewport.h],
-            time,
-            scale_factor,
-        };
-        queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&frame));
-        timings.gpu_upload = Instant::now() - t_paint_end;
 
         // Snapshot the laid-out tree for next-frame hit-testing.
         self.core.snapshot(root, &mut timings);

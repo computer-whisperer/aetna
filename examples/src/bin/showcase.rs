@@ -199,6 +199,13 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // `--profile <output.json>` attaches a `tracing-chrome` subscriber
+    // for the lifetime of the run; the JSON is loadable in
+    // chrome://tracing or perfetto. Compiled out unless the binary is
+    // built with `--features profiling`. Drops to a clear error when
+    // the flag is passed without the feature.
+    let _profile_guard = install_profiling()?;
+
     let viewport = Rect::new(0.0, 0.0, 900.0, 640.0);
     // No HostConfig::with_redraw_interval here — the Media page's
     // animated surface tile carries `redraw_within(16ms)` directly,
@@ -207,4 +214,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // widget asks for a future frame (e.g. when the user navigates
     // to a different Media-page section).
     aetna_winit_wgpu::run_host_app("Aetna — showcase", viewport, AnimatedShowcase::new())
+}
+
+#[cfg(feature = "profiling")]
+fn install_profiling() -> Result<Option<tracing_chrome::FlushGuard>, Box<dyn std::error::Error>> {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    let mut args = std::env::args().skip(1);
+    let mut output: Option<String> = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--profile" => {
+                output = Some(args.next().ok_or("--profile expects a path argument")?);
+            }
+            other if other.starts_with("--profile=") => {
+                output = Some(other.trim_start_matches("--profile=").to_string());
+            }
+            _ => {}
+        }
+    }
+    let Some(path) = output else {
+        return Ok(None);
+    };
+
+    let (chrome_layer, guard) = tracing_chrome::ChromeLayerBuilder::new()
+        .file(&path)
+        .include_args(true)
+        .build();
+    tracing_subscriber::registry().with(chrome_layer).init();
+    eprintln!("aetna-showcase: tracing chrome JSON → {path} (load in chrome://tracing or perfetto)");
+    Ok(Some(guard))
+}
+
+#[cfg(not(feature = "profiling"))]
+fn install_profiling() -> Result<Option<()>, Box<dyn std::error::Error>> {
+    if std::env::args().any(|a| a == "--profile" || a.starts_with("--profile=")) {
+        return Err(
+            "--profile passed but the binary was built without `--features profiling`. \
+             Rebuild with `cargo run -p aetna-examples --bin showcase --features profiling -- --profile out.json`."
+                .into(),
+        );
+    }
+    Ok(None)
 }

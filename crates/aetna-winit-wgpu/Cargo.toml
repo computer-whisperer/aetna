@@ -22,3 +22,10 @@ aetna-wgpu = { version = "0.3.1", path = "../aetna-wgpu" }
 pollster = "0.4"
 wgpu = "29"
 winit = "0.30"
+
+[features]
+# Forwards to `aetna-core/profiling` and `aetna-wgpu/profiling`. Off by
+# default. When on, the host emits `frame::build` / `frame::prepare` /
+# `frame::submit` spans alongside the per-phase spans inside the
+# renderer. Hosts attach their own subscriber (e.g. `tracing-chrome`).
+profiling = ["aetna-core/profiling", "aetna-wgpu/profiling"]

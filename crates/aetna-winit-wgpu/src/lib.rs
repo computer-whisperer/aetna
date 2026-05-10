@@ -668,40 +668,47 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         // 3D viewports, video frames) push pixels to
                         // the queue here, before paint records draws
                         // that sample those textures.
-                        self.app.before_paint(&gfx.queue);
-                        WinitWgpuApp::before_build(&mut self.app);
-                        let theme = self.app.theme();
-                        let cx =
-                            aetna_core::BuildCx::new(&theme).with_ui_state(gfx.renderer.ui_state());
-                        let mut tree = self.app.build(&cx);
-                        let palette = theme.palette().clone();
-                        gfx.renderer.set_theme(theme);
-                        // Snapshot hotkeys alongside build() so the chord list
-                        // reflects current state (apps can return different
-                        // hotkeys per mode, e.g. `j/k` only in list view).
-                        gfx.renderer.set_hotkeys(self.app.hotkeys());
-                        gfx.renderer.set_selection(self.app.selection());
-                        // Drain any toasts the app accumulated since
-                        // the last frame and queue them onto the
-                        // runtime's toast stack. The synthesize pass
-                        // inside `prepare` then renders the layer.
-                        gfx.renderer.push_toasts(self.app.drain_toasts());
-                        // Window is configured at physical size; layout works
-                        // in logical pixels so divide by the OS-reported scale.
-                        let scale_factor = gfx.window.scale_factor() as f32;
-                        let viewport = Rect::new(
-                            0.0,
-                            0.0,
-                            gfx.config.width as f32 / scale_factor,
-                            gfx.config.height as f32 / scale_factor,
-                        );
-                        let prepare = gfx.renderer.prepare(
-                            &gfx.device,
-                            &gfx.queue,
-                            &mut tree,
-                            viewport,
-                            scale_factor,
-                        );
+                        let (mut tree, palette, scale_factor, viewport) = {
+                            aetna_core::profile_span!("frame::build");
+                            self.app.before_paint(&gfx.queue);
+                            WinitWgpuApp::before_build(&mut self.app);
+                            let theme = self.app.theme();
+                            let cx = aetna_core::BuildCx::new(&theme)
+                                .with_ui_state(gfx.renderer.ui_state());
+                            let tree = self.app.build(&cx);
+                            let palette = theme.palette().clone();
+                            gfx.renderer.set_theme(theme);
+                            // Snapshot hotkeys alongside build() so the chord list
+                            // reflects current state (apps can return different
+                            // hotkeys per mode, e.g. `j/k` only in list view).
+                            gfx.renderer.set_hotkeys(self.app.hotkeys());
+                            gfx.renderer.set_selection(self.app.selection());
+                            // Drain any toasts the app accumulated since
+                            // the last frame and queue them onto the
+                            // runtime's toast stack. The synthesize pass
+                            // inside `prepare` then renders the layer.
+                            gfx.renderer.push_toasts(self.app.drain_toasts());
+                            // Window is configured at physical size; layout works
+                            // in logical pixels so divide by the OS-reported scale.
+                            let scale_factor = gfx.window.scale_factor() as f32;
+                            let viewport = Rect::new(
+                                0.0,
+                                0.0,
+                                gfx.config.width as f32 / scale_factor,
+                                gfx.config.height as f32 / scale_factor,
+                            );
+                            (tree, palette, scale_factor, viewport)
+                        };
+                        let prepare = {
+                            aetna_core::profile_span!("frame::prepare");
+                            gfx.renderer.prepare(
+                                &gfx.device,
+                                &gfx.queue,
+                                &mut tree,
+                                viewport,
+                                scale_factor,
+                            )
+                        };
 
                         // Resolve the pointer cursor against the laid-out
                         // tree (computed_ids are now valid) and push it to
@@ -714,26 +721,29 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             self.last_cursor = cursor;
                         }
 
-                        let mut encoder =
-                            gfx.device
-                                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        {
+                            aetna_core::profile_span!("frame::submit");
+                            let mut encoder = gfx.device.create_command_encoder(
+                                &wgpu::CommandEncoderDescriptor {
                                     label: Some("aetna_winit_wgpu::encoder"),
-                                });
-                        // `render()` owns pass lifetimes itself so it can split
-                        // around `BackdropSnapshot` boundaries when the app
-                        // uses backdrop-sampling shaders. With no boundary it
-                        // collapses to a single pass — same behaviour as the
-                        // old `draw(pass)` path.
-                        gfx.renderer.render(
-                            &gfx.device,
-                            &mut encoder,
-                            &frame.texture,
-                            &view,
-                            gfx.msaa.as_ref().map(|msaa| &msaa.view),
-                            wgpu::LoadOp::Clear(bg_color(&palette)),
-                        );
-                        gfx.queue.submit(Some(encoder.finish()));
-                        frame.present();
+                                },
+                            );
+                            // `render()` owns pass lifetimes itself so it can split
+                            // around `BackdropSnapshot` boundaries when the app
+                            // uses backdrop-sampling shaders. With no boundary it
+                            // collapses to a single pass — same behaviour as the
+                            // old `draw(pass)` path.
+                            gfx.renderer.render(
+                                &gfx.device,
+                                &mut encoder,
+                                &frame.texture,
+                                &view,
+                                gfx.msaa.as_ref().map(|msaa| &msaa.view),
+                                wgpu::LoadOp::Clear(bg_color(&palette)),
+                            );
+                            gfx.queue.submit(Some(encoder.finish()));
+                            frame.present();
+                        }
 
                         // Inside-out redraw scheduling: Aetna folds
                         // every visible widget's `redraw_within`

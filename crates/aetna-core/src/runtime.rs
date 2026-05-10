@@ -1033,26 +1033,32 @@ impl RunnerCore {
         // layers. The subsequent `layout::layout` call re-assigns
         // (idempotently — same path shapes produce the same ids) and
         // lays out the appended layers alongside everything else.
-        layout::assign_ids(root);
-        let tooltip_pending = tooltip::synthesize_tooltip(root, &self.ui_state, t0);
-        let toast_pending = toast::synthesize_toasts(root, &mut self.ui_state, t0);
-        self.theme.apply_metrics(root);
-        layout::layout(root, &mut self.ui_state, viewport);
-        self.ui_state.sync_focus_order(root);
-        self.ui_state.sync_selection_order(root);
-        focus::sync_popover_focus(root, &mut self.ui_state);
-        self.ui_state.apply_to_state();
-        let mut needs_redraw = self.ui_state.tick_visual_animations(root, Instant::now())
-            || tooltip_pending
-            || toast_pending;
-        self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
-            (
-                (viewport.w * scale_factor).ceil().max(1.0) as u32,
-                (viewport.h * scale_factor).ceil().max(1.0) as u32,
-            )
-        });
+        let mut needs_redraw = {
+            crate::profile_span!("prepare::layout");
+            layout::assign_ids(root);
+            let tooltip_pending = tooltip::synthesize_tooltip(root, &self.ui_state, t0);
+            let toast_pending = toast::synthesize_toasts(root, &mut self.ui_state, t0);
+            self.theme.apply_metrics(root);
+            layout::layout(root, &mut self.ui_state, viewport);
+            self.ui_state.sync_focus_order(root);
+            self.ui_state.sync_selection_order(root);
+            focus::sync_popover_focus(root, &mut self.ui_state);
+            self.ui_state.apply_to_state();
+            self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
+                (
+                    (viewport.w * scale_factor).ceil().max(1.0) as u32,
+                    (viewport.h * scale_factor).ceil().max(1.0) as u32,
+                )
+            });
+            self.ui_state.tick_visual_animations(root, Instant::now())
+                || tooltip_pending
+                || toast_pending
+        };
         let t_after_layout = Instant::now();
-        let ops = draw_ops::draw_ops_with_theme(root, &self.ui_state, &self.theme);
+        let ops = {
+            crate::profile_span!("prepare::draw_ops");
+            draw_ops::draw_ops_with_theme(root, &self.ui_state, &self.theme)
+        };
         let t_after_draw_ops = Instant::now();
         timings.layout = t_after_layout - t0;
         timings.draw_ops = t_after_draw_ops - t_after_layout;
@@ -1120,6 +1126,7 @@ impl RunnerCore {
         F1: Fn(&ShaderHandle) -> bool,
         F2: Fn(&ShaderHandle) -> bool,
     {
+        crate::profile_span!("prepare::paint");
         let t0 = Instant::now();
         self.quad_scratch.clear();
         self.runs.clear();
@@ -1445,6 +1452,7 @@ impl RunnerCore {
     /// flush, etc.) so the snapshot reflects final geometry. Writes
     /// `timings.snapshot`.
     pub fn snapshot(&mut self, root: &El, timings: &mut PrepareTimings) {
+        crate::profile_span!("prepare::snapshot");
         let t0 = Instant::now();
         self.last_tree = Some(root.clone());
         timings.snapshot = Instant::now() - t0;

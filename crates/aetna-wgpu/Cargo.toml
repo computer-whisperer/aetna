@@ -33,6 +33,13 @@ web-time = "1"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "29", features = ["fragile-send-sync-non-atomic-wasm"] }
 
+[features]
+# Forwards to `aetna-core/profiling`. Off by default; flip on to enable
+# `profile_span!` inside the wgpu backend's per-frame paths
+# (`prepare::gpu_upload`) and let downstream hosts attach a
+# tracing subscriber. See `aetna_core::profile`.
+profiling = ["aetna-core/profiling"]
+
 [dev-dependencies]
 png = "0.18"
 pollster = "0.4"

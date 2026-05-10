@@ -28,6 +28,9 @@ lyon_tessellation = "1.0.20"
 nalgebra = { version = "0.34", default-features = false, features = ["std"] }
 swash = "0.2"
 ttf-parser = "0.25.1"
+# Optional — pulled in only when the `profiling` feature is on.
+# Drives the `profile_span!` macro; off-builds compile away to ().
+tracing = { version = "0.1", optional = true }
 usvg = { version = "0.47.0", default-features = false }
 # `Instant` that works on wasm32 (browser has no monotonic clock; std's
 # Instant::now() panics). API-identical to std::time::Instant on native.
@@ -35,6 +38,13 @@ web-time = "1"
 
 [features]
 default = ["default_fonts"]
+# Lights up the `profile_span!` macro across aetna-core (and any
+# downstream crate that mirrors the feature). When off, every span call
+# expands to `()` and the `tracing` dep is not pulled in — release
+# builds carry zero overhead. When on, spans nest naturally and a host
+# subscriber (typically `tracing-chrome` for chrome://tracing /
+# perfetto) receives them. See `aetna_core::profile`.
+profiling = ["dep:tracing"]
 # Bundle aetna-fonts' default font set (Inter + JetBrains Mono +
 # NotoColorEmoji + Symbols2 + Math) into the binary. Disable to ship
 # your own fonts via `register_font`. The per-format features below are

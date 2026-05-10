@@ -56,6 +56,7 @@ pub mod metrics;
 pub mod paint;
 pub mod palette;
 pub mod prelude;
+pub mod profile;
 #[doc(hidden)]
 pub mod runtime;
 pub mod selection;

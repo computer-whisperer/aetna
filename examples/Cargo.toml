@@ -14,6 +14,21 @@ aetna-fixtures = { version = "0.3.1", path = "../crates/aetna-fixtures" }
 aetna-wgpu = { version = "0.3.1", path = "../crates/aetna-wgpu" }
 aetna-winit-wgpu = { version = "0.3.1", path = "../crates/aetna-winit-wgpu" }
 wgpu = "29"
+# Off by default. The `profiling` feature pulls these in and forwards
+# `aetna-winit-wgpu/profiling` (which transitively turns on the wgpu
+# backend + core spans). The showcase binary's `--profile <path>` flag
+# attaches `tracing-chrome` and writes a chrome://tracing JSON.
+tracing = { version = "0.1", optional = true }
+tracing-chrome = { version = "0.7", optional = true }
+tracing-subscriber = { version = "0.3", optional = true }
+
+[features]
+profiling = [
+    "dep:tracing",
+    "dep:tracing-chrome",
+    "dep:tracing-subscriber",
+    "aetna-winit-wgpu/profiling",
+]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # `wayland-data-control` is required so arboard talks to native
