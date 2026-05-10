@@ -211,7 +211,6 @@ fn build_text_area(key: &str, value: &str, view: Option<TextSelection>) -> El {
         .child(viewport)
 }
 
-
 fn caret_bar() -> El {
     El::new(Kind::Custom("text_area_caret"))
         .style_profile(StyleProfile::Solid)
@@ -252,7 +251,10 @@ fn text_area_geometry(value: &str) -> TextGeometry<'_> {
 /// and only while drag events keep arriving — a perfectly still
 /// pointer past the edge won't continue scrolling. Pumping a redraw
 /// timer for hold-still autoscroll is a future improvement.
-pub fn drag_autoscroll_request_for(event: &UiEvent, key: &str) -> Option<crate::scroll::ScrollRequest> {
+pub fn drag_autoscroll_request_for(
+    event: &UiEvent,
+    key: &str,
+) -> Option<crate::scroll::ScrollRequest> {
     if !matches!(event.kind, UiEventKind::Drag) {
         return None;
     }
@@ -902,13 +904,14 @@ mod tests {
         // way an app's `drain_scroll_requests` would, and assert the
         // inner scroll's offset shifted to expose the caret line.
         let value = (0..40).map(|i| format!("line {i}\n")).collect::<String>();
-        let mut sel = Selection::default();
         // Caret near the end of the body, in the bottom third.
         let caret_byte = clamp_to_char_boundary(&value, value.len() - 1);
-        sel.range = Some(SelectionRange {
-            anchor: SelectionPoint::new(TEST_KEY, caret_byte),
-            head: SelectionPoint::new(TEST_KEY, caret_byte),
-        });
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new(TEST_KEY, caret_byte),
+                head: SelectionPoint::new(TEST_KEY, caret_byte),
+            }),
+        };
         let mut root = super::text_area(&value, &sel, TEST_KEY)
             .height(Size::Fixed(80.0))
             .width(Size::Fixed(240.0));
@@ -950,11 +953,12 @@ mod tests {
         // we mustn't generate a scroll-into-view for this area —
         // typing in widget A shouldn't pull widget B's scroll back to
         // its caret.
-        let mut sel = Selection::default();
-        sel.range = Some(SelectionRange {
-            anchor: SelectionPoint::new("other", 0),
-            head: SelectionPoint::new("other", 0),
-        });
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("other", 0),
+                head: SelectionPoint::new("other", 0),
+            }),
+        };
         assert!(caret_scroll_request_for("hello\nworld", &sel, TEST_KEY).is_none());
     }
 
@@ -965,12 +969,13 @@ mod tests {
         // request every frame would snap the scroll back to the
         // caret after a manual wheel.
         let value = (0..40).map(|i| format!("line {i}\n")).collect::<String>();
-        let mut sel = Selection::default();
         // Caret on the first line (always in view at offset 0).
-        sel.range = Some(SelectionRange {
-            anchor: SelectionPoint::new(TEST_KEY, 0),
-            head: SelectionPoint::new(TEST_KEY, 0),
-        });
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new(TEST_KEY, 0),
+                head: SelectionPoint::new(TEST_KEY, 0),
+            }),
+        };
         let mut root = super::text_area(&value, &sel, TEST_KEY)
             .height(Size::Fixed(80.0))
             .width(Size::Fixed(240.0));
@@ -1110,9 +1115,7 @@ mod tests {
             .expect("drag past bottom edge should produce a scroll request");
         match req {
             crate::scroll::ScrollRequest::EnsureVisible {
-                container_key,
-                y,
-                ..
+                container_key, y, ..
             } => {
                 assert_eq!(container_key, TEST_KEY);
                 // y should be past the current viewport bottom in
@@ -1159,10 +1162,7 @@ mod tests {
         let ev = UiEvent {
             path: None,
             key: Some(target.key.clone()),
-            pointer: Some((
-                target.rect.x + tokens::SPACE_3 + 10.0,
-                target.rect.y - 20.0,
-            )),
+            pointer: Some((target.rect.x + tokens::SPACE_3 + 10.0, target.rect.y - 20.0)),
             target: Some(target),
             key_press: None,
             text: None,
@@ -1175,7 +1175,10 @@ mod tests {
             .expect("drag past top edge should produce a scroll request");
         match req {
             crate::scroll::ScrollRequest::EnsureVisible { y, .. } => {
-                assert!(y < 200.0, "should ask to expose a y above the current 200 offset");
+                assert!(
+                    y < 200.0,
+                    "should ask to expose a y above the current 200 offset"
+                );
             }
             other => panic!("expected EnsureVisible, got {other:?}"),
         }
@@ -1187,10 +1190,7 @@ mod tests {
         let ev = UiEvent {
             path: None,
             key: Some(target.key.clone()),
-            pointer: Some((
-                target.rect.x,
-                target.rect.bottom() + 50.0,
-            )),
+            pointer: Some((target.rect.x, target.rect.bottom() + 50.0)),
             target: Some(target),
             key_press: None,
             text: None,

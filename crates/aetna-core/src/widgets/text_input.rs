@@ -2114,8 +2114,12 @@ mod tests {
         // rect).
         use crate::tree::Size;
         let value = "abcdefghijklmnopqrstuvwxyz0123456789".repeat(2);
-        let mut root = super::text_input(&value, &as_selection_in("ti", TextSelection::caret(value.len())), "ti")
-            .width(Size::Fixed(120.0));
+        let mut root = super::text_input(
+            &value,
+            &as_selection_in("ti", TextSelection::caret(value.len())),
+            "ti",
+        )
+        .width(Size::Fixed(120.0));
         let mut ui_state = crate::state::UiState::new();
         crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 120.0, 40.0));
 
@@ -2147,8 +2151,9 @@ mod tests {
         // x_offset is applied and the text leaf sits at the
         // inner's content origin.
         use crate::tree::Size;
-        let mut root = super::text_input("hi", &as_selection_in("ti", TextSelection::caret(2)), "ti")
-            .width(Size::Fixed(120.0));
+        let mut root =
+            super::text_input("hi", &as_selection_in("ti", TextSelection::caret(2)), "ti")
+                .width(Size::Fixed(120.0));
         let mut ui_state = crate::state::UiState::new();
         crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 120.0, 40.0));
 

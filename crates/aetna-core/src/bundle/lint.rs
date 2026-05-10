@@ -305,13 +305,12 @@ fn walk(
                 kind: FindingKind::DeadTooltip,
                 node_id: n.computed_id.clone(),
                 source: n.source,
-                message:
-                    ".tooltip() on a node without .key() never fires — hit-test only \
+                message: ".tooltip() on a node without .key() never fires — hit-test only \
                      returns keyed nodes, so hover skips past this leaf to the nearest \
                      keyed ancestor. Add .key(\"…\") on the same node that carries the \
                      tooltip; for info-only chrome inside list rows, a synthetic key \
                      like \"row:{idx}.<part>\" is enough."
-                        .to_string(),
+                    .to_string(),
             });
         }
 
@@ -2088,10 +2087,8 @@ mod tests {
         // tooltip lookup is by the hit target's `computed_id`, not
         // by walking ancestors. So the leaf's tooltip still never
         // fires. Flag it.
-        let root = crate::row([
-            crate::text("inner detail").tooltip("never shown"),
-        ])
-        .key("outer-row");
+        let root =
+            crate::row([crate::text("inner detail").tooltip("never shown")]).key("outer-row");
 
         let report = lint_one(root);
 

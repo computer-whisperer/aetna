@@ -120,12 +120,11 @@ impl App for Notes {
     fn drain_scroll_requests(&mut self) -> Vec<aetna_core::scroll::ScrollRequest> {
         let mut out: Vec<aetna_core::scroll::ScrollRequest> =
             std::mem::take(&mut self.pending_scroll_requests);
-        if std::mem::take(&mut self.scroll_caret_into_view) {
-            if let Some(req) =
+        if std::mem::take(&mut self.scroll_caret_into_view)
+            && let Some(req) =
                 text_area::caret_scroll_request_for(&self.body, &self.selection, BODY_KEY)
-            {
-                out.push(req);
-            }
+        {
+            out.push(req);
         }
         out
     }
