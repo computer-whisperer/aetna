@@ -1035,24 +1035,53 @@ impl RunnerCore {
         // lays out the appended layers alongside everything else.
         let mut needs_redraw = {
             crate::profile_span!("prepare::layout");
-            layout::assign_ids(root);
-            let tooltip_pending = tooltip::synthesize_tooltip(root, &self.ui_state, t0);
-            let toast_pending = toast::synthesize_toasts(root, &mut self.ui_state, t0);
-            self.theme.apply_metrics(root);
-            layout::layout(root, &mut self.ui_state, viewport);
-            self.ui_state.sync_focus_order(root);
-            self.ui_state.sync_selection_order(root);
-            focus::sync_popover_focus(root, &mut self.ui_state);
-            self.ui_state.apply_to_state();
+            {
+                crate::profile_span!("prepare::layout::assign_ids");
+                layout::assign_ids(root);
+            }
+            let tooltip_pending = {
+                crate::profile_span!("prepare::layout::tooltip");
+                tooltip::synthesize_tooltip(root, &self.ui_state, t0)
+            };
+            let toast_pending = {
+                crate::profile_span!("prepare::layout::toast");
+                toast::synthesize_toasts(root, &mut self.ui_state, t0)
+            };
+            {
+                crate::profile_span!("prepare::layout::apply_metrics");
+                self.theme.apply_metrics(root);
+            }
+            {
+                crate::profile_span!("prepare::layout::layout");
+                layout::layout(root, &mut self.ui_state, viewport);
+            }
+            {
+                crate::profile_span!("prepare::layout::sync_focus_order");
+                self.ui_state.sync_focus_order(root);
+            }
+            {
+                crate::profile_span!("prepare::layout::sync_selection_order");
+                self.ui_state.sync_selection_order(root);
+            }
+            {
+                crate::profile_span!("prepare::layout::sync_popover_focus");
+                focus::sync_popover_focus(root, &mut self.ui_state);
+            }
+            {
+                crate::profile_span!("prepare::layout::apply_state");
+                self.ui_state.apply_to_state();
+            }
             self.viewport_px = self.surface_size_override.unwrap_or_else(|| {
                 (
                     (viewport.w * scale_factor).ceil().max(1.0) as u32,
                     (viewport.h * scale_factor).ceil().max(1.0) as u32,
                 )
             });
-            self.ui_state.tick_visual_animations(root, Instant::now())
-                || tooltip_pending
-                || toast_pending
+            let animations = {
+                crate::profile_span!("prepare::layout::tick_animations");
+                self.ui_state.tick_visual_animations(root, Instant::now())
+            };
+            animations || tooltip_pending || toast_pending
         };
         let t_after_layout = Instant::now();
         let ops = {

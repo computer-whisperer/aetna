@@ -204,18 +204,22 @@ pub struct LayoutCtx<'a> {
 
 /// Lay out the whole tree into the given viewport rect.
 pub fn layout(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
-    assign_id(root, "root");
-    ui_state
-        .layout
-        .computed_rects
-        .insert(root.computed_id.clone(), viewport);
-    rebuild_key_index(root, ui_state);
-    // Per-scrollable scratch is rebuilt every layout — entries for
-    // scrollables that disappeared mid-frame must not leave stale
-    // thumb rects behind for hit-test or paint to find.
-    ui_state.scroll.metrics.clear();
-    ui_state.scroll.thumb_rects.clear();
-    ui_state.scroll.thumb_tracks.clear();
+    {
+        crate::profile_span!("layout::root_setup");
+        assign_id(root, "root");
+        ui_state
+            .layout
+            .computed_rects
+            .insert(root.computed_id.clone(), viewport);
+        rebuild_key_index(root, ui_state);
+        // Per-scrollable scratch is rebuilt every layout — entries for
+        // scrollables that disappeared mid-frame must not leave stale
+        // thumb rects behind for hit-test or paint to find.
+        ui_state.scroll.metrics.clear();
+        ui_state.scroll.thumb_rects.clear();
+        ui_state.scroll.thumb_tracks.clear();
+    }
+    crate::profile_span!("layout::children");
     layout_children(root, viewport, ui_state);
 }
 
@@ -715,11 +719,13 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
     let main_extent = if vertical { inner.h } else { inner.w };
     let cross_extent = if vertical { inner.w } else { inner.h };
 
-    let intrinsics: Vec<(f32, f32)> = node
-        .children
-        .iter()
-        .map(|c| child_intrinsic(c, vertical, cross_extent, node.align))
-        .collect();
+    let intrinsics: Vec<(f32, f32)> = {
+        crate::profile_span!("layout::axis::intrinsics");
+        node.children
+            .iter()
+            .map(|c| child_intrinsic(c, vertical, cross_extent, node.align))
+            .collect()
+    };
 
     let mut consumed = 0.0;
     let mut fill_weight_total = 0.0;
@@ -752,6 +758,7 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
             0.0
         };
 
+    crate::profile_span!("layout::axis::place");
     for (i, (c, (iw, ih))) in node.children.iter_mut().zip(intrinsics).enumerate() {
         let main_size = match main_size_of(c, iw, ih, vertical) {
             MainSize::Resolved(v) => v,
