@@ -2,7 +2,7 @@
 
 /// Font weight. The renderer maps these to font-loading or to
 /// font-weight CSS / SVG attributes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum FontWeight {
     #[default]
     Regular,
@@ -17,7 +17,7 @@ pub enum FontWeight {
 /// role (`Theme::font_family`, `Theme::mono_font_family`), and any
 /// run can override per-node via `.font_family(...)` /
 /// `.mono_font_family(...)`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum FontFamily {
     /// Inter Variable, the closest bundled match for modern shadcn /
@@ -65,7 +65,7 @@ pub enum TextAlign {
     End,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum TextWrap {
     #[default]
     NoWrap,

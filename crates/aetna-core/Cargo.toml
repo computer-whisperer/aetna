@@ -24,6 +24,12 @@ fdsm = "0.8"
 fdsm-ttf-parser = "0.2"
 image = { version = "0.25", default-features = false }
 kurbo = "0.13"
+# Bounded LRU cache for shaped `TextLayout`s. Without it, every text
+# node in the tree triggers a fresh cosmic-text shape on each frame
+# (twice per intrinsic call) — reshaping the same labels over and over
+# was a measurable share of the layout pass. Cache hit avoids buffer
+# alloc, set_text, shape, and the layout-runs walk.
+lru = "0.18"
 lyon_tessellation = "1.0.20"
 nalgebra = { version = "0.34", default-features = false, features = ["std"] }
 # FxHash via rustc-hash for the per-frame side maps (computed_rects,

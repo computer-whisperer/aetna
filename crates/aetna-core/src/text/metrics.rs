@@ -12,7 +12,9 @@ use crate::tree::{FontFamily, FontWeight, TextWrap};
 use cosmic_text::{
     Attrs, Buffer, Cursor, Family, FontSystem, Metrics, Shaping, Weight, Wrap, fontdb,
 };
+use lru::LruCache;
 use std::cell::RefCell;
+use std::num::NonZeroUsize;
 
 const MONO_CHAR_WIDTH_FACTOR: f32 = 0.62;
 
@@ -290,6 +292,48 @@ pub fn layout_text_with_line_height(
 
 #[allow(clippy::too_many_arguments)]
 pub fn layout_text_with_line_height_and_family(
+    text: &str,
+    size: f32,
+    line_height: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    mono: bool,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> TextLayout {
+    // Cache by full shaping inputs. The intrinsic measurement pass
+    // walks subtrees recursively at every flex level, so the same text
+    // node easily gets shaped 2 × tree-depth times per frame.
+    // `ellipsize_text_with_family`'s binary search adds further
+    // repetition by reshaping each candidate prefix. The cache
+    // amortizes all of that to a single hash lookup once the layout
+    // has been computed for the first time. `TextLayout` is fully
+    // owned (no borrows back into `FontSystem`), so the cached values
+    // are safe to clone out across frames. Bounded LRU keeps memory
+    // predictable; eviction is benign — the next call recomputes.
+    let key = ShapeKey {
+        text: Box::from(text),
+        size_bits: size.to_bits(),
+        line_height_bits: line_height.to_bits(),
+        family,
+        weight,
+        mono,
+        wrap,
+        available_width_bits: available_width.map(f32::to_bits),
+    };
+    if let Some(cached) = SHAPE_CACHE.with_borrow_mut(|c| c.get(&key).cloned()) {
+        return cached;
+    }
+    let layout =
+        layout_text_uncached(text, size, line_height, family, weight, mono, wrap, available_width);
+    SHAPE_CACHE.with_borrow_mut(|c| {
+        c.put(key, layout.clone());
+    });
+    layout
+}
+
+#[allow(clippy::too_many_arguments)]
+fn layout_text_uncached(
     text: &str,
     size: f32,
     line_height: f32,
@@ -1052,6 +1096,34 @@ fn layout_text_cosmic_with(
 // which is the side benefit.
 thread_local! {
     static FONT_SYSTEM: RefCell<FontSystem> = RefCell::new(bundled_font_system());
+}
+
+/// Cache key for [`layout_text_with_line_height_and_family`]. Captures
+/// every input that influences the produced [`TextLayout`]; floats are
+/// stored as `to_bits` so they participate in `Hash` / `Eq` directly.
+/// Same shape on every entry — no enum variant hidden behind a `Box`,
+/// since the lookup happens once per text node per frame and we want
+/// the fast path to be a single hash.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct ShapeKey {
+    text: Box<str>,
+    size_bits: u32,
+    line_height_bits: u32,
+    family: FontFamily,
+    weight: FontWeight,
+    mono: bool,
+    wrap: TextWrap,
+    available_width_bits: Option<u32>,
+}
+
+/// Bounded thread-local LRU of shaped layouts. 1024 is comfortably more
+/// than the ~50 distinct text labels a typical Aetna app renders per
+/// frame, plus the binary-search prefixes `ellipsize_text_with_family`
+/// produces. Eviction is benign — the next miss reshapes via cosmic.
+const SHAPE_CACHE_CAPACITY: usize = 1024;
+thread_local! {
+    static SHAPE_CACHE: RefCell<LruCache<ShapeKey, TextLayout>> =
+        RefCell::new(LruCache::new(NonZeroUsize::new(SHAPE_CACHE_CAPACITY).unwrap()));
 }
 
 fn bundled_font_system() -> FontSystem {
