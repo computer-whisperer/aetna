@@ -298,6 +298,56 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
         );
     }
 
+    // Inner container: clips horizontal overflow and applies a
+    // horizontal `x_offset` so the caret stays inside the visible
+    // viewport. Stateless — `x_offset` is computed each frame from
+    // the current `head_px` and the inner's available width.
+    //
+    // The clip lives on the inner (not the outer) so the outer's
+    // focus-ring band, which paints outside the layout rect via
+    // `paint_overflow`, isn't scissored. Same pattern as
+    // `text_area`'s stage-1 scroll viewport.
+    let inner = El::new(Kind::Group)
+        .clip()
+        .width(Size::Fill(1.0))
+        .height(Size::Fill(1.0))
+        .layout(move |ctx| {
+            // Sticky-right: when the caret would land past the
+            // right edge, slide content left so the caret sits at
+            // the right edge of the visible area. Otherwise leave
+            // it anchored at the left (x_offset = 0). Identical
+            // math to `current_x_offset` so the event-time
+            // pointer→byte mapping in `apply_event` lands on the
+            // same content column the user sees.
+            let x_offset = (head_px - ctx.container.w).max(0.0);
+            ctx.children
+                .iter()
+                .map(|c| {
+                    let (w, h) = (ctx.measure)(c);
+                    // Pick the size the actual layout pass would have
+                    // resolved: Fixed/Hug → intrinsic, Fill → fill the
+                    // available extent on that axis.
+                    let w = match c.width {
+                        Size::Fixed(v) => v,
+                        Size::Hug => w,
+                        Size::Fill(_) => ctx.container.w,
+                    };
+                    let h = match c.height {
+                        Size::Fixed(v) => v,
+                        Size::Hug => h,
+                        Size::Fill(_) => ctx.container.h,
+                    };
+                    // Vertical center inside the inner's content area
+                    // — the outer's `Justify::Center` no longer
+                    // applies here (layout_override replaces axis
+                    // distribution).
+                    let y = ctx.container.y + (ctx.container.h - h) * 0.5;
+                    Rect::new(ctx.container.x - x_offset, y, w, h)
+                })
+                .collect()
+        })
+        .children(children);
+
     El::new(Kind::Custom("text_input"))
         .at_loc(Location::caller())
         .style_profile(StyleProfile::Surface)
@@ -314,12 +364,12 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
         .stroke(tokens::BORDER)
         .default_radius(tokens::RADIUS_MD)
         .axis(Axis::Overlay)
-        .align(Align::Start) // children pin to the left edge
-        .justify(Justify::Center) // children center vertically
+        .align(Align::Start)
+        .justify(Justify::Center)
         .default_width(Size::Fill(1.0))
         .default_height(Size::Fixed(tokens::CONTROL_HEIGHT))
         .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
-        .children(children)
+        .child(inner)
 }
 
 fn caret_bar() -> El {
@@ -558,7 +608,14 @@ fn fold_event_local(
             let (Some((px, _py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
                 return false;
             };
-            let local_x = px - target.rect.x - tokens::SPACE_3;
+            // Account for the inner clip group's horizontal
+            // caret-into-view shift: with a long value scrolled
+            // past the right edge, the content the user clicks
+            // lives at `local_x + x_offset` in content space, not
+            // at raw `local_x`.
+            let viewport_w = (target.rect.w - 2.0 * tokens::SPACE_3).max(0.0);
+            let x_offset = current_x_offset(value, selection.head, viewport_w, opts.mask);
+            let local_x = px - target.rect.x - tokens::SPACE_3 + x_offset;
             let pos = caret_from_x(value, local_x, opts.mask);
             // Multi-click: 2 = select word at hit; ≥3 = select all.
             // Modifier-shift extend still wins over multi-click — it
@@ -592,7 +649,13 @@ fn fold_event_local(
             let (Some((px, _py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
                 return false;
             };
-            let local_x = px - target.rect.x - tokens::SPACE_3;
+            // Same scroll-offset adjustment as the PointerDown
+            // path above. The current `selection.head` reflects
+            // pre-event state — that's the head the rendered
+            // frame used to compute its `x_offset`.
+            let viewport_w = (target.rect.w - 2.0 * tokens::SPACE_3).max(0.0);
+            let x_offset = current_x_offset(value, selection.head, viewport_w, opts.mask);
+            let local_x = px - target.rect.x - tokens::SPACE_3 + x_offset;
             selection.head = caret_from_x(value, local_x, opts.mask);
             true
         }
@@ -760,6 +823,29 @@ pub fn caret_byte_at(value: &str, event: &UiEvent, opts: &TextInputOpts<'_>) -> 
     let target = event.target.as_ref()?;
     let local_x = px - target.rect.x - tokens::SPACE_3;
     Some(caret_from_x(value, local_x, opts.mask))
+}
+
+/// Horizontal scroll offset applied to text_input's content for
+/// caret-into-view. Mirrored between the build-time `layout_override`
+/// (where it shifts content left) and the event-time pointer-to-byte
+/// math (where it shifts the pointer's local x right to land in
+/// content coords). Stateless — derived purely from current
+/// `value`, `head`, and the viewport width.
+///
+/// Returns `0.0` when the caret would land inside the viewport
+/// without any scroll, otherwise the minimum positive offset that
+/// pins the caret at the right edge of the visible area. Same
+/// `head` clamp + mask handling as `build_text_input`.
+fn current_x_offset(value: &str, head: usize, viewport_w: f32, mask: MaskMode) -> f32 {
+    if viewport_w <= 0.0 {
+        return 0.0;
+    }
+    let head = clamp_to_char_boundary(value, head.min(value.len()));
+    let display = display_str(value, mask);
+    let geometry = single_line_geometry(&display);
+    let head_display = original_to_display_byte(value, head, mask);
+    let head_px = geometry.prefix_width(head_display);
+    (head_px - viewport_w).max(0.0)
 }
 
 fn caret_from_x(value: &str, local_x: f32, mask: MaskMode) -> usize {
@@ -1025,21 +1111,37 @@ mod tests {
         }
     }
 
+    /// Return the visual content children of a built text_input —
+    /// selection band(s), placeholder, text leaf, and caret bar.
+    /// The widget wraps these in an inner clipping group that
+    /// applies horizontal caret-into-view via `layout_override`, so
+    /// `el.children` itself is `[inner_group]` and the real content
+    /// children live one level deeper. This helper keeps the
+    /// existing assertions concise.
+    fn content_children(el: &El) -> &[El] {
+        assert_eq!(
+            el.children.len(),
+            1,
+            "text_input wraps its content in a single inner group"
+        );
+        &el.children[0].children
+    }
+
     #[test]
     fn text_input_collapsed_renders_value_as_single_text_leaf_plus_caret() {
         let el = text_input("hello", TextSelection::caret(2));
         assert!(matches!(el.kind, Kind::Custom("text_input")));
         assert!(el.focusable);
         assert!(el.capture_keys);
-        // [0] = text leaf with the full value, [1] = caret bar.
-        assert_eq!(el.children.len(), 2);
-        assert!(matches!(el.children[0].kind, Kind::Text));
-        assert_eq!(el.children[0].text.as_deref(), Some("hello"));
-        assert!(matches!(
-            el.children[1].kind,
-            Kind::Custom("text_input_caret")
-        ));
-        assert!(el.children[1].alpha_follows_focused_ancestor);
+        // Content: [0] = text leaf with the full value, [1] = caret
+        // bar. (The outer wraps these in a single inner clip group
+        // for horizontal caret-into-view; see `content_children`.)
+        let cs = content_children(&el);
+        assert_eq!(cs.len(), 2);
+        assert!(matches!(cs[0].kind, Kind::Text));
+        assert_eq!(cs[0].text.as_deref(), Some("hello"));
+        assert!(matches!(cs[1].kind, Kind::Custom("text_input_caret")));
+        assert!(cs[1].alpha_follows_focused_ancestor);
     }
 
     #[test]
@@ -1052,17 +1154,12 @@ mod tests {
     fn text_input_with_selection_inserts_selection_band_first() {
         // anchor=2, head=4 → selection "ll", head at right edge.
         let el = text_input("hello", TextSelection::range(2, 4));
+        let cs = content_children(&el);
         // [0] = selection band, [1] = full-value text leaf, [2] = caret.
-        assert_eq!(el.children.len(), 3);
-        assert!(matches!(
-            el.children[0].kind,
-            Kind::Custom("text_input_selection")
-        ));
-        assert_eq!(el.children[1].text.as_deref(), Some("hello"));
-        assert!(matches!(
-            el.children[2].kind,
-            Kind::Custom("text_input_caret")
-        ));
+        assert_eq!(cs.len(), 3);
+        assert!(matches!(cs[0].kind, Kind::Custom("text_input_selection")));
+        assert_eq!(cs[1].text.as_deref(), Some("hello"));
+        assert!(matches!(cs[2].kind, Kind::Custom("text_input_caret")));
     }
 
     #[test]
@@ -1074,8 +1171,7 @@ mod tests {
         let value = "hello";
         let head = 3;
         let el = text_input(value, TextSelection::caret(head));
-        let caret = el
-            .children
+        let caret = content_children(&el)
             .iter()
             .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
             .expect("caret child");
@@ -1099,9 +1195,9 @@ mod tests {
         // snap back to 0. The single text leaf still renders the whole
         // value; only the caret offset reflects the snap.
         let el = text_input("é", TextSelection::caret(1));
-        assert_eq!(el.children[0].text.as_deref(), Some("é"));
-        let caret = el
-            .children
+        let cs = content_children(&el);
+        assert_eq!(cs[0].text.as_deref(), Some("é"));
+        let caret = cs
             .iter()
             .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
             .expect("caret child");
@@ -1879,8 +1975,7 @@ mod tests {
         // The text leaf should never expose the original characters in
         // a password field. One bullet per scalar.
         let el = text_input_with("hunter2", TextSelection::caret(0), password_opts());
-        let leaf = el
-            .children
+        let leaf = content_children(&el)
             .iter()
             .find(|c| matches!(c.kind, Kind::Text))
             .expect("text leaf");
@@ -1896,8 +1991,7 @@ mod tests {
         let value = "abc";
         let head = 2;
         let el = text_input_with(value, TextSelection::caret(head), password_opts());
-        let caret = el
-            .children
+        let caret = content_children(&el)
             .iter()
             .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
             .expect("caret child");
@@ -1993,21 +2087,96 @@ mod tests {
     fn placeholder_renders_only_when_value_is_empty() {
         let opts = TextInputOpts::default().placeholder("Email");
         let empty = text_input_with("", TextSelection::default(), opts);
-        let muted_leaf = empty
-            .children
+        let muted_leaf = content_children(&empty)
             .iter()
             .find(|c| matches!(c.kind, Kind::Text) && c.text.as_deref() == Some("Email"));
         assert!(muted_leaf.is_some(), "placeholder leaf should be present");
 
         let nonempty = text_input_with("hi", TextSelection::caret(2), opts);
-        let muted_leaf = nonempty
-            .children
+        let muted_leaf = content_children(&nonempty)
             .iter()
             .find(|c| matches!(c.kind, Kind::Text) && c.text.as_deref() == Some("Email"));
         assert!(
             muted_leaf.is_none(),
             "placeholder should not render once the field has a value"
         );
+    }
+
+    #[test]
+    fn long_value_with_caret_at_end_shifts_content_left_to_keep_caret_in_view() {
+        // Regression: when value width exceeds the viewport, the
+        // inner clip group's `layout_override` shifts content left
+        // by `head_px - viewport_w` so the caret pins to the right
+        // edge of the visible area. Verify by laying out a long
+        // value in a narrow text_input and checking the text
+        // leaf's painted rect extends left of the outer's content
+        // origin (i.e. negative-x relative to the outer's content
+        // rect).
+        use crate::tree::Size;
+        let value = "abcdefghijklmnopqrstuvwxyz0123456789".repeat(2);
+        let mut root = super::text_input(&value, &as_selection_in("ti", TextSelection::caret(value.len())), "ti")
+            .width(Size::Fixed(120.0));
+        let mut ui_state = crate::state::UiState::new();
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 120.0, 40.0));
+
+        // Find the text leaf (the Kind::Text under the inner Group).
+        let inner = &root.children[0];
+        let text_leaf = inner
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Text))
+            .expect("text leaf");
+        let leaf_rect = ui_state.rect(&text_leaf.computed_id);
+
+        // The leaf's x must be left of the inner's content origin
+        // (i.e. negative-relative) because the long content has
+        // been scrolled left to keep the caret on the right edge.
+        let inner_rect = ui_state.rect(&inner.computed_id);
+        assert!(
+            leaf_rect.x < inner_rect.x,
+            "text leaf rect.x={} should be left of inner rect.x={} after \
+             horizontal caret-into-view; layout did not shift content",
+            leaf_rect.x,
+            inner_rect.x,
+        );
+    }
+
+    #[test]
+    fn short_value_does_not_shift_content() {
+        // Counter-test: when value fits inside the viewport, no
+        // x_offset is applied and the text leaf sits at the
+        // inner's content origin.
+        use crate::tree::Size;
+        let mut root = super::text_input("hi", &as_selection_in("ti", TextSelection::caret(2)), "ti")
+            .width(Size::Fixed(120.0));
+        let mut ui_state = crate::state::UiState::new();
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 120.0, 40.0));
+
+        let inner = &root.children[0];
+        let text_leaf = inner
+            .children
+            .iter()
+            .find(|c| matches!(c.kind, Kind::Text))
+            .expect("text leaf");
+        let leaf_rect = ui_state.rect(&text_leaf.computed_id);
+        let inner_rect = ui_state.rect(&inner.computed_id);
+        assert!(
+            (leaf_rect.x - inner_rect.x).abs() < 0.5,
+            "short value should not shift; got leaf.x={} inner.x={}",
+            leaf_rect.x,
+            inner_rect.x
+        );
+    }
+
+    /// Test helper: build a `Selection` with `(anchor, head)` under
+    /// a single key.
+    fn as_selection_in(key: &str, sel: TextSelection) -> Selection {
+        Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new(key, sel.anchor),
+                head: SelectionPoint::new(key, sel.head),
+            }),
+        }
     }
 
     #[test]
@@ -2214,8 +2383,7 @@ mod tests {
         // Builder set the El's key.
         assert_eq!(el.key.as_deref(), Some("name"));
         // Caret child translates to the prefix width of "he".
-        let caret = el
-            .children
+        let caret = content_children(&el)
             .iter()
             .find(|c| matches!(c.kind, Kind::Custom("text_input_caret")))
             .expect("caret child");
