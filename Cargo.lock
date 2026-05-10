@@ -37,6 +37,7 @@ dependencies = [
  "kurbo",
  "lyon_tessellation",
  "nalgebra",
+ "rustc-hash 2.1.2",
  "swash",
  "tracing",
  "ttf-parser",

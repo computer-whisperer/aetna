@@ -117,6 +117,12 @@ pub fn synthesize_toasts(root: &mut El, ui_state: &mut UiState, now: Instant) ->
     );
     let cards: Vec<El> = ui_state.toast.queue.iter().map(toast_card).collect();
     root.children.push(toast_stack(cards));
+    // Assign computed_ids to the pushed layer in-place so the
+    // subsequent `layout_post_assign` doesn't have to re-walk the
+    // whole tree. Pairs with `RunnerCore::prepare_layout`'s
+    // skip-the-second-id-walk flow.
+    let i = root.children.len() - 1;
+    crate::layout::assign_id_appended(&root.computed_id, &mut root.children[i], i);
     true
 }
 

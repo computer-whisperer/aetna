@@ -1053,7 +1053,13 @@ impl RunnerCore {
             }
             {
                 crate::profile_span!("prepare::layout::layout");
-                layout::layout(root, &mut self.ui_state, viewport);
+                // `assign_ids` ran above (so tooltip/toast synthesis
+                // could resolve nodes by id), and the synthesize
+                // functions called `assign_id_appended` on the layers
+                // they pushed — so the recursive id walk inside
+                // `layout::layout` would be a wasted second pass over
+                // the entire tree. Use `layout_post_assign` to skip it.
+                layout::layout_post_assign(root, &mut self.ui_state, viewport);
             }
             {
                 crate::profile_span!("prepare::layout::sync_focus_order");
@@ -1513,7 +1519,7 @@ where
 fn aggregate_redraw_within(
     node: &El,
     viewport: Rect,
-    rects: &std::collections::HashMap<String, Rect>,
+    rects: &rustc_hash::FxHashMap<String, Rect>,
 ) -> Option<std::time::Duration> {
     let mut acc: Option<std::time::Duration> = None;
     visit_redraw_within(node, viewport, rects, VisibilityClip::Unclipped, &mut acc);
@@ -1557,7 +1563,7 @@ impl VisibilityClip {
 fn visit_redraw_within(
     node: &El,
     viewport: Rect,
-    rects: &std::collections::HashMap<String, Rect>,
+    rects: &rustc_hash::FxHashMap<String, Rect>,
     inherited_clip: VisibilityClip,
     acc: &mut Option<std::time::Duration>,
 ) {

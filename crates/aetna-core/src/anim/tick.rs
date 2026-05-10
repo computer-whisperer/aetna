@@ -8,7 +8,9 @@
 //! props mutate the `El`'s author fields directly so the next build
 //! reads the eased value.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+
+use rustc_hash::FxHashMap;
 // web_time::Instant works on wasm32 (std::time::Instant::now() panics there).
 use web_time::Instant;
 
@@ -74,9 +76,9 @@ const SUBTREE_PROPS: &[AnimProp] = &[
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn tick_node(
     node: &mut El,
-    anims: &mut HashMap<(String, AnimProp), Animation>,
-    envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
-    node_states: &HashMap<String, InteractionState>,
+    anims: &mut FxHashMap<(String, AnimProp), Animation>,
+    envelopes: &mut FxHashMap<(String, EnvelopeKind), f32>,
+    node_states: &FxHashMap<String, InteractionState>,
     hot: HotTargets<'_>,
     focus_visible: bool,
     visited: &mut HashSet<(String, AnimProp)>,
@@ -172,9 +174,9 @@ fn process_prop(
     node: &mut El,
     prop: AnimProp,
     timing: Timing,
-    anims: &mut HashMap<(String, AnimProp), Animation>,
-    envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
-    node_states: &HashMap<String, InteractionState>,
+    anims: &mut FxHashMap<(String, AnimProp), Animation>,
+    envelopes: &mut FxHashMap<(String, EnvelopeKind), f32>,
+    node_states: &FxHashMap<String, InteractionState>,
     hot: HotTargets<'_>,
     focus_visible: bool,
     visited: &mut HashSet<(String, AnimProp)>,
@@ -309,7 +311,7 @@ fn write_prop(
     n: &mut El,
     prop: AnimProp,
     value: AnimValue,
-    envelopes: &mut HashMap<(String, EnvelopeKind), f32>,
+    envelopes: &mut FxHashMap<(String, EnvelopeKind), f32>,
 ) {
     match (prop, value) {
         (AnimProp::AppFill, AnimValue::Color(c)) => n.fill = Some(c),

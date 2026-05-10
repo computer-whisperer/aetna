@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
+use rustc_hash::FxHashMap;
 use web_time::Instant;
 
 use crate::anim::{AnimProp, Animation};
@@ -64,11 +65,11 @@ pub(crate) struct AnimationState {
     /// lazily as state transitions happen; trimmed by
     /// [`UiState::tick_visual_animations`](super::UiState::tick_visual_animations)
     /// when their nodes leave the tree.
-    pub(crate) animations: HashMap<(String, AnimProp), Animation>,
+    pub(crate) animations: FxHashMap<(String, AnimProp), Animation>,
     /// State-envelope amounts (0..1) per (node, kind), written by the
     /// animation tick. `draw_ops` reads these to modulate the surface
     /// visuals; missing entries read as `0.0`.
-    pub(crate) envelopes: HashMap<(String, EnvelopeKind), f32>,
+    pub(crate) envelopes: FxHashMap<(String, EnvelopeKind), f32>,
     /// Animation pacing mode. Default is `Live`; headless render
     /// binaries switch to `Settled` so single-frame snapshots reflect
     /// the post-animation visual.
@@ -174,11 +175,11 @@ impl Debug for WidgetStateStore {
 #[derive(Default)]
 pub(crate) struct LayoutState {
     /// Computed rect per node, written by the layout pass.
-    pub(crate) computed_rects: HashMap<String, Rect>,
+    pub(crate) computed_rects: FxHashMap<String, Rect>,
     /// `key -> computed_id` map, refreshed at the top of every layout
     /// pass. Populated only for nodes that carry an author-set `key`;
     /// duplicate keys keep the first entry seen in tree order.
-    pub(crate) key_index: HashMap<String, String>,
+    pub(crate) key_index: FxHashMap<String, String>,
 }
 
 impl Debug for LayoutState {
@@ -194,7 +195,7 @@ impl Debug for LayoutState {
 /// and read by animation/drawing passes.
 #[derive(Default)]
 pub(crate) struct NodeInteractionState {
-    pub(crate) nodes: HashMap<String, InteractionState>,
+    pub(crate) nodes: FxHashMap<String, InteractionState>,
 }
 
 impl Debug for NodeInteractionState {
@@ -341,25 +342,25 @@ pub(crate) struct ScrollState {
     /// Scroll offset (logical pixels) per scrollable node, keyed by
     /// `El::computed_id`. The layout pass reads this when positioning a
     /// scrollable's children and writes back the clamped value.
-    pub(crate) offsets: HashMap<String, f32>,
+    pub(crate) offsets: FxHashMap<String, f32>,
     /// Per-scrollable layout metrics — viewport height, content
     /// height, max offset — written by the layout pass and read by
     /// `draw_ops` (to size the scrollbar thumb) and the runtime (to
     /// translate thumb-drag delta into offset delta).
-    pub(crate) metrics: HashMap<String, ScrollMetrics>,
+    pub(crate) metrics: FxHashMap<String, ScrollMetrics>,
     /// Per-scrollable thumb rect (logical pixels), populated alongside
     /// `metrics` when the scrollable has `scrollbar` enabled and its
     /// content overflows. Read by `draw_ops` to paint the thumb. An
     /// entry is *absent* when the scrollbar is disabled or the content
     /// fits the viewport.
-    pub(crate) thumb_rects: HashMap<String, Rect>,
+    pub(crate) thumb_rects: FxHashMap<String, Rect>,
     /// Per-scrollable track rect — the full vertical column that
     /// accepts pointer presses (wider than the visible thumb so the
     /// thumb is easy to grab; full viewport height so a click on the
     /// track above/below the thumb pages by a viewport). Same x-extent
     /// as `thumb_rects` but expanded to `SCROLLBAR_HITBOX_WIDTH` and
     /// the inner-rect height. Populated alongside `thumb_rects`.
-    pub(crate) thumb_tracks: HashMap<String, Rect>,
+    pub(crate) thumb_tracks: FxHashMap<String, Rect>,
     /// Active scrollbar drag, set by `pointer_down` when the press
     /// lands inside a thumb rect, consumed by `pointer_moved` to update
     /// the corresponding `offsets` entry, cleared by `pointer_up`.
@@ -372,7 +373,7 @@ pub(crate) struct ScrollState {
     /// enter the viewport and are measured. Subsequent frames read this
     /// instead of falling back to the estimated row height, so scroll
     /// math stabilizes once the visible regions have been seen.
-    pub(crate) measured_row_heights: HashMap<String, HashMap<usize, f32>>,
+    pub(crate) measured_row_heights: FxHashMap<String, FxHashMap<usize, f32>>,
 }
 
 /// Runtime queue for toast notifications. Apps provide fire-and-forget

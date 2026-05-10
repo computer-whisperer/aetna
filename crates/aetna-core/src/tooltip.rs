@@ -96,6 +96,12 @@ pub fn synthesize_tooltip(root: &mut El, ui_state: &UiState, now: Instant) -> bo
     );
     root.children
         .push(tooltip_layer(text, hover.node_id.clone()));
+    // Assign computed_ids to the pushed layer in-place so the
+    // subsequent `layout_post_assign` doesn't have to re-walk the
+    // whole tree just to id one new floating subtree. Pairs with
+    // `RunnerCore::prepare_layout`'s skip-the-second-id-walk flow.
+    let i = root.children.len() - 1;
+    crate::layout::assign_id_appended(&root.computed_id, &mut root.children[i], i);
     // Tooltip is now in the tree; further redraws are driven by
     // the layer's fade-in envelope, not by us.
     false

@@ -202,11 +202,30 @@ pub struct LayoutCtx<'a> {
     pub rect_of_id: &'a dyn Fn(&str) -> Option<Rect>,
 }
 
-/// Lay out the whole tree into the given viewport rect.
+/// Lay out the whole tree into the given viewport rect. Assigns
+/// `computed_id`s, rebuilds the key index, and runs the layout walk.
+///
+/// Hosts that drive their own pipeline (the Aetna runtime does this in
+/// [`crate::runtime::RunnerCore::prepare_layout`]) typically call
+/// [`assign_ids`] before synthesizing floating layers (tooltips,
+/// toasts), then route the laid-out call through
+/// [`layout_post_assign`] so the id walk doesn't run twice per frame.
 pub fn layout(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
     {
-        crate::profile_span!("layout::root_setup");
+        crate::profile_span!("layout::assign_ids");
         assign_id(root, "root");
+    }
+    layout_post_assign(root, ui_state, viewport);
+}
+
+/// Like [`layout`], but skips the recursive `assign_id` walk. Callers
+/// are responsible for ensuring every node's `computed_id` is already
+/// set — typically by invoking [`assign_ids`] earlier in the pipeline,
+/// then having any per-frame floating-layer synthesis pass call
+/// [`assign_id_appended`] on its newly pushed layer.
+pub fn layout_post_assign(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
+    {
+        crate::profile_span!("layout::root_setup");
         ui_state
             .layout
             .computed_rects
@@ -223,13 +242,28 @@ pub fn layout(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
     layout_children(root, viewport, ui_state);
 }
 
+/// Assign `computed_id`s to a child that was just appended to an
+/// already-id-assigned `parent`. Companion to [`layout_post_assign`]:
+/// floating-layer synthesis (tooltip, toast) pushes one new child onto
+/// the root and uses this to give the new subtree the same path-style
+/// ids the recursive `assign_id` would have, without re-walking the
+/// rest of the tree.
+pub fn assign_id_appended(parent_id: &str, child: &mut El, child_index: usize) {
+    let role = role_token(&child.kind);
+    let suffix = match (&child.key, role) {
+        (Some(k), r) => format!("{r}[{k}]"),
+        (None, r) => format!("{r}.{child_index}"),
+    };
+    assign_id(child, &format!("{parent_id}.{suffix}"));
+}
+
 /// Walk the tree once and refresh `ui_state.layout.key_index` so
 /// `LayoutCtx::rect_of_key` can resolve `key → computed_id` without
 /// re-scanning the tree per lookup. First key wins — duplicate keys
 /// are an author bug, but we don't want to crash layout over it.
 fn rebuild_key_index(root: &El, ui_state: &mut UiState) {
     ui_state.layout.key_index.clear();
-    fn visit(node: &El, index: &mut std::collections::HashMap<String, String>) {
+    fn visit(node: &El, index: &mut rustc_hash::FxHashMap<String, String>) {
         if let Some(key) = &node.key {
             index
                 .entry(key.clone())
