@@ -71,6 +71,10 @@ impl App for AnimatedShowcase {
         self.inner.drain_toasts()
     }
 
+    fn drain_focus_requests(&mut self) -> Vec<String> {
+        self.inner.drain_focus_requests()
+    }
+
     fn shaders(&self) -> Vec<aetna_core::AppShader> {
         self.inner.shaders()
     }

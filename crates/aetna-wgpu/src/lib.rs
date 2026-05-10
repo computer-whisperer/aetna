@@ -1053,6 +1053,14 @@ impl Runner {
         self.core.dismiss_toast(id);
     }
 
+    /// Queue programmatic focus requests by widget key. Hosts call
+    /// this once per frame with `app.drain_focus_requests()`. Each
+    /// key is resolved during the next `prepare` against the rebuilt
+    /// focus order; unmatched keys drop silently.
+    pub fn push_focus_requests(&mut self, keys: Vec<String>) {
+        self.core.push_focus_requests(keys);
+    }
+
     /// Switch animation pacing. Default is [`AnimationMode::Live`].
     /// Headless render binaries should call this with
     /// [`AnimationMode::Settled`] so a single-frame snapshot reflects

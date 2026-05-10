@@ -739,6 +739,28 @@ pub trait App {
         Vec::new()
     }
 
+    /// Drain pending programmatic focus requests produced since the
+    /// last frame. The runtime calls this once per `prepare_layout`,
+    /// after the focus order has been rebuilt from the new tree, and
+    /// resolves each entry against the keyed focusables. Unmatched
+    /// keys (widget absent from the rebuilt tree, or not focusable)
+    /// are dropped silently.
+    ///
+    /// This is the imperative companion to keyboard `Tab` traversal:
+    /// use it for affordances like *Ctrl+F → focus the search input*,
+    /// *jump-to-match → focus the matched row*, or *open inline edit
+    /// → focus the field*. Apps typically accumulate keys in a
+    /// `Vec<String>` field from event handlers and `mem::take` it
+    /// here.
+    ///
+    /// Multiple requests in one frame resolve in order; the last
+    /// successfully-resolved key is the one focused.
+    ///
+    /// Default: no requests.
+    fn drain_focus_requests(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Custom shaders this app needs registered. Each entry carries
     /// the shader name, its WGSL source, and per-flag opt-ins
     /// (backdrop sampling, time-driven motion). The host runner

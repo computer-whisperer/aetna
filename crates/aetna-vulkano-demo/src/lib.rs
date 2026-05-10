@@ -402,6 +402,8 @@ impl<A: App> ApplicationHandler for Host<A> {
                 rcx.runner.set_hotkeys(self.app.hotkeys());
                 rcx.runner.set_selection(self.app.selection());
                 rcx.runner.push_toasts(self.app.drain_toasts());
+                rcx.runner
+                    .push_focus_requests(self.app.drain_focus_requests());
                 let scale_factor = rcx.window.scale_factor() as f32;
                 let viewport = Rect::new(
                     0.0,
@@ -668,6 +670,7 @@ mod tests {
             let _: fn(&mut $runner, Selection) = <$runner>::set_selection;
             let _: fn(&mut $runner, Vec<ToastSpec>) = <$runner>::push_toasts;
             let _: fn(&mut $runner, u64) = <$runner>::dismiss_toast;
+            let _: fn(&mut $runner, Vec<String>) = <$runner>::push_focus_requests;
             let _: fn(&mut $runner, AnimationMode) = <$runner>::set_animation_mode;
             let _: fn(&mut $runner, f32, f32, f32) -> bool = <$runner>::pointer_wheel;
         }};

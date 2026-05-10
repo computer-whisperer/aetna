@@ -938,6 +938,8 @@ mod web_entry {
                         gfx.renderer.set_theme(theme);
                         gfx.renderer.set_hotkeys(self.app.hotkeys());
                         gfx.renderer.set_selection(self.app.selection());
+                        gfx.renderer
+                            .push_focus_requests(self.app.drain_focus_requests());
                         let t_after_build = Instant::now();
                         let prepare = gfx.renderer.prepare(
                             &gfx.device,

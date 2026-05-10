@@ -38,6 +38,29 @@ impl UiState {
         }
     }
 
+    /// Queue programmatic focus requests by key. Each entry is
+    /// resolved once per `prepare_layout`, after the focus order has
+    /// been rebuilt: matching keys focus the corresponding node;
+    /// unmatched keys are dropped silently. Hosts call this once per
+    /// frame from [`crate::event::App::drain_focus_requests`]; apps
+    /// that own a `Runner` can also push directly for tests.
+    pub fn push_focus_requests(&mut self, keys: Vec<String>) {
+        self.focus.pending_requests.extend(keys);
+    }
+
+    /// Drain the queued focus requests, resolving each by key against
+    /// the current focus order. The last successfully-resolved key
+    /// wins. Called by `prepare_layout` after `sync_popover_focus` so
+    /// explicit requests override popover auto-focus.
+    pub fn drain_focus_requests(&mut self) {
+        let keys = std::mem::take(&mut self.focus.pending_requests);
+        for key in keys {
+            if let Some(target) = self.focus.order.iter().find(|t| t.key == key).cloned() {
+                self.set_focus(Some(target));
+            }
+        }
+    }
+
     /// Set whether the current focus should display its focus ring.
     /// The runtime calls this from input-handling paths: pointer-down
     /// clears it (`false`), Tab and arrow-nav raise it (`true`). Apps

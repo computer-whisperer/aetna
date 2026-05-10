@@ -251,6 +251,12 @@ pub(crate) struct SelectionState {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct FocusState {
     pub(crate) order: Vec<UiTarget>,
+    /// Programmatic focus requests buffered between frames. Hosts
+    /// call [`UiState::push_focus_requests`] once per build with the
+    /// keys produced by [`crate::event::App::drain_focus_requests`];
+    /// `prepare_layout` drains and resolves them after the focus
+    /// order has been rebuilt.
+    pub(crate) pending_requests: Vec<String>,
 }
 
 /// Tracks the latest primary `pointer_down` so the next press can

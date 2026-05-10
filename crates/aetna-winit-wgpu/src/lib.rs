@@ -168,6 +168,10 @@ impl<A: App> App for BasicApp<A> {
         self.0.drain_toasts()
     }
 
+    fn drain_focus_requests(&mut self) -> Vec<String> {
+        self.0.drain_focus_requests()
+    }
+
     fn shaders(&self) -> Vec<aetna_core::AppShader> {
         self.0.shaders()
     }
@@ -782,6 +786,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                 gfx.renderer.set_hotkeys(self.app.hotkeys());
                                 gfx.renderer.set_selection(self.app.selection());
                                 gfx.renderer.push_toasts(self.app.drain_toasts());
+                                gfx.renderer
+                                    .push_focus_requests(self.app.drain_focus_requests());
                                 (tree, palette)
                             };
                             let prepare = {

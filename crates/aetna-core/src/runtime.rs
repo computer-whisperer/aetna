@@ -1031,6 +1031,15 @@ impl RunnerCore {
         self.ui_state.dismiss_toast(id);
     }
 
+    /// Queue programmatic focus requests by widget key. Each entry is
+    /// resolved during the next `prepare_layout`, after the focus
+    /// order has been rebuilt from the new tree; unmatched keys drop
+    /// silently. Hosts wire this from [`crate::event::App::drain_focus_requests`]
+    /// once per frame, alongside `push_toasts`.
+    pub fn push_focus_requests(&mut self, keys: Vec<String>) {
+        self.ui_state.push_focus_requests(keys);
+    }
+
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {
         self.ui_state.set_animation_mode(mode);
     }
@@ -1115,6 +1124,14 @@ impl RunnerCore {
             {
                 crate::profile_span!("prepare::layout::sync_popover_focus");
                 focus::sync_popover_focus(root, &mut self.ui_state);
+            }
+            {
+                // Drain after popover auto-focus so explicit app
+                // requests win when both fire on the same frame
+                // (e.g. a hotkey opens a popover and then jumps focus
+                // to a non-default child).
+                crate::profile_span!("prepare::layout::drain_focus_requests");
+                self.ui_state.drain_focus_requests();
             }
             {
                 crate::profile_span!("prepare::layout::apply_state");

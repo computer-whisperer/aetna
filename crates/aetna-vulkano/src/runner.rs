@@ -934,6 +934,10 @@ impl Runner {
         self.core.dismiss_toast(id);
     }
 
+    pub fn push_focus_requests(&mut self, keys: Vec<String>) {
+        self.core.push_focus_requests(keys);
+    }
+
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {
         self.core.set_animation_mode(mode);
     }
