@@ -110,6 +110,21 @@ pub enum FindingKind {
     /// so the thumb sits in a reserved gutter to the right of
     /// content.
     ScrollbarObscuresFocusable,
+    /// `.tooltip()` on a node that has no `.key()`. Tooltips fire
+    /// through the hit-test pipeline, and `hit_test` only returns
+    /// keyed nodes — hover skips past unkeyed leaves to the nearest
+    /// keyed ancestor (which has a different `computed_id` and a
+    /// different tooltip lookup), so the tooltip is silently dead.
+    ///
+    /// Fix: add `.key("…")` to the same node that carries the
+    /// tooltip. For info-only chrome inside list rows (sha cells,
+    /// timestamps, chips, identicon avatars) the usual key is a
+    /// synthetic one like `"row:{idx}.<part>"` — its only purpose is
+    /// to make the tooltip's hover land. Moving the `.tooltip()` to
+    /// a keyed ancestor instead conflates "I want a hover popover
+    /// here" with "I'm declaring a click/focus target," and is
+    /// usually not what you want.
+    DeadTooltip,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -280,6 +295,26 @@ fn walk(
                 ),
             });
         }
+        // `.tooltip()` on an unkeyed node — silently dead, because
+        // hit-test only returns keyed nodes, so hover never lands on
+        // this leaf and `synthesize_tooltip` never reads its text.
+        // Same "modifier requires unrelated state to take effect"
+        // shape as the dead-`.ellipsis()` finding below.
+        if n.tooltip.is_some() && n.key.is_none() {
+            r.findings.push(Finding {
+                kind: FindingKind::DeadTooltip,
+                node_id: n.computed_id.clone(),
+                source: n.source,
+                message:
+                    ".tooltip() on a node without .key() never fires — hit-test only \
+                     returns keyed nodes, so hover skips past this leaf to the nearest \
+                     keyed ancestor. Add .key(\"…\") on the same node that carries the \
+                     tooltip; for info-only chrome inside list rows, a synthetic key \
+                     like \"row:{idx}.<part>\" is enough."
+                        .to_string(),
+            });
+        }
+
         // SurfaceRole::Panel only paints stroke + shadow on top of the
         // node's existing fill. Without a fill, the surface reads as a
         // thin border over BACKGROUND — the classic "invisible panel"
@@ -2003,6 +2038,69 @@ mod tests {
                 .iter()
                 .any(|f| f.kind == FindingKind::ScrollbarObscuresFocusable),
             "expected no ScrollbarObscuresFocusable when content fits in the viewport (no thumb rendered)\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn unkeyed_tooltip_reports_dead_tooltip() {
+        // Repro: a `.tooltip()` on a text leaf with no `.key()`.
+        // Hit-test only returns keyed nodes, so hover never lands on
+        // this leaf and the tooltip is silently dead. The classic
+        // mistake on commit-graph row chrome (sha cells, timestamps,
+        // chips, identicon avatars).
+        let root = crate::text("abc1234").tooltip("commit sha");
+
+        let report = lint_one(root);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::DeadTooltip),
+            "expected DeadTooltip on unkeyed tooltipped text\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn keyed_tooltip_satisfies_dead_tooltip_policy() {
+        // Counter-test: same shape, but the leaf has a key — so
+        // hit-test does land here and the tooltip fires.
+        let root = crate::text("abc1234").key("sha").tooltip("commit sha");
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::DeadTooltip),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn unkeyed_tooltip_inside_keyed_ancestor_still_reports_dead_tooltip() {
+        // Even when an ancestor is keyed (so hover lands on the
+        // ancestor), the leaf's tooltip text is on the leaf — and
+        // tooltip lookup is by the hit target's `computed_id`, not
+        // by walking ancestors. So the leaf's tooltip still never
+        // fires. Flag it.
+        let root = crate::row([
+            crate::text("inner detail").tooltip("never shown"),
+        ])
+        .key("outer-row");
+
+        let report = lint_one(root);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::DeadTooltip),
+            "expected DeadTooltip on unkeyed leaf even with keyed ancestor\n{}",
             report.text()
         );
     }

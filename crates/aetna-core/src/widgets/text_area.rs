@@ -582,6 +582,7 @@ mod tests {
             key: "ta".to_string(),
             node_id: "/ta".to_string(),
             rect: crate::tree::Rect::new(0.0, 0.0, 200.0, 100.0),
+            tooltip: None,
         }
     }
 

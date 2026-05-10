@@ -52,12 +52,21 @@ use crate::tree::{El, Rect};
 
 /// Hit-test target metadata. `key` is the author-facing route, while
 /// `node_id` is the stable laid-out tree path used by artifacts.
+///
+/// `tooltip` snapshots the node's tooltip text at the moment the
+/// target was constructed, so the tooltip pass doesn't have to walk
+/// the live tree to resolve it. This is what makes tooltips work on
+/// virtual-list rows: hit-testing reads `last_tree` (where the row
+/// has been realized), and the cached text survives into the next
+/// frame's `synthesize_tooltip` even though that frame's tree hasn't
+/// rebuilt its virtual-list children yet.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct UiTarget {
     pub key: String,
     pub node_id: String,
     pub rect: Rect,
+    pub tooltip: Option<String>,
 }
 
 /// Which mouse button (or pointer button) generated a pointer event.

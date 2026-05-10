@@ -437,6 +437,7 @@ mod tests {
                 key: key.to_string(),
                 node_id: format!("/{key}"),
                 rect: Rect::new(0.0, 0.0, 6.0, 400.0),
+                tooltip: None,
             }),
             pointer: Some((x, 100.0)),
             key_press: None,
@@ -456,6 +457,7 @@ mod tests {
                 key: key.to_string(),
                 node_id: format!("/{key}"),
                 rect: Rect::new(0.0, 0.0, 6.0, 400.0),
+                tooltip: None,
             }),
             pointer: None,
             key_press: Some(KeyPress {

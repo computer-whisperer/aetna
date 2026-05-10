@@ -6,6 +6,12 @@
 //! are hit-test targets — author intent is "I tagged it with a key, it's
 //! interactive."
 //!
+//! This keyed-only rule is also what gates
+//! [`crate::tree::El::tooltip`]: an unkeyed leaf with `.tooltip()` is
+//! silently dead because hover never lands on it. The bundle lint
+//! flags this case as
+//! [`crate::bundle::lint::FindingKind::DeadTooltip`].
+//!
 //! Reads computed rects from `UiState`'s layout side map (populated by
 //! the layout pass) — the tree carries identity (`computed_id`) but not
 //! geometry. Paint-time transforms (`translate`, `scale`) are then
@@ -99,6 +105,7 @@ fn hit_test_rec(
             key: key.clone(),
             node_id: node.computed_id.clone(),
             rect: painted_rect,
+            tooltip: node.tooltip.clone(),
         });
     }
     if node.block_pointer {

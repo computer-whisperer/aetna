@@ -71,10 +71,14 @@ pub fn synthesize_tooltip(root: &mut El, ui_state: &UiState, now: Instant) -> bo
         return false;
     };
 
-    // Look up the tooltip text on the hovered node. Hover targets
-    // can outlive their nodes by one frame after a rebuild — if the
-    // node is gone, treat that as "no tooltip" rather than crashing.
-    let Some(text) = find_tooltip_text(root, &hover.node_id) else {
+    // Tooltip text is snapshotted onto `UiTarget` at hit-test time
+    // (`hit_test_rec`), against the previous frame's tree. Reading
+    // from the cached `UiTarget` rather than walking the live tree
+    // is what makes tooltips work on `virtual_list_dyn` rows: this
+    // pass runs before `layout_post_assign` has called `build_row`
+    // on the current frame, so the live tree's virtual-list
+    // children are still empty.
+    let Some(text) = hover.tooltip.as_deref() else {
         return false;
     };
 
@@ -105,14 +109,6 @@ pub fn synthesize_tooltip(root: &mut El, ui_state: &UiState, now: Instant) -> bo
     // Tooltip is now in the tree; further redraws are driven by
     // the layer's fade-in envelope, not by us.
     false
-}
-
-/// Find the `tooltip` text on the node whose `computed_id == id`.
-fn find_tooltip_text<'a>(node: &'a El, id: &str) -> Option<&'a str> {
-    if node.computed_id == id {
-        return node.tooltip.as_deref();
-    }
-    node.children.iter().find_map(|c| find_tooltip_text(c, id))
 }
 
 /// Build a `Kind::Custom("tooltip_layer")` that fills the viewport
@@ -292,6 +288,81 @@ mod tests {
     }
 
     #[test]
+    fn tooltip_fires_on_virtual_list_row_after_rebuild() {
+        // Regression for issue #23: tooltip synthesis runs before
+        // `layout_post_assign` realizes `virtual_list_dyn` rows, so a
+        // tree walk for tooltip text on a virtual-list row child
+        // always misses. The fix snapshots the text onto `UiTarget`
+        // at hit-test time (which reads the *previous* frame's tree,
+        // where rows are realized), and `synthesize_tooltip` reads
+        // from the cached target instead of walking the live tree.
+        //
+        // The test models that two-frame sequence: lay out frame 1
+        // (rows realized), hit-test to capture the hover, then build
+        // a fresh frame 2 tree (rows not realized) and assert that
+        // the tooltip layer still appends.
+        use crate::hit_test::hit_test_target;
+        use crate::tree::virtual_list_dyn;
+        use crate::widgets::overlay::overlays;
+        use crate::widgets::text::text;
+
+        fn build_tree() -> El {
+            overlays(
+                virtual_list_dyn(5, 30.0, |i| {
+                    text(format!("row {i}"))
+                        .key(format!("row:{i}"))
+                        .tooltip(format!("tip {i}"))
+                        .height(crate::tree::Size::Fixed(30.0))
+                }),
+                std::iter::empty::<Option<El>>(),
+            )
+        }
+
+        // Frame 1: lay out with virtual rows realized so we can
+        // hit-test against a row child.
+        let mut tree_f1 = build_tree();
+        let mut state = UiState::new();
+        layout(&mut tree_f1, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+
+        // Hit-test mid-viewport — should land on one of the
+        // realized rows. The exact row index isn't load-bearing.
+        let target = hit_test_target(&tree_f1, &state, (50.0, 45.0))
+            .expect("hit-test should find a realized virtual-list row");
+        assert!(
+            target.tooltip.is_some(),
+            "hit-test should snapshot the row's tooltip text; got {:?}",
+            target.tooltip
+        );
+
+        let now = Instant::now();
+        state.set_hovered(Some(target), now);
+
+        // Frame 2: rebuild from scratch. The virtual list's row
+        // closure has not run on this fresh tree — its `children`
+        // is empty. Assign ids and synthesize, which exercises the
+        // path that used to walk the live tree and miss.
+        let mut tree_f2 = build_tree();
+        assign_ids(&mut tree_f2);
+        let before = tree_f2.children.len();
+        let pending = synthesize_tooltip(
+            &mut tree_f2,
+            &state,
+            now + HOVER_DELAY + Duration::from_millis(1),
+        );
+        assert!(!pending);
+        assert_eq!(
+            tree_f2.children.len(),
+            before + 1,
+            "tooltip layer should append even though the virtual list \
+             hasn't realized its rows on this frame"
+        );
+        assert!(matches!(
+            tree_f2.children.last().unwrap().kind,
+            Kind::Custom("tooltip_layer")
+        ));
+    }
+
+    #[test]
     fn hover_change_resets_timer_via_set_hovered() {
         let mut state = UiState::new();
         let now = Instant::now();
@@ -299,11 +370,13 @@ mod tests {
             key: "a".into(),
             node_id: "/a".into(),
             rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            tooltip: None,
         };
         let target_b = UiTarget {
             key: "b".into(),
             node_id: "/b".into(),
             rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            tooltip: None,
         };
         state.set_hovered(Some(target_a), now);
         let started = state.tooltip.hover_started_at;

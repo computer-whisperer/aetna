@@ -537,6 +537,7 @@ mod tests {
                 key: (*k).to_string(),
                 node_id: format!("root.{k}"),
                 rect: crate::tree::Rect::new(0.0, 0.0, 0.0, 0.0),
+                tooltip: None,
             })
             .collect()
     }

@@ -85,6 +85,7 @@ fn collect_focusable_self(
             key: key.clone(),
             node_id: node.computed_id.clone(),
             rect: computed,
+            tooltip: node.tooltip.clone(),
         });
     }
 }
@@ -137,6 +138,7 @@ fn collect_selectable(
             key: key.clone(),
             node_id: node.computed_id.clone(),
             rect: computed,
+            tooltip: node.tooltip.clone(),
         });
     }
     for child in &node.children {
@@ -172,6 +174,7 @@ fn collect_focus(
             key: key.clone(),
             node_id: node.computed_id.clone(),
             rect: computed,
+            tooltip: node.tooltip.clone(),
         });
     }
     for child in &node.children {

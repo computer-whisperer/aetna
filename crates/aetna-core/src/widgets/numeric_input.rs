@@ -299,6 +299,7 @@ mod tests {
                 key: target_key.to_string(),
                 node_id: format!("/{target_key}"),
                 rect: Rect::new(0.0, 0.0, 100.0, 32.0),
+                tooltip: None,
             }),
             pointer: None,
             key_press: None,

@@ -640,6 +640,7 @@ mod tests {
                 key: "settings:tab:advanced".into(),
                 node_id: "/settings/2".into(),
                 rect: Rect::new(0.0, 0.0, 60.0, 28.0),
+                tooltip: None,
             }),
             pointer: None,
             key_press: None,

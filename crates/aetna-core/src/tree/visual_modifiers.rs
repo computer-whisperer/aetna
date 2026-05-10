@@ -79,6 +79,22 @@ impl El {
     /// Attach a hover tooltip to this element. The runtime synthesizes
     /// a floating tooltip layer when the pointer rests on the node for
     /// the configured delay.
+    ///
+    /// **The node must also have a [`key`](Self::key).** Tooltips fire
+    /// through the hit-test pipeline, and `crate::hit_test` only
+    /// returns keyed nodes — an unkeyed leaf with `.tooltip()` is
+    /// silently dead, because hover skips past it to the nearest
+    /// keyed ancestor (which has a different `computed_id` and a
+    /// different tooltip). The bundle lint flags this case as
+    /// [`crate::bundle::lint::FindingKind::DeadTooltip`].
+    ///
+    /// For info-only chrome inside list rows (sha cells, timestamps,
+    /// chips, identicon avatars) the usual key is a synthetic one
+    /// like `"row:{idx}.<part>"` — its only purpose is to make the
+    /// tooltip's hover land. The tooltip text is snapshotted onto the
+    /// hit target at hit-test time, so tooltips fire correctly even
+    /// on `virtual_list_dyn` rows whose children are realized only
+    /// during layout.
     pub fn tooltip(mut self, text: impl Into<String>) -> Self {
         self.tooltip = Some(text.into());
         self

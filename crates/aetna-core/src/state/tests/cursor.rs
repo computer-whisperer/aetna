@@ -119,6 +119,7 @@ fn cursor_falls_back_to_default_when_target_id_not_in_tree() {
         key: "ghost".into(),
         node_id: "no-such-node".into(),
         rect: Rect::default(),
+        tooltip: None,
     });
     assert_eq!(state.cursor(&tree), Cursor::Default);
 }

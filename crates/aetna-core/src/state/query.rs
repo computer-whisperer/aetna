@@ -94,6 +94,7 @@ fn find_target_by_key(root: &El, key: &str) -> Option<UiTarget> {
             key: key.to_string(),
             node_id: root.computed_id.clone(),
             rect: Rect::default(),
+            tooltip: root.tooltip.clone(),
         });
     }
     root.children

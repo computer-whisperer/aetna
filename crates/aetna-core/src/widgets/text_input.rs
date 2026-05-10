@@ -1020,6 +1020,7 @@ mod tests {
             key: "ti".into(),
             node_id: "root.text_input[ti]".into(),
             rect: Rect::new(20.0, 20.0, 400.0, 36.0),
+            tooltip: None,
         }
     }
 
