@@ -1152,8 +1152,7 @@ mod tests {
                 )
             });
         assert!(
-            finding.message.contains("vertical padding")
-                && finding.message.contains("Sides::xy"),
+            finding.message.contains("vertical padding") && finding.message.contains("Sides::xy"),
             "expected padding-y advice, got:\n{}\n{}",
             finding.message,
             report.text(),
