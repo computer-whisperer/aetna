@@ -46,6 +46,9 @@ struct Notes {
     /// `ScrollRequest::EnsureVisible` so keyboard navigation past
     /// the visible region scrolls the body back to the caret.
     scroll_caret_into_view: bool,
+    /// Drag-select auto-scroll requests collected during pointer
+    /// drags past the viewport edges. Drained next frame.
+    pending_scroll_requests: Vec<aetna_core::scroll::ScrollRequest>,
 }
 
 impl Default for Notes {
@@ -56,6 +59,7 @@ impl Default for Notes {
             clipboard: arboard::Clipboard::new().ok(),
             last_primary: String::new(),
             scroll_caret_into_view: false,
+            pending_scroll_requests: Vec::new(),
         }
     }
 }
@@ -114,12 +118,16 @@ impl App for Notes {
     }
 
     fn drain_scroll_requests(&mut self) -> Vec<aetna_core::scroll::ScrollRequest> {
-        if !std::mem::take(&mut self.scroll_caret_into_view) {
-            return Vec::new();
+        let mut out: Vec<aetna_core::scroll::ScrollRequest> =
+            std::mem::take(&mut self.pending_scroll_requests);
+        if std::mem::take(&mut self.scroll_caret_into_view) {
+            if let Some(req) =
+                text_area::caret_scroll_request_for(&self.body, &self.selection, BODY_KEY)
+            {
+                out.push(req);
+            }
         }
-        text_area::caret_scroll_request_for(&self.body, &self.selection, BODY_KEY)
-            .into_iter()
-            .collect()
+        out
     }
 
     fn on_event(&mut self, event: UiEvent) {
@@ -166,6 +174,13 @@ impl App for Notes {
                 self.scroll_caret_into_view = true;
             }
             return;
+        }
+
+        // Drag-select auto-scroll: when the pointer is past the
+        // visible top/bottom edge during a drag, queue a scroll
+        // request that exposes the next line in that direction.
+        if let Some(req) = text_area::drag_autoscroll_request_for(&event, BODY_KEY) {
+            self.pending_scroll_requests.push(req);
         }
 
         apply_with_clipboard(

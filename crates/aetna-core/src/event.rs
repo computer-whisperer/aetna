@@ -67,6 +67,16 @@ pub struct UiTarget {
     pub node_id: String,
     pub rect: Rect,
     pub tooltip: Option<String>,
+    /// Scroll offset of the deepest scroll subtree inside this hit
+    /// target, in logical pixels. `0.0` for widgets that don't
+    /// contain a scroll. Used by widgets like
+    /// [`crate::widgets::text_area`] to convert a pointer in viewport
+    /// space (what the user clicks) into content space (what
+    /// cosmic-text's `hit_byte` and `caret_xy` work in) — without
+    /// this, clicks after scrolling land on the wrong line because
+    /// the content has been shifted up by `scroll_offset_y` while
+    /// the outer's `rect` hasn't moved.
+    pub scroll_offset_y: f32,
 }
 
 /// Which mouse button (or pointer button) generated a pointer event.

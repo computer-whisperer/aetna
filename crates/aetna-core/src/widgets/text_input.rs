@@ -1021,6 +1021,7 @@ mod tests {
             node_id: "root.text_input[ti]".into(),
             rect: Rect::new(20.0, 20.0, 400.0, 36.0),
             tooltip: None,
+            scroll_offset_y: 0.0,
         }
     }
 

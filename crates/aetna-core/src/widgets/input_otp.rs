@@ -189,6 +189,7 @@ mod tests {
                 node_id: format!("/{key}"),
                 rect: Rect::new(0.0, 0.0, 100.0, 40.0),
                 tooltip: None,
+                scroll_offset_y: 0.0,
             }),
             pointer: None,
             key_press: None,
@@ -209,6 +210,7 @@ mod tests {
                 node_id: format!("/{key}"),
                 rect: Rect::new(0.0, 0.0, 100.0, 40.0),
                 tooltip: None,
+                scroll_offset_y: 0.0,
             }),
             pointer: None,
             key_press: Some(KeyPress {

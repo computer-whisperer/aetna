@@ -22,6 +22,7 @@ fn stale_focus_clears_on_rebuild() {
         node_id: "root.missing".into(),
         rect: Rect::default(),
         tooltip: None,
+        scroll_offset_y: 0.0,
     });
 
     state.sync_focus_order(&tree);

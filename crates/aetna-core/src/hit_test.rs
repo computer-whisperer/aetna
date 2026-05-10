@@ -106,6 +106,7 @@ fn hit_test_rec(
             node_id: node.computed_id.clone(),
             rect: painted_rect,
             tooltip: node.tooltip.clone(),
+            scroll_offset_y: nearest_descendant_scroll_offset_y(node, ui_state),
         });
     }
     if node.block_pointer {
@@ -266,6 +267,47 @@ fn scroll_target_rec(
     for c in &node.children {
         scroll_target_rec(c, ui_state, point, child_clip, total_translate, out);
     }
+}
+
+/// Find the nearest `Kind::Scroll` descendant of `node` (or `node`
+/// itself) and return its stored scroll offset y. Returns `0.0` when
+/// no scroll lives in this subtree.
+///
+/// Walks pre-order, first-match-wins — widgets that compose a single
+/// inner scroll (e.g. `text_area`) get the right offset in O(depth).
+/// Widgets that nest multiple scrolls would need a different
+/// convention; none exist today.
+fn nearest_descendant_scroll_offset_y(node: &El, ui_state: &UiState) -> f32 {
+    if matches!(node.kind, Kind::Scroll) {
+        return ui_state
+            .scroll
+            .offsets
+            .get(&node.computed_id)
+            .copied()
+            .unwrap_or(0.0);
+    }
+    for c in &node.children {
+        if let Some(off) = find_scroll_offset_y(c, ui_state) {
+            return off;
+        }
+    }
+    0.0
+}
+
+fn find_scroll_offset_y(node: &El, ui_state: &UiState) -> Option<f32> {
+    if matches!(node.kind, Kind::Scroll) {
+        return Some(
+            ui_state
+                .scroll
+                .offsets
+                .get(&node.computed_id)
+                .copied()
+                .unwrap_or(0.0),
+        );
+    }
+    node.children
+        .iter()
+        .find_map(|c| find_scroll_offset_y(c, ui_state))
 }
 
 fn translated(r: Rect, offset: (f32, f32)) -> Rect {

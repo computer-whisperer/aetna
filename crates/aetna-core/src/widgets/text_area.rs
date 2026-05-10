@@ -236,6 +236,60 @@ fn text_area_geometry(value: &str) -> TextGeometry<'_> {
     )
 }
 
+/// Build a [`ScrollRequest::EnsureVisible`] for an in-flight drag
+/// whose pointer has moved past the top or bottom edge of the
+/// text_area's visible scroll viewport. Returns `None` when the
+/// pointer is still inside the viewport, when the event isn't a
+/// drag, when the event lacks pointer/target metadata, or when the
+/// target isn't this text_area's outer key.
+///
+/// The returned request asks the runtime to scroll so the
+/// pointer's content-space `y` is just inside the viewport. Apps
+/// push it to [`crate::event::App::drain_scroll_requests`] the
+/// same way [`caret_scroll_request_for`] is pushed.
+///
+/// Today this fires *only* when the pointer is fully past the edge
+/// and only while drag events keep arriving — a perfectly still
+/// pointer past the edge won't continue scrolling. Pumping a redraw
+/// timer for hold-still autoscroll is a future improvement.
+pub fn drag_autoscroll_request_for(event: &UiEvent, key: &str) -> Option<crate::scroll::ScrollRequest> {
+    if !matches!(event.kind, UiEventKind::Drag) {
+        return None;
+    }
+    let (_, py) = event.pointer?;
+    let target = event.target.as_ref()?;
+    if target.key != key {
+        return None;
+    }
+    // Viewport bounds in absolute coords. Padding cuts both the top
+    // and bottom of the outer rect.
+    let viewport_top = target.rect.y + tokens::SPACE_2;
+    let viewport_bottom = target.rect.bottom() - tokens::SPACE_2;
+    let line_h = line_height_px();
+    if py < viewport_top {
+        // Pointer dragged above the visible top — expose the line
+        // just above the current top of content.
+        let content_y_above = (target.scroll_offset_y - line_h).max(0.0);
+        Some(crate::scroll::ScrollRequest::ensure_visible(
+            key,
+            content_y_above,
+            line_h,
+        ))
+    } else if py > viewport_bottom {
+        // Pointer dragged below the visible bottom — expose the line
+        // just below the current bottom of content.
+        let viewport_h = (viewport_bottom - viewport_top).max(line_h);
+        let content_y_below = target.scroll_offset_y + viewport_h;
+        Some(crate::scroll::ScrollRequest::ensure_visible(
+            key,
+            content_y_below,
+            line_h,
+        ))
+    } else {
+        None
+    }
+}
+
 /// Build a [`ScrollRequest::EnsureVisible`] that keeps the caret of
 /// the text_area keyed `key` inside its scroll viewport. Returns
 /// `None` when the global selection doesn't currently live in this
@@ -482,7 +536,15 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
                 return false;
             };
             let local_x = px - target.rect.x - tokens::SPACE_3;
-            let local_y = py - target.rect.y - tokens::SPACE_2;
+            // After stage 1 wrapped the content in a scroll viewport,
+            // the visible glyph row at viewport-y=N is content-y=N +
+            // offset. `UiTarget.scroll_offset_y` carries the nearest
+            // descendant scroll's offset so the hit lands on the
+            // right content line. Without this, clicks on a scrolled
+            // text_area placed the caret on the line that was where
+            // the pointer is *now* without scrolling — off by the
+            // current offset.
+            let local_y = py - target.rect.y - tokens::SPACE_2 + target.scroll_offset_y;
             let pos = caret_from_xy(value, local_x, local_y);
             // Multi-click: 2 = word at caret, ≥3 = line containing
             // caret (delimited by '\n'). Shift+multi-click falls
@@ -515,7 +577,8 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
                 return false;
             };
             let local_x = px - target.rect.x - tokens::SPACE_3;
-            let local_y = py - target.rect.y - tokens::SPACE_2;
+            // See PointerDown above for the scroll_offset_y rationale.
+            let local_y = py - target.rect.y - tokens::SPACE_2 + target.scroll_offset_y;
             selection.head = caret_from_xy(value, local_x, local_y);
             true
         }
@@ -556,7 +619,11 @@ pub fn caret_byte_at(value: &str, event: &UiEvent) -> Option<usize> {
     let (px, py) = event.pointer?;
     let target = event.target.as_ref()?;
     let local_x = px - target.rect.x - tokens::SPACE_3;
-    let local_y = py - target.rect.y - tokens::SPACE_2;
+    // Same scroll-offset adjustment as the PointerDown / Drag paths
+    // in apply_event — `target.scroll_offset_y` is set by hit-test
+    // to the nearest descendant scroll's stored offset, so we get
+    // content-space y rather than viewport-space y.
+    let local_y = py - target.rect.y - tokens::SPACE_2 + target.scroll_offset_y;
     Some(caret_from_xy(value, local_x, local_y))
 }
 
@@ -672,6 +739,7 @@ mod tests {
             node_id: "/ta".to_string(),
             rect: crate::tree::Rect::new(0.0, 0.0, 200.0, 100.0),
             tooltip: None,
+            scroll_offset_y: 0.0,
         }
     }
 
@@ -934,6 +1002,204 @@ mod tests {
             after, after2,
             "caret already visible → resolver must leave the offset alone"
         );
+    }
+
+    #[test]
+    fn pointer_down_after_scroll_lands_on_the_visible_line_not_content_origin() {
+        // Regression: stage 1 wrapped contents in a scroll viewport
+        // but `apply_event`'s pointer→caret math kept using the
+        // outer rect's y, which is unchanged by the inner scroll.
+        // So once a user scrolled down and clicked, the caret would
+        // land on the line that was visible at that y *before*
+        // scrolling — i.e., a content-y of `local_y` instead of
+        // `local_y + offset`. The fix is `UiTarget.scroll_offset_y`
+        // (populated by hit-test). Verify a click after a scroll
+        // lands on the right line.
+        let lines: Vec<String> = (0..40).map(|i| format!("line {i}")).collect();
+        let value = lines.join("\n");
+        // Build a text_area with a small fixed height; layout the
+        // full pipeline so the inner scroll has metrics.
+        let mut root = super::text_area(&value, &Selection::default(), TEST_KEY)
+            .height(Size::Fixed(60.0))
+            .width(Size::Fixed(200.0));
+        let mut ui_state = crate::state::UiState::new();
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 200.0, 60.0));
+        let scroll_id = root.children[0].computed_id.clone();
+        // Wheel-scroll down by 5 lines' worth.
+        let offset = line_height_px() * 5.0;
+        ui_state.scroll.offsets.insert(scroll_id.clone(), offset);
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 200.0, 60.0));
+
+        // Synthesize a PointerDown at viewport-y mid-first-visible
+        // line. hit_test populates `scroll_offset_y` from the
+        // descendant scroll's stored offset.
+        let target = crate::hit_test::hit_test_target(
+            &root,
+            &ui_state,
+            (
+                tokens::SPACE_3 + 5.0,
+                tokens::SPACE_2 + line_height_px() * 0.5,
+            ),
+        )
+        .expect("click inside text_area should hit it");
+        assert!(
+            (target.scroll_offset_y - offset).abs() < 0.5,
+            "UiTarget.scroll_offset_y={} should reflect the inner scroll's {}",
+            target.scroll_offset_y,
+            offset
+        );
+
+        // Now drive a PointerDown through apply_event and assert
+        // the caret landed near the byte at line 5 (the first
+        // visible line after scrolling), not line 0.
+        let ev = UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            pointer: Some((
+                target.rect.x + tokens::SPACE_3 + 5.0,
+                target.rect.y + tokens::SPACE_2 + line_height_px() * 0.5,
+            )),
+            target: Some(target),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 1,
+            kind: UiEventKind::PointerDown,
+        };
+        let mut value_mut = value.clone();
+        let mut sel = Selection::default();
+        super::apply_event(&mut value_mut, &mut sel, TEST_KEY, &ev);
+        let view = sel.within(TEST_KEY).expect("apply_event sets selection");
+        // line 5 begins after 5 newlines (each "line N" is 6 or 7
+        // bytes plus '\n'); use the actual offset from value.
+        let line5_start = lines[..5].iter().map(|s| s.len() + 1).sum::<usize>();
+        let line5_end = line5_start + lines[5].len();
+        assert!(
+            view.head >= line5_start && view.head <= line5_end,
+            "PointerDown after a 5-line scroll should land on line 5 \
+             (bytes [{line5_start}..{line5_end}]); got head={}",
+            view.head
+        );
+    }
+
+    #[test]
+    fn drag_past_bottom_edge_emits_autoscroll_request() {
+        // Drag-select auto-scroll: when the user drags below the
+        // bottom of the visible scroll viewport, the helper
+        // returns a request that scrolls the inner scroll to expose
+        // the next line down. The app pushes this into
+        // `drain_scroll_requests` to advance the offset.
+        let target = ta_target();
+        let ev = UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            pointer: Some((
+                target.rect.x + tokens::SPACE_3 + 10.0,
+                target.rect.bottom() + 30.0, // 30px below the bottom
+            )),
+            target: Some(target),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 0,
+            kind: UiEventKind::Drag,
+        };
+        let req = drag_autoscroll_request_for(&ev, TEST_KEY)
+            .expect("drag past bottom edge should produce a scroll request");
+        match req {
+            crate::scroll::ScrollRequest::EnsureVisible {
+                container_key,
+                y,
+                ..
+            } => {
+                assert_eq!(container_key, TEST_KEY);
+                // y should be past the current viewport bottom in
+                // content coords. With offset=0 and a 100×100 outer
+                // (less 2*SPACE_2 padding), the viewport_h is
+                // ~100-2*SPACE_2; the request asks for a y at that
+                // bottom edge.
+                assert!(y > 0.0);
+            }
+            other => panic!("expected EnsureVisible, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn drag_inside_viewport_emits_no_autoscroll_request() {
+        // No autoscroll when the pointer is still inside the
+        // visible viewport — only continuous-drag past an edge
+        // should trigger it.
+        let target = ta_target();
+        let ev = UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            pointer: Some((
+                target.rect.x + tokens::SPACE_3 + 10.0,
+                target.rect.y + tokens::SPACE_2 + 20.0,
+            )),
+            target: Some(target),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 0,
+            kind: UiEventKind::Drag,
+        };
+        assert!(drag_autoscroll_request_for(&ev, TEST_KEY).is_none());
+    }
+
+    #[test]
+    fn drag_past_top_edge_emits_autoscroll_request_up() {
+        // Symmetric: pointer above the top of the visible viewport
+        // returns a request that exposes the line just above.
+        let mut target = ta_target();
+        target.scroll_offset_y = 200.0; // currently scrolled down
+        let ev = UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            pointer: Some((
+                target.rect.x + tokens::SPACE_3 + 10.0,
+                target.rect.y - 20.0,
+            )),
+            target: Some(target),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 0,
+            kind: UiEventKind::Drag,
+        };
+        let req = drag_autoscroll_request_for(&ev, TEST_KEY)
+            .expect("drag past top edge should produce a scroll request");
+        match req {
+            crate::scroll::ScrollRequest::EnsureVisible { y, .. } => {
+                assert!(y < 200.0, "should ask to expose a y above the current 200 offset");
+            }
+            other => panic!("expected EnsureVisible, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn drag_autoscroll_returns_none_for_non_drag_events() {
+        let target = ta_target();
+        let ev = UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            pointer: Some((
+                target.rect.x,
+                target.rect.bottom() + 50.0,
+            )),
+            target: Some(target),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 1,
+            kind: UiEventKind::PointerDown,
+        };
+        assert!(drag_autoscroll_request_for(&ev, TEST_KEY).is_none());
     }
 
     #[test]

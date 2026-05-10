@@ -538,6 +538,7 @@ mod tests {
                 node_id: format!("root.{k}"),
                 rect: crate::tree::Rect::new(0.0, 0.0, 0.0, 0.0),
                 tooltip: None,
+                scroll_offset_y: 0.0,
             })
             .collect()
     }

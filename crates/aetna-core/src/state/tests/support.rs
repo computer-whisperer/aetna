@@ -85,6 +85,7 @@ pub(crate) fn target(node: &El, state: &UiState, key: &str) -> UiTarget {
         node_id: find_id(node, key).expect("target id"),
         rect,
         tooltip: None,
+        scroll_offset_y: 0.0,
     }
 }
 pub(crate) fn find_id(node: &El, key: &str) -> Option<String> {
