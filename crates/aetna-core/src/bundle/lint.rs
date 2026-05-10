@@ -142,6 +142,33 @@ pub enum FindingKind {
     /// `Corners::bottom(N)` for a footer), or add padding to the
     /// parent so the child is inset from the curve.
     CornerStackup,
+    /// A `surface_role=Panel` node whose direct children sit flush
+    /// against one or more of its outer edges with no padding
+    /// (neither on the panel nor on the touching child) to inset the
+    /// content. The canonical trip is `card([...])` called without
+    /// the `card_header` / `card_content` / `card_footer` slot
+    /// wrappers and without an explicit `.padding(...)`: `card()`
+    /// itself carries no inner padding, so titles paint on the top
+    /// stroke, action buttons paint on the bottom stroke, and chip
+    /// rows pin to the left edge.
+    ///
+    /// The check is per-side. A side is treated as "padded" — and so
+    /// is not flagged — when either the panel itself pads on that
+    /// side, or any child whose rect touches that side carries
+    /// inward padding on that side. So the canonical anatomy
+    /// (`card_header` pads top/left/right, `card_footer` pads
+    /// bottom/left/right, both at `SPACE_6`) stays quiet without
+    /// special-casing.
+    ///
+    /// Fixes:
+    ///
+    /// - Wrap content in the slot anatomy: `card([card_header([...]),
+    ///   card_content([...]), card_footer([...])])` — each slot bakes
+    ///   the shadcn `SPACE_6` padding recipe.
+    /// - For dense list-row cards where the slot padding feels too
+    ///   generous, pad the panel itself:
+    ///   `card([...]).padding(Sides::all(tokens::SPACE_4))`.
+    UnpaddedSurfacePanel,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -347,6 +374,10 @@ fn walk(
                      wrap in card() / sidebar() / dialog() for the canonical recipe, or set .fill(tokens::CARD)"
                         .to_string(),
             });
+        }
+
+        if matches!(n.surface_role, SurfaceRole::Panel) {
+            check_unpadded_surface_panel(n, computed, ui_state, r, n.source);
         }
 
         // Reinvented widgets: a plain Group whose visual recipe matches
@@ -762,6 +793,99 @@ fn check_corner_stackup(
              Set `.radius({helper})` on the child so its corners follow the parent's curve, \
              or add padding to the parent so the child is inset from the curve.",
             pr_max = pr.max(),
+        ),
+    });
+}
+
+/// Detects [`FindingKind::UnpaddedSurfacePanel`]: a Panel surface
+/// whose direct children sit flush against one or more outer edges
+/// with no padding to inset them. Per-side rule: a side is "safe"
+/// when either the panel itself pads on that side, or some child
+/// whose rect touches that side carries inward padding on that side.
+/// That keeps the canonical `card([card_header, card_content,
+/// card_footer])` anatomy quiet (header pads top/left/right at
+/// `SPACE_6`; footer pads bottom/left/right at `SPACE_6`) while
+/// flagging `card([row(...).width(Fill(1.0)), button_row])` and
+/// other bare-panel + Fill-children shapes.
+fn check_unpadded_surface_panel(
+    panel: &El,
+    panel_rect: Rect,
+    ui_state: &UiState,
+    r: &mut LintReport,
+    blame: Source,
+) {
+    // Match the issue spec: a child rect within `RING_WIDTH` of an
+    // outer edge counts as flush against it.
+    let touch_eps = crate::tokens::RING_WIDTH;
+    // Half a pixel of inward padding is enough to clear `touch_eps`
+    // and inset content from the edge.
+    const PAD_EPS: f32 = 0.5;
+
+    // Per-side state: (any child touches, any touching child pads inward).
+    let mut top = (false, false);
+    let mut right = (false, false);
+    let mut bottom = (false, false);
+    let mut left = (false, false);
+
+    for c in &panel.children {
+        let cr = ui_state.rect(&c.computed_id);
+        if cr.w <= PAD_EPS || cr.h <= PAD_EPS {
+            // Zero-area children can't be flush against anything.
+            continue;
+        }
+        if (cr.y - panel_rect.y).abs() <= touch_eps {
+            top.0 = true;
+            if c.padding.top > PAD_EPS {
+                top.1 = true;
+            }
+        }
+        if (panel_rect.right() - cr.right()).abs() <= touch_eps {
+            right.0 = true;
+            if c.padding.right > PAD_EPS {
+                right.1 = true;
+            }
+        }
+        if (panel_rect.bottom() - cr.bottom()).abs() <= touch_eps {
+            bottom.0 = true;
+            if c.padding.bottom > PAD_EPS {
+                bottom.1 = true;
+            }
+        }
+        if (cr.x - panel_rect.x).abs() <= touch_eps {
+            left.0 = true;
+            if c.padding.left > PAD_EPS {
+                left.1 = true;
+            }
+        }
+    }
+
+    let pad = panel.padding;
+    let mut sides: Vec<&'static str> = Vec::new();
+    if pad.top <= PAD_EPS && top.0 && !top.1 {
+        sides.push("top");
+    }
+    if pad.right <= PAD_EPS && right.0 && !right.1 {
+        sides.push("right");
+    }
+    if pad.bottom <= PAD_EPS && bottom.0 && !bottom.1 {
+        sides.push("bottom");
+    }
+    if pad.left <= PAD_EPS && left.0 && !left.1 {
+        sides.push("left");
+    }
+    if sides.is_empty() {
+        return;
+    }
+    let joined = sides.join("/");
+    r.findings.push(Finding {
+        kind: FindingKind::UnpaddedSurfacePanel,
+        node_id: panel.computed_id.clone(),
+        source: blame,
+        message: format!(
+            "Panel-surface children sit flush against the {joined} edge — \
+             wrap content in the slot anatomy (`card_header(...)` / `card_content(...)` / `card_footer(...)` \
+             each bake `SPACE_6` padding), or pad the panel itself \
+             (e.g. `.padding(Sides::all(tokens::SPACE_4))` for dense list-row cards).",
         ),
     });
 }
@@ -2367,6 +2491,103 @@ mod tests {
                 .iter()
                 .any(|f| f.kind == FindingKind::CornerStackup),
             "canonical card_header(...).fill(...) recipe should be quiet after metrics pass, got:\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn bare_card_with_flush_content_reports_unpadded_surface_panel_issue_24() {
+        // Repro for #24: `card([...])` with children that carry their
+        // own width/gap config and no slot wrappers and no
+        // `.padding(...)` on the card. The row's rect is flush against
+        // the card's top stroke (and L/R via Size::Fill(1.0)).
+        let root = crate::widgets::card::card([
+            crate::row([
+                crate::text("some title").bold(),
+                crate::text("description line").muted(),
+            ])
+            .gap(crate::tokens::SPACE_2)
+            .width(Size::Fill(1.0)),
+        ])
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(80.0));
+
+        let report = lint_one(root);
+        let f = report
+            .findings
+            .iter()
+            .find(|f| f.kind == FindingKind::UnpaddedSurfacePanel)
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected UnpaddedSurfacePanel finding, got:\n{}",
+                    report.text()
+                )
+            });
+        assert!(
+            f.message.contains("top"),
+            "expected the flushing-side list to call out `top`, got: {}",
+            f.message
+        );
+    }
+
+    #[test]
+    fn card_with_explicit_padding_does_not_report_unpadded_surface_panel() {
+        // The "dense list-row card" fix from the issue: pad the card
+        // itself (the bare slot recipe's SPACE_6 feels too generous).
+        let root = crate::widgets::card::card([crate::row([crate::text("title").bold()])
+            .width(Size::Fill(1.0))])
+        .padding(Sides::all(crate::tokens::SPACE_4))
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(60.0));
+
+        let report = lint_one(root);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::UnpaddedSurfacePanel),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn canonical_card_anatomy_does_not_report_unpadded_surface_panel() {
+        // header pads top/left/right at SPACE_6; footer pads
+        // bottom/left/right at SPACE_6. Every panel edge is covered
+        // by a touching slot child with inward padding on that side.
+        let root = crate::widgets::card::card([
+            crate::widgets::card::card_header([crate::widgets::card::card_title("Header")]),
+            crate::widgets::card::card_content([crate::text("Body")]),
+            crate::widgets::card::card_footer([crate::text("footer")]),
+        ])
+        .width(Size::Fixed(220.0))
+        .height(Size::Fixed(160.0));
+
+        let report = lint_one(root);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::UnpaddedSurfacePanel),
+            "canonical slot anatomy should be quiet, got:\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn sidebar_widget_does_not_report_unpadded_surface_panel() {
+        // sidebar() carries default_padding(SPACE_4), so the panel
+        // itself insets content from every edge.
+        let root = crate::widgets::sidebar::sidebar([crate::text("nav")]);
+
+        let report = lint_one(root);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::UnpaddedSurfacePanel),
+            "{}",
             report.text()
         );
     }
