@@ -92,6 +92,24 @@ pub enum FindingKind {
     ///   neighbor (≥ `tokens::RING_WIDTH`), or restructure so the
     ///   neighbor doesn't sit on the focusable element's edge.
     FocusRingObscured,
+    /// A focusable node sits inside a scrolling ancestor whose
+    /// scrollbar thumb is currently rendered (content overflows), and
+    /// the focusable's rect overlaps the thumb's track on the x-axis
+    /// — so the thumb paints on top of the control whenever the user
+    /// scrolls to it.
+    ///
+    /// The trap is that giving the *scroll itself* horizontal padding
+    /// (the natural reading of `FocusRingObscured`'s message) shifts
+    /// `inner` and the thumb together: padding clears the focus-ring
+    /// scissor, but the thumb still sits in the rightmost
+    /// `SCROLLBAR_THUMB_WIDTH + SCROLLBAR_TRACK_INSET` pixels of the
+    /// children's visible area.
+    ///
+    /// Fix: move horizontal padding *inside* the scroll, onto a
+    /// wrapper that constrains children to a narrower content rect,
+    /// so the thumb sits in a reserved gutter to the right of
+    /// content.
+    ScrollbarObscuresFocusable,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -140,7 +158,7 @@ pub fn lint(root: &El, ui_state: &UiState) -> LintReport {
         root,
         None,
         None,
-        ClipCtx::None,
+        &ClipCtx::None,
         ui_state,
         &mut r,
         &mut seen_ids,
@@ -166,8 +184,11 @@ fn is_from_user(source: Source) -> bool {
 /// clipping ancestor's scissor rect and, for scrollable ancestors,
 /// the axis along which content can be scrolled into view (clipping
 /// on that axis is benign — focus rings on partially-clipped rows
-/// become visible after auto-scroll-on-focus).
-#[derive(Clone, Copy)]
+/// become visible after auto-scroll-on-focus). The scrolling variant
+/// also carries the ancestor's `node_id` so descendant checks can
+/// look up its `thumb_tracks` entry to detect scrollbar/control
+/// overlap (`ScrollbarObscuresFocusable`).
+#[derive(Clone)]
 enum ClipCtx {
     None,
     /// Non-scrolling clip — the rect cuts on every side.
@@ -178,6 +199,7 @@ enum ClipCtx {
     Scrolling {
         rect: Rect,
         scroll_axis: Axis,
+        node_id: String,
     },
 }
 
@@ -185,7 +207,7 @@ fn walk(
     n: &El,
     parent_kind: Option<&Kind>,
     parent_blame: Option<Source>,
-    nearest_clip: ClipCtx,
+    nearest_clip: &ClipCtx,
     ui_state: &UiState,
     r: &mut LintReport,
     seen: &mut std::collections::BTreeMap<String, usize>,
@@ -445,12 +467,13 @@ fn walk(
             ClipCtx::Scrolling {
                 rect: computed,
                 scroll_axis: n.axis,
+                node_id: n.computed_id.clone(),
             }
         } else {
             ClipCtx::Static(computed)
         }
     } else {
-        nearest_clip
+        nearest_clip.clone()
     };
 
     for (child_idx, c) in n.children.iter().enumerate() {
@@ -508,26 +531,39 @@ fn walk(
             });
         }
 
-        // Focus-ring obscurement: only meaningful for focusable nodes
-        // that reserve a paint_overflow band (the band is where the
-        // ring renders in the stock-shader path).
         if from_user_child
             && c.focusable
-            && has_paint_overflow(c.paint_overflow)
             && let Some(blame) = child_blame
         {
-            check_focus_ring_obscured(
-                c,
-                c_rect,
-                child_clip,
-                &n.children[child_idx + 1..],
-                ui_state,
-                r,
-                blame,
-            );
+            // Focus-ring obscurement: only meaningful for focusable
+            // nodes that reserve a paint_overflow band (the band is
+            // where the ring renders in the stock-shader path).
+            if has_paint_overflow(c.paint_overflow) {
+                check_focus_ring_obscured(
+                    c,
+                    c_rect,
+                    &child_clip,
+                    &n.children[child_idx + 1..],
+                    ui_state,
+                    r,
+                    blame,
+                );
+            }
+            // Independent of paint_overflow: the focusable's own rect
+            // overlaps an ancestor scroll's thumb track (the thumb
+            // paints on top of the control whenever it's visible).
+            check_scrollbar_overlap(c, c_rect, &child_clip, ui_state, r, blame);
         }
 
-        walk(c, Some(&n.kind), child_blame, child_clip, ui_state, r, seen);
+        walk(
+            c,
+            Some(&n.kind),
+            child_blame,
+            &child_clip,
+            ui_state,
+            r,
+            seen,
+        );
     }
 }
 
@@ -538,7 +574,7 @@ fn has_paint_overflow(s: Sides) -> bool {
 fn check_focus_ring_obscured(
     n: &El,
     n_rect: Rect,
-    nearest_clip: ClipCtx,
+    nearest_clip: &ClipCtx,
     later_siblings: &[El],
     ui_state: &UiState,
     r: &mut LintReport,
@@ -551,11 +587,13 @@ fn check_focus_ring_obscured(
     // clipped rows into view on focus.
     let (clip_rect, check_horiz, check_vert) = match nearest_clip {
         ClipCtx::None => (None, false, false),
-        ClipCtx::Static(rect) => (Some(rect), true, true),
-        ClipCtx::Scrolling { rect, scroll_axis } => match scroll_axis {
-            Axis::Column => (Some(rect), true, false),
-            Axis::Row => (Some(rect), false, true),
-            Axis::Overlay => (Some(rect), true, true),
+        ClipCtx::Static(rect) => (Some(*rect), true, true),
+        ClipCtx::Scrolling {
+            rect, scroll_axis, ..
+        } => match scroll_axis {
+            Axis::Column => (Some(*rect), true, false),
+            Axis::Row => (Some(*rect), false, true),
+            Axis::Overlay => (Some(*rect), true, true),
         },
     };
     if let Some(clip) = clip_rect {
@@ -612,6 +650,61 @@ fn check_focus_ring_obscured(
             break;
         }
     }
+}
+
+/// Detects `ScrollbarObscuresFocusable`: a focusable descendant of a
+/// scrolling ancestor whose x-extent overlaps the visible scrollbar
+/// thumb's column. The check uses the thumb's *active* width
+/// (`SCROLLBAR_THUMB_WIDTH_ACTIVE`) — the wider rendering shown when
+/// the user interacts with the scrollbar — so the fix that clears
+/// the active thumb (a `SCROLLBAR_THUMB_WIDTH_ACTIVE +
+/// SCROLLBAR_TRACK_INSET`-wide right-edge gutter on content) is also
+/// what silences the lint.
+///
+/// The thumb's vertical position changes with scroll offset, but its
+/// x-column is fixed; checking x-axis overlap (independent of the
+/// thumb's current y) catches focusables that would be covered at
+/// any scroll position.
+///
+/// Only fires when content actually overflows enough for the runtime
+/// to write a `thumb_tracks` entry — non-overflowing scrolls don't
+/// render a thumb, so the bug isn't user-visible.
+fn check_scrollbar_overlap(
+    n: &El,
+    n_rect: Rect,
+    nearest_clip: &ClipCtx,
+    ui_state: &UiState,
+    r: &mut LintReport,
+    blame: Source,
+) {
+    let ClipCtx::Scrolling { node_id, .. } = nearest_clip else {
+        return;
+    };
+    let Some(track) = ui_state.scroll.thumb_tracks.get(node_id).copied() else {
+        return;
+    };
+    // Active thumb sits flush-right inside the hitbox gutter, so its
+    // right edge equals the track's right edge and its width is
+    // SCROLLBAR_THUMB_WIDTH_ACTIVE. Checking against this (rather
+    // than the wider hitbox) matches the conventional fix gutter of
+    // SCROLLBAR_THUMB_WIDTH_ACTIVE + SCROLLBAR_TRACK_INSET.
+    let active_w = crate::tokens::SCROLLBAR_THUMB_WIDTH_ACTIVE;
+    let thumb_left = track.right() - active_w;
+    let thumb_right = track.right();
+    let overlap_x = n_rect.right().min(thumb_right) - n_rect.x.max(thumb_left);
+    if overlap_x <= 0.5 {
+        return;
+    }
+    r.findings.push(Finding {
+        kind: FindingKind::ScrollbarObscuresFocusable,
+        node_id: n.computed_id.clone(),
+        source: blame,
+        message: format!(
+            "scrollbar thumb overlaps this focusable on the right edge by {overlap_x:.0}px (thumb x={thumb_left:.0}..{thumb_right:.0}; control x={ctrl_x:.0}..{ctrl_right:.0}) — move horizontal padding *inside* the scroll, onto a wrapper that constrains children to a narrower content rect, so the thumb sits in a reserved gutter to the right of content",
+            ctrl_x = n_rect.x,
+            ctrl_right = n_rect.right(),
+        ),
+    });
 }
 
 /// True if `n` paints visible pixels (so it can occlude a sibling's
@@ -1667,6 +1760,120 @@ mod tests {
                 .iter()
                 .any(|f| f.kind == FindingKind::FocusRingObscured),
             "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn scrollbar_overlap_lint_fires_when_thumb_covers_fill_child() {
+        // Repro from #21: padding *on* the scroll silences
+        // FocusRingObscured but leaves the scrollbar thumb painting
+        // on top of right-flush focusables.
+        let body = crate::tree::column(
+            (0..30)
+                .map(|i| {
+                    crate::tree::row([
+                        crate::text(format!("Row {i}")),
+                        crate::tree::spacer(),
+                        crate::widgets::switch::switch(false).key(format!("row-{i}-toggle")),
+                    ])
+                    .gap(crate::tokens::SPACE_2)
+                    .width(Size::Fill(1.0))
+                })
+                .collect::<Vec<_>>(),
+        )
+        .gap(crate::tokens::SPACE_2)
+        .width(Size::Fill(1.0));
+
+        let mut root = crate::tree::scroll([body])
+            .padding(Sides::xy(crate::tokens::SPACE_3, crate::tokens::SPACE_2))
+            .width(Size::Fixed(480.0))
+            .height(Size::Fixed(320.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 480.0, 320.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::ScrollbarObscuresFocusable),
+            "expected ScrollbarObscuresFocusable for a switch that reaches the scroll's inner.right()\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn scrollbar_overlap_lint_silenced_when_padding_is_inside_scroll() {
+        // The recommended fix: move horizontal padding onto a wrapper
+        // *inside* the scroll. The scroll's own padding stays on the
+        // y axis only; the wrapper inset clears the thumb gutter.
+        let body = crate::tree::column(
+            (0..30)
+                .map(|i| {
+                    crate::tree::row([
+                        crate::text(format!("Row {i}")),
+                        crate::tree::spacer(),
+                        crate::widgets::switch::switch(false).key(format!("row-{i}-toggle")),
+                    ])
+                    .gap(crate::tokens::SPACE_2)
+                    .width(Size::Fill(1.0))
+                })
+                .collect::<Vec<_>>(),
+        )
+        .gap(crate::tokens::SPACE_2)
+        .width(Size::Fill(1.0));
+
+        let mut root = crate::tree::scroll([crate::tree::column([body])
+            .padding(Sides::xy(crate::tokens::SPACE_3, 0.0))
+            .width(Size::Fill(1.0))])
+        .padding(Sides::xy(0.0, crate::tokens::SPACE_2))
+        .width(Size::Fixed(480.0))
+        .height(Size::Fixed(320.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 480.0, 320.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::ScrollbarObscuresFocusable),
+            "expected no ScrollbarObscuresFocusable when padding is inside the scroll\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn scrollbar_overlap_lint_quiet_when_content_does_not_overflow() {
+        // A `scroll` with content shorter than its viewport doesn't
+        // render a thumb, so the bug isn't user-visible. The lint
+        // should match — thumb_tracks has no entry for the scroll, so
+        // there's nothing to collide against.
+        let body = crate::tree::column([crate::tree::row([
+            crate::text("only row"),
+            crate::tree::spacer(),
+            crate::widgets::switch::switch(false).key("only-toggle"),
+        ])
+        .gap(crate::tokens::SPACE_2)
+        .width(Size::Fill(1.0))])
+        .gap(crate::tokens::SPACE_2)
+        .width(Size::Fill(1.0));
+
+        let mut root = crate::tree::scroll([body])
+            .padding(Sides::xy(crate::tokens::SPACE_3, crate::tokens::SPACE_2))
+            .width(Size::Fixed(480.0))
+            .height(Size::Fixed(320.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 480.0, 320.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::ScrollbarObscuresFocusable),
+            "expected no ScrollbarObscuresFocusable when content fits in the viewport (no thumb rendered)\n{}",
             report.text()
         );
     }
