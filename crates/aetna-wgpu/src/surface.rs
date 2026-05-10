@@ -465,9 +465,10 @@ impl AppTextureBackend for WgpuAppTexture {
 ///
 /// # Panics
 ///
-/// Panics if the texture's format is outside the supported set or its
-/// sample count is not 1. These are app-side mistakes, not runtime
-/// errors — fail loudly rather than silently miscompositing.
+/// Panics if the texture is missing `TEXTURE_BINDING` usage, its format
+/// is outside the supported set, or its sample count is not 1. These are
+/// app-side mistakes, not runtime errors — fail loudly rather than
+/// silently miscompositing.
 pub fn app_texture(texture: Arc<wgpu::Texture>) -> AppTexture {
     let format = match texture.format() {
         wgpu::TextureFormat::Rgba8UnormSrgb => SurfaceFormat::Rgba8UnormSrgb,
@@ -479,6 +480,13 @@ pub fn app_texture(texture: Arc<wgpu::Texture>) -> AppTexture {
             f
         ),
     };
+    assert!(
+        texture
+            .usage()
+            .contains(wgpu::TextureUsages::TEXTURE_BINDING),
+        "aetna_wgpu::app_texture: source texture must include TEXTURE_BINDING usage (got {:?})",
+        texture.usage(),
+    );
     assert_eq!(
         texture.sample_count(),
         1,

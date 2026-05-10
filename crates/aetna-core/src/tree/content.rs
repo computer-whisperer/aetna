@@ -204,6 +204,27 @@ impl El {
         self
     }
 
+    /// Select how a vector asset should render. The default is
+    /// [`crate::vector::VectorRenderMode::Painted`], which preserves
+    /// authored fills/strokes/gradients. Use [`Self::vector_mask`] when
+    /// the asset is intended as one-colour coverage geometry.
+    pub fn vector_render_mode(mut self, mode: crate::vector::VectorRenderMode) -> Self {
+        self.vector_render_mode = mode;
+        self
+    }
+
+    /// Treat this vector as coverage geometry and paint it with one
+    /// colour. Backends can render this through their MSDF path.
+    pub fn vector_mask(self, color: Color) -> Self {
+        self.vector_render_mode(crate::vector::VectorRenderMode::Mask { color })
+    }
+
+    /// Preserve authored vector paint. This is the default for
+    /// [`crate::tree::vector`].
+    pub fn vector_painted(self) -> Self {
+        self.vector_render_mode(crate::vector::VectorRenderMode::Painted)
+    }
+
     /// Inside-out redraw deadline. While this El is visible (rect
     /// intersects the viewport), Aetna asks the host to drive the next
     /// frame within `deadline`. Aggregated across the tree via `min`,

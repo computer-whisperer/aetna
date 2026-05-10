@@ -256,12 +256,12 @@ impl IconMsdfAtlas {
     }
 
     /// Rasterise (or look up) the MTSDF for an app-supplied
-    /// [`crate::vector::VectorAsset`] and return its slot. The asset's
-    /// structural content hash is the cache key — apps that build the
-    /// same shape twice share one slot. Stroke width and other style
-    /// participate in the hash, so a single asset has one canonical
-    /// MTSDF; varying styles produce distinct slots automatically
-    /// without per-call quantisation.
+    /// [`crate::vector::VectorAsset`] being rendered as an explicit mask
+    /// and return its slot. The asset's structural content hash is the
+    /// cache key — apps that build the same shape twice share one slot.
+    /// Stroke width and other style participate in the hash, so a single
+    /// asset has one canonical MTSDF; varying styles produce distinct
+    /// slots automatically without per-call quantisation.
     pub fn ensure_vector_asset(
         &mut self,
         asset: &crate::vector::VectorAsset,

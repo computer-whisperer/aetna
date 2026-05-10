@@ -38,7 +38,7 @@ pub use crate::style::StyleProfile;
 pub use crate::surface::{
     AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat, SurfaceSource,
 };
-pub use crate::svg_icon::{IconSource, IntoIconSource, SvgIcon};
+pub use crate::svg_icon::{IconSource, IntoIconSource, SvgIcon, SvgIconPaintMode};
 pub use crate::text::metrics::{
     MeasuredText, TextHit, TextLayout, TextLine, caret_xy, caret_xy_with_family, hit_text,
     hit_text_with_family, layout_text, layout_text_with_family,
@@ -54,6 +54,7 @@ pub use crate::tree::{
     TextWrap, column, divider, hard_break, image, row, scroll, spacer, stack, surface, text_runs,
     vector, virtual_list, virtual_list_dyn,
 };
+pub use crate::vector::VectorRenderMode;
 pub use crate::vector::{
     IconMaterial, PathBuilder, VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorLineCap,
     VectorLineJoin, VectorPath, VectorSegment, VectorStroke,

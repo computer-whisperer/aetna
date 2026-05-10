@@ -102,7 +102,7 @@ pub use surface::{
     AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat, SurfaceSource,
     next_app_texture_id,
 };
-pub use svg_icon::{IconSource, IntoIconSource, SvgIcon};
+pub use svg_icon::{IconSource, IntoIconSource, SvgIcon, SvgIconPaintMode};
 // Atlas/glyph types are backend-implementer surface (consumed by
 // `aetna-wgpu` / `aetna-vulkano` paint paths). App authors don't
 // touch them, so hide from docs.rs while keeping them resolvable
@@ -126,7 +126,7 @@ pub use tree::{
     divider, hard_break, row, scroll, spacer, stack, surface, text_runs, vector, virtual_list,
     virtual_list_dyn,
 };
-pub use vector::IconMaterial;
+pub use vector::{IconMaterial, VectorRenderMode};
 // Vector path / mesh tessellation types are internal-tooling surface.
 // `aetna_core::vector::*` keeps them reachable for tools that need
 // raw mesh access; hide from docs.rs and the crate-root prelude so

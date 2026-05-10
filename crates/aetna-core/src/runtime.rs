@@ -1388,6 +1388,7 @@ impl RunnerCore {
                     rect,
                     scissor,
                     asset,
+                    render_mode,
                     ..
                 } => {
                     close_run(
@@ -1404,7 +1405,8 @@ impl RunnerCore {
                     if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
                         continue;
                     }
-                    let recorded = text.record_vector(*rect, phys, asset, scale_factor);
+                    let recorded =
+                        text.record_vector(*rect, phys, asset, *render_mode, scale_factor);
                     for index in recorded {
                         self.paint_items.push(PaintItem::Vector(index));
                     }
@@ -1779,6 +1781,7 @@ pub trait TextRecorder {
         _rect: Rect,
         _scissor: Option<PhysicalScissor>,
         _asset: &crate::vector::VectorAsset,
+        _render_mode: crate::vector::VectorRenderMode,
         _scale_factor: f32,
     ) -> Range<usize> {
         0..0

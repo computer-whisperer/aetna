@@ -23,7 +23,8 @@
 //! ```
 //!
 //! Identity is content-hashed: two `SvgIcon`s parsed from the same
-//! source share an MSDF atlas slot. Cloning is a cheap `Arc` bump.
+//! source and paint mode share backend cache entries. Cloning is a cheap
+//! `Arc` bump.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -49,6 +50,13 @@ pub struct SvgIcon {
 struct SvgIconInner {
     asset: VectorAsset,
     content_hash: u64,
+    paint_mode: SvgIconPaintMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SvgIconPaintMode {
+    Authored,
+    CurrentColorMask,
 }
 
 impl SvgIcon {
@@ -57,7 +65,11 @@ impl SvgIcon {
     /// this icon. Use this for full-color art (logos, illustrations).
     pub fn parse(svg: &str) -> Result<Self, VectorParseError> {
         let asset = parse_svg_asset(svg)?;
-        Ok(Self::from_asset(asset, hash_svg(svg, false)))
+        Ok(Self::from_asset(
+            asset,
+            hash_svg(svg, false),
+            SvgIconPaintMode::Authored,
+        ))
     }
 
     /// Parse an SVG and treat every fill/stroke as `currentColor`. The
@@ -65,14 +77,19 @@ impl SvgIcon {
     /// modulates strokes — matches how the built-in lucide icons work.
     pub fn parse_current_color(svg: &str) -> Result<Self, VectorParseError> {
         let asset = parse_current_color_svg_asset(svg)?;
-        Ok(Self::from_asset(asset, hash_svg(svg, true)))
+        Ok(Self::from_asset(
+            asset,
+            hash_svg(svg, true),
+            SvgIconPaintMode::CurrentColorMask,
+        ))
     }
 
-    fn from_asset(asset: VectorAsset, content_hash: u64) -> Self {
+    fn from_asset(asset: VectorAsset, content_hash: u64, paint_mode: SvgIconPaintMode) -> Self {
         Self {
             inner: Arc::new(SvgIconInner {
                 asset,
                 content_hash,
+                paint_mode,
             }),
         }
     }
@@ -84,10 +101,14 @@ impl SvgIcon {
     }
 
     /// Stable per-process identity. Two `SvgIcon`s parsed from the
-    /// same input share this value, so the MSDF atlas dedups them
-    /// automatically.
+    /// same input and paint mode share this value, so backend caches
+    /// dedup them automatically.
     pub fn content_hash(&self) -> u64 {
         self.inner.content_hash
+    }
+
+    pub fn paint_mode(&self) -> SvgIconPaintMode {
+        self.inner.paint_mode
     }
 }
 
@@ -107,6 +128,7 @@ impl std::fmt::Debug for SvgIcon {
                 &format_args!("{:016x}", self.inner.content_hash),
             )
             .field("paths", &self.inner.asset.paths.len())
+            .field("paint_mode", &self.inner.paint_mode)
             .finish()
     }
 }
@@ -126,6 +148,13 @@ impl IconSource {
         match self {
             IconSource::Builtin(name) => crate::icons::icon_vector_asset(*name),
             IconSource::Custom(svg) => svg.vector_asset(),
+        }
+    }
+
+    pub fn paint_mode(&self) -> SvgIconPaintMode {
+        match self {
+            IconSource::Builtin(_) => SvgIconPaintMode::CurrentColorMask,
+            IconSource::Custom(svg) => svg.paint_mode(),
         }
     }
 
@@ -237,6 +266,12 @@ mod tests {
         let a = SvgIcon::parse(RED_CIRCLE).unwrap();
         let b = SvgIcon::parse_current_color(RED_CIRCLE).unwrap();
         assert_ne!(a.content_hash(), b.content_hash());
+        assert_eq!(a.paint_mode(), SvgIconPaintMode::Authored);
+        assert_eq!(b.paint_mode(), SvgIconPaintMode::CurrentColorMask);
+        assert_eq!(
+            IconSource::Builtin(IconName::Settings).paint_mode(),
+            SvgIconPaintMode::CurrentColorMask
+        );
     }
 
     #[test]

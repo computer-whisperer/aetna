@@ -140,8 +140,12 @@ fn emit_op(s: &mut String, op: &DrawOp) {
             id, rect, texture, ..
         } => emit_surface_placeholder(s, id, *rect, texture),
         DrawOp::Vector {
-            id, rect, asset, ..
-        } => emit_vector_placeholder(s, id, *rect, asset),
+            id,
+            rect,
+            asset,
+            render_mode,
+            ..
+        } => emit_vector_placeholder(s, id, *rect, asset, *render_mode),
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
 }
@@ -158,10 +162,12 @@ fn emit_vector_placeholder(
     id: &str,
     rect: Rect,
     asset: &crate::vector::VectorAsset,
+    render_mode: crate::vector::VectorRenderMode,
 ) {
     let label = format!(
-        "Vector#{:08x} {} path{}",
+        "Vector#{:08x} {:?} {} path{}",
         asset.content_hash() as u32,
+        render_mode,
         asset.paths.len(),
         if asset.paths.len() == 1 { "" } else { "s" },
     );

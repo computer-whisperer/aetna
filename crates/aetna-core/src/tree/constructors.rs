@@ -281,29 +281,28 @@ pub fn image(img: impl Into<Image>) -> El {
     El::new(Kind::Image).at_loc(Location::caller()).image(img)
 }
 
-/// An app-supplied vector asset rasterised once into the MSDF atlas
-/// and sampled at any size. Companion to [`crate::tree::icon`] for
-/// content that doesn't fit icon conventions: arbitrary-aspect
-/// bounding boxes, no theme-color rules, programmatic construction
-/// each frame. Pairs with [`crate::vector::PathBuilder`] for ergonomic
-/// path construction.
+/// An app-supplied vector asset. By default Aetna preserves authored
+/// fills, strokes, and gradients through the painted vector path; call
+/// [`El::vector_mask`] when the asset should be treated as a one-colour
+/// coverage mask. Companion to [`crate::tree::icon`] for content that
+/// doesn't fit icon conventions: arbitrary-aspect bounding boxes,
+/// programmatic construction each frame. Pairs with
+/// [`crate::vector::PathBuilder`] for ergonomic path construction.
 ///
 /// # Sizing
 ///
 /// The default size matches the asset's view-box dimensions in logical
 /// pixels. Set [`El::width`] / [`El::height`] / [`El::fill_size`] to
-/// override; the MSDF samples across the resolved rect, so the asset
-/// stays sharp at any scale (subject to atlas pixel budget — see
-/// [`crate::vector::VectorAsset::content_hash`] for the cache shape).
+/// override. Painted vectors are tessellated into the resolved rect;
+/// mask vectors sample the backend MSDF atlas across that rect.
 ///
 /// # Caching
 ///
 /// The asset's [`VectorAsset::content_hash`](crate::vector::VectorAsset::content_hash)
-/// is the atlas key — apps that build the same shape twice (two
-/// commits sharing a merge connector geometry, two flowchart edges
-/// with the same arc) share one MSDF rasterisation. Apps with
-/// per-frame-unique geometry get one rasterisation per unique shape
-/// per atlas eviction cycle.
+/// is the backend cache key. Apps that build the same shape twice (two
+/// commits sharing a merge connector geometry, two flowchart edges with
+/// the same arc) can share backend work; per-frame-unique geometry gets
+/// one cache entry per unique shape.
 ///
 /// ```ignore
 /// use aetna_core::prelude::*;

@@ -22,6 +22,7 @@ use crate::svg_icon::IconSource;
 use crate::text::atlas::RunStyle;
 use crate::text::metrics::TextLayout;
 use crate::tree::{Color, FontFamily, FontWeight, Rect, TextWrap};
+use crate::vector::VectorRenderMode;
 
 /// One paint operation in the laid-out frame.
 #[derive(Clone, Debug)]
@@ -141,16 +142,16 @@ pub enum DrawOp {
         fit: ImageFit,
         transform: crate::affine::Affine2,
     },
-    /// An app-supplied vector asset rasterised through the MSDF atlas
-    /// path. The backend rasterises the asset once per unique
-    /// [`crate::vector::VectorAsset::content_hash`] and samples the
-    /// cached MSDF across `rect` for any size. SVG bundle output emits
-    /// a placeholder rect labelled with the asset's hash.
+    /// An app-supplied vector asset. `render_mode` decides whether the
+    /// backend preserves authored paint or treats the asset as a
+    /// one-colour mask. SVG bundle output emits a placeholder rect
+    /// labelled with the asset's hash.
     Vector {
         id: String,
         rect: Rect,
         scissor: Option<Rect>,
         asset: std::sync::Arc<crate::vector::VectorAsset>,
+        render_mode: VectorRenderMode,
     },
     /// Mid-frame snapshot of the current target into a sampled texture,
     /// scheduled before any backdrop-sampling pass.

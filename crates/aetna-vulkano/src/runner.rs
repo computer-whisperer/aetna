@@ -291,9 +291,10 @@ impl TextRecorder for PaintRecorder<'_> {
         rect: Rect,
         scissor: Option<PhysicalScissor>,
         asset: &aetna_core::vector::VectorAsset,
+        render_mode: aetna_core::vector::VectorRenderMode,
         _scale_factor: f32,
     ) -> std::ops::Range<usize> {
-        self.icons.record_vector(rect, scissor, asset)
+        self.icons.record_vector(rect, scissor, asset, render_mode)
     }
 }
 

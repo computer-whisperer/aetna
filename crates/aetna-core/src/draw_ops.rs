@@ -82,8 +82,13 @@ pub fn resolve_palette(ops: &mut [DrawOp], palette: &Palette) {
                 }
             }
             DrawOp::AppTexture { .. } => {}
-            DrawOp::Vector { asset, .. } => {
-                *asset = std::sync::Arc::new(asset.resolved_palette(palette));
+            DrawOp::Vector {
+                asset, render_mode, ..
+            } => {
+                *render_mode = render_mode.resolved_palette(palette);
+                if matches!(render_mode, crate::vector::VectorRenderMode::Painted) {
+                    *asset = std::sync::Arc::new(asset.resolved_palette(palette));
+                }
             }
             DrawOp::BackdropSnapshot => {}
         }
@@ -579,6 +584,7 @@ fn push_node(
             rect: inner,
             scissor,
             asset: asset.clone(),
+            render_mode: n.vector_render_mode,
         });
     }
 
@@ -2051,6 +2057,7 @@ mod tests {
             rect,
             scissor,
             asset,
+            render_mode,
             ..
         } = op
         else {
@@ -2064,6 +2071,11 @@ mod tests {
         assert!((s.w - 40.0).abs() < 1e-3, "scissor.w = {}", s.w);
         // Content hash round-trips through Arc into the op.
         assert_eq!(asset.content_hash(), expected_hash);
+        assert_eq!(
+            *render_mode,
+            crate::vector::VectorRenderMode::Painted,
+            "app vectors default to painted rendering"
+        );
         // The asset's first segment is preserved (sanity-check that the
         // PathBuilder fed through correctly).
         let first_seg = asset.paths[0].segments.first().copied();
@@ -2100,6 +2112,37 @@ mod tests {
             stroke.color,
             VectorColor::Solid(crate::Palette::aetna_light().primary),
             "vector token colors should resolve through the active palette"
+        );
+    }
+
+    #[test]
+    fn vector_mask_mode_resolves_mask_color_against_active_palette() {
+        use crate::vector::{PathBuilder, VectorAsset, VectorRenderMode};
+
+        let path = PathBuilder::new()
+            .move_to(0.0, 0.0)
+            .line_to(10.0, 10.0)
+            .stroke_solid(Color::rgb(1, 2, 3), 1.0)
+            .build();
+        let mut root =
+            crate::tree::vector(VectorAsset::from_paths([0.0, 0.0, 10.0, 10.0], vec![path]))
+                .vector_mask(tokens::PRIMARY);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 100.0, 100.0));
+
+        let ops = draw_ops_with_theme(&root, &state, &Theme::aetna_light());
+        let DrawOp::Vector { render_mode, .. } = ops
+            .iter()
+            .find(|op| matches!(op, DrawOp::Vector { .. }))
+            .expect("vector op")
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            *render_mode,
+            VectorRenderMode::Mask {
+                color: crate::Palette::aetna_light().primary
+            }
         );
     }
 

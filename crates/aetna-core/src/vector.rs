@@ -31,6 +31,35 @@ pub struct VectorAsset {
     pub gradients: Vec<VectorGradient>,
 }
 
+/// Render policy for app-supplied [`VectorAsset`]s.
+///
+/// `Painted` preserves authored fills, strokes, gradients, and
+/// `currentColor` paint, so backends use the colour-aware vector path.
+/// `Mask` treats the asset as coverage geometry and applies one caller-
+/// supplied colour, which lets backends use their MSDF atlas path.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum VectorRenderMode {
+    Painted,
+    Mask { color: Color },
+}
+
+impl Default for VectorRenderMode {
+    fn default() -> Self {
+        Self::Painted
+    }
+}
+
+impl VectorRenderMode {
+    pub fn resolved_palette(self, palette: &crate::palette::Palette) -> Self {
+        match self {
+            Self::Painted => Self::Painted,
+            Self::Mask { color } => Self::Mask {
+                color: palette.resolve(color),
+            },
+        }
+    }
+}
+
 impl VectorAsset {
     /// Build a [`VectorAsset`] from a list of paths and an explicit view
     /// box, without going through SVG parsing. The companion to
@@ -47,9 +76,7 @@ impl VectorAsset {
         }
     }
 
-    /// Whether any path's fill or stroke uses a gradient. Renderers that
-    /// short-cut monochromatic icons through a coverage-only path (e.g.
-    /// MSDF) need to detect this and route to a colour-aware path.
+    /// Whether any path's fill or stroke uses a gradient.
     pub fn has_gradient(&self) -> bool {
         self.paths.iter().any(|p| {
             p.fill

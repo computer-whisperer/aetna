@@ -31,7 +31,7 @@ use vulkano::{
     device::Device,
     format::Format,
     image::{
-        Image as VkImage, ImageAspects, ImageSubresourceRange,
+        Image as VkImage, ImageAspects, ImageSubresourceRange, ImageUsage,
         sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode},
         view::{ImageView, ImageViewCreateInfo},
     },
@@ -453,9 +453,10 @@ impl AppTextureBackend for VulkanoAppTexture {
 ///
 /// # Panics
 ///
-/// Panics if the image's format is outside the supported set or its
-/// sample count is not 1. These are app-side mistakes, not runtime
-/// errors — fail loudly rather than silently miscompositing.
+/// Panics if the image is missing `SAMPLED` usage, its format is outside
+/// the supported set, or its sample count is not 1. These are app-side
+/// mistakes, not runtime errors — fail loudly rather than silently
+/// miscompositing.
 pub fn app_texture(image: Arc<VkImage>) -> AppTexture {
     let format = match image.format() {
         Format::R8G8B8A8_SRGB => SurfaceFormat::Rgba8UnormSrgb,
@@ -467,6 +468,11 @@ pub fn app_texture(image: Arc<VkImage>) -> AppTexture {
             f
         ),
     };
+    assert!(
+        image.usage().intersects(ImageUsage::SAMPLED),
+        "aetna_vulkano::app_texture: source image must include SAMPLED usage (got {:?})",
+        image.usage(),
+    );
     let samples = image.samples();
     assert_eq!(
         samples as u32, 1,

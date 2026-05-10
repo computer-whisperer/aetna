@@ -326,11 +326,14 @@ pub struct El {
 
     /// Vector asset for [`Kind::Vector`] elements. Set via
     /// [`Self::vector_source`] (typically through the
-    /// [`crate::tree::vector`] builder). The asset's view box
-    /// determines the natural aspect ratio; the rasterised MSDF is
-    /// sampled across the resolved rect, so the rendered size is
-    /// independent of the source view-box dimensions.
+    /// [`crate::tree::vector`] builder). The asset's view box determines
+    /// the natural aspect ratio.
     pub vector_source: Option<std::sync::Arc<crate::vector::VectorAsset>>,
+    /// Render policy for [`Self::vector_source`]. Defaults to
+    /// [`crate::vector::VectorRenderMode::Painted`] so authored vector
+    /// paint is preserved unless the caller explicitly opts into mask
+    /// rendering.
+    pub vector_render_mode: crate::vector::VectorRenderMode,
 
     pub children: Vec<El>,
 

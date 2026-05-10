@@ -37,13 +37,13 @@ pub enum Kind {
     /// independent. See [`crate::tree::surface`] for the full sizing /
     /// aspect-ratio contract.
     Surface,
-    /// App-supplied vector asset rasterised through the MSDF atlas
-    /// path. Backed by [`crate::vector::VectorAsset`] and the
-    /// [`crate::tree::vector`] builder; the backend rasterises once per
-    /// unique content hash and samples the cached MSDF for any size.
-    /// Unlike [`Kind::Image`] (icon-styled, square-shaped), this is the
-    /// general-purpose path for arbitrary-aspect vector content —
-    /// commit-graph curves, Gantt connectors, custom chart marks.
+    /// App-supplied vector asset. Backed by
+    /// [`crate::vector::VectorAsset`] and the [`crate::tree::vector`]
+    /// builder; callers explicitly choose painted vector rendering or
+    /// one-colour mask rendering. Unlike [`Kind::Image`] (icon-styled,
+    /// square-shaped), this is the general-purpose path for arbitrary-
+    /// aspect vector content — commit-graph curves, Gantt connectors,
+    /// custom chart marks.
     Vector,
     /// Escape hatch for app-defined components.
     Custom(&'static str),
