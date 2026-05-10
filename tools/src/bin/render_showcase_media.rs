@@ -4,8 +4,8 @@
 //! the windowed showcase uses, without depending on the host's
 //! redraw cadence or interactive redraws.
 //!
-//! Usage: `cargo run -p aetna-wgpu --example render_showcase_media`
-//! Writes: `crates/aetna-wgpu/out/showcase_media.wgpu.png`
+//! Usage: `cargo run -p aetna-tools --bin render_showcase_media`
+//! Writes: `tools/out/showcase_media.wgpu.png`
 
 use std::f32::consts::TAU;
 use std::sync::Arc;
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .map_err(|e| format!("no compatible adapter ({e})"))?;
 
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("aetna_wgpu::example::showcase_media::device"),
+        label: Some("aetna_wgpu::tools::showcase_media::device"),
         required_features: wgpu::Features::empty(),
         required_limits: wgpu::Limits::default(),
         experimental_features: wgpu::ExperimentalFeatures::default(),

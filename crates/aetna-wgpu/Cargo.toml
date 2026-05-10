@@ -34,6 +34,5 @@ web-time = "1"
 wgpu = { version = "29", features = ["fragile-send-sync-non-atomic-wasm"] }
 
 [dev-dependencies]
-aetna-fixtures = { version = "0.3.1", path = "../aetna-fixtures" }
 png = "0.18"
 pollster = "0.4"

@@ -170,7 +170,6 @@ name = "aetna-wgpu"
 version = "0.3.1"
 dependencies = [
  "aetna-core",
- "aetna-fixtures",
  "bytemuck",
  "cosmic-text",
  "png",
