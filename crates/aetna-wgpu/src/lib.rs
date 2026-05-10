@@ -117,6 +117,13 @@ const INITIAL_INSTANCE_CAPACITY: usize = 256;
 pub struct Runner {
     target_format: wgpu::TextureFormat,
     sample_count: u32,
+    /// Whether the adapter advertises `DownlevelFlags::MULTISAMPLED_SHADING`.
+    /// Threaded through to [`build_quad_pipeline`] so stock and custom
+    /// shaders that use `@interpolate(perspective, sample)` get
+    /// downlevelled (qualifier stripped) on backends that don't support
+    /// per-sample shading — notably WebGL2 and most browser WebGPU
+    /// adapters. See [`Self::with_caps`] for the host-side query.
+    per_sample_shading: bool,
 
     // Shared resources.
     pipeline_layout: wgpu::PipelineLayout,
@@ -302,11 +309,45 @@ impl Runner {
     /// MSAA samples. The host must provide a matching multisampled
     /// render target and a single-sample resolve target. `sample_count`
     /// of 1 is the non-MSAA default.
+    ///
+    /// Defaults `per_sample_shading` to `true` — appropriate for native
+    /// adapters, where `DownlevelFlags::MULTISAMPLED_SHADING` is the norm.
+    /// Web/WebGL2 hosts must instead route through [`Self::with_caps`]
+    /// and pass the actual cap from the adapter, otherwise stock
+    /// pipelines fail naga validation on shader-module creation.
     pub fn with_sample_count(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target_format: wgpu::TextureFormat,
+        sample_count: u32,
+    ) -> Self {
+        Self::with_caps(device, queue, target_format, sample_count, true)
+    }
+
+    /// Like [`Self::with_sample_count`], but with the `per_sample_shading`
+    /// downlevel cap supplied explicitly. Hosts that target backends
+    /// without `DownlevelFlags::MULTISAMPLED_SHADING` (WebGL2, most
+    /// browser WebGPU) read the flag off the adapter and pass it here:
+    ///
+    /// ```ignore
+    /// let caps = adapter.get_downlevel_capabilities();
+    /// let pss = caps.flags.contains(wgpu::DownlevelFlags::MULTISAMPLED_SHADING);
+    /// Runner::with_caps(&device, &queue, format, sample_count, pss)
+    /// ```
+    ///
+    /// When `false`, every pipeline (stock and later-registered custom)
+    /// has `@interpolate(perspective, sample)` rewritten to
+    /// `@interpolate(perspective)` before WGSL compilation. The shader
+    /// then interpolates at pixel centre instead of per MSAA sample —
+    /// MSAA coverage still works at `sample_count > 1`; only the
+    /// per-sub-sample brightness pass is skipped, slightly thickening
+    /// the AA band on curved SDF edges.
+    pub fn with_caps(
         device: &wgpu::Device,
         _queue: &wgpu::Queue,
         target_format: wgpu::TextureFormat,
         sample_count: u32,
+        per_sample_shading: bool,
     ) -> Self {
         // ---- Shared resources ----
         let frame_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -415,6 +456,7 @@ impl Runner {
             sample_count,
             "stock::rounded_rect",
             stock_wgsl::ROUNDED_RECT,
+            per_sample_shading,
         );
         pipelines.insert(ShaderHandle::Stock(StockShader::RoundedRect), rr_pipeline);
 
@@ -425,6 +467,7 @@ impl Runner {
             sample_count,
             "stock::spinner",
             stock_wgsl::SPINNER,
+            per_sample_shading,
         );
         pipelines.insert(ShaderHandle::Stock(StockShader::Spinner), spinner_pipeline);
 
@@ -435,6 +478,7 @@ impl Runner {
             sample_count,
             "stock::skeleton",
             stock_wgsl::SKELETON,
+            per_sample_shading,
         );
         pipelines.insert(
             ShaderHandle::Stock(StockShader::Skeleton),
@@ -448,6 +492,7 @@ impl Runner {
             sample_count,
             "stock::progress_indeterminate",
             stock_wgsl::PROGRESS_INDETERMINATE,
+            per_sample_shading,
         );
         pipelines.insert(
             ShaderHandle::Stock(StockShader::ProgressIndeterminate),
@@ -467,6 +512,7 @@ impl Runner {
         Self {
             target_format,
             sample_count,
+            per_sample_shading,
             pipeline_layout,
             backdrop_pipeline_layout,
             quad_bind_group,
@@ -576,6 +622,7 @@ impl Runner {
             self.sample_count,
             &label,
             wgsl,
+            self.per_sample_shading,
         );
         self.pipelines.insert(ShaderHandle::Custom(name), pipeline);
         if samples_backdrop {

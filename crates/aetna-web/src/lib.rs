@@ -353,6 +353,24 @@ mod web_entry {
                     .await
                     .expect("no compatible adapter");
 
+                // Per-sample MSAA shading is a downlevel cap. WebGL2
+                // (GLES 3.0) and most browser WebGPU adapters don't
+                // advertise it, and naga rejects shaders that use
+                // `@interpolate(perspective, sample)` at module
+                // creation when the cap is missing. Read the flag here
+                // and pass it to `Runner::with_caps` so stock + custom
+                // shaders downlevel cleanly on those backends.
+                let downlevel = adapter.get_downlevel_capabilities();
+                let per_sample_shading = downlevel
+                    .flags
+                    .contains(wgpu::DownlevelFlags::MULTISAMPLED_SHADING);
+                if !per_sample_shading {
+                    log::info!(
+                        "aetna-web: adapter lacks DownlevelFlags::MULTISAMPLED_SHADING; \
+                         shaders will downlevel `@interpolate(perspective, sample)` to per-pixel-centre interpolation"
+                    );
+                }
+
                 // WebGL2 has a tighter feature/limit envelope than
                 // native; downlevel_webgl2_defaults is the matching
                 // baseline. Cap at the adapter's actual limits so
@@ -424,7 +442,8 @@ mod web_entry {
                 };
                 surface.configure(&device, &config);
 
-                let mut renderer = Runner::with_sample_count(&device, &queue, format, SAMPLE_COUNT);
+                let mut renderer =
+                    Runner::with_caps(&device, &queue, format, SAMPLE_COUNT, per_sample_shading);
                 renderer.set_theme(theme);
                 renderer.set_surface_size(config.width, config.height);
                 // Register every shader the App declared. If the

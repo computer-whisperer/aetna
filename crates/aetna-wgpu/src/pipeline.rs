@@ -58,10 +58,35 @@ pub(crate) fn build_quad_pipeline(
     sample_count: u32,
     label: &str,
     wgsl: &str,
+    per_sample_shading: bool,
 ) -> wgpu::RenderPipeline {
+    // Several stock shaders (rounded_rect, spinner, skeleton,
+    // progress_indeterminate) — and some custom ones like the
+    // gradient demo — use `@interpolate(perspective, sample)` to opt
+    // into per-sample MSAA shading for cleaner SDF AA on rounded
+    // corners. naga validates that qualifier against the adapter's
+    // `DownlevelFlags::MULTISAMPLED_SHADING` at module-creation time
+    // (regardless of pipeline `sample_count`), and WebGL2 — plus most
+    // browser WebGPU adapters — don't expose the flag. Without the
+    // downlevel, `create_shader_module` panics before pipeline init
+    // on those backends. Strip the `, sample` qualifier when the
+    // adapter doesn't advertise the cap: the shader then interpolates
+    // at pixel centre instead of per sample, which slightly thickens
+    // the AA band on curved edges but otherwise renders correctly.
+    // MSAA itself (coverage-based) still functions at
+    // `sample_count > 1`. Hosts pass the flag from
+    // `adapter.get_downlevel_capabilities().flags`.
+    let wgsl = if per_sample_shading {
+        Cow::Borrowed(wgsl)
+    } else {
+        Cow::Owned(wgsl.replace(
+            "@interpolate(perspective, sample)",
+            "@interpolate(perspective)",
+        ))
+    };
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(wgsl)),
+        source: wgpu::ShaderSource::Wgsl(wgsl),
     });
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
