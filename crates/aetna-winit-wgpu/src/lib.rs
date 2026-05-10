@@ -419,6 +419,11 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
         let mut renderer = Runner::with_sample_count(&device, &queue, format, sample_count);
         renderer.set_theme(self.app.theme());
         renderer.set_surface_size(config.width, config.height);
+        // Pre-rasterize printable ASCII for Inter + JetBrains Mono so
+        // first-frame appearance of new text labels (e.g. switching
+        // section in the showcase) doesn't trip a 20-30ms MSDF
+        // generation hitch. ~40ms one-off at startup.
+        renderer.warm_default_glyphs();
         // Register any custom shaders the app declared. Done once at
         // startup; pipelines are cached for the runner's lifetime.
         for s in self.app.shaders() {

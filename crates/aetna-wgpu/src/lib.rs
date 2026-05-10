@@ -548,6 +548,20 @@ impl Runner {
     }
 
     /// Set the theme used to resolve implicit widget surfaces to shaders.
+    /// Pre-rasterize printable ASCII for the bundled default faces
+    /// (Inter Variable + JetBrains Mono Variable). Pays the ~40ms
+    /// one-time MSDF-generation cost up-front so the first frame that
+    /// introduces each character doesn't take a 20-30ms paint hit.
+    /// Hosts that interactively render UI text (the showcase, custom
+    /// apps, etc.) should call this once after constructing the
+    /// `Runner` and before the first frame; headless fixtures that
+    /// render only static content can skip it. MSDF keys are
+    /// size-independent so each character is rasterized exactly once
+    /// and reused for every size + weight afterwards.
+    pub fn warm_default_glyphs(&mut self) {
+        self.text_paint.warm_default_glyphs();
+    }
+
     pub fn set_theme(&mut self, theme: Theme) {
         self.icon_paint.set_material(theme.icon_material());
         self.core.set_theme(theme);

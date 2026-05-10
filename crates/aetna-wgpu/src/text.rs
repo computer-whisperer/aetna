@@ -30,7 +30,7 @@ use aetna_core::text::msdf_atlas::{
     DEFAULT_BASE_EM, DEFAULT_SPREAD, MSDF_BYTES_PER_PIXEL, MsdfAtlas, MsdfAtlasPage, MsdfGlyphKey,
     MsdfRect, MsdfSlot,
 };
-use aetna_core::tree::{Rect, TextWrap};
+use aetna_core::tree::{FontFamily, Rect, TextWrap};
 
 use bytemuck::{Pod, Zeroable};
 use cosmic_text::fontdb;
@@ -745,6 +745,72 @@ impl TextPaint {
         let face_index = self.atlas.font_system().db().face(font_id)?.index;
         let face = Face::parse(font.data(), face_index).ok()?;
         self.msdf_atlas.ensure(key, &face)
+    }
+
+    /// Pre-rasterize printable ASCII (0x20–0x7E) for the bundled
+    /// proportional and monospace default faces (Inter Variable +
+    /// JetBrains Mono Variable). Call once at host startup to absorb
+    /// the per-glyph SDF generation cost up-front instead of having
+    /// the first frame that introduces each character pay it as a
+    /// 20-30ms paint hitch. Glyphs in MSDF are size-independent
+    /// (`MsdfGlyphKey { font, glyph_id }` carries no size), and the
+    /// bundled faces are variable, so each character is rasterized
+    /// exactly once across all weights and sizes. Roughly ~190
+    /// rasterizations × ~200µs each ≈ 40ms one-time cost.
+    pub fn warm_default_glyphs(&mut self) {
+        const FAMILIES: &[FontFamily] = &[FontFamily::Inter, FontFamily::JetBrainsMono];
+        let chars: Vec<char> = (0x20u32..=0x7Eu32)
+            .filter_map(char::from_u32)
+            .collect();
+        self.warm_msdf_for_chars(&chars, FAMILIES);
+    }
+
+    /// Pre-rasterize the MSDF for each `(family, char)` pair. Looks
+    /// up the first matching font in the fontdb per family at
+    /// `Weight::NORMAL` — variable fonts return the same face for
+    /// every weight, and MSDF keys are weight-independent at
+    /// rasterization time, so a single warmup covers every weight the
+    /// renderer later asks for.
+    pub fn warm_msdf_for_chars(&mut self, chars: &[char], families: &[FontFamily]) {
+        for family in families {
+            let name = family.family_name();
+            let font_id = self
+                .atlas
+                .font_system()
+                .db()
+                .query(&fontdb::Query {
+                    families: &[fontdb::Family::Name(name)],
+                    weight: fontdb::Weight::NORMAL,
+                    ..fontdb::Query::default()
+                });
+            let Some(font_id) = font_id else { continue };
+            let face_index = self
+                .atlas
+                .font_system()
+                .db()
+                .face(font_id)
+                .map(|f| f.index)
+                .unwrap_or(0);
+            let Some(font) = self
+                .atlas
+                .font_system_mut()
+                .get_font(font_id, fontdb::Weight::NORMAL)
+            else {
+                continue;
+            };
+            let Ok(face) = Face::parse(font.data(), face_index) else {
+                continue;
+            };
+            for &ch in chars {
+                if let Some(glyph_id) = face.glyph_index(ch) {
+                    let key = MsdfGlyphKey {
+                        font: font_id,
+                        glyph_id: glyph_id.0,
+                    };
+                    let _ = self.msdf_atlas.ensure(key, &face);
+                }
+            }
+        }
     }
 
     /// Sync atlas pages to GPU textures and upload instance data.
