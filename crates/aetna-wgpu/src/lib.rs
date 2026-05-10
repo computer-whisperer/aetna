@@ -1061,6 +1061,16 @@ impl Runner {
         self.core.push_focus_requests(keys);
     }
 
+    /// Queue programmatic scroll-to-row requests targeting virtual
+    /// lists by key. Hosts call this once per frame with
+    /// `app.drain_scroll_requests()`. Each request is consumed during
+    /// the next `prepare` by the layout pass for the matching list,
+    /// where viewport height and row heights are known. Unmatched
+    /// list keys and out-of-range row indices drop silently.
+    pub fn push_scroll_requests(&mut self, requests: Vec<aetna_core::scroll::ScrollRequest>) {
+        self.core.push_scroll_requests(requests);
+    }
+
     /// Switch animation pacing. Default is [`AnimationMode::Live`].
     /// Headless render binaries should call this with
     /// [`AnimationMode::Settled`] so a single-frame snapshot reflects

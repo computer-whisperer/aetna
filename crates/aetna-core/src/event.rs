@@ -761,6 +761,23 @@ pub trait App {
         Vec::new()
     }
 
+    /// Drain pending programmatic scroll requests targeting virtual
+    /// lists. The runtime resolves each request during layout of the
+    /// matching list, using the live viewport rect and row-height
+    /// cache (so first-frame and `virtual_list_dyn` cases work without
+    /// the app duplicating the widget's layout math). Unmatched list
+    /// keys and out-of-range row indices drop silently.
+    ///
+    /// Use for "reveal a row" affordances: jump-to-search-result,
+    /// reveal-selected-item, scroll-to-top-on-tab-change. Apps
+    /// typically accumulate requests in a `Vec<ScrollRequest>` field
+    /// from event handlers and `mem::take` it here.
+    ///
+    /// Default: no requests.
+    fn drain_scroll_requests(&mut self) -> Vec<crate::scroll::ScrollRequest> {
+        Vec::new()
+    }
+
     /// Custom shaders this app needs registered. Each entry carries
     /// the shader name, its WGSL source, and per-flag opt-ins
     /// (backdrop sampling, time-driven motion). The host runner

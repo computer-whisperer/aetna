@@ -172,6 +172,10 @@ impl<A: App> App for BasicApp<A> {
         self.0.drain_focus_requests()
     }
 
+    fn drain_scroll_requests(&mut self) -> Vec<aetna_core::scroll::ScrollRequest> {
+        self.0.drain_scroll_requests()
+    }
+
     fn shaders(&self) -> Vec<aetna_core::AppShader> {
         self.0.shaders()
     }
@@ -788,6 +792,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                 gfx.renderer.push_toasts(self.app.drain_toasts());
                                 gfx.renderer
                                     .push_focus_requests(self.app.drain_focus_requests());
+                                gfx.renderer
+                                    .push_scroll_requests(self.app.drain_scroll_requests());
                                 (tree, palette)
                             };
                             let prepare = {

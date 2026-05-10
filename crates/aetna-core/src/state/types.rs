@@ -380,6 +380,14 @@ pub(crate) struct ScrollState {
     /// instead of falling back to the estimated row height, so scroll
     /// math stabilizes once the visible regions have been seen.
     pub(crate) measured_row_heights: FxHashMap<String, FxHashMap<usize, f32>>,
+    /// Programmatic scroll requests buffered between frames. Hosts
+    /// call [`UiState::push_scroll_requests`] once per build with the
+    /// requests produced by [`crate::event::App::drain_scroll_requests`];
+    /// each is consumed during layout of the matching virtual list,
+    /// where the live viewport rect and row-height cache let the
+    /// resolver compute the target offset correctly even on first
+    /// frame and for unmeasured `virtual_list_dyn` rows.
+    pub(crate) pending_requests: Vec<crate::scroll::ScrollRequest>,
 }
 
 /// Runtime queue for toast notifications. Apps provide fire-and-forget

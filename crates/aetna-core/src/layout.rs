@@ -33,6 +33,7 @@
 
 use std::sync::Arc;
 
+use crate::scroll::{ScrollAlignment, ScrollRequest};
 use crate::state::UiState;
 use crate::text::metrics as text_metrics;
 use crate::tree::*;
@@ -439,6 +440,69 @@ fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state:
     }
 }
 
+/// Consume any pending [`ScrollRequest`]s targeting this list's `key`,
+/// resolving each into a target offset using the live viewport rect and
+/// the caller-supplied row-extent function. Writes the resolved offset
+/// directly into `scroll.offsets`; the immediately-following
+/// `write_virtual_scroll_state` call clamps it to `[0, max_offset]`.
+///
+/// Requests for other lists are left in the queue for sibling lists in
+/// the same layout pass. Anything still queued after layout completes is
+/// dropped by the runtime (see `prepare_layout`).
+fn resolve_scroll_requests<F>(
+    node: &El,
+    inner: Rect,
+    count: usize,
+    row_extent: F,
+    ui_state: &mut UiState,
+) where
+    F: Fn(usize) -> (f32, f32),
+{
+    if ui_state.scroll.pending_requests.is_empty() {
+        return;
+    }
+    let Some(key) = node.key.as_deref() else {
+        return;
+    };
+    let pending = std::mem::take(&mut ui_state.scroll.pending_requests);
+    let (matched, remaining): (Vec<ScrollRequest>, Vec<ScrollRequest>) =
+        pending.into_iter().partition(|req| req.list_key == key);
+    ui_state.scroll.pending_requests = remaining;
+
+    for req in matched {
+        if req.row >= count {
+            continue;
+        }
+        let (row_top, row_h) = row_extent(req.row);
+        let row_bottom = row_top + row_h;
+        let viewport_h = inner.h;
+        let current = ui_state
+            .scroll
+            .offsets
+            .get(&node.computed_id)
+            .copied()
+            .unwrap_or(0.0);
+        let new_offset = match req.align {
+            ScrollAlignment::Start => row_top,
+            ScrollAlignment::End => row_bottom - viewport_h,
+            ScrollAlignment::Center => row_top + (row_h - viewport_h) / 2.0,
+            ScrollAlignment::Visible => {
+                if row_top < current {
+                    row_top
+                } else if row_bottom > current + viewport_h {
+                    row_bottom - viewport_h
+                } else {
+                    continue;
+                }
+            }
+        };
+        ui_state
+            .scroll
+            .offsets
+            .insert(node.computed_id.clone(), new_offset);
+    }
+}
+
 /// Clamp the stored scroll offset, write the metrics + thumb rect, and
 /// return the clamped offset. Shared scaffold for both virtual modes.
 fn write_virtual_scroll_state(node: &El, inner: Rect, total_h: f32, ui_state: &mut UiState) -> f32 {
@@ -487,6 +551,13 @@ fn layout_virtual_fixed(
     ui_state: &mut UiState,
 ) {
     let total_h = count as f32 * row_height;
+    resolve_scroll_requests(
+        node,
+        inner,
+        count,
+        |i| (i as f32 * row_height, row_height),
+        ui_state,
+    );
     let offset = write_virtual_scroll_state(node, inner, total_h, ui_state);
 
     if count == 0 {
@@ -557,6 +628,47 @@ fn layout_virtual_dynamic(
         .unwrap_or((0.0, 0));
     let unmeasured = count.saturating_sub(measured_count);
     let total_h = measured_sum + (unmeasured as f32) * estimated_row_height;
+
+    // Skip the cache snapshot entirely when nothing in the queue
+    // targets this list — a hot path on dynamic lists with warm
+    // caches (potentially thousands of entries) that would otherwise
+    // pay a per-frame HashMap clone for an operation that fires
+    // maybe once a minute.
+    let has_request = node.key.as_deref().is_some_and(|k| {
+        ui_state
+            .scroll
+            .pending_requests
+            .iter()
+            .any(|r| r.list_key == k)
+    });
+    if has_request {
+        // Snapshot the cache so the closure can read it while
+        // `ui_state` stays mutably borrowed for the offsets write.
+        let measured = ui_state
+            .scroll
+            .measured_row_heights
+            .get(&node.computed_id)
+            .cloned();
+        resolve_scroll_requests(
+            node,
+            inner,
+            count,
+            |target| {
+                let row_h = |i: usize| -> f32 {
+                    measured
+                        .as_ref()
+                        .and_then(|m| m.get(&i).copied())
+                        .unwrap_or(estimated_row_height)
+                };
+                let mut top = 0.0_f32;
+                for i in 0..target {
+                    top += row_h(i);
+                }
+                (top, row_h(target))
+            },
+            ui_state,
+        );
+    }
 
     let offset = write_virtual_scroll_state(node, inner, total_h, ui_state);
 

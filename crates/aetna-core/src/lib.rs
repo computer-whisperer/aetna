@@ -59,6 +59,7 @@ pub mod prelude;
 pub mod profile;
 #[doc(hidden)]
 pub mod runtime;
+pub mod scroll;
 pub mod selection;
 pub mod shader;
 pub mod state;

@@ -75,6 +75,10 @@ impl App for AnimatedShowcase {
         self.inner.drain_focus_requests()
     }
 
+    fn drain_scroll_requests(&mut self) -> Vec<aetna_core::scroll::ScrollRequest> {
+        self.inner.drain_scroll_requests()
+    }
+
     fn shaders(&self) -> Vec<aetna_core::AppShader> {
         self.inner.shaders()
     }

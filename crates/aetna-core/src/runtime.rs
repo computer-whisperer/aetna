@@ -1040,6 +1040,15 @@ impl RunnerCore {
         self.ui_state.push_focus_requests(keys);
     }
 
+    /// Queue programmatic scroll-to-row requests targeting virtual
+    /// lists by key. Each request is consumed during layout of the
+    /// matching list, where viewport height and row heights are
+    /// known. Hosts wire this from [`crate::event::App::drain_scroll_requests`]
+    /// once per frame, alongside `push_focus_requests`.
+    pub fn push_scroll_requests(&mut self, requests: Vec<crate::scroll::ScrollRequest>) {
+        self.ui_state.push_scroll_requests(requests);
+    }
+
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {
         self.ui_state.set_animation_mode(mode);
     }
@@ -1112,6 +1121,11 @@ impl RunnerCore {
                 // `layout::layout` would be a wasted second pass over
                 // the entire tree. Use `layout_post_assign` to skip it.
                 layout::layout_post_assign(root, &mut self.ui_state, viewport);
+                // Drop scroll requests that didn't match any virtual
+                // list this frame (the matching list may have been
+                // removed from the tree, or the app may have raced a
+                // state change that retired the key).
+                self.ui_state.clear_pending_scroll_requests();
             }
             {
                 crate::profile_span!("prepare::layout::sync_focus_order");

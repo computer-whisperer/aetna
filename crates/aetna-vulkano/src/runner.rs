@@ -938,6 +938,10 @@ impl Runner {
         self.core.push_focus_requests(keys);
     }
 
+    pub fn push_scroll_requests(&mut self, requests: Vec<aetna_core::scroll::ScrollRequest>) {
+        self.core.push_scroll_requests(requests);
+    }
+
     pub fn set_animation_mode(&mut self, mode: AnimationMode) {
         self.core.set_animation_mode(mode);
     }

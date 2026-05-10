@@ -19,6 +19,25 @@ impl UiState {
         self.scroll.offsets.get(id).copied().unwrap_or(0.0)
     }
 
+    /// Queue programmatic scroll-to-row requests targeting virtual
+    /// lists by key. Each request is consumed during layout of the
+    /// matching list — viewport height and row heights are only known
+    /// then, especially for `virtual_list_dyn` where unmeasured rows
+    /// use the configured estimate. Hosts call this once per frame
+    /// from [`crate::event::App::drain_scroll_requests`]; apps that
+    /// own a `Runner` can also push directly for tests.
+    pub fn push_scroll_requests(&mut self, requests: Vec<crate::scroll::ScrollRequest>) {
+        self.scroll.pending_requests.extend(requests);
+    }
+
+    /// Drop any scroll requests still queued after the layout pass
+    /// completed. Called by `prepare_layout` so requests targeting a
+    /// list that wasn't in the tree this frame don't silently fire
+    /// against a re-mounted list with the same key on a later frame.
+    pub fn clear_pending_scroll_requests(&mut self) {
+        self.scroll.pending_requests.clear();
+    }
+
     /// Iterate `(scroll_node_id, track_rect)` for every scrollable
     /// whose visible scrollbar is currently active. Hosts use this to
     /// drive cursor changes (e.g., a vertical-resize cursor over the

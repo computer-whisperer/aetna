@@ -941,6 +941,8 @@ mod web_entry {
                         gfx.renderer.push_toasts(self.app.drain_toasts());
                         gfx.renderer
                             .push_focus_requests(self.app.drain_focus_requests());
+                        gfx.renderer
+                            .push_scroll_requests(self.app.drain_scroll_requests());
                         let t_after_build = Instant::now();
                         let prepare = gfx.renderer.prepare(
                             &gfx.device,
