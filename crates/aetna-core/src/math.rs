@@ -12,6 +12,7 @@ use crate::tree::{Color, FontFamily, FontWeight, Rect, TextWrap};
 
 const DEFAULT_RULE_THICKNESS: f32 = 1.1;
 const SCRIPT_SCALE: f32 = 0.72;
+const LARGE_OPERATOR_SCALE: f32 = 1.35;
 const FRACTION_PAD_EM: f32 = 0.18;
 const FRACTION_GAP_EM: f32 = 0.18;
 const SQRT_GAP_EM: f32 = 0.10;
@@ -114,6 +115,13 @@ impl LayoutCtx {
 
     fn rule_thickness(self) -> f32 {
         (DEFAULT_RULE_THICKNESS * self.size / 16.0).max(0.75)
+    }
+
+    fn large_operator(self) -> Self {
+        Self {
+            size: self.size * LARGE_OPERATOR_SCALE,
+            display: self.display,
+        }
     }
 }
 
@@ -364,7 +372,12 @@ fn layout_under_over(
     over: Option<&MathExpr>,
     ctx: LayoutCtx,
 ) -> MathLayout {
-    let base_layout = layout_expr(base, ctx);
+    let base_ctx = if matches!(ctx.display, MathDisplay::Block) && is_large_operator_base(base) {
+        ctx.large_operator()
+    } else {
+        ctx
+    };
+    let base_layout = layout_expr(base, base_ctx);
     let script_ctx = ctx.script();
     let under_layout = under.map(|expr| layout_expr(expr, script_ctx));
     let over_layout = over.map(|expr| layout_expr(expr, script_ctx));
@@ -400,10 +413,14 @@ fn layout_under_over(
 
 fn is_display_limits_base(expr: &MathExpr) -> bool {
     match expr {
-        MathExpr::Operator(s) => matches!(s.as_str(), "∑" | "∏" | "⋂" | "⋃"),
+        MathExpr::Operator(_) => is_large_operator_base(expr),
         MathExpr::Text(s) => matches!(s.as_str(), "lim" | "max" | "min" | "sup" | "inf"),
         _ => false,
     }
+}
+
+fn is_large_operator_base(expr: &MathExpr) -> bool {
+    matches!(expr, MathExpr::Operator(s) if matches!(s.as_str(), "∑" | "∏" | "⋂" | "⋃"))
 }
 
 fn translate_atoms(out: &mut Vec<MathAtom>, atoms: Vec<MathAtom>, dx: f32, dy: f32) {
@@ -957,6 +974,13 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, MathAtom::Glyph { text, y_baseline, .. } if text == "i" && *y_baseline > 0.0)),
             "sum lower limit should sit below the operator"
+        );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Glyph { text, size, .. } if text == "∑" && *size > 16.0)),
+            "display sum should use a larger operator glyph"
         );
     }
 
