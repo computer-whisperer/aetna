@@ -382,7 +382,21 @@ impl App for Showcase {
     }
 
     fn drain_toasts(&mut self) -> Vec<ToastSpec> {
-        std::mem::take(&mut self.status.pending_toasts)
+        let mut toasts = std::mem::take(&mut self.status.pending_toasts);
+        toasts.append(&mut self.about.pending_toasts);
+        toasts
+    }
+
+    fn selection(&self) -> Selection {
+        // Surface whichever section currently owns a focused text
+        // input — the runtime uses it to paint highlight bands and
+        // resolve clipboard ops. The About page's dispatcher is the
+        // only About-section text input today; other sections that
+        // host inputs return their own selection here as they grow.
+        match self.section {
+            Section::About => self.about.message_selection.clone(),
+            _ => Selection::default(),
+        }
     }
 
     fn drain_link_opens(&mut self) -> Vec<String> {
