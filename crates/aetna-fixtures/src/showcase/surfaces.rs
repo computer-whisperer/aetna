@@ -7,15 +7,24 @@
 
 use aetna_core::prelude::*;
 
-const GLASS_NEXT_KEY: &str = "surfaces-glass-next";
-const GLASS_DRIFT_KEY: &str = "surfaces-glass-drift";
-
 #[derive(Default)]
 pub struct State {
     pub glass_preset: usize,
     pub glass_drift: usize,
 }
 
+// Liquid-glass demo wiring — keys, presets, drift table, helpers. The
+// demo needs backdrop sampling (Pass A → snapshot → Pass B), which
+// WebGL2 surfaces don't advertise (`COPY_SRC` on the swapchain texture
+// is missing), so the whole subsection drops out on wasm builds along
+// with the wiring below. Tests cover the on_event cycling, so the cfg
+// keeps these compiled under `cfg(test)` regardless of target.
+#[cfg(any(not(target_arch = "wasm32"), test))]
+const GLASS_NEXT_KEY: &str = "surfaces-glass-next";
+#[cfg(any(not(target_arch = "wasm32"), test))]
+const GLASS_DRIFT_KEY: &str = "surfaces-glass-drift";
+
+#[cfg(any(not(target_arch = "wasm32"), test))]
 #[derive(Clone, Copy)]
 struct GlassPreset {
     label: &'static str,
@@ -26,6 +35,7 @@ struct GlassPreset {
     tint: Color,
 }
 
+#[cfg(any(not(target_arch = "wasm32"), test))]
 const GLASS_PRESETS: &[GlassPreset] = &[
     GlassPreset {
         label: "Soft",
@@ -85,19 +95,36 @@ const GLASS_PRESETS: &[GlassPreset] = &[
     },
 ];
 
+#[cfg(any(not(target_arch = "wasm32"), test))]
 const DRIFT_OFFSETS: &[f32] = &[0.0, -120.0, 120.0];
 
 pub fn view(state: &State) -> El {
-    scroll([column([
+    // Web builds run without the backdrop-sampling capability the
+    // liquid-glass shader needs (WebGL2 surfaces don't advertise
+    // COPY_SRC, so the snapshot copy can't run). Drop the demo and the
+    // sentences that promise it rather than show a static card the user
+    // would assume is broken.
+    #[cfg(not(target_arch = "wasm32"))]
+    let intro = paragraph(
+        "How the panel chrome looks. Surface roles slot tokenized \
+         palette colours into stock components; drop shadows give \
+         layered surfaces a sense of elevation; and the liquid-glass \
+         card at the bottom proves any El can mount a custom WGSL \
+         shader without losing layer compositing.",
+    )
+    .muted();
+    #[cfg(target_arch = "wasm32")]
+    let intro = paragraph(
+        "How the panel chrome looks. Surface roles slot tokenized \
+         palette colours into stock components, and drop shadows give \
+         layered surfaces a sense of elevation.",
+    )
+    .muted();
+
+    #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
+    let mut items: Vec<El> = vec![
         h1("Surfaces"),
-        paragraph(
-            "How the panel chrome looks. Surface roles slot tokenized \
-             palette colours into stock components; drop shadows give \
-             layered surfaces a sense of elevation; and the liquid-glass \
-             card at the bottom proves any El can mount a custom WGSL \
-             shader without losing layer compositing.",
-        )
-        .muted(),
+        intro,
         section_label("Surface roles"),
         paragraph(
             "Each role binds a palette token to a stock surface — \
@@ -141,30 +168,50 @@ pub fn view(state: &State) -> El {
         )
         .muted()
         .small(),
-        section_label("Custom-shaded surface"),
-        paragraph(
-            "`liquid_glass.wgsl` reads the snapshot beneath the card, \
-             blurs and refracts it, and tints the result. Any El can \
-             mount a custom shader with `.shader(ShaderBinding::custom)` \
-             — the runtime orchestrates Pass A → snapshot → Pass B \
-             around it.",
-        )
-        .muted(),
-        glass_demo(state),
-    ])
-    .gap(tokens::SPACE_4)
-    .align(Align::Stretch)])
-    .height(Size::Fill(1.0))
+    ];
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        items.push(section_label("Custom-shaded surface"));
+        items.push(
+            paragraph(
+                "`liquid_glass.wgsl` reads the snapshot beneath the card, \
+                 blurs and refracts it, and tints the result. Any El can \
+                 mount a custom shader with `.shader(ShaderBinding::custom)` \
+                 — the runtime orchestrates Pass A → snapshot → Pass B \
+                 around it.",
+            )
+            .muted(),
+        );
+        items.push(glass_demo(state));
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = state;
+
+    scroll([column(items).gap(tokens::SPACE_4).align(Align::Stretch)]).height(Size::Fill(1.0))
 }
 
 pub fn on_event(state: &mut State, e: UiEvent) {
-    if !matches!(e.kind, UiEventKind::Click | UiEventKind::Activate) {
-        return;
+    // Glass-section buttons are the only event sources on this page,
+    // and they're cfg'd out on wasm — the body just no-ops there.
+    #[cfg(any(not(target_arch = "wasm32"), test))]
+    {
+        if !matches!(e.kind, UiEventKind::Click | UiEventKind::Activate) {
+            return;
+        }
+        match e.route() {
+            Some(GLASS_NEXT_KEY) => {
+                state.glass_preset = (state.glass_preset + 1) % GLASS_PRESETS.len()
+            }
+            Some(GLASS_DRIFT_KEY) => {
+                state.glass_drift = (state.glass_drift + 1) % DRIFT_OFFSETS.len()
+            }
+            _ => {}
+        }
     }
-    match e.route() {
-        Some(GLASS_NEXT_KEY) => state.glass_preset = (state.glass_preset + 1) % GLASS_PRESETS.len(),
-        Some(GLASS_DRIFT_KEY) => state.glass_drift = (state.glass_drift + 1) % DRIFT_OFFSETS.len(),
-        _ => {}
+    #[cfg(all(target_arch = "wasm32", not(test)))]
+    {
+        let _ = (state, e);
     }
 }
 
@@ -189,6 +236,7 @@ fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {
         .height(Size::Fixed(120.0))
 }
 
+#[cfg(any(not(target_arch = "wasm32"), test))]
 fn glass_backdrop() -> El {
     // Stripes use status tokens — they swap with the theme so the glass
     // demo stays vivid under any palette without hard-coding colors.
@@ -205,6 +253,7 @@ fn glass_backdrop() -> El {
     .height(Size::Fill(1.0))
 }
 
+#[cfg(any(not(target_arch = "wasm32"), test))]
 fn glass_card(preset: &GlassPreset, drift_x: f32) -> El {
     column([
         text("Liquid glass")
@@ -240,6 +289,7 @@ fn glass_card(preset: &GlassPreset, drift_x: f32) -> El {
     .animate(Timing::SPRING_BOUNCY)
 }
 
+#[cfg(any(not(target_arch = "wasm32"), test))]
 fn glass_demo(state: &State) -> El {
     let preset = &GLASS_PRESETS[state.glass_preset % GLASS_PRESETS.len()];
     let drift_x = DRIFT_OFFSETS[state.glass_drift % DRIFT_OFFSETS.len()];
