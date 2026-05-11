@@ -839,10 +839,31 @@ fn push_math_glyph_id_op(
     atom_index: usize,
     out: &mut Vec<DrawOp>,
 ) {
-    use crate::vector::{
-        VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorPath, VectorRenderMode,
-        VectorSegment,
+    use crate::vector::VectorRenderMode;
+
+    let Some(asset) = math_glyph_vector_asset(glyph_id, view_box) else {
+        return;
     };
+    out.push(DrawOp::Vector {
+        id: format!("{}.math-glyph-id.{atom_index}", n.computed_id),
+        rect: Rect::new(
+            origin_x + atom_rect.x,
+            baseline_y + atom_rect.y,
+            atom_rect.w,
+            atom_rect.h,
+        ),
+        scissor,
+        asset: std::sync::Arc::new(asset),
+        render_mode: VectorRenderMode::Mask { color },
+    });
+}
+
+fn math_glyph_vector_asset(glyph_id: u16, view_box: Rect) -> Option<crate::vector::VectorAsset> {
+    use crate::vector::{
+        VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorPath, VectorSegment,
+    };
+
+    const MAX_SOURCE_DIM: f32 = 24.0;
 
     struct Outline {
         segments: Vec<VectorSegment>,
@@ -873,20 +894,23 @@ fn push_math_glyph_id_op(
     }
 
     let Ok(face) = ttf_parser::Face::parse(aetna_fonts::NOTO_SANS_MATH_REGULAR, 0) else {
-        return;
+        return None;
     };
     let mut outline = Outline {
         segments: Vec::new(),
     };
     let Some(_) = face.outline_glyph(ttf_parser::GlyphId(glyph_id), &mut outline) else {
-        return;
+        return None;
     };
-    if outline.segments.is_empty() || atom_rect.w <= 0.0 || atom_rect.h <= 0.0 {
-        return;
+    if outline.segments.is_empty() {
+        return None;
     }
     if view_box.w <= 0.0 || view_box.h <= 0.0 {
-        return;
+        return None;
     }
+    let scale = MAX_SOURCE_DIM / view_box.w.max(view_box.h);
+    normalize_vector_segments(&mut outline.segments, view_box, scale);
+    let normalized_view_box = [0.0, 0.0, view_box.w * scale, view_box.h * scale];
     let path = VectorPath {
         segments: outline.segments,
         fill: Some(VectorFill {
@@ -896,20 +920,35 @@ fn push_math_glyph_id_op(
         }),
         stroke: None,
     };
-    let asset =
-        VectorAsset::from_paths([view_box.x, view_box.y, view_box.w, view_box.h], vec![path]);
-    out.push(DrawOp::Vector {
-        id: format!("{}.math-glyph-id.{atom_index}", n.computed_id),
-        rect: Rect::new(
-            origin_x + atom_rect.x,
-            baseline_y + atom_rect.y,
-            atom_rect.w,
-            atom_rect.h,
-        ),
-        scissor,
-        asset: std::sync::Arc::new(asset),
-        render_mode: VectorRenderMode::Mask { color },
-    });
+    Some(VectorAsset::from_paths(normalized_view_box, vec![path]))
+}
+
+fn normalize_vector_segments(
+    segments: &mut [crate::vector::VectorSegment],
+    view_box: Rect,
+    scale: f32,
+) {
+    use crate::vector::VectorSegment;
+
+    let normalize = |point: &mut [f32; 2]| {
+        point[0] = (point[0] - view_box.x) * scale;
+        point[1] = (point[1] - view_box.y) * scale;
+    };
+    for segment in segments {
+        match segment {
+            VectorSegment::MoveTo(point) | VectorSegment::LineTo(point) => normalize(point),
+            VectorSegment::QuadTo(control, point) => {
+                normalize(control);
+                normalize(point);
+            }
+            VectorSegment::CubicTo(control_a, control_b, point) => {
+                normalize(control_a);
+                normalize(control_b);
+                normalize(point);
+            }
+            VectorSegment::Close => {}
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2947,6 +2986,30 @@ mod tests {
             VectorRenderMode::Mask {
                 color: crate::Palette::aetna_light().primary
             }
+        );
+    }
+
+    #[test]
+    fn math_exact_glyph_assets_are_normalized_before_msdf_rasterization() {
+        let face = ttf_parser::Face::parse(aetna_fonts::NOTO_SANS_MATH_REGULAR, 0).unwrap();
+        let glyph_id = face.glyph_index('√').expect("math radical glyph").0;
+        let asset = math_glyph_vector_asset(glyph_id, Rect::new(-64.0, -3200.0, 1280.0, 4096.0))
+            .expect("math glyph vector asset");
+
+        assert!(
+            asset.view_box[2].max(asset.view_box[3]) <= 24.001,
+            "font-unit view box should be normalized before hitting the icon MSDF path: {:?}",
+            asset.view_box
+        );
+
+        let mut atlas = crate::icon_msdf_atlas::IconMsdfAtlas::default();
+        let slot = atlas
+            .ensure_vector_asset(&asset)
+            .expect("normalized glyph should rasterize");
+        assert!(
+            slot.rect.w <= 80 && slot.rect.h <= 80,
+            "normalized math glyph should produce icon-sized MSDFs, got {:?}",
+            slot.rect
         );
     }
 
