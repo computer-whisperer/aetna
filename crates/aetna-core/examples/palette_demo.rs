@@ -17,24 +17,14 @@ fn main() -> std::io::Result<()> {
 
     let variants = [
         (
-            "palette_demo.shadcn_zinc_dark",
-            "shadcn zinc dark",
-            Theme::shadcn_zinc_dark(),
+            "palette_demo.aetna_dark",
+            "Aetna dark",
+            Theme::aetna_dark(),
         ),
         (
-            "palette_demo.shadcn_zinc_light",
-            "shadcn zinc light",
-            Theme::shadcn_zinc_light(),
-        ),
-        (
-            "palette_demo.shadcn_neutral_dark",
-            "shadcn neutral dark",
-            Theme::shadcn_neutral_dark(),
-        ),
-        (
-            "palette_demo.shadcn_neutral_light",
-            "shadcn neutral light",
-            Theme::shadcn_neutral_light(),
+            "palette_demo.aetna_light",
+            "Aetna light",
+            Theme::aetna_light(),
         ),
         (
             "palette_demo.radix_slate_blue_dark",
@@ -45,6 +35,26 @@ fn main() -> std::io::Result<()> {
             "palette_demo.radix_slate_blue_light",
             "Radix slate + blue light",
             Theme::radix_slate_blue_light(),
+        ),
+        (
+            "palette_demo.radix_sand_amber_dark",
+            "Radix sand + amber dark",
+            Theme::radix_sand_amber_dark(),
+        ),
+        (
+            "palette_demo.radix_sand_amber_light",
+            "Radix sand + amber light",
+            Theme::radix_sand_amber_light(),
+        ),
+        (
+            "palette_demo.radix_mauve_violet_dark",
+            "Radix mauve + violet dark",
+            Theme::radix_mauve_violet_dark(),
+        ),
+        (
+            "palette_demo.radix_mauve_violet_light",
+            "Radix mauve + violet light",
+            Theme::radix_mauve_violet_light(),
         ),
     ];
 
@@ -73,7 +83,7 @@ fn palette_demo(label: &'static str, palette: &Palette) -> El {
         row([
             column([
                 h1("Palette demo"),
-                text("Copied shadcn and Radix palettes rendered through Aetna tokens.").muted(),
+                text("Aetna and Radix palettes rendered through Aetna tokens.").muted(),
             ])
             .gap(tokens::SPACE_2)
             .height(Size::Hug),

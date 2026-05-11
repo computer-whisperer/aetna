@@ -34,38 +34,18 @@ pub struct Theme {
 
 impl Theme {
     /// Current default: stock rounded-rect surfaces with the Aetna Dark
-    /// palette, copied from shadcn/ui zinc dark, and compact desktop
+    /// palette (copied from shadcn/ui zinc dark) and compact desktop
     /// metrics.
     pub fn aetna_dark() -> Self {
-        Self::shadcn_zinc_dark()
+        Self::default().with_palette(Palette::aetna_dark())
     }
 
-    /// Stock rounded-rect surfaces with the Aetna Light palette, copied
-    /// from shadcn/ui zinc light. Drop-in alternative to
+    /// Stock rounded-rect surfaces with the Aetna Light palette (copied
+    /// from shadcn/ui zinc light). Drop-in alternative to
     /// [`Self::aetna_dark`] — token references swap rgba at paint time
     /// without rebuilding the widget tree.
     pub fn aetna_light() -> Self {
-        Self::shadcn_zinc_light()
-    }
-
-    /// Stock rounded-rect surfaces with the shadcn/ui zinc dark palette.
-    pub fn shadcn_zinc_dark() -> Self {
-        Self::default().with_palette(Palette::shadcn_zinc_dark())
-    }
-
-    /// Stock rounded-rect surfaces with the shadcn/ui zinc light palette.
-    pub fn shadcn_zinc_light() -> Self {
-        Self::default().with_palette(Palette::shadcn_zinc_light())
-    }
-
-    /// Stock rounded-rect surfaces with the shadcn/ui neutral dark palette.
-    pub fn shadcn_neutral_dark() -> Self {
-        Self::default().with_palette(Palette::shadcn_neutral_dark())
-    }
-
-    /// Stock rounded-rect surfaces with the shadcn/ui neutral light palette.
-    pub fn shadcn_neutral_light() -> Self {
-        Self::default().with_palette(Palette::shadcn_neutral_light())
+        Self::default().with_palette(Palette::aetna_light())
     }
 
     /// Stock rounded-rect surfaces with a Radix Colors slate + blue
@@ -78,6 +58,30 @@ impl Theme {
     /// light palette.
     pub fn radix_slate_blue_light() -> Self {
         Self::default().with_palette(Palette::radix_slate_blue_light())
+    }
+
+    /// Stock rounded-rect surfaces with a Radix Colors sand + amber
+    /// dark palette — warm sepia neutrals with a bright amber accent.
+    pub fn radix_sand_amber_dark() -> Self {
+        Self::default().with_palette(Palette::radix_sand_amber_dark())
+    }
+
+    /// Stock rounded-rect surfaces with a Radix Colors sand + amber
+    /// light palette.
+    pub fn radix_sand_amber_light() -> Self {
+        Self::default().with_palette(Palette::radix_sand_amber_light())
+    }
+
+    /// Stock rounded-rect surfaces with a Radix Colors mauve + violet
+    /// dark palette — purple-tinged neutrals with a violet accent.
+    pub fn radix_mauve_violet_dark() -> Self {
+        Self::default().with_palette(Palette::radix_mauve_violet_dark())
+    }
+
+    /// Stock rounded-rect surfaces with a Radix Colors mauve + violet
+    /// light palette.
+    pub fn radix_mauve_violet_light() -> Self {
+        Self::default().with_palette(Palette::radix_mauve_violet_light())
     }
 
     /// Replace the runtime color palette. Token references resolve

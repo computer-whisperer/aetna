@@ -88,19 +88,6 @@ impl Palette {
     /// theme scaffold. These rgba values also serve as the compile-time
     /// fallback baked into the constants in [`crate::tokens`].
     pub const fn aetna_dark() -> Self {
-        Self::shadcn_zinc_dark()
-    }
-
-    /// Aetna's default light palette, copied from shadcn/ui's zinc
-    /// light theme scaffold.
-    pub const fn aetna_light() -> Self {
-        Self::shadcn_zinc_light()
-    }
-
-    /// shadcn/ui zinc dark theme scaffold, converted from the upstream
-    /// HSL CSS variables to 8-bit sRGB. Status and component-extension
-    /// tokens are Aetna additions layered on top of the shadcn core.
-    pub const fn shadcn_zinc_dark() -> Self {
         Self {
             background: Color::token("background", 9, 9, 11, 255),
             foreground: Color::token("foreground", 250, 250, 250, 255),
@@ -148,10 +135,9 @@ impl Palette {
         }
     }
 
-    /// shadcn/ui zinc light theme scaffold, converted from the upstream
-    /// HSL CSS variables to 8-bit sRGB. Status and component-extension
-    /// tokens are Aetna additions layered on top of the shadcn core.
-    pub const fn shadcn_zinc_light() -> Self {
+    /// Aetna's default light palette, copied from shadcn/ui's zinc light
+    /// theme scaffold.
+    pub const fn aetna_light() -> Self {
         Self {
             background: Color::token("background", 255, 255, 255, 255),
             foreground: Color::token("foreground", 9, 9, 11, 255),
@@ -196,71 +182,6 @@ impl Palette {
 
             selection_bg: Color::token("selection-bg", 37, 99, 235, 64),
             selection_bg_unfocused: Color::token("selection-bg-unfocused", 113, 113, 122, 56),
-        }
-    }
-
-    /// shadcn/ui neutral dark theme scaffold, converted from the
-    /// upstream HSL CSS variables to 8-bit sRGB.
-    pub const fn shadcn_neutral_dark() -> Self {
-        let mut palette = Self::shadcn_zinc_dark();
-        palette.background = Color::token("background", 10, 10, 10, 255);
-        palette.foreground = Color::token("foreground", 250, 250, 250, 255);
-        palette.card = Color::token("card", 10, 10, 10, 255);
-        palette.card_foreground = Color::token("card-foreground", 250, 250, 250, 255);
-        palette.popover = Color::token("popover", 10, 10, 10, 255);
-        palette.popover_foreground = Color::token("popover-foreground", 250, 250, 250, 255);
-        palette.primary = Color::token("primary", 250, 250, 250, 255);
-        palette.primary_foreground = Color::token("primary-foreground", 23, 23, 23, 255);
-        palette.secondary = Color::token("secondary", 38, 38, 38, 255);
-        palette.secondary_foreground = Color::token("secondary-foreground", 250, 250, 250, 255);
-        palette.muted = Color::token("muted", 38, 38, 38, 255);
-        palette.muted_foreground = Color::token("muted-foreground", 163, 163, 163, 255);
-        palette.accent = Color::token("accent", 38, 38, 38, 255);
-        palette.accent_foreground = Color::token("accent-foreground", 250, 250, 250, 255);
-        palette.border = Color::token("border", 38, 38, 38, 255);
-        palette.input = Color::token("input", 38, 38, 38, 255);
-        palette.ring = Color::token("ring", 212, 212, 212, 255);
-        palette.scrollbar_thumb_fill = Color::token("scrollbar-thumb", 115, 115, 115, 120);
-        palette.scrollbar_thumb_fill_active =
-            Color::token("scrollbar-thumb-active", 163, 163, 163, 220);
-        palette.selection_bg_unfocused = Color::token("selection-bg-unfocused", 115, 115, 115, 64);
-        palette
-    }
-
-    /// shadcn/ui neutral light theme scaffold, converted from the
-    /// upstream HSL CSS variables to 8-bit sRGB.
-    pub const fn shadcn_neutral_light() -> Self {
-        let mut palette = Self::shadcn_zinc_light();
-        palette.background = Color::token("background", 255, 255, 255, 255);
-        palette.foreground = Color::token("foreground", 10, 10, 10, 255);
-        palette.card = Color::token("card", 255, 255, 255, 255);
-        palette.card_foreground = Color::token("card-foreground", 10, 10, 10, 255);
-        palette.popover = Color::token("popover", 255, 255, 255, 255);
-        palette.popover_foreground = Color::token("popover-foreground", 10, 10, 10, 255);
-        palette.primary = Color::token("primary", 23, 23, 23, 255);
-        palette.primary_foreground = Color::token("primary-foreground", 250, 250, 250, 255);
-        palette.secondary = Color::token("secondary", 245, 245, 245, 255);
-        palette.secondary_foreground = Color::token("secondary-foreground", 23, 23, 23, 255);
-        palette.muted = Color::token("muted", 245, 245, 245, 255);
-        palette.muted_foreground = Color::token("muted-foreground", 115, 115, 115, 255);
-        palette.accent = Color::token("accent", 245, 245, 245, 255);
-        palette.accent_foreground = Color::token("accent-foreground", 23, 23, 23, 255);
-        palette.border = Color::token("border", 229, 229, 229, 255);
-        palette.input = Color::token("input", 229, 229, 229, 255);
-        palette.ring = Color::token("ring", 10, 10, 10, 255);
-        palette.scrollbar_thumb_fill = Color::token("scrollbar-thumb", 115, 115, 115, 90);
-        palette.scrollbar_thumb_fill_active =
-            Color::token("scrollbar-thumb-active", 82, 82, 82, 220);
-        palette.selection_bg_unfocused = Color::token("selection-bg-unfocused", 115, 115, 115, 56);
-        palette
-    }
-
-    /// Return a neutral-family palette for the requested luminance mode.
-    pub const fn shadcn_neutral(is_dark: bool) -> Self {
-        if is_dark {
-            Self::shadcn_neutral_dark()
-        } else {
-            Self::shadcn_neutral_light()
         }
     }
 
@@ -372,6 +293,228 @@ impl Palette {
             Self::radix_slate_blue_dark()
         } else {
             Self::radix_slate_blue_light()
+        }
+    }
+
+    /// Radix Colors-inspired sand + amber dark palette — warm sepia
+    /// neutrals from `sand` paired with a bright `amber` accent. The
+    /// amber-9 yellow is luminous enough that primary action surfaces
+    /// take a dark foreground; everywhere else follows the same role
+    /// mapping as the slate + blue variant.
+    pub const fn radix_sand_amber_dark() -> Self {
+        Self {
+            background: Color::token("background", 17, 17, 16, 255),
+            foreground: Color::token("foreground", 238, 238, 236, 255),
+
+            card: Color::token("card", 25, 25, 24, 255),
+            card_foreground: Color::token("card-foreground", 238, 238, 236, 255),
+
+            popover: Color::token("popover", 25, 25, 24, 255),
+            popover_foreground: Color::token("popover-foreground", 238, 238, 236, 255),
+
+            primary: Color::token("primary", 255, 197, 61, 255),
+            primary_foreground: Color::token("primary-foreground", 33, 32, 28, 255),
+
+            secondary: Color::token("secondary", 34, 34, 33, 255),
+            secondary_foreground: Color::token("secondary-foreground", 238, 238, 236, 255),
+
+            muted: Color::token("muted", 34, 34, 33, 255),
+            muted_foreground: Color::token("muted-foreground", 181, 179, 173, 255),
+
+            accent: Color::token("accent", 48, 32, 8, 255),
+            accent_foreground: Color::token("accent-foreground", 255, 202, 22, 255),
+
+            destructive: Color::token("destructive", 229, 72, 77, 255),
+            destructive_foreground: Color::token("destructive-foreground", 255, 255, 255, 255),
+
+            border: Color::token("border", 59, 58, 55, 255),
+            input: Color::token("input", 59, 58, 55, 255),
+            ring: Color::token("ring", 255, 197, 61, 255),
+
+            success: Color::token("success", 48, 164, 108, 255),
+            success_foreground: Color::token("success-foreground", 14, 21, 18, 255),
+            warning: Color::token("warning", 255, 197, 61, 255),
+            warning_foreground: Color::token("warning-foreground", 79, 52, 34, 255),
+            info: Color::token("info", 0, 144, 255, 255),
+            info_foreground: Color::token("info-foreground", 255, 255, 255, 255),
+
+            overlay_scrim: Color::token("overlay-scrim", 0, 0, 0, 204),
+            link_foreground: Color::token("link-foreground", 255, 202, 22, 255),
+
+            scrollbar_thumb_fill: Color::token("scrollbar-thumb", 111, 109, 102, 120),
+            scrollbar_thumb_fill_active: Color::token("scrollbar-thumb-active", 181, 179, 173, 220),
+
+            selection_bg: Color::token("selection-bg", 255, 197, 61, 96),
+            selection_bg_unfocused: Color::token("selection-bg-unfocused", 111, 109, 102, 64),
+        }
+    }
+
+    /// Radix Colors-inspired sand + amber light palette.
+    pub const fn radix_sand_amber_light() -> Self {
+        Self {
+            background: Color::token("background", 253, 253, 252, 255),
+            foreground: Color::token("foreground", 33, 32, 28, 255),
+
+            card: Color::token("card", 255, 255, 255, 255),
+            card_foreground: Color::token("card-foreground", 33, 32, 28, 255),
+
+            popover: Color::token("popover", 255, 255, 255, 255),
+            popover_foreground: Color::token("popover-foreground", 33, 32, 28, 255),
+
+            primary: Color::token("primary", 255, 197, 61, 255),
+            primary_foreground: Color::token("primary-foreground", 33, 32, 28, 255),
+
+            secondary: Color::token("secondary", 241, 240, 239, 255),
+            secondary_foreground: Color::token("secondary-foreground", 33, 32, 28, 255),
+
+            muted: Color::token("muted", 241, 240, 239, 255),
+            muted_foreground: Color::token("muted-foreground", 99, 99, 94, 255),
+
+            accent: Color::token("accent", 255, 247, 194, 255),
+            accent_foreground: Color::token("accent-foreground", 171, 100, 0, 255),
+
+            destructive: Color::token("destructive", 229, 72, 77, 255),
+            destructive_foreground: Color::token("destructive-foreground", 255, 255, 255, 255),
+
+            border: Color::token("border", 218, 217, 214, 255),
+            input: Color::token("input", 207, 206, 202, 255),
+            ring: Color::token("ring", 255, 197, 61, 255),
+
+            success: Color::token("success", 48, 164, 108, 255),
+            success_foreground: Color::token("success-foreground", 25, 59, 45, 255),
+            warning: Color::token("warning", 255, 197, 61, 255),
+            warning_foreground: Color::token("warning-foreground", 79, 52, 34, 255),
+            info: Color::token("info", 0, 144, 255, 255),
+            info_foreground: Color::token("info-foreground", 255, 255, 255, 255),
+
+            overlay_scrim: Color::token("overlay-scrim", 0, 0, 0, 128),
+            link_foreground: Color::token("link-foreground", 171, 100, 0, 255),
+
+            scrollbar_thumb_fill: Color::token("scrollbar-thumb", 141, 141, 134, 90),
+            scrollbar_thumb_fill_active: Color::token("scrollbar-thumb-active", 99, 99, 94, 220),
+
+            selection_bg: Color::token("selection-bg", 255, 197, 61, 64),
+            selection_bg_unfocused: Color::token("selection-bg-unfocused", 141, 141, 134, 56),
+        }
+    }
+
+    /// Return a Radix sand + amber palette for the requested luminance mode.
+    pub const fn radix_sand_amber(is_dark: bool) -> Self {
+        if is_dark {
+            Self::radix_sand_amber_dark()
+        } else {
+            Self::radix_sand_amber_light()
+        }
+    }
+
+    /// Radix Colors-inspired mauve + violet dark palette — purple-tinged
+    /// neutrals from `mauve` paired with a `violet` accent. Same role
+    /// mapping as the slate + blue variant; the violet-9 base is deep
+    /// enough that primary action surfaces stay readable with a white
+    /// foreground.
+    pub const fn radix_mauve_violet_dark() -> Self {
+        Self {
+            background: Color::token("background", 18, 17, 19, 255),
+            foreground: Color::token("foreground", 238, 238, 240, 255),
+
+            card: Color::token("card", 26, 25, 27, 255),
+            card_foreground: Color::token("card-foreground", 238, 238, 240, 255),
+
+            popover: Color::token("popover", 26, 25, 27, 255),
+            popover_foreground: Color::token("popover-foreground", 238, 238, 240, 255),
+
+            primary: Color::token("primary", 110, 86, 207, 255),
+            primary_foreground: Color::token("primary-foreground", 255, 255, 255, 255),
+
+            secondary: Color::token("secondary", 35, 34, 37, 255),
+            secondary_foreground: Color::token("secondary-foreground", 238, 238, 240, 255),
+
+            muted: Color::token("muted", 35, 34, 37, 255),
+            muted_foreground: Color::token("muted-foreground", 181, 178, 188, 255),
+
+            accent: Color::token("accent", 41, 31, 67, 255),
+            accent_foreground: Color::token("accent-foreground", 186, 167, 255, 255),
+
+            destructive: Color::token("destructive", 229, 72, 77, 255),
+            destructive_foreground: Color::token("destructive-foreground", 255, 255, 255, 255),
+
+            border: Color::token("border", 60, 57, 63, 255),
+            input: Color::token("input", 60, 57, 63, 255),
+            ring: Color::token("ring", 110, 86, 207, 255),
+
+            success: Color::token("success", 48, 164, 108, 255),
+            success_foreground: Color::token("success-foreground", 14, 21, 18, 255),
+            warning: Color::token("warning", 255, 197, 61, 255),
+            warning_foreground: Color::token("warning-foreground", 79, 52, 34, 255),
+            info: Color::token("info", 0, 144, 255, 255),
+            info_foreground: Color::token("info-foreground", 255, 255, 255, 255),
+
+            overlay_scrim: Color::token("overlay-scrim", 0, 0, 0, 204),
+            link_foreground: Color::token("link-foreground", 186, 167, 255, 255),
+
+            scrollbar_thumb_fill: Color::token("scrollbar-thumb", 111, 109, 120, 120),
+            scrollbar_thumb_fill_active: Color::token("scrollbar-thumb-active", 181, 178, 188, 220),
+
+            selection_bg: Color::token("selection-bg", 110, 86, 207, 96),
+            selection_bg_unfocused: Color::token("selection-bg-unfocused", 111, 109, 120, 64),
+        }
+    }
+
+    /// Radix Colors-inspired mauve + violet light palette.
+    pub const fn radix_mauve_violet_light() -> Self {
+        Self {
+            background: Color::token("background", 253, 252, 253, 255),
+            foreground: Color::token("foreground", 33, 31, 38, 255),
+
+            card: Color::token("card", 255, 255, 255, 255),
+            card_foreground: Color::token("card-foreground", 33, 31, 38, 255),
+
+            popover: Color::token("popover", 255, 255, 255, 255),
+            popover_foreground: Color::token("popover-foreground", 33, 31, 38, 255),
+
+            primary: Color::token("primary", 110, 86, 207, 255),
+            primary_foreground: Color::token("primary-foreground", 255, 255, 255, 255),
+
+            secondary: Color::token("secondary", 242, 239, 243, 255),
+            secondary_foreground: Color::token("secondary-foreground", 33, 31, 38, 255),
+
+            muted: Color::token("muted", 242, 239, 243, 255),
+            muted_foreground: Color::token("muted-foreground", 101, 99, 109, 255),
+
+            accent: Color::token("accent", 244, 240, 254, 255),
+            accent_foreground: Color::token("accent-foreground", 101, 80, 185, 255),
+
+            destructive: Color::token("destructive", 229, 72, 77, 255),
+            destructive_foreground: Color::token("destructive-foreground", 255, 255, 255, 255),
+
+            border: Color::token("border", 219, 216, 224, 255),
+            input: Color::token("input", 208, 205, 215, 255),
+            ring: Color::token("ring", 110, 86, 207, 255),
+
+            success: Color::token("success", 48, 164, 108, 255),
+            success_foreground: Color::token("success-foreground", 25, 59, 45, 255),
+            warning: Color::token("warning", 255, 197, 61, 255),
+            warning_foreground: Color::token("warning-foreground", 79, 52, 34, 255),
+            info: Color::token("info", 0, 144, 255, 255),
+            info_foreground: Color::token("info-foreground", 255, 255, 255, 255),
+
+            overlay_scrim: Color::token("overlay-scrim", 0, 0, 0, 128),
+            link_foreground: Color::token("link-foreground", 101, 80, 185, 255),
+
+            scrollbar_thumb_fill: Color::token("scrollbar-thumb", 142, 140, 153, 90),
+            scrollbar_thumb_fill_active: Color::token("scrollbar-thumb-active", 101, 99, 109, 220),
+
+            selection_bg: Color::token("selection-bg", 110, 86, 207, 64),
+            selection_bg_unfocused: Color::token("selection-bg-unfocused", 142, 140, 153, 56),
+        }
+    }
+
+    /// Return a Radix mauve + violet palette for the requested luminance mode.
+    pub const fn radix_mauve_violet(is_dark: bool) -> Self {
+        if is_dark {
+            Self::radix_mauve_violet_dark()
+        } else {
+            Self::radix_mauve_violet_light()
         }
     }
 

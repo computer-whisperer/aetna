@@ -50,7 +50,7 @@ The architectural decision: `El` is the author's description of the scene; every
 | Capability | What it covers and how to see it |
 |---|---|
 | Grammar | `column`/`row`/`card`/`button`/`badge`/`text`/`spacer`, intrinsic + `Fill`/`Hug`/`Fixed` sizing, `pub const` tokens. |
-| Theme palettes | shadcn-shaped color tokens with copied `zinc` and `neutral` dark/light palettes plus a Radix Colors `slate` + `blue` dark/light pair. `Theme::aetna_dark()` and `Theme::aetna_light()` default to shadcn zinc; explicit constructors are `Theme::shadcn_zinc_dark()`, `Theme::shadcn_zinc_light()`, `Theme::shadcn_neutral_dark()`, `Theme::shadcn_neutral_light()`, `Theme::radix_slate_blue_dark()`, and `Theme::radix_slate_blue_light()`. `cargo run -p aetna-core --example palette_demo` renders every stock palette. |
+| Theme palettes | shadcn-shaped color tokens with `Theme::aetna_dark()` / `Theme::aetna_light()` (the default; copies shadcn/ui zinc) plus three Radix Colors pairs: `Theme::radix_slate_blue_{dark,light}()`, `Theme::radix_sand_amber_{dark,light}()`, and `Theme::radix_mauve_violet_{dark,light}()` — eight stock palettes in total. `cargo run -p aetna-core --example palette_demo` renders every one. |
 | Wgpu rendering | `cargo run -p aetna-examples --bin settings`; `cargo run -p aetna-wgpu --example render_png` writes `crates/aetna-wgpu/out/settings.wgpu.png` |
 | Stock shaders | `rounded_rect` + `text_sdf` + `focus_ring` |
 | Custom-shader escape hatch | `crates/aetna-wgpu/out/custom_shader.wgpu.png` — gradient buttons rendered by user-authored `shaders/gradient.wgsl` |

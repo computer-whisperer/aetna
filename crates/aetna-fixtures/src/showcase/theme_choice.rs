@@ -1,11 +1,12 @@
 //! User-selectable theme — drives [`crate::Showcase::theme`] so the
 //! showcase renders against the chosen palette without rebuilding state.
 //!
-//! Eight themes total: Aetna's own dark/light pair, the shadcn zinc and
-//! neutral pairs, and the Radix slate-blue pair. The picker in the
-//! sidebar swaps between these live; every page reflects the choice on
-//! the next frame because token lookups resolve through the active
-//! palette at paint time.
+//! Eight themes total: Aetna's own dark/light pair (= shadcn zinc, the
+//! palette Aetna ships against by default) plus three Radix Colors
+//! pairs — slate + blue, sand + amber, and mauve + violet. The picker
+//! in the sidebar swaps between these live; every page reflects the
+//! choice on the next frame because token lookups resolve through the
+//! active palette at paint time.
 
 use aetna_core::prelude::Theme;
 
@@ -14,24 +15,24 @@ pub enum ThemeChoice {
     #[default]
     AetnaDark,
     AetnaLight,
-    ShadcnZincDark,
-    ShadcnZincLight,
-    ShadcnNeutralDark,
-    ShadcnNeutralLight,
     RadixSlateBlueDark,
     RadixSlateBlueLight,
+    RadixSandAmberDark,
+    RadixSandAmberLight,
+    RadixMauveVioletDark,
+    RadixMauveVioletLight,
 }
 
 impl ThemeChoice {
     pub const ALL: [ThemeChoice; 8] = [
         ThemeChoice::AetnaDark,
         ThemeChoice::AetnaLight,
-        ThemeChoice::ShadcnZincDark,
-        ThemeChoice::ShadcnZincLight,
-        ThemeChoice::ShadcnNeutralDark,
-        ThemeChoice::ShadcnNeutralLight,
         ThemeChoice::RadixSlateBlueDark,
         ThemeChoice::RadixSlateBlueLight,
+        ThemeChoice::RadixSandAmberDark,
+        ThemeChoice::RadixSandAmberLight,
+        ThemeChoice::RadixMauveVioletDark,
+        ThemeChoice::RadixMauveVioletLight,
     ];
 
     /// Stable identifier used as the value in routed select keys
@@ -40,12 +41,12 @@ impl ThemeChoice {
         match self {
             ThemeChoice::AetnaDark => "aetna-dark",
             ThemeChoice::AetnaLight => "aetna-light",
-            ThemeChoice::ShadcnZincDark => "shadcn-zinc-dark",
-            ThemeChoice::ShadcnZincLight => "shadcn-zinc-light",
-            ThemeChoice::ShadcnNeutralDark => "shadcn-neutral-dark",
-            ThemeChoice::ShadcnNeutralLight => "shadcn-neutral-light",
             ThemeChoice::RadixSlateBlueDark => "radix-slate-blue-dark",
             ThemeChoice::RadixSlateBlueLight => "radix-slate-blue-light",
+            ThemeChoice::RadixSandAmberDark => "radix-sand-amber-dark",
+            ThemeChoice::RadixSandAmberLight => "radix-sand-amber-light",
+            ThemeChoice::RadixMauveVioletDark => "radix-mauve-violet-dark",
+            ThemeChoice::RadixMauveVioletLight => "radix-mauve-violet-light",
         }
     }
 
@@ -54,12 +55,12 @@ impl ThemeChoice {
         match self {
             ThemeChoice::AetnaDark => "Aetna · dark",
             ThemeChoice::AetnaLight => "Aetna · light",
-            ThemeChoice::ShadcnZincDark => "shadcn zinc · dark",
-            ThemeChoice::ShadcnZincLight => "shadcn zinc · light",
-            ThemeChoice::ShadcnNeutralDark => "shadcn neutral · dark",
-            ThemeChoice::ShadcnNeutralLight => "shadcn neutral · light",
-            ThemeChoice::RadixSlateBlueDark => "Radix slate · dark",
-            ThemeChoice::RadixSlateBlueLight => "Radix slate · light",
+            ThemeChoice::RadixSlateBlueDark => "Radix slate + blue · dark",
+            ThemeChoice::RadixSlateBlueLight => "Radix slate + blue · light",
+            ThemeChoice::RadixSandAmberDark => "Radix sand + amber · dark",
+            ThemeChoice::RadixSandAmberLight => "Radix sand + amber · light",
+            ThemeChoice::RadixMauveVioletDark => "Radix mauve + violet · dark",
+            ThemeChoice::RadixMauveVioletLight => "Radix mauve + violet · light",
         }
     }
 
@@ -71,12 +72,12 @@ impl ThemeChoice {
         match self {
             ThemeChoice::AetnaDark => Theme::aetna_dark(),
             ThemeChoice::AetnaLight => Theme::aetna_light(),
-            ThemeChoice::ShadcnZincDark => Theme::shadcn_zinc_dark(),
-            ThemeChoice::ShadcnZincLight => Theme::shadcn_zinc_light(),
-            ThemeChoice::ShadcnNeutralDark => Theme::shadcn_neutral_dark(),
-            ThemeChoice::ShadcnNeutralLight => Theme::shadcn_neutral_light(),
             ThemeChoice::RadixSlateBlueDark => Theme::radix_slate_blue_dark(),
             ThemeChoice::RadixSlateBlueLight => Theme::radix_slate_blue_light(),
+            ThemeChoice::RadixSandAmberDark => Theme::radix_sand_amber_dark(),
+            ThemeChoice::RadixSandAmberLight => Theme::radix_sand_amber_light(),
+            ThemeChoice::RadixMauveVioletDark => Theme::radix_mauve_violet_dark(),
+            ThemeChoice::RadixMauveVioletLight => Theme::radix_mauve_violet_light(),
         }
     }
 }

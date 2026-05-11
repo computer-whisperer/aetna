@@ -45,9 +45,9 @@ Several important pieces are already in place:
   handling.
 - stock icon helpers and icon-bearing buttons exist.
 - backend runners can receive themes through the shared core path.
-- the default dark/light palettes copy shadcn/ui zinc, with shadcn neutral
-  and Radix slate+blue dark/light variants available for side-by-side
-  inspection.
+- the default dark/light palettes copy shadcn/ui zinc, with Radix
+  slate+blue, sand+amber, and mauve+violet dark/light variants available
+  for side-by-side inspection.
 
 That means the next polish work should tune global defaults first. Local
 fixture tweaks should be treated as evidence of a missing default or missing
