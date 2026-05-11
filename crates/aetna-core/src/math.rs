@@ -1847,6 +1847,7 @@ fn parse_mathml_node(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPars
         "mover" => parse_mathml_under_over(node, false, true),
         "munderover" => parse_mathml_under_over(node, true, true),
         "mfenced" => parse_mathml_fenced(node),
+        "semantics" => parse_mathml_semantics(node),
         "mtable" => parse_mathml_table(node),
         "mtr" => Ok(MathExpr::row(
             mathml_element_children(node)
@@ -1866,6 +1867,20 @@ fn parse_mathml_children(node: roxmltree::Node<'_, '_>) -> Result<Vec<MathExpr>,
         .into_iter()
         .map(parse_mathml_node)
         .collect()
+}
+
+fn parse_mathml_semantics(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathParseError> {
+    let children = mathml_element_children(node);
+    let Some(presentation) = children
+        .into_iter()
+        .find(|child| !matches!(child.tag_name().name(), "annotation" | "annotation-xml"))
+    else {
+        return Err(mathml_error_at(
+            node,
+            "<semantics> expected a presentation child".to_string(),
+        ));
+    };
+    parse_mathml_node(presentation)
 }
 
 fn mathml_element_children<'a, 'input>(
@@ -3531,6 +3546,47 @@ mod tests {
             }
             other => panic!("expected under/over expression, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_mathml_semantics_wrapper() {
+        let expr = parse_mathml(
+            r#"
+            <math>
+              <semantics>
+                <mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow>
+                <annotation encoding="application/x-tex">x+1</annotation>
+              </semantics>
+            </math>
+            "#,
+        )
+        .expect("valid mathml semantics wrapper");
+        match expr {
+            MathExpr::Row(children) => {
+                assert_eq!(children.len(), 3);
+                assert_eq!(children[0], MathExpr::Identifier("x".into()));
+                assert_eq!(children[2], MathExpr::Number("1".into()));
+            }
+            other => panic!("expected row expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_mathml_semantics_without_presentation_child() {
+        let err = parse_mathml(
+            r#"
+            <math>
+              <semantics>
+                <annotation encoding="application/x-tex">x+1</annotation>
+              </semantics>
+            </math>
+            "#,
+        )
+        .expect_err("invalid mathml semantics wrapper");
+        assert!(
+            err.message
+                .contains("<semantics> expected a presentation child")
+        );
     }
 
     #[test]

@@ -132,7 +132,7 @@ The supported TeX subset is deliberately small:
 
 The supported MathML subset mirrors that same IR:
 
-- `math`, `mrow`
+- `math`, `mrow`, `semantics` with annotations ignored
 - `mi`, `mn`, `mo`, `mtext`, `mspace`
 - `mfrac`
 - `msqrt`, `mroot`
