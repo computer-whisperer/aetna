@@ -235,8 +235,10 @@ function. That helper now reads the bundled Noto Sans Math MATH table for the
 low-risk values that are already close to the tuned heuristics: script scale,
 axis height, fraction rule thickness, fraction numerator/denominator gaps,
 script shifts/gaps, upper/lower limit placement, radical rule thickness, and
-radical vertical gaps. The next step is widening that bridge to full fraction
-shifts and delimiter assemblies.
+radical vertical gaps. Fraction numerator/denominator shifts are also applied
+as minimum baseline placement constraints while the fraction rule remains on
+the shared math axis. The next step is widening that bridge to delimiter
+assemblies.
 
 ### 3. Inline Layout Quality
 

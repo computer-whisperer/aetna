@@ -257,6 +257,26 @@ impl MathMetrics {
             }
     }
 
+    fn fraction_numerator_shift(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| {
+                constants
+                    .fraction_numerator_shift(self.size, matches!(self.display, MathDisplay::Block))
+            })
+            .unwrap_or(self.size * 0.55)
+    }
+
+    fn fraction_denominator_shift(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| {
+                constants.fraction_denominator_shift(
+                    self.size,
+                    matches!(self.display, MathDisplay::Block),
+                )
+            })
+            .unwrap_or(self.size * 0.55)
+    }
+
     fn math_axis_shift(self) -> f32 {
         if matches!(self.display, MathDisplay::Block)
             && let Some(axis) = self.operator_axis_shift()
@@ -412,6 +432,10 @@ struct OpenTypeMathConstants {
     upper_limit_baseline_rise_min: i16,
     lower_limit_gap_min: i16,
     lower_limit_baseline_drop_min: i16,
+    fraction_numerator_shift_up: i16,
+    fraction_numerator_display_style_shift_up: i16,
+    fraction_denominator_shift_down: i16,
+    fraction_denominator_display_style_shift_down: i16,
     fraction_rule_thickness: i16,
     fraction_numerator_gap_min: i16,
     fraction_num_display_style_gap_min: i16,
@@ -474,6 +498,24 @@ impl OpenTypeMathConstants {
 
     fn lower_limit_baseline_drop_min(self, size: f32) -> Option<f32> {
         self.font_units(self.lower_limit_baseline_drop_min, size)
+    }
+
+    fn fraction_numerator_shift(self, size: f32, display: bool) -> Option<f32> {
+        let value = if display {
+            self.fraction_numerator_display_style_shift_up
+        } else {
+            self.fraction_numerator_shift_up
+        };
+        self.font_units(value, size)
+    }
+
+    fn fraction_denominator_shift(self, size: f32, display: bool) -> Option<f32> {
+        let value = if display {
+            self.fraction_denominator_display_style_shift_down
+        } else {
+            self.fraction_denominator_shift_down
+        };
+        self.font_units(value, size)
     }
 
     fn fraction_numerator_gap(self, size: f32, display: bool) -> Option<f32> {
@@ -539,6 +581,14 @@ fn parse_open_type_math_constants(font: &[u8]) -> Option<OpenTypeMathConstants> 
         upper_limit_baseline_rise_min: constants.upper_limit_baseline_rise_min().value,
         lower_limit_gap_min: constants.lower_limit_gap_min().value,
         lower_limit_baseline_drop_min: constants.lower_limit_baseline_drop_min().value,
+        fraction_numerator_shift_up: constants.fraction_numerator_shift_up().value,
+        fraction_numerator_display_style_shift_up: constants
+            .fraction_numerator_display_style_shift_up()
+            .value,
+        fraction_denominator_shift_down: constants.fraction_denominator_shift_down().value,
+        fraction_denominator_display_style_shift_down: constants
+            .fraction_denominator_display_style_shift_down()
+            .value,
         fraction_rule_thickness: constants.fraction_rule_thickness().value,
         fraction_numerator_gap_min: constants.fraction_numerator_gap_min().value,
         fraction_num_display_style_gap_min: constants.fraction_num_display_style_gap_min().value,
@@ -674,8 +724,10 @@ fn layout_fraction(numerator: &MathExpr, denominator: &MathExpr, ctx: LayoutCtx)
     let width = num.width.max(den.width) + pad * 2.0;
     let num_x = (width - num.width) * 0.5;
     let den_x = (width - den.width) * 0.5;
-    let num_dy = rule_center_y - num_gap - rule * 0.5 - num.descent;
-    let den_dy = rule_center_y + den_gap + rule * 0.5 + den.ascent;
+    let num_dy = (rule_center_y - num_gap - rule * 0.5 - num.descent)
+        .min(-metrics.fraction_numerator_shift());
+    let den_dy = (rule_center_y + den_gap + rule * 0.5 + den.ascent)
+        .max(metrics.fraction_denominator_shift());
     let ascent = -num_dy + num.ascent;
     let descent = den_dy + den.descent;
     let mut atoms = Vec::new();
@@ -2029,6 +2081,18 @@ mod tests {
         );
         assert!(
             constants
+                .fraction_numerator_shift(16.0, true)
+                .is_some_and(|shift| shift > 1.0 && shift < 24.0),
+            "display numerator shift should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .fraction_denominator_shift(16.0, true)
+                .is_some_and(|shift| shift > 1.0 && shift < 24.0),
+            "display denominator shift should come from Noto Sans Math"
+        );
+        assert!(
+            constants
                 .radical_rule_thickness(16.0)
                 .is_some_and(|thickness| thickness > 0.75 && thickness < 2.0),
             "radical rule thickness should come from Noto Sans Math"
@@ -2061,6 +2125,52 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, MathAtom::Radical { .. })),
             "sqrt should emit a radical atom"
+        );
+    }
+
+    #[test]
+    fn display_fraction_honors_baseline_shifts() {
+        let layout = layout_math(
+            &parse_tex(r"\frac{1}{2}").unwrap(),
+            16.0,
+            MathDisplay::Block,
+        );
+        let metrics = LayoutCtx {
+            size: 16.0,
+            display: MathDisplay::Block,
+        }
+        .metrics();
+        let numerator_y = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph {
+                    text, y_baseline, ..
+                } if text == "1" => Some(*y_baseline),
+                _ => None,
+            })
+            .expect("numerator baseline");
+        let denominator_y = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph {
+                    text, y_baseline, ..
+                } if text == "2" => Some(*y_baseline),
+                _ => None,
+            })
+            .expect("denominator baseline");
+
+        assert!(
+            -numerator_y >= metrics.fraction_numerator_shift() - 0.1,
+            "numerator shift = {}, min = {}",
+            -numerator_y,
+            metrics.fraction_numerator_shift()
+        );
+        assert!(
+            denominator_y >= metrics.fraction_denominator_shift() - 0.1,
+            "denominator shift = {denominator_y}, min = {}",
+            metrics.fraction_denominator_shift()
         );
     }
 
