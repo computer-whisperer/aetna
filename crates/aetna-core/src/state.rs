@@ -62,6 +62,18 @@ pub struct UiState {
     /// click variant to emit. Cleared by `pointer_up` matching the
     /// same button.
     pub(crate) pressed_secondary: Option<(UiTarget, PointerButton)>,
+    /// URL of the text-link run under a primary press, when present.
+    /// Set by `pointer_down` from `hit_test::link_at`; consumed by
+    /// `pointer_up`, which emits `UiEventKind::LinkActivated` only
+    /// when the up position lands on the same link URL — same
+    /// press-then-confirm contract as a normal `Click`.
+    pub(crate) pressed_link: Option<String>,
+    /// URL of the text-link run currently under the pointer (no
+    /// button press required). Tracked by `pointer_moved` so the
+    /// cursor resolver can return [`crate::cursor::Cursor::Pointer`]
+    /// over links without the text leaves having to be keyed
+    /// hover-test targets. Cleared on `pointer_left`.
+    pub(crate) hovered_link: Option<String>,
     pub focused: Option<UiTarget>,
     /// Whether the focused element should display its focus ring.
     /// Tracks the web platform's `:focus-visible` heuristic: keyboard

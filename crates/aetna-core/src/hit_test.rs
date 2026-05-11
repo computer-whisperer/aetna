@@ -25,7 +25,7 @@ use crate::event::UiTarget;
 use crate::selection::SelectionPoint;
 use crate::state::UiState;
 use crate::text::metrics;
-use crate::tree::{El, Kind, Rect};
+use crate::tree::{El, FontWeight, Kind, Rect, TextWrap};
 
 /// Find the topmost keyed node whose laid-out rect contains `point`
 /// (logical pixels). Returns `None` if the point hits no keyed node.
@@ -156,6 +156,150 @@ pub fn selection_point_at(
         }
     };
     Some(SelectionPoint { key, byte })
+}
+
+/// Find the link URL of the topmost text-link run containing `point`.
+///
+/// Walks the tree for `Kind::Inlines` paragraphs whose painted rect
+/// contains the pointer, re-runs the same shaping pipeline the paint
+/// pass uses to find the byte under the pointer, then walks the
+/// paragraph's child runs to identify which one owns that byte.
+/// Returns the run's [`crate::tree::El::text_link`] URL, or `None`
+/// when the click missed every link run.
+///
+/// This is the read side of the link-click contract: the runtime calls
+/// it from `pointer_down` / `pointer_up` and the app sees the result as
+/// a [`crate::event::UiEventKind::LinkActivated`] event with the URL in
+/// [`crate::event::UiEvent::key`]. Aetna does not act on the URL — see
+/// [`crate::event::App::drain_link_opens`] for the app-decided handoff
+/// to a host opener.
+pub fn link_at(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<String> {
+    link_at_rec(root, ui_state, point, None, (0.0, 0.0))
+}
+
+fn link_at_rec(
+    node: &El,
+    ui_state: &UiState,
+    point: (f32, f32),
+    inherited_clip: Option<Rect>,
+    inherited_translate: (f32, f32),
+) -> Option<String> {
+    if let Some(clip) = inherited_clip
+        && !clip.contains(point.0, point.1)
+    {
+        return None;
+    }
+    let total_translate = (
+        inherited_translate.0 + node.translate.0,
+        inherited_translate.1 + node.translate.1,
+    );
+    let computed = ui_state.rect(&node.computed_id);
+    let translated_rect = translated(computed, total_translate);
+    let painted_rect = scaled_around_center(translated_rect, node.scale);
+    let child_clip = if node.clip {
+        match inherited_clip {
+            Some(clip) => Some(
+                clip.intersect(painted_rect)
+                    .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+            ),
+            None => Some(painted_rect),
+        }
+    } else {
+        inherited_clip
+    };
+    // Children paint last → are on top → check first. A link nested
+    // inside an overlay should win over a link in the page beneath.
+    for child in node.children.iter().rev() {
+        if let Some(url) = link_at_rec(child, ui_state, point, child_clip, total_translate) {
+            return Some(url);
+        }
+    }
+    if !matches!(node.kind, Kind::Inlines) {
+        return None;
+    }
+    if !painted_rect.contains(point.0, point.1) {
+        return None;
+    }
+    link_in_inlines_at(node, painted_rect, point)
+}
+
+fn link_in_inlines_at(node: &El, painted_rect: Rect, point: (f32, f32)) -> Option<String> {
+    // Mirror `draw_ops`'s inline paragraph: glyphs paint inside the
+    // node's padding rect, with the same per-paragraph font size /
+    // line height aggregated from the child Text runs.
+    let glyph_rect = painted_rect.inset(node.padding);
+    if !glyph_rect.contains(point.0, point.1) {
+        return None;
+    }
+    let runs = collect_link_runs(node);
+    if runs.iter().all(|(_, link)| link.is_none()) {
+        return None;
+    }
+    let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
+    if concat.is_empty() {
+        return None;
+    }
+    let inline_size = inline_paragraph_font_size(node) * node.scale;
+    let geometry = metrics::TextGeometry::new_with_family(
+        &concat,
+        inline_size,
+        node.font_family,
+        FontWeight::Regular,
+        false,
+        node.text_wrap,
+        match node.text_wrap {
+            TextWrap::NoWrap => None,
+            TextWrap::Wrap => Some(glyph_rect.w),
+        },
+    );
+    let local_x = (point.0 - glyph_rect.x).max(0.0);
+    let local_y = (point.1 - glyph_rect.y).max(0.0);
+    let byte = geometry.hit_byte(local_x, local_y)?;
+    // Map the global byte offset back to the run that owns it. A byte
+    // past the last grapheme means the click landed beyond the rendered
+    // text (paragraphs hugged narrower than their layout slot leave
+    // empty space at the end of each line) — treat as no link rather
+    // than guessing the nearest run.
+    let mut offset = 0usize;
+    for (text, link) in &runs {
+        let len = text.len();
+        if byte < offset + len {
+            return link.clone();
+        }
+        offset += len;
+    }
+    None
+}
+
+/// Mirror `draw_ops::collect_inline_runs` but keep just the run text
+/// and link URL — that's all the link hit-test needs. Hard breaks
+/// inject a `\n` so byte offsets line up with the shaped string.
+fn collect_link_runs(node: &El) -> Vec<(String, Option<String>)> {
+    let mut runs = Vec::new();
+    for c in &node.children {
+        match c.kind {
+            Kind::Text => {
+                if let Some(text) = &c.text {
+                    runs.push((text.clone(), c.text_link.clone()));
+                }
+            }
+            Kind::HardBreak => runs.push(("\n".to_string(), None)),
+            _ => {}
+        }
+    }
+    runs
+}
+
+/// Mirror `draw_ops::inline_paragraph_font_size` so the shaping
+/// here matches the paint pass exactly.
+fn inline_paragraph_font_size(node: &El) -> f32 {
+    let mut size: f32 = node.font_size;
+    for c in &node.children {
+        if matches!(c.kind, Kind::Text) {
+            size = size.max(c.font_size);
+        }
+    }
+    size
 }
 
 /// Inner state carried while walking for a selectable target. We
@@ -359,6 +503,60 @@ mod tests {
             return Some(state.rect(&node.computed_id));
         }
         node.children.iter().find_map(|c| find_text_rect(c, state))
+    }
+
+    /// Find the rect of the topmost `Kind::Inlines` paragraph. Inline
+    /// children (Text leaves) have zero-size rects in layout so callers
+    /// that want the painted box reach for the parent's instead.
+    fn find_inlines_rect(node: &El, state: &UiState) -> Option<Rect> {
+        if matches!(node.kind, Kind::Inlines) {
+            return Some(state.rect(&node.computed_id));
+        }
+        node.children
+            .iter()
+            .find_map(|c| find_inlines_rect(c, state))
+    }
+
+    #[test]
+    fn link_at_resolves_per_run_inside_inline_paragraph() {
+        // Layout a paragraph that mixes plain text and a single linked
+        // run. Clicks on the plain prefix should miss the link; clicks
+        // on the linked run should resolve to its URL. This locks the
+        // per-run hit test against regressing back to whole-paragraph
+        // detection.
+        const PREFIX: &str = "Visit ";
+        const LINKED: &str = "github.com/computer-whisperer/aetna";
+        const URL: &str = "https://github.com/computer-whisperer/aetna";
+        let mut tree = column([crate::text_runs([
+            crate::text(PREFIX),
+            crate::text(LINKED).link(URL),
+            crate::text("."),
+        ])])
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 600.0, 200.0));
+        let para = find_inlines_rect(&tree, &state).expect("inlines rect");
+        // Sanity: the layout fits on one line, so vertical center is
+        // safe everywhere.
+        let cy = para.y + para.h * 0.5;
+        // Click 1px in from the left edge of the paragraph — squarely
+        // inside the "Visit " prefix (no link).
+        let prefix_x = para.x + 1.0;
+        assert_eq!(
+            link_at(&tree, &state, (prefix_x, cy)),
+            None,
+            "clicking the unlinked prefix should not surface the link URL",
+        );
+        // Click well past the prefix — the linked run is much wider
+        // than "Visit " and its trailing ".", so a probe halfway across
+        // the paragraph is inside the linked region for any plausible
+        // proportional font.
+        let linked_x = para.x + para.w * 0.5;
+        assert_eq!(
+            link_at(&tree, &state, (linked_x, cy)).as_deref(),
+            Some(URL),
+            "clicking inside the linked run should surface its URL",
+        );
     }
 
     #[test]

@@ -387,6 +387,13 @@ impl UiEvent {
 pub enum UiEventKind {
     /// Primary-button pointer down + up landed on the same node.
     Click,
+    /// Primary-button click landed on a text run carrying a
+    /// [`crate::tree::El::text_link`] URL. The URL is in [`UiEvent::key`].
+    /// Apps decide whether to honor it (filtering, confirmation,
+    /// platform-appropriate open via [`App::drain_link_opens`] +
+    /// host-side opener). Aetna doesn't open URLs itself — it surfaces
+    /// the click and lets the app route it.
+    LinkActivated,
     /// Secondary-button (right-click) pointer down + up landed on the
     /// same node. Used for context menus.
     SecondaryClick,
@@ -794,6 +801,26 @@ pub trait App {
     ///
     /// Default: no requests.
     fn drain_scroll_requests(&mut self) -> Vec<crate::scroll::ScrollRequest> {
+        Vec::new()
+    }
+
+    /// Drain pending URL-open requests produced since the last frame.
+    /// Hosts call this once per frame and route each URL to a
+    /// platform-appropriate opener — `window.open` in the wasm host,
+    /// the `open` crate (or equivalent) on native.
+    ///
+    /// The library emits [`UiEventKind::LinkActivated`] when a click
+    /// lands on a text run carrying a link URL, but it does not act
+    /// on the URL itself: opening a link is an app concern (apps may
+    /// want to confirm, filter by scheme, route through an internal
+    /// router, or no-op entirely). Apps that want the default
+    /// browser-style behavior accumulate URLs from
+    /// [`UiEventKind::LinkActivated`] in their `on_event` handler and
+    /// return them here; apps that don't override this method drop
+    /// link clicks on the floor.
+    ///
+    /// Default: no requests.
+    fn drain_link_opens(&mut self) -> Vec<String> {
         Vec::new()
     }
 

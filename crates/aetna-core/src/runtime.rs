@@ -311,6 +311,18 @@ impl RunnerCore {
         // and only returns whether identity flipped.
         let prev_hover = self.ui_state.hovered.clone();
         let hover_changed = self.ui_state.set_hovered(hit, Instant::now());
+        // Track the link URL under the pointer separately from keyed
+        // hover so the cursor resolver can flip to `Pointer` over text
+        // runs that aren't themselves hit-test targets. A change here
+        // (entering or leaving a link) needs a redraw so the host's
+        // per-frame cursor resolution reads the new value.
+        let prev_hovered_link = self.ui_state.hovered_link.clone();
+        let new_hovered_link = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| hit_test::link_at(t, &self.ui_state, (x, y)));
+        let link_hover_changed = new_hovered_link != prev_hovered_link;
+        self.ui_state.hovered_link = new_hovered_link;
         let modifiers = self.ui_state.modifiers;
 
         let mut out = Vec::new();
@@ -401,7 +413,7 @@ impl RunnerCore {
             });
         }
 
-        let needs_redraw = hover_changed || !out.is_empty();
+        let needs_redraw = hover_changed || link_hover_changed || !out.is_empty();
         PointerMove {
             events: out,
             needs_redraw,
@@ -423,6 +435,13 @@ impl RunnerCore {
         self.ui_state.set_hovered(None, Instant::now());
         self.ui_state.pressed = None;
         self.ui_state.pressed_secondary = None;
+        // Pointer leaves the window → no link is hovered or pressed
+        // anymore. Clearing here keeps a stale `Pointer` cursor from
+        // sticking after the user moves the mouse out of the canvas
+        // and lets re-entry recompute against the actual current
+        // position.
+        self.ui_state.hovered_link = None;
+        self.ui_state.pressed_link = None;
 
         let mut out = Vec::new();
         if let Some(prev) = prev_hover {
@@ -601,6 +620,17 @@ impl RunnerCore {
             return Vec::new();
         }
 
+        // Stash any link URL the press lands on before the keyed-
+        // target walk consumes the press. Cleared in `pointer_up`,
+        // which only emits `LinkActivated` if the up position resolves
+        // to the same URL — same press-then-confirm contract as a
+        // normal `Click`. A press that misses every link clears any
+        // stale value from the previous press so a drag-released-
+        // elsewhere never fires a link from an earlier interaction.
+        self.ui_state.pressed_link = self
+            .last_tree
+            .as_ref()
+            .and_then(|t| hit_test::link_at(t, &self.ui_state, (x, y)));
         self.ui_state.set_focus(hit.clone());
         // `:focus-visible` rule: pointer-driven focus suppresses the
         // ring; widgets that want it on click opt in via
@@ -815,6 +845,31 @@ impl RunnerCore {
                             click_count,
                             path: None,
                             kind: UiEventKind::Click,
+                        });
+                    }
+                }
+                // Link click — surface the URL as a separate event so
+                // the app's link policy is independent of any keyed
+                // ancestor's `Click`. Press-then-confirm: the up
+                // position must resolve to the same URL as the down
+                // (cancel-on-drag-away, matching native link UX).
+                if let Some(pressed_url) = self.ui_state.pressed_link.take() {
+                    let up_link = self
+                        .last_tree
+                        .as_ref()
+                        .and_then(|t| hit_test::link_at(t, &self.ui_state, (x, y)));
+                    if up_link.as_ref() == Some(&pressed_url) {
+                        out.push(UiEvent {
+                            key: Some(pressed_url),
+                            target: None,
+                            pointer: Some((x, y)),
+                            key_press: None,
+                            text: None,
+                            selection: None,
+                            modifiers,
+                            click_count: 1,
+                            path: None,
+                            kind: UiEventKind::LinkActivated,
                         });
                     }
                 }
@@ -2052,6 +2107,131 @@ mod tests {
         let events = core.pointer_up(cx, cy, PointerButton::Primary);
         let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         assert_eq!(kinds, vec![UiEventKind::PointerUp, UiEventKind::Click]);
+    }
+
+    /// Build a tree containing a single inline paragraph with one
+    /// linked run, layout to a fixed viewport, and return the runner +
+    /// the absolute rect of the paragraph. The linked text is long
+    /// enough that probes well into the paragraph land safely inside
+    /// the link for any plausible proportional font.
+    fn lay_out_link_tree() -> (RunnerCore, Rect, &'static str) {
+        use crate::tree::*;
+        const URL: &str = "https://github.com/computer-whisperer/aetna";
+        let mut tree = crate::column([crate::text_runs([
+            crate::text("Visit "),
+            crate::text("github.com/computer-whisperer/aetna").link(URL),
+            crate::text("."),
+        ])])
+        .padding(10.0);
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 600.0, 200.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+        let para = core
+            .last_tree
+            .as_ref()
+            .and_then(|t| t.children.first())
+            .map(|p| core.ui_state.rect(&p.computed_id))
+            .expect("paragraph rect");
+        (core, para, URL)
+    }
+
+    #[test]
+    fn pointer_up_on_link_emits_link_activated_with_url() {
+        let (mut core, para, url) = lay_out_link_tree();
+        // Probe ~100 logical pixels in — past the "Visit " prefix
+        // (~40px in default UI font) and well inside the long linked
+        // run, which extends ~250+px from there.
+        let cx = para.x + 100.0;
+        let cy = para.y + para.h * 0.5;
+        core.pointer_moved(cx, cy);
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let events = core.pointer_up(cx, cy, PointerButton::Primary);
+        let link = events
+            .iter()
+            .find(|e| e.kind == UiEventKind::LinkActivated)
+            .expect("LinkActivated event");
+        assert_eq!(link.key.as_deref(), Some(url));
+    }
+
+    #[test]
+    fn pointer_up_after_drag_off_link_does_not_activate() {
+        let (mut core, para, _url) = lay_out_link_tree();
+        let press_x = para.x + 100.0;
+        let cy = para.y + para.h * 0.5;
+        core.pointer_moved(press_x, cy);
+        core.pointer_down(press_x, cy, PointerButton::Primary);
+        // Release far below the paragraph — the user dragged off the
+        // link before letting go, which native browsers treat as
+        // cancel.
+        let events = core.pointer_up(press_x, 180.0, PointerButton::Primary);
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
+        assert!(
+            !kinds.contains(&UiEventKind::LinkActivated),
+            "drag-off-link should cancel the link activation; got {kinds:?}",
+        );
+    }
+
+    #[test]
+    fn pointer_moved_over_link_resolves_cursor_to_pointer_and_requests_redraw() {
+        use crate::cursor::Cursor;
+        let (mut core, para, _url) = lay_out_link_tree();
+        let cx = para.x + 100.0;
+        let cy = para.y + para.h * 0.5;
+        // Pointer initially well outside the paragraph.
+        let initial = core.pointer_moved(para.x - 50.0, cy);
+        assert!(
+            !initial.needs_redraw,
+            "moving in empty space shouldn't request a redraw"
+        );
+        let tree = core.last_tree.as_ref().expect("tree").clone();
+        assert_eq!(
+            core.ui_state.cursor(&tree),
+            Cursor::Default,
+            "no link under pointer → default cursor"
+        );
+        // Move onto the link — needs_redraw flips so the host
+        // re-resolves the cursor on the next frame.
+        let onto = core.pointer_moved(cx, cy);
+        assert!(
+            onto.needs_redraw,
+            "entering a link region should flag a redraw so the cursor refresh isn't stale"
+        );
+        assert_eq!(
+            core.ui_state.cursor(&tree),
+            Cursor::Pointer,
+            "pointer over a link → Pointer cursor"
+        );
+        // Move back off — should flag a redraw again so the cursor
+        // returns to Default.
+        let off = core.pointer_moved(para.x - 50.0, cy);
+        assert!(
+            off.needs_redraw,
+            "leaving a link region should flag a redraw"
+        );
+        assert_eq!(core.ui_state.cursor(&tree), Cursor::Default);
+    }
+
+    #[test]
+    fn pointer_up_on_unlinked_text_does_not_emit_link_activated() {
+        let (mut core, para, _url) = lay_out_link_tree();
+        // Click 1px in from the left edge — inside the "Visit "
+        // prefix, before the linked run starts.
+        let cx = para.x + 1.0;
+        let cy = para.y + para.h * 0.5;
+        core.pointer_moved(cx, cy);
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let events = core.pointer_up(cx, cy, PointerButton::Primary);
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
+        assert!(
+            !kinds.contains(&UiEventKind::LinkActivated),
+            "click on the unlinked prefix should not surface a link event; got {kinds:?}",
+        );
     }
 
     #[test]

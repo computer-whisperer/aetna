@@ -19,11 +19,17 @@ impl UiState {
     ///    first explicit `.cursor(...)`. Press capture wins so a button
     ///    drag that wanders onto a text region doesn't flicker the
     ///    cursor mid-press.
-    /// 2. Else if [`Self::hovered`] is set, walk from the hovered
+    /// 2. Else if the pointer is over a text-link run
+    ///    ([`Self::hovered_link`] is `Some`), use [`Cursor::Pointer`].
+    ///    Link runs aren't keyed hit-test targets, so this branch sits
+    ///    parallel to the keyed-hover lookup. Beats any
+    ///    `.cursor(Cursor::Text)` declared on a containing paragraph
+    ///    — link affordance is more specific than panel affordance.
+    /// 3. Else if [`Self::hovered`] is set, walk from the hovered
     ///    target up to `root` for the first explicit declaration —
     ///    so a panel that sets `.cursor(Move)` once propagates to
     ///    children that don't override.
-    /// 3. Else [`Cursor::Default`].
+    /// 4. Else [`Cursor::Default`].
     ///
     /// Disabled state isn't auto-mapped to [`Cursor::NotAllowed`];
     /// widgets that want that affordance branch in their build closure.
@@ -34,6 +40,9 @@ impl UiState {
                 return c;
             }
             return cursor_for_target(root, id).unwrap_or(Cursor::Default);
+        }
+        if self.hovered_link.is_some() {
+            return Cursor::Pointer;
         }
         if let Some(hovered) = &self.hovered {
             return cursor_for_target(root, hovered.node_id.as_str()).unwrap_or(Cursor::Default);
