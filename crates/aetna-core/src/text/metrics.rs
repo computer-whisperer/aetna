@@ -710,6 +710,9 @@ pub fn selection_rects_with_family(
         let c_hi = Cursor::new(hi_line, hi_in_line);
         let mut rects = Vec::new();
         for run in buffer.layout_runs() {
+            if run.line_i < lo_line || run.line_i > hi_line {
+                continue;
+            }
             for (x, w) in run.highlight(c_lo, c_hi) {
                 rects.push((x, run.line_top, w, run.line_height));
             }
@@ -1527,6 +1530,33 @@ mod tests {
         for (_x, _y, w, _h) in &rects {
             assert!(*w > 0.0, "empty width: {rects:?}");
         }
+    }
+
+    #[test]
+    fn selection_rects_for_single_line_range_do_not_highlight_other_lines() {
+        let text = "alpha\nbeta\ngamma";
+        let lo = text.find("et").unwrap();
+        let hi = lo + "et".len();
+        let rects = selection_rects(
+            text,
+            lo,
+            hi,
+            16.0,
+            FontWeight::Regular,
+            TextWrap::NoWrap,
+            None,
+        );
+        assert_eq!(
+            rects.len(),
+            1,
+            "single-line range should only highlight that line: {rects:?}"
+        );
+        let line_h = line_height(16.0);
+        let y = rects[0].1;
+        assert!(
+            (y - line_h).abs() < 0.01,
+            "expected second line y={line_h}, got {y}; rects={rects:?}"
+        );
     }
 
     #[test]
