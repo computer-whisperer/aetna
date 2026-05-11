@@ -11,6 +11,7 @@ use aetna_core::prelude::*;
 use super::{Group, Section, Showcase, theme_choice::ThemeChoice};
 
 pub const THEME_PICKER_KEY: &str = "theme-picker";
+pub const DIAGNOSTICS_TOGGLE_KEY: &str = "diagnostics-toggle";
 
 /// Build the main view (sidebar + content) plus the list of floating
 /// layers each page contributes. `Showcase::build` wraps the result in
@@ -50,6 +51,7 @@ fn sidebar_chrome(app: &Showcase) -> El {
             .key("nav-scroll")
             .gap(tokens::SPACE_3)
             .height(Size::Fill(1.0)),
+        diagnostics_toggle(app.diagnostics_visible),
     ])
 }
 
@@ -69,6 +71,19 @@ fn theme_picker(active: ThemeChoice) -> El {
     ])
     .gap(tokens::SPACE_1)
     .padding(Sides::xy(0.0, tokens::SPACE_2))
+}
+
+/// Footer row that toggles the host-diagnostics overlay. Sits below the
+/// nav scroll so it stays pinned to the bottom of the sidebar even when
+/// the section list is long enough to scroll.
+fn diagnostics_toggle(active: bool) -> El {
+    row([
+        text("Debug overlay").label().width(Size::Fill(1.0)),
+        switch(active).key(DIAGNOSTICS_TOGGLE_KEY),
+    ])
+    .gap(tokens::SPACE_3)
+    .padding(Sides::xy(0.0, tokens::SPACE_2))
+    .align(Align::Center)
 }
 
 fn theme_picker_menu() -> El {

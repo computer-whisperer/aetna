@@ -8,6 +8,7 @@
 
 use aetna_core::prelude::*;
 
+pub mod about;
 pub mod animation;
 pub mod booleans;
 pub mod buttons;
@@ -28,7 +29,7 @@ pub mod text_inputs;
 pub mod theme_choice;
 pub mod typography;
 
-pub use shell::THEME_PICKER_KEY;
+pub use shell::{DIAGNOSTICS_TOGGLE_KEY, THEME_PICKER_KEY};
 pub use theme_choice::ThemeChoice;
 
 /// WGSL for the liquid-glass custom shader. Surfaced through
@@ -41,8 +42,12 @@ pub const LIQUID_GLASS_WGSL: &str = include_str!("../../shaders/liquid_glass.wgs
 /// owns its own state struct on [`Showcase`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Section {
-    /// Token swatches grid for the active theme — the hero shot.
+    /// Landing page — short framing of the project plus a small live
+    /// teaser. Default on first launch so visitors hitting the wasm
+    /// build land on something narrative rather than a swatch grid.
     #[default]
+    About,
+    /// Token swatches grid for the active theme — the hero shot.
     Palette,
     Typography,
     Surfaces,
@@ -64,6 +69,7 @@ pub enum Section {
 /// Sidebar grouping. Each section belongs to exactly one group.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Group {
+    Welcome,
     Theme,
     Foundations,
     Inputs,
@@ -73,7 +79,8 @@ pub enum Group {
 }
 
 impl Section {
-    pub const ALL: [Section; 16] = [
+    pub const ALL: [Section; 17] = [
+        Section::About,
         Section::Palette,
         Section::Typography,
         Section::Surfaces,
@@ -95,6 +102,7 @@ impl Section {
     /// Sidebar label.
     pub fn label(self) -> &'static str {
         match self {
+            Section::About => "About",
             Section::Palette => "Palette",
             Section::Typography => "Typography",
             Section::Surfaces => "Surfaces",
@@ -117,6 +125,7 @@ impl Section {
     /// Slug used in routed-key prefixes and bin output filenames.
     pub fn slug(self) -> &'static str {
         match self {
+            Section::About => "about",
             Section::Palette => "palette",
             Section::Typography => "typography",
             Section::Surfaces => "surfaces",
@@ -139,6 +148,7 @@ impl Section {
     /// Sidebar grouping this section belongs to.
     pub fn group(self) -> Group {
         match self {
+            Section::About => Group::Welcome,
             Section::Palette => Group::Theme,
             Section::Typography | Section::Surfaces | Section::Layout => Group::Foundations,
             Section::Buttons | Section::Booleans | Section::TextInputs | Section::Forms => {
@@ -157,7 +167,8 @@ impl Section {
 }
 
 impl Group {
-    pub const ALL: [Group; 6] = [
+    pub const ALL: [Group; 7] = [
+        Group::Welcome,
         Group::Theme,
         Group::Foundations,
         Group::Inputs,
@@ -168,6 +179,7 @@ impl Group {
 
     pub fn label(self) -> &'static str {
         match self {
+            Group::Welcome => "Welcome",
             Group::Theme => "Theme",
             Group::Foundations => "Foundations",
             Group::Inputs => "Inputs",
@@ -197,7 +209,18 @@ pub struct Showcase {
     pub(crate) section: Section,
     pub(crate) theme_choice: ThemeChoice,
     pub(crate) theme_picker_open: bool,
+    /// When true, mount the host-diagnostics overlay. Defaults to false
+    /// so the panel doesn't sit on top of overlay/page content unless
+    /// the user opts in via the sidebar toggle.
+    pub(crate) diagnostics_visible: bool,
 
+    pub(crate) about: about::State,
+    /// URLs accumulated from `UiEventKind::LinkActivated` events.
+    /// Drained by the host once per frame via [`App::drain_link_opens`]
+    /// — the host owns the platform-appropriate open call. Showcase
+    /// keeps the field private; the only producer is the Activate arm
+    /// in `on_event`, the only consumer is the trait impl.
+    pub(crate) pending_link_opens: Vec<String>,
     pub(crate) surfaces: surfaces::State,
     pub(crate) layout: layout::State,
     pub(crate) buttons: buttons::State,
@@ -252,6 +275,7 @@ impl App for Showcase {
     fn build(&self, cx: &BuildCx) -> El {
         let theme = self.theme();
         let body = match self.section {
+            Section::About => about::view(&self.about),
             Section::Palette => palette::view(theme.palette()),
             Section::Typography => typography::view(),
             Section::Surfaces => surfaces::view(&self.surfaces),
@@ -271,11 +295,14 @@ impl App for Showcase {
         };
         let (main, mut layers) = shell::frame(self, body);
         // Mount the diagnostic overlay on top of every page when the
-        // host attached a `HostDiagnostics`. Hosts that opt out (the
-        // headless render bins, vulkano-demo, anything that doesn't
-        // call `BuildCx::with_diagnostics`) get the showcase exactly
-        // as before — no overlay, no extra widgets in the tree.
-        if let Some(diag) = cx.diagnostics() {
+        // host attached a `HostDiagnostics` *and* the sidebar toggle is
+        // on. Hosts that opt out (the headless render bins,
+        // vulkano-demo, anything that doesn't call
+        // `BuildCx::with_diagnostics`) get the showcase exactly as
+        // before — no overlay, no extra widgets in the tree.
+        if self.diagnostics_visible
+            && let Some(diag) = cx.diagnostics()
+        {
             layers.push(Some(diagnostics::layer(diag)));
         }
         overlay_root(main, layers)
@@ -293,12 +320,28 @@ impl App for Showcase {
     }
 
     fn on_event(&mut self, event: UiEvent) {
+        // Link click — accumulate the URL for the host to open. The
+        // showcase doesn't filter or transform; in a real app this is
+        // the spot to short-circuit links to internal routes, prompt
+        // for confirmation on outbound URLs, etc.
+        if event.kind == UiEventKind::LinkActivated
+            && let Some(url) = event.route()
+        {
+            self.pending_link_opens.push(url.to_string());
+            return;
+        }
+
         // Sidebar nav — any click on a `nav-*` key switches section.
         if matches!(event.kind, UiEventKind::Click | UiEventKind::Activate)
             && let Some(k) = event.route()
             && let Some(target) = nav_section(k)
         {
             self.section = target;
+            return;
+        }
+
+        // Sidebar diagnostics toggle.
+        if switch::apply_event(&mut self.diagnostics_visible, &event, DIAGNOSTICS_TOGGLE_KEY) {
             return;
         }
 
@@ -318,6 +361,7 @@ impl App for Showcase {
         }
 
         match self.section {
+            Section::About => about::on_event(&mut self.about, event),
             Section::Palette => {}    // static — no events
             Section::Typography => {} // static
             Section::Surfaces => surfaces::on_event(&mut self.surfaces, event),
@@ -339,6 +383,10 @@ impl App for Showcase {
 
     fn drain_toasts(&mut self) -> Vec<ToastSpec> {
         std::mem::take(&mut self.status.pending_toasts)
+    }
+
+    fn drain_link_opens(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_link_opens)
     }
 
     fn shaders(&self) -> Vec<AppShader> {
