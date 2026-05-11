@@ -119,6 +119,9 @@ The current in-progress implementation has:
 - visual bundle fixtures:
   - `cargo run -p aetna-markdown --example markdown_math`
   - `cargo run -p aetna-markdown --example markdown_math_stress`
+- the native showcase Math page now has editable markdown presets plus static
+  coverage cards for nested roots, large operator limits, MathML-only import,
+  and malformed-source error rendering
 
 The supported TeX subset is deliberately small:
 
@@ -304,15 +307,17 @@ The first focused stress fixture is in place as
 `cargo run -p aetna-markdown --example markdown_math_stress`. It covers
 inline fractions at several font sizes, narrow wrapping near atomic math
 embeds, nested scripts, short and long radicals, Greek/operator fallback, and
-display structures. Keep extending this bundle and split it only when it stops
-being readable as a single regression image.
+display structures. The showcase Math page now complements that static bundle
+with editable markdown presets for fractions, matrices, limits, malformed
+source, and wrapping, plus fixed regression cards for nested roots, display
+operator sizing, MathML table/fence import, and error expressions. Keep
+extending these fixtures and split them only when they stop being readable as
+single regression surfaces.
 
 Remaining visual fixture coverage to add:
 
-- more pathological nested radicals and roots,
-- large operator limits at multiple display sizes,
-- MathML-only import cases that do not have a matching TeX source,
-- malformed-source error rendering,
+- more pathological nested radicals and roots beyond the current smoke card,
+- more MathML-only import cases that do not have a matching TeX source,
 - GPU screenshots after the SVG/bundle artifact stays plausible.
 
 The bundle pipeline is the right first gate. GPU screenshots can follow once
