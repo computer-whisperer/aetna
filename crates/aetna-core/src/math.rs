@@ -117,6 +117,7 @@ pub enum MathAtom {
     GlyphId {
         glyph_id: u16,
         rect: Rect,
+        view_box: Rect,
     },
     Rule {
         rect: Rect,
@@ -443,6 +444,14 @@ impl MathMetrics {
         })
     }
 
+    fn delimiter_assembly_parts(
+        self,
+        delimiter: char,
+    ) -> Option<Vec<OpenTypeDelimiterAssemblyPart>> {
+        self.font_constants()
+            .and_then(|constants| constants.delimiter_assembly_parts(delimiter))
+    }
+
     fn delimiter_width(self) -> f32 {
         self.size * 0.42
     }
@@ -504,6 +513,8 @@ struct OpenTypeDelimiterAssemblyPart {
     start_connector_length: u16,
     end_connector_length: u16,
     full_advance: u16,
+    horizontal_advance: u16,
+    bbox: Option<OpenTypeGlyphBBox>,
     extender: bool,
 }
 
@@ -688,6 +699,17 @@ impl OpenTypeMathConstants {
         })
     }
 
+    fn delimiter_assembly_parts(
+        &self,
+        delimiter: char,
+    ) -> Option<Vec<OpenTypeDelimiterAssemblyPart>> {
+        let variants = self
+            .delimiter_variants
+            .iter()
+            .find(|variants| variants.delimiter == delimiter)?;
+        (!variants.assembly_parts.is_empty()).then(|| variants.assembly_parts.clone())
+    }
+
     #[cfg_attr(not(test), allow(dead_code))]
     fn delimiter_first_variant_glyph_id(&self, delimiter: char) -> Option<u16> {
         self.delimiter_variants
@@ -823,6 +845,15 @@ fn parse_open_type_delimiter_variants(
                             start_connector_length: part.start_connector_length,
                             end_connector_length: part.end_connector_length,
                             full_advance: part.full_advance,
+                            horizontal_advance: face.glyph_hor_advance(part.glyph_id).unwrap_or(0),
+                            bbox: face.glyph_bounding_box(part.glyph_id).map(|bbox| {
+                                OpenTypeGlyphBBox {
+                                    x_min: bbox.x_min,
+                                    y_min: bbox.y_min,
+                                    x_max: bbox.x_max,
+                                    y_max: bbox.y_max,
+                                }
+                            }),
                             extender: part.part_flags.extender(),
                         })
                         .collect()
@@ -1231,6 +1262,15 @@ fn layout_delimiter(delimiter: &str, rect: Rect, stretch: bool, ctx: LayoutCtx) 
     {
         return layout;
     }
+    if let Some(delimiter) = delimiter
+        .chars()
+        .next()
+        .filter(|_| delimiter.chars().count() == 1)
+        && let Some(parts) = ctx.metrics().delimiter_assembly_parts(delimiter)
+        && let Some(layout) = layout_delimiter_assembly(&parts, rect, ctx)
+    {
+        return layout;
+    }
     MathLayout {
         width: rect.w,
         ascent: -rect.y,
@@ -1260,19 +1300,18 @@ fn layout_delimiter_variant(
     let constants = metrics.font_constants()?;
     let scale = metrics.size / constants.units_per_em;
     let width = (variant.horizontal_advance as f32 * scale).max(target_rect.w);
-    let glyph_top = -(bbox.y_max as f32) * scale;
-    let glyph_width = (bbox.x_max - bbox.x_min) as f32 * scale;
-    let glyph_height = (bbox.y_max - bbox.y_min) as f32 * scale;
-    if glyph_width <= 0.0 || glyph_height <= 0.0 {
+    let view_box = glyph_advance_view_box(bbox, variant.horizontal_advance, None)?;
+    let glyph_height = view_box.h * scale;
+    if view_box.w <= 0.0 || glyph_height <= 0.0 {
         return None;
     }
     let target_center_y = target_rect.y + target_rect.h * 0.5;
-    let glyph_center_y = glyph_top + glyph_height * 0.5;
+    let glyph_center_y = view_box.y * scale + glyph_height * 0.5;
     let glyph_y = target_center_y - glyph_center_y;
     let rect = Rect::new(
-        (width - glyph_width) * 0.5,
-        glyph_y + glyph_top,
-        glyph_width,
+        (width - view_box.w * scale) * 0.5,
+        glyph_y + view_box.y * scale,
+        view_box.w * scale,
         glyph_height,
     );
     Some(MathLayout {
@@ -1282,8 +1321,186 @@ fn layout_delimiter_variant(
         atoms: vec![MathAtom::GlyphId {
             glyph_id: variant.glyph_id,
             rect,
+            view_box,
         }],
     })
+}
+
+fn layout_delimiter_assembly(
+    parts: &[OpenTypeDelimiterAssemblyPart],
+    target_rect: Rect,
+    ctx: LayoutCtx,
+) -> Option<MathLayout> {
+    let metrics = ctx.metrics();
+    let constants = metrics.font_constants()?;
+    if constants.units_per_em <= 0.0 {
+        return None;
+    }
+    let scale = metrics.size / constants.units_per_em;
+    let overlap_units = constants.min_connector_overlap.max(1);
+    let target_units = target_rect.h / scale;
+    let source_parts: Vec<OpenTypeDelimiterAssemblyPart> = parts.iter().rev().copied().collect();
+    let mut assembly = source_parts.clone();
+    let extender_parts: Vec<OpenTypeDelimiterAssemblyPart> = source_parts
+        .iter()
+        .copied()
+        .filter(|part| part.extender)
+        .collect();
+    if extender_parts.is_empty() {
+        return None;
+    }
+
+    let mut extra_repeats = 0;
+    while assembly_max_length_units(&assembly, overlap_units) < target_units {
+        extra_repeats += 1;
+        assembly = Vec::with_capacity(source_parts.len() + extra_repeats * extender_parts.len());
+        for part in &source_parts {
+            assembly.push(*part);
+            if part.extender {
+                assembly.extend(std::iter::repeat_n(*part, extra_repeats));
+            }
+        }
+    }
+
+    let overlaps = assembly_overlaps_for_target(&assembly, target_units, overlap_units);
+    let total_units = assembly_raw_advance_units(&assembly) - overlaps.iter().sum::<f32>();
+    let total_height = total_units * scale;
+    let target_center_y = target_rect.y + target_rect.h * 0.5;
+    let top = target_center_y - total_height * 0.5;
+    let width = assembly
+        .iter()
+        .filter_map(|part| {
+            let bbox = part.bbox?;
+            Some(
+                (part.horizontal_advance as f32 * scale)
+                    .max((bbox.x_max - bbox.x_min) as f32 * scale),
+            )
+        })
+        .fold(target_rect.w, f32::max);
+
+    let mut cursor_units = 0.0;
+    let mut atoms = Vec::with_capacity(assembly.len());
+    for (index, part) in assembly.iter().enumerate() {
+        let bbox = part.bbox?;
+        let slot_height = part.full_advance as f32 * scale;
+        let view_box =
+            glyph_advance_view_box(bbox, part.horizontal_advance, Some(part.full_advance))?;
+        let glyph_width = view_box.w * scale;
+        let glyph_height = view_box.h * scale;
+        if glyph_width <= 0.0 || glyph_height <= 0.0 || slot_height <= 0.0 {
+            return None;
+        }
+        let rect = Rect::new(
+            (width - glyph_width) * 0.5,
+            top + cursor_units * scale,
+            glyph_width,
+            slot_height.max(glyph_height),
+        );
+        atoms.push(MathAtom::GlyphId {
+            glyph_id: part.glyph_id,
+            rect,
+            view_box,
+        });
+        if index + 1 < assembly.len() {
+            cursor_units += part.full_advance as f32 - overlaps[index];
+        }
+    }
+
+    Some(MathLayout {
+        width,
+        ascent: (-top).max(-target_rect.y),
+        descent: (top + total_height).max(target_rect.y + target_rect.h),
+        atoms,
+    })
+}
+
+fn glyph_advance_view_box(
+    bbox: OpenTypeGlyphBBox,
+    horizontal_advance: u16,
+    vertical_advance: Option<u16>,
+) -> Option<Rect> {
+    let x = (bbox.x_min as f32).min(0.0);
+    let width = (horizontal_advance as f32)
+        .max(bbox.x_max as f32 - x)
+        .max((bbox.x_max - bbox.x_min) as f32);
+    let y = -(bbox.y_max as f32);
+    let height = vertical_advance
+        .map(f32::from)
+        .unwrap_or((bbox.y_max - bbox.y_min) as f32)
+        .max((bbox.y_max - bbox.y_min) as f32);
+    (width > 0.0 && height > 0.0).then(|| Rect::new(x, y, width, height))
+}
+
+fn assembly_raw_advance_units(parts: &[OpenTypeDelimiterAssemblyPart]) -> f32 {
+    parts.iter().map(|part| part.full_advance as f32).sum()
+}
+
+fn assembly_max_length_units(parts: &[OpenTypeDelimiterAssemblyPart], min_overlap: u16) -> f32 {
+    assembly_raw_advance_units(parts)
+        - assembly_overlap_limits(parts, min_overlap)
+            .iter()
+            .map(|(min, _)| *min)
+            .sum::<f32>()
+}
+
+fn assembly_overlap_limits(
+    parts: &[OpenTypeDelimiterAssemblyPart],
+    min_overlap: u16,
+) -> Vec<(f32, f32)> {
+    parts
+        .windows(2)
+        .map(|pair| {
+            let min = min_overlap as f32;
+            let max = pair[0]
+                .end_connector_length
+                .min(pair[1].start_connector_length)
+                .max(min_overlap) as f32;
+            (min, max)
+        })
+        .collect()
+}
+
+fn assembly_overlaps_for_target(
+    parts: &[OpenTypeDelimiterAssemblyPart],
+    target_units: f32,
+    min_overlap: u16,
+) -> Vec<f32> {
+    let limits = assembly_overlap_limits(parts, min_overlap);
+    if limits.is_empty() {
+        return Vec::new();
+    }
+    let raw = assembly_raw_advance_units(parts);
+    let min_sum: f32 = limits.iter().map(|(min, _)| *min).sum();
+    let max_sum: f32 = limits.iter().map(|(_, max)| *max).sum();
+    let desired_sum = (raw - target_units).clamp(min_sum, max_sum);
+    let mut overlaps: Vec<f32> = limits.iter().map(|(min, _)| *min).collect();
+    let mut remaining = desired_sum - min_sum;
+
+    while remaining > 0.001 {
+        let adjustable: Vec<usize> = overlaps
+            .iter()
+            .zip(limits.iter())
+            .enumerate()
+            .filter_map(|(index, (overlap, (_, max)))| (*overlap < *max - 0.001).then_some(index))
+            .collect();
+        if adjustable.is_empty() {
+            break;
+        }
+        let share = remaining / adjustable.len() as f32;
+        let mut distributed = 0.0;
+        for index in adjustable {
+            let capacity = limits[index].1 - overlaps[index];
+            let add = share.min(capacity);
+            overlaps[index] += add;
+            distributed += add;
+        }
+        if distributed <= 0.001 {
+            break;
+        }
+        remaining -= distributed;
+    }
+
+    overlaps
 }
 
 fn layout_table(
@@ -1379,9 +1596,14 @@ fn translate_atoms(out: &mut Vec<MathAtom>, atoms: Vec<MathAtom>, dx: f32, dy: f
             weight,
             italic,
         },
-        MathAtom::GlyphId { glyph_id, rect } => MathAtom::GlyphId {
+        MathAtom::GlyphId {
+            glyph_id,
+            rect,
+            view_box,
+        } => MathAtom::GlyphId {
             glyph_id,
             rect: Rect::new(rect.x + dx, rect.y + dy, rect.w, rect.h),
+            view_box,
         },
         MathAtom::Rule { rect } => MathAtom::Rule {
             rect: Rect::new(rect.x + dx, rect.y + dy, rect.w, rect.h),
@@ -2685,8 +2907,8 @@ mod tests {
             layout
                 .atoms
                 .iter()
-                .any(|atom| matches!(atom, MathAtom::Delimiter { delimiter, rect, thickness } if delimiter == "(" && rect.h > 16.0 && *thickness < 2.0)),
-            "fence should emit a stretched vector delimiter with normal stroke weight"
+                .any(|atom| matches!(atom, MathAtom::GlyphId { rect, .. } if rect.h > 16.0)),
+            "fence should emit a stretched OpenType delimiter variant glyph"
         );
     }
 
@@ -2733,6 +2955,57 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, MathAtom::GlyphId { .. })),
             "moderately stretched fences should use exact OpenType delimiter variant glyphs"
+        );
+    }
+
+    #[test]
+    fn very_tall_tex_fences_use_open_type_assembly_parts() {
+        let expr =
+            parse_tex(r"\left\{\begin{matrix}a\\b\\c\\d\\e\\f\\g\\h\end{matrix}\right.").unwrap();
+        let layout = layout_math(&expr, 16.0, MathDisplay::Inline);
+        let glyph_id_count = layout
+            .atoms
+            .iter()
+            .filter(|atom| matches!(atom, MathAtom::GlyphId { .. }))
+            .count();
+        assert!(
+            glyph_id_count > 2,
+            "very tall fences should use repeated OpenType assembly glyph parts"
+        );
+        assert!(
+            !layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Delimiter { .. })),
+            "font assembly should avoid the hand-drawn delimiter fallback"
+        );
+        let MathExpr::Fenced { body, .. } = expr else {
+            panic!("expected fenced expression");
+        };
+        let ctx = LayoutCtx {
+            size: 16.0,
+            display: MathDisplay::Inline,
+        };
+        let target_rect = delimiter_rect(&layout_expr(&body, ctx), ctx);
+        let assembled_top = layout
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                MathAtom::GlyphId { rect, .. } => Some(rect.y),
+                _ => None,
+            })
+            .fold(f32::INFINITY, f32::min);
+        let assembled_bottom = layout
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                MathAtom::GlyphId { rect, .. } => Some(rect.y + rect.h),
+                _ => None,
+            })
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            assembled_bottom - assembled_top <= target_rect.h + 0.5,
+            "assembled delimiter height should track target height"
         );
     }
 

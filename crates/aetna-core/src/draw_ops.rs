@@ -780,9 +780,13 @@ fn push_math_ops(
                     link: None,
                 });
             }
-            crate::math::MathAtom::GlyphId { glyph_id, rect } => {
+            crate::math::MathAtom::GlyphId {
+                glyph_id,
+                rect,
+                view_box,
+            } => {
                 push_math_glyph_id_op(
-                    n, *glyph_id, *rect, origin_x, baseline_y, scissor, color, i, out,
+                    n, *glyph_id, *rect, *view_box, origin_x, baseline_y, scissor, color, i, out,
                 );
             }
             crate::math::MathAtom::Rule { rect: atom_rect } => {
@@ -827,6 +831,7 @@ fn push_math_glyph_id_op(
     n: &El,
     glyph_id: u16,
     atom_rect: Rect,
+    view_box: Rect,
     origin_x: f32,
     baseline_y: f32,
     scissor: Option<Rect>,
@@ -873,19 +878,13 @@ fn push_math_glyph_id_op(
     let mut outline = Outline {
         segments: Vec::new(),
     };
-    let Some(bbox) = face.outline_glyph(ttf_parser::GlyphId(glyph_id), &mut outline) else {
+    let Some(_) = face.outline_glyph(ttf_parser::GlyphId(glyph_id), &mut outline) else {
         return;
     };
     if outline.segments.is_empty() || atom_rect.w <= 0.0 || atom_rect.h <= 0.0 {
         return;
     }
-    let view_box = [
-        bbox.x_min as f32,
-        -(bbox.y_max as f32),
-        (bbox.x_max - bbox.x_min) as f32,
-        (bbox.y_max - bbox.y_min) as f32,
-    ];
-    if view_box[2] <= 0.0 || view_box[3] <= 0.0 {
+    if view_box.w <= 0.0 || view_box.h <= 0.0 {
         return;
     }
     let path = VectorPath {
@@ -897,7 +896,8 @@ fn push_math_glyph_id_op(
         }),
         stroke: None,
     };
-    let asset = VectorAsset::from_paths(view_box, vec![path]);
+    let asset =
+        VectorAsset::from_paths([view_box.x, view_box.y, view_box.w, view_box.h], vec![path]);
     out.push(DrawOp::Vector {
         id: format!("{}.math-glyph-id.{atom_index}", n.computed_id),
         rect: Rect::new(

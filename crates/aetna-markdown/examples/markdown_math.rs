@@ -22,6 +22,12 @@ The first TeX slice intentionally covers the structural basics:
 $\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, $\\sqrt[3]{x+1}$, $\\left(\\frac{a}{b}\\right)$, $\\begin{pmatrix}1&0\\\\0&1\\end{pmatrix}$, and $y_{n+1}=y_n+x^2$.
 
 Aligned TeX arrays now feed the same native table layout: $\\begin{array}{lr}x&100\\\\xx&2\\end{array}$.
+
+Tall fences use OpenType delimiter assembly parts:
+
+$$
+\\left\\{\\begin{matrix}a\\\\b\\\\c\\\\d\\\\e\\\\f\\\\g\\\\h\\end{matrix}\\right.
+$$
 ";
 
 const MATHML_SOURCE: &str = r#"
@@ -88,7 +94,7 @@ fn fixture() -> El {
 fn main() -> std::io::Result<()> {
     let mut root = fixture();
 
-    let viewport = Rect::new(0.0, 0.0, 680.0, 760.0);
+    let viewport = Rect::new(0.0, 0.0, 680.0, 860.0);
     let bundle = render_bundle(&mut root, viewport);
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");

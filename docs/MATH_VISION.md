@@ -180,9 +180,10 @@ parentheses, brackets, braces, bars, angles, floors, and ceilings emit native
 vector atoms instead of scaled text glyphs when the enclosed expression crosses
 the font's `DelimitedSubFormulaMinHeight`, so tall fences do not become
 artificially bold while ordinary inline fences remain native glyphs. They still
-need OpenType MATH delimiter assemblies for arbitrarily tall production-quality
-shapes, but moderately stretched fences can already render through exact
-OpenType delimiter variant glyph outlines.
+fall back to the bootstrap vector shape only when the font does not expose a
+usable delimiter variant or assembly. Moderately stretched fences render
+through exact OpenType delimiter variant glyph outlines, and taller fences can
+now be built from the font's assembly pieces and extender glyphs.
 
 The TeX matrix adapter is now intentionally narrow: it recognizes the common
 LaTeX matrix environments, treats `&` as a cell separator and `\\` as a row
@@ -247,8 +248,10 @@ threshold for common fences, and it preserves variant glyph IDs plus assembly
 part connector/extender metadata. Rendering now has a first exact-glyph bridge:
 when a discrete delimiter variant covers the requested height, the math layout
 emits that glyph ID and draw-op resolution converts the bundled Noto Sans Math
-outline into a mask vector. Larger sizes still use the native vector fallback
-until assembly recipes are lowered into paint atoms.
+outline into a mask vector. When no variant is tall enough, the layout repeats
+OpenType assembly extender parts, distributes connector overlap so the final
+height tracks the target expression, and emits each assembly piece through the
+same glyph-id outline path.
 
 ### 3. Inline Layout Quality
 
