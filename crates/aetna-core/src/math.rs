@@ -64,10 +64,12 @@ pub enum MathExpr {
     Identifier(String),
     Number(String),
     Operator(String),
-    OperatorWithSpacing {
+    OperatorWithMetadata {
         text: String,
         lspace: Option<f32>,
         rspace: Option<f32>,
+        large_operator: Option<bool>,
+        movable_limits: Option<bool>,
     },
     Text(String),
     Space(f32),
@@ -992,10 +994,11 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
         MathExpr::Identifier(s) => layout_glyph(s, ctx, FontWeight::Regular, true),
         MathExpr::Number(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
         MathExpr::Operator(s) => layout_operator(s, ctx),
-        MathExpr::OperatorWithSpacing {
+        MathExpr::OperatorWithMetadata {
             text,
             lspace,
             rspace,
+            ..
         } => layout_operator_with_spacing(text, *lspace, *rspace, ctx),
         MathExpr::Text(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
         MathExpr::Space(em) => MathLayout {
@@ -1418,10 +1421,20 @@ fn layout_accent_mark(accent: &MathExpr, ctx: LayoutCtx) -> MathLayout {
 
 fn is_display_limits_base(expr: &MathExpr) -> bool {
     match expr {
-        MathExpr::Operator(_) | MathExpr::OperatorWithSpacing { .. } => {
-            is_large_operator_base(expr)
-        }
+        MathExpr::Operator(_) | MathExpr::OperatorWithMetadata { .. } => has_movable_limits(expr),
         MathExpr::Text(s) => matches!(s.as_str(), "lim" | "max" | "min" | "sup" | "inf"),
+        _ => false,
+    }
+}
+
+fn has_movable_limits(expr: &MathExpr) -> bool {
+    match expr {
+        MathExpr::Operator(s) => operator_info(s).movable_limits,
+        MathExpr::OperatorWithMetadata {
+            text,
+            movable_limits,
+            ..
+        } => movable_limits.unwrap_or_else(|| operator_info(text).movable_limits),
         _ => false,
     }
 }
@@ -1429,7 +1442,11 @@ fn is_display_limits_base(expr: &MathExpr) -> bool {
 fn is_large_operator_base(expr: &MathExpr) -> bool {
     match expr {
         MathExpr::Operator(s) => is_large_operator_symbol_str(s),
-        MathExpr::OperatorWithSpacing { text, .. } => is_large_operator_symbol_str(text),
+        MathExpr::OperatorWithMetadata {
+            text,
+            large_operator,
+            ..
+        } => large_operator.unwrap_or_else(|| operator_info(text).large_operator),
         _ => false,
     }
 }
@@ -1445,10 +1462,11 @@ fn is_large_operator_symbol(ch: char) -> bool {
 fn layout_large_operator_variant(expr: &MathExpr, ctx: LayoutCtx) -> Option<MathLayout> {
     let (operator, lspace_override, rspace_override) = match expr {
         MathExpr::Operator(operator) => (operator.as_str(), None, None),
-        MathExpr::OperatorWithSpacing {
+        MathExpr::OperatorWithMetadata {
             text,
             lspace,
             rspace,
+            ..
         } => (text.as_str(), *lspace, *rspace),
         _ => return None,
     };
@@ -2035,13 +2053,18 @@ fn parse_mathml_operator(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, Math
     let operator = normalized_node_text(node);
     let lspace = node.attribute("lspace").and_then(parse_em_length);
     let rspace = node.attribute("rspace").and_then(parse_em_length);
-    if lspace.is_none() && rspace.is_none() {
+    let large_operator = node.attribute("largeop").map(mathml_bool_attr_value);
+    let movable_limits = node.attribute("movablelimits").map(mathml_bool_attr_value);
+    if lspace.is_none() && rspace.is_none() && large_operator.is_none() && movable_limits.is_none()
+    {
         return Ok(MathExpr::Operator(operator));
     }
-    Ok(MathExpr::OperatorWithSpacing {
+    Ok(MathExpr::OperatorWithMetadata {
         text: operator,
         lspace,
         rspace,
+        large_operator,
+        movable_limits,
     })
 }
 
@@ -2148,7 +2171,11 @@ fn parse_mathml_accent(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPa
 }
 
 fn mathml_bool_attr(value: Option<&str>) -> bool {
-    matches!(value, Some("true") | Some("1"))
+    value.is_some_and(mathml_bool_attr_value)
+}
+
+fn mathml_bool_attr_value(value: &str) -> bool {
+    matches!(value.trim(), "true" | "1")
 }
 
 fn parse_mathml_table(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathParseError> {
@@ -3870,10 +3897,12 @@ mod tests {
             .expect("valid spaced operator");
         assert_eq!(
             expr,
-            MathExpr::OperatorWithSpacing {
+            MathExpr::OperatorWithMetadata {
                 text: "+".into(),
                 lspace: Some(0.0),
                 rspace: Some(0.5),
+                large_operator: None,
+                movable_limits: None,
             }
         );
 
@@ -3884,6 +3913,39 @@ mod tests {
             custom_width > default_width,
             "custom width = {custom_width}, default width = {default_width}"
         );
+    }
+
+    #[test]
+    fn parses_mathml_operator_limit_attributes() {
+        let expr = parse_mathml(
+            r#"
+            <math>
+              <msub>
+                <mo movablelimits="true">lim</mo>
+                <mi>x</mi>
+              </msub>
+            </math>
+            "#,
+        )
+        .expect("valid movable limits operator");
+        let layout = layout_math(&expr, 16.0, MathDisplay::Block);
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Glyph { text, y_baseline, .. } if text == "x" && *y_baseline > 0.0)),
+            "movablelimits operator should place display subscript underneath"
+        );
+
+        let large = parse_mathml(r#"<math><mo largeop="true">∫</mo></math>"#)
+            .expect("valid large operator");
+        assert!(matches!(
+            large,
+            MathExpr::OperatorWithMetadata {
+                large_operator: Some(true),
+                ..
+            }
+        ));
     }
 
     #[test]
