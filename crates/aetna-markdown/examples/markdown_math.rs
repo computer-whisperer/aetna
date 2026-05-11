@@ -52,6 +52,17 @@ const MATHML_SOURCE: &str = r#"
       <mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow>
       <mi>n</mi>
     </munderover>
+    <mo>+</mo>
+    <mtable>
+      <mtr>
+        <mtd><mi>a</mi></mtd>
+        <mtd><mi>b</mi></mtd>
+      </mtr>
+      <mtr>
+        <mtd><mi>c</mi></mtd>
+        <mtd><mi>d</mi></mtd>
+      </mtr>
+    </mtable>
   </mrow>
 </math>
 "#;

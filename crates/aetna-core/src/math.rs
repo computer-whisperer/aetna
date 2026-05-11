@@ -16,6 +16,8 @@ const LARGE_OPERATOR_SCALE: f32 = 1.35;
 const FRACTION_PAD_EM: f32 = 0.18;
 const FRACTION_GAP_EM: f32 = 0.18;
 const SQRT_GAP_EM: f32 = 0.10;
+const TABLE_COL_GAP_EM: f32 = 0.8;
+const TABLE_ROW_GAP_EM: f32 = 0.35;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum MathDisplay {
@@ -51,6 +53,9 @@ pub enum MathExpr {
         base: Arc<MathExpr>,
         under: Option<Arc<MathExpr>>,
         over: Option<Arc<MathExpr>>,
+    },
+    Table {
+        rows: Vec<Vec<MathExpr>>,
     },
     Error(String),
 }
@@ -154,6 +159,7 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
         MathExpr::UnderOver { base, under, over } => {
             layout_under_over(base, under.as_deref(), over.as_deref(), ctx)
         }
+        MathExpr::Table { rows } => layout_table(rows, ctx),
         MathExpr::Error(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
     }
 }
@@ -423,6 +429,65 @@ fn is_large_operator_base(expr: &MathExpr) -> bool {
     matches!(expr, MathExpr::Operator(s) if matches!(s.as_str(), "∑" | "∏" | "⋂" | "⋃"))
 }
 
+fn layout_table(rows: &[Vec<MathExpr>], ctx: LayoutCtx) -> MathLayout {
+    if rows.is_empty() {
+        return MathLayout {
+            width: 0.0,
+            ascent: 0.0,
+            descent: 0.0,
+            atoms: Vec::new(),
+        };
+    }
+    let cell_layouts: Vec<Vec<MathLayout>> = rows
+        .iter()
+        .map(|row| row.iter().map(|cell| layout_expr(cell, ctx)).collect())
+        .collect();
+    let col_count = cell_layouts.iter().map(Vec::len).max().unwrap_or(0);
+    let mut col_widths = vec![0.0_f32; col_count];
+    let mut row_ascents = vec![ctx.size * 0.75; rows.len()];
+    let mut row_descents = vec![ctx.size * 0.25; rows.len()];
+    for (row_index, row) in cell_layouts.iter().enumerate() {
+        for (col_index, cell) in row.iter().enumerate() {
+            col_widths[col_index] = col_widths[col_index].max(cell.width);
+            row_ascents[row_index] = row_ascents[row_index].max(cell.ascent);
+            row_descents[row_index] = row_descents[row_index].max(cell.descent);
+        }
+    }
+    let col_gap = ctx.size * TABLE_COL_GAP_EM;
+    let row_gap = ctx.size * TABLE_ROW_GAP_EM;
+    let width = col_widths.iter().sum::<f32>() + col_gap * col_count.saturating_sub(1) as f32;
+    let row_heights: Vec<f32> = row_ascents
+        .iter()
+        .zip(row_descents.iter())
+        .map(|(ascent, descent)| ascent + descent)
+        .collect();
+    let height = row_heights.iter().sum::<f32>() + row_gap * rows.len().saturating_sub(1) as f32;
+    let baseline_origin = height * 0.5;
+    let mut atoms = Vec::new();
+    let mut row_top = 0.0;
+    for (row_index, row) in cell_layouts.into_iter().enumerate() {
+        let row_baseline = row_top + row_ascents[row_index];
+        let mut col_left = 0.0;
+        for (col_index, cell) in row.into_iter().enumerate() {
+            let cell_x = col_left + (col_widths[col_index] - cell.width) * 0.5;
+            translate_atoms(
+                &mut atoms,
+                cell.atoms,
+                cell_x,
+                row_baseline - baseline_origin,
+            );
+            col_left += col_widths[col_index] + col_gap;
+        }
+        row_top += row_heights[row_index] + row_gap;
+    }
+    MathLayout {
+        width,
+        ascent: baseline_origin,
+        descent: height - baseline_origin,
+        atoms,
+    }
+}
+
 fn translate_atoms(out: &mut Vec<MathAtom>, atoms: Vec<MathAtom>, dx: f32, dy: f32) {
     out.extend(atoms.into_iter().map(|atom| match atom {
         MathAtom::Glyph {
@@ -521,6 +586,14 @@ fn parse_mathml_node(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPars
         "munder" => parse_mathml_under_over(node, true, false),
         "mover" => parse_mathml_under_over(node, false, true),
         "munderover" => parse_mathml_under_over(node, true, true),
+        "mtable" => parse_mathml_table(node),
+        "mtr" => Ok(MathExpr::row(
+            mathml_element_children(node)
+                .into_iter()
+                .map(parse_mathml_node)
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        "mtd" => Ok(MathExpr::row(parse_mathml_children(node)?)),
         unsupported => Ok(MathExpr::Error(format!(
             "unsupported MathML element <{unsupported}>"
         ))),
@@ -607,6 +680,42 @@ fn parse_mathml_under_over(
         under: under.transpose()?,
         over: over.transpose()?,
     })
+}
+
+fn parse_mathml_table(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathParseError> {
+    let mut rows = Vec::new();
+    for row_node in mathml_element_children(node) {
+        if !matches!(row_node.tag_name().name(), "mtr" | "mlabeledtr") {
+            return Err(mathml_error_at(
+                row_node,
+                format!(
+                    "<mtable> expected row element children, got <{}>",
+                    row_node.tag_name().name()
+                ),
+            ));
+        }
+        let mut row = Vec::new();
+        for cell_node in mathml_element_children(row_node) {
+            require_mathml_tag(cell_node, "mtd")?;
+            row.push(MathExpr::row(parse_mathml_children(cell_node)?));
+        }
+        rows.push(row);
+    }
+    Ok(MathExpr::Table { rows })
+}
+
+fn require_mathml_tag(node: roxmltree::Node<'_, '_>, expected: &str) -> Result<(), MathParseError> {
+    if node.tag_name().name() == expected {
+        Ok(())
+    } else {
+        Err(mathml_error_at(
+            node,
+            format!(
+                "expected <{expected}> element, got <{}>",
+                node.tag_name().name()
+            ),
+        ))
+    }
 }
 
 fn normalized_node_text(node: roxmltree::Node<'_, '_>) -> String {
@@ -1073,6 +1182,46 @@ mod tests {
             }
             other => panic!("expected under/over expression, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_mathml_table() {
+        let expr = parse_mathml(
+            r#"
+            <math>
+              <mtable>
+                <mtr>
+                  <mtd><mi>a</mi></mtd>
+                  <mtd><mi>b</mi></mtd>
+                </mtr>
+                <mtr>
+                  <mtd><mi>c</mi></mtd>
+                  <mtd><mi>d</mi></mtd>
+                </mtr>
+              </mtable>
+            </math>
+            "#,
+        )
+        .expect("valid mathml");
+        match expr {
+            MathExpr::Table { rows } => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0].len(), 2);
+                assert_eq!(rows[1].len(), 2);
+            }
+            other => panic!("expected table expression, got {other:?}"),
+        }
+        let layout = layout_math(
+            &parse_mathml(
+                r#"<math><mtable><mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr><mtr><mtd><mi>c</mi></mtd><mtd><mi>d</mi></mtd></mtr></mtable></math>"#,
+            )
+            .unwrap(),
+            16.0,
+            MathDisplay::Block,
+        );
+        assert!(layout.width > 20.0, "width = {}", layout.width);
+        assert!(layout.ascent > 10.0, "ascent = {}", layout.ascent);
+        assert!(layout.descent > 10.0, "descent = {}", layout.descent);
     }
 
     #[test]

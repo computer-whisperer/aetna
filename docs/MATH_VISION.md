@@ -60,11 +60,11 @@ like a small subset of MathML Core:
 - `Root`
 - `Scripts`
 - `UnderOver`
+- `Table`
 - `Error`
 
 Expected expansions:
 
-- `Table`
 - `Style`
 - `Phantom`
 - explicit operator metadata
@@ -131,6 +131,7 @@ The supported MathML subset mirrors that same IR:
 - `msqrt`, `mroot`
 - `msub`, `msup`, `msubsup`
 - `munder`, `mover`, `munderover`
+- `mtable`, `mtr`, `mtd`
 
 This is enough to render smoke examples such as:
 
