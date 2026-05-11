@@ -145,50 +145,44 @@ fn emit_op(s: &mut String, op: &DrawOp) {
             asset,
             render_mode,
             ..
-        } => emit_vector_placeholder(s, id, *rect, asset, *render_mode),
+        } => emit_vector(s, id, *rect, asset, *render_mode),
         DrawOp::BackdropSnapshot => {} // v2 — no SVG analogue.
     }
 }
 
-/// Placeholder rect labelled with the vector asset's content hash and
-/// path count. The real tessellated geometry would emit far more SVG
-/// than the bundle is meant to carry; the placeholder lets inspection
-/// tooling see *where* a vector widget composites without rasterising
-/// it. (A future improvement could emit the actual `<path>` elements
-/// for true round-trip fidelity, since `VectorPath`'s data shape maps
-/// directly to SVG path commands.)
-fn emit_vector_placeholder(
+fn emit_vector(
     s: &mut String,
     id: &str,
     rect: Rect,
     asset: &crate::vector::VectorAsset,
     render_mode: crate::vector::VectorRenderMode,
 ) {
-    let label = format!(
-        "Vector#{:08x} {:?} {} path{}",
-        asset.content_hash() as u32,
-        render_mode,
-        asset.paths.len(),
-        if asset.paths.len() == 1 { "" } else { "s" },
-    );
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        return;
+    }
+    let [vx, vy, vw, vh] = asset.view_box;
     let _ = writeln!(
         s,
-        r##"<rect data-node="{}" data-shader="stock::vector" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="#181818" stroke="#999" stroke-width="1" stroke-dasharray="4 2" />"##,
+        r#"<svg data-node="{}" data-shader="stock::vector" x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" viewBox="{:.2} {:.2} {:.2} {:.2}">"#,
         esc(id),
         rect.x,
         rect.y,
         rect.w,
         rect.h,
+        vx,
+        vy,
+        vw,
+        vh,
     );
-    let cx = rect.x + rect.w * 0.5;
-    let cy = rect.y + rect.h * 0.5;
-    let _ = writeln!(
-        s,
-        r##"<text x="{:.2}" y="{:.2}" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="10" fill="#bbb">{}</text>"##,
-        cx,
-        cy,
-        esc(&label),
-    );
+    match render_mode {
+        crate::vector::VectorRenderMode::Painted => {
+            emit_custom_paths(s, asset, tokens::FOREGROUND, 1.5);
+        }
+        crate::vector::VectorRenderMode::Mask { color } => {
+            emit_mask_paths(s, asset, color);
+        }
+    }
+    s.push_str("</svg>\n");
 }
 
 /// Placeholder rect labelled with the image's content hash. The real
@@ -865,6 +859,31 @@ fn emit_custom_paths(s: &mut String, asset: &VectorAsset, current_color: Color, 
             }
             None => String::new(),
         };
+        let _ = writeln!(s, r#"<path d="{}" {} {}/>"#, d, fill_attr, stroke_attr);
+    }
+}
+
+fn emit_mask_paths(s: &mut String, asset: &VectorAsset, color: Color) {
+    for path in &asset.paths {
+        let d = serialize_segments(&path.segments);
+        if d.is_empty() {
+            continue;
+        }
+        let fill_attr = if path.fill.is_some() {
+            format!(r#"fill="{}""#, color_svg(color))
+        } else {
+            r#"fill="none""#.to_string()
+        };
+        let stroke_attr = path
+            .stroke
+            .map(|st| {
+                format!(
+                    r#"stroke="{}" stroke-width="{:.2}""#,
+                    color_svg(color),
+                    st.width
+                )
+            })
+            .unwrap_or_default();
         let _ = writeln!(s, r#"<path d="{}" {} {}/>"#, d, fill_attr, stroke_attr);
     }
 }

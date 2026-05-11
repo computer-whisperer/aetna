@@ -799,8 +799,64 @@ fn push_math_ops(
                     uniforms,
                 });
             }
+            crate::math::MathAtom::Radical { points, thickness } => {
+                push_math_radical_op(
+                    n, points, *thickness, origin_x, baseline_y, scissor, color, i, out,
+                );
+            }
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_math_radical_op(
+    n: &El,
+    points: &[[f32; 2]; 4],
+    thickness: f32,
+    origin_x: f32,
+    baseline_y: f32,
+    scissor: Option<Rect>,
+    color: Color,
+    atom_index: usize,
+    out: &mut Vec<DrawOp>,
+) {
+    use crate::vector::{PathBuilder, VectorAsset, VectorLineJoin, VectorRenderMode};
+
+    let min_x = points.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min);
+    let max_x = points
+        .iter()
+        .map(|p| p[0])
+        .fold(f32::NEG_INFINITY, f32::max);
+    let min_y = points.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
+    let max_y = points
+        .iter()
+        .map(|p| p[1])
+        .fold(f32::NEG_INFINITY, f32::max);
+    let pad = thickness * 0.5;
+    let local = |p: [f32; 2]| [p[0] - min_x + pad, p[1] - min_y + pad];
+    let [p0, p1, p2, p3] = points.map(local);
+    let rect = Rect::new(
+        origin_x + min_x - pad,
+        baseline_y + min_y - pad,
+        max_x - min_x + pad * 2.0,
+        max_y - min_y + pad * 2.0,
+    );
+    let path = PathBuilder::new()
+        .move_to(p0[0], p0[1])
+        .line_to(p1[0], p1[1])
+        .line_to(p2[0], p2[1])
+        .line_to(p3[0], p3[1])
+        .stroke_solid(color, thickness)
+        .stroke_line_join(VectorLineJoin::Miter)
+        .build();
+    let asset = VectorAsset::from_paths([0.0, 0.0, rect.w, rect.h], vec![path]);
+    out.push(DrawOp::Vector {
+        id: format!("{}.math-radical.{atom_index}", n.computed_id),
+        rect,
+        scissor,
+        asset: std::sync::Arc::new(asset),
+        render_mode: VectorRenderMode::Painted,
+    });
 }
 
 fn push_inline_mixed_ops(

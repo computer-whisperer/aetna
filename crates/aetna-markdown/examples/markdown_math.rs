@@ -22,11 +22,33 @@ The first TeX slice intentionally covers the structural basics:
 $\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, and $y_{n+1}=y_n+x^2$.
 ";
 
+const MATHML_SOURCE: &str = r#"
+<math display="block">
+  <mfrac>
+    <mrow>
+      <msup><mi>a</mi><mn>2</mn></msup>
+      <mo>+</mo>
+      <msup><mi>b</mi><mn>2</mn></msup>
+    </mrow>
+    <msqrt>
+      <msub><mi>x</mi><mn>1</mn></msub>
+      <mo>+</mo>
+      <msub><mi>x</mi><mn>2</mn></msub>
+    </msqrt>
+  </mfrac>
+</math>
+"#;
+
 fn fixture() -> El {
-    column([md_with_options(
-        SOURCE,
-        MarkdownOptions::default().math(true),
-    )])
+    let (mathml_expr, mathml_display) =
+        parse_mathml_with_display(MATHML_SOURCE).expect("fixture MathML parses");
+    column([
+        md_with_options(SOURCE, MarkdownOptions::default().math(true)),
+        divider(),
+        h2("MathML input"),
+        paragraph("The expression below comes from Presentation MathML and lands on the same native math renderer."),
+        math_block(mathml_expr).math_display(mathml_display),
+    ])
     .padding(tokens::SPACE_7)
     .width(Size::Fixed(680.0))
 }
@@ -34,7 +56,7 @@ fn fixture() -> El {
 fn main() -> std::io::Result<()> {
     let mut root = fixture();
 
-    let viewport = Rect::new(0.0, 0.0, 680.0, 560.0);
+    let viewport = Rect::new(0.0, 0.0, 680.0, 760.0);
     let bundle = render_bundle(&mut root, viewport);
 
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");

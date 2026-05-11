@@ -83,6 +83,10 @@ pub enum MathAtom {
     Rule {
         rect: Rect,
     },
+    Radical {
+        points: [[f32; 2]; 4],
+        thickness: f32,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -252,22 +256,28 @@ fn layout_fraction(numerator: &MathExpr, denominator: &MathExpr, ctx: LayoutCtx)
 
 fn layout_sqrt(child: &MathExpr, ctx: LayoutCtx) -> MathLayout {
     let inner = layout_expr(child, ctx);
-    let radical = layout_glyph("√", ctx, FontWeight::Regular, false);
     let gap = ctx.size * SQRT_GAP_EM;
     let rule = ctx.rule_thickness();
-    let radical_w = radical.width * 0.85;
+    let radical_w = ctx.size * 0.72;
     let inner_x = radical_w + gap;
-    let rule_y = -inner.ascent - gap - rule;
+    let bar_y = -inner.ascent - gap - rule * 0.5;
+    let tick_y = (inner.descent * 0.75).max(ctx.size * 0.13);
+    let end_x = inner_x + inner.width;
     let mut atoms = Vec::new();
-    translate_atoms(&mut atoms, radical.atoms, 0.0, 0.0);
-    atoms.push(MathAtom::Rule {
-        rect: Rect::new(inner_x, rule_y, inner.width, rule),
+    atoms.push(MathAtom::Radical {
+        points: [
+            [0.0, -ctx.size * 0.02],
+            [ctx.size * 0.2, tick_y],
+            [radical_w, bar_y],
+            [end_x, bar_y],
+        ],
+        thickness: rule,
     });
     translate_atoms(&mut atoms, inner.atoms, inner_x, 0.0);
     MathLayout {
-        width: inner_x + inner.width,
-        ascent: inner.ascent + gap + rule,
-        descent: inner.descent,
+        width: end_x,
+        ascent: -bar_y + rule * 0.5,
+        descent: tick_y + rule * 0.5,
         atoms,
     }
 }
@@ -334,6 +344,10 @@ fn translate_atoms(out: &mut Vec<MathAtom>, atoms: Vec<MathAtom>, dx: f32, dy: f
         },
         MathAtom::Rule { rect } => MathAtom::Rule {
             rect: Rect::new(rect.x + dx, rect.y + dy, rect.w, rect.h),
+        },
+        MathAtom::Radical { points, thickness } => MathAtom::Radical {
+            points: points.map(|[x, y]| [x + dx, y + dy]),
+            thickness,
         },
     }));
 }
@@ -747,7 +761,14 @@ mod tests {
                 .atoms
                 .iter()
                 .any(|atom| matches!(atom, MathAtom::Rule { .. })),
-            "fraction/sqrt should emit rule atoms"
+            "fraction should emit rule atoms"
+        );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Radical { .. })),
+            "sqrt should emit a radical atom"
         );
     }
 
@@ -785,7 +806,14 @@ mod tests {
                 .atoms
                 .iter()
                 .any(|atom| matches!(atom, MathAtom::Rule { .. })),
-            "fraction/sqrt should emit rule atoms"
+            "fraction should emit rule atoms"
+        );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Radical { .. })),
+            "sqrt should emit a radical atom"
         );
     }
 

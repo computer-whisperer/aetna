@@ -80,10 +80,11 @@ boxes, not into `El` children. The important intermediate values are:
 - `descent`
 - baseline-relative positioned atoms
 
-The current first slice exposes `MathLayout` and `MathAtom` with glyph and rule
-atoms. That is sufficient for simple text, scripts, fractions, and temporary
-sqrt rendering. It is not the final representation for high-quality radicals,
-stretchy delimiters, matrices, or large operators.
+The current first slice exposes `MathLayout` and `MathAtom` with glyph, rule,
+and radical atoms. That is sufficient for simple text, scripts, fractions, and
+basic square-root rendering. It is not the final representation for
+stretchy delimiters, matrices, large operators, or OpenType-MATH-quality
+radical assemblies.
 
 ### Draw Ops
 
@@ -105,6 +106,7 @@ The current in-progress implementation has:
 - a small `parse_tex` helper in core for the initial vertical slice
 - a small `parse_mathml` / `parse_mathml_with_display` adapter for the
   matching Presentation MathML subset
+- a native vector-backed radical atom for joined square-root check/stem/bar
 - `Kind::Math`
 - `math`, `math_inline`, and `math_block` constructors
 - layout support for standalone math nodes
@@ -145,16 +147,18 @@ The first visual fixture was valuable. It exposed two issues immediately:
 - Inline built-up fractions need a math axis above the prose baseline. The
   current fraction layout raises the rule and tightens inline fraction spacing.
 
-The radical rendering is intentionally not considered solved. The current
-implementation paints `√` plus a separate overbar rule. Attempts to overlap the
-rule into the glyph made the result worse. The right fix is a proper radical
-construction, not more hand-tuning of the normal square-root glyph.
+The radical rendering has moved past the first `√` glyph plus separate overbar
+rule. The current implementation emits one vector-backed radical atom so the
+check, stem, and overbar are visually joined in SVG and native backends. This
+is good enough for the bootstrap fixture, but the metrics are still heuristic;
+the final path should come from OpenType MATH constants and glyph variants or a
+better native assembly.
 
 ## Next Work Packages
 
 ### 1. Radical Construction
 
-Replace the temporary `√` plus rule approach with a real radical assembly:
+Replace the heuristic vector radical with a metric-backed radical assembly:
 
 - Prefer OpenType MATH glyph variants / assemblies from Noto Sans Math when
   available.
