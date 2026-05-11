@@ -19,6 +19,9 @@
 //!         bullet_list(["nested one", "nested two"]),
 //!     ]),
 //! ])
+//!
+//! numbered_list_from(42, ["Custom start", "Keeps counting"]);
+//! task_list([(true, "Done"), (false, "Todo")]);
 //! ```
 //!
 //! Plain `text(...)` items (including bare `&str` items via the
@@ -29,6 +32,9 @@
 
 use std::panic::Location;
 
+use crate::icons::icon;
+use crate::metrics::MetricsRole;
+use crate::style::StyleProfile;
 use crate::text::metrics::line_width;
 use crate::tokens;
 use crate::tree::*;
@@ -80,20 +86,54 @@ where
     I: IntoIterator<Item = E>,
     E: Into<El>,
 {
+    numbered_list_from(1, items)
+}
+
+#[track_caller]
+pub fn numbered_list_from<I, E>(start: u64, items: I) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
     let loc = Location::caller();
     let items_vec: Vec<El> = items.into_iter().map(Into::into).collect();
-    let marker_slot_width = numbered_marker_width(items_vec.len());
+    let marker_slot_width = numbered_marker_width(start, items_vec.len());
 
     let item_els: Vec<El> = items_vec
         .into_iter()
         .enumerate()
         .map(|(i, item)| {
-            let marker = text(format!("{}.", i + 1))
+            let n = start.saturating_add(i as u64);
+            let marker = text(format!("{n}."))
                 .at_loc(loc)
                 .text_color(tokens::MUTED_FOREGROUND)
                 .end_text()
                 .width(Size::Fixed(marker_slot_width));
             list_item(marker, marker_slot_width, item, loc)
+        })
+        .collect();
+
+    column(item_els)
+        .at_loc(loc)
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+        .default_gap(ITEM_GAP)
+}
+
+#[track_caller]
+pub fn task_list<I, E>(items: I) -> El
+where
+    I: IntoIterator<Item = (bool, E)>,
+    E: Into<El>,
+{
+    let loc = Location::caller();
+    let marker_slot_width = checkbox_marker_width();
+
+    let item_els: Vec<El> = items
+        .into_iter()
+        .map(|(checked, item)| {
+            let marker = task_marker(checked).at_loc(loc);
+            list_item(marker, marker_slot_width, item.into(), loc)
         })
         .collect();
 
@@ -153,13 +193,49 @@ fn bullet_marker_width() -> f32 {
     (glyph_w + 4.0).ceil()
 }
 
-fn numbered_marker_width(count: usize) -> f32 {
+fn numbered_marker_width(start: u64, count: usize) -> f32 {
     // The widest marker is the largest number plus a period — e.g.
     // `12.` for a 12-item list, `100.` for a 100-item list.
-    let widest_num = count.max(1);
+    let widest_num = if count == 0 {
+        start
+    } else {
+        start.saturating_add(count.saturating_sub(1) as u64)
+    };
     let sample = format!("{}.", widest_num);
     let w = line_width(&sample, tokens::TEXT_BASE.size, FontWeight::Regular, false);
     (w + 2.0).ceil()
+}
+
+fn checkbox_marker_width() -> f32 {
+    crate::widgets::checkbox::SIZE
+}
+
+fn task_marker(checked: bool) -> El {
+    let (fill, stroke) = if checked {
+        (tokens::PRIMARY, tokens::PRIMARY)
+    } else {
+        (tokens::CARD, tokens::INPUT)
+    };
+    let check_opacity = if checked { 1.0 } else { 0.0 };
+
+    El::new(Kind::Custom("task_marker"))
+        .style_profile(StyleProfile::Surface)
+        .metrics_role(MetricsRole::ChoiceControl)
+        .axis(Axis::Overlay)
+        .align(Align::Center)
+        .justify(Justify::Center)
+        .default_width(Size::Fixed(crate::widgets::checkbox::SIZE))
+        .default_height(Size::Fixed(crate::widgets::checkbox::SIZE))
+        .default_radius(tokens::RADIUS_SM)
+        .fill(fill)
+        .stroke(stroke)
+        .child(
+            icon("check")
+                .icon_size(12.0)
+                .icon_stroke_width(2.5)
+                .color(tokens::PRIMARY_FOREGROUND)
+                .opacity(check_opacity),
+        )
 }
 
 #[cfg(test)]
@@ -218,12 +294,42 @@ mod tests {
     }
 
     #[test]
+    fn numbered_list_from_uses_custom_start() {
+        let l = numbered_list_from(42, ["alpha", "beta"]);
+
+        let labels: Vec<&str> = l
+            .children
+            .iter()
+            .map(|item| {
+                let marker_slot = &item.children[0];
+                marker_slot.children[0].text.as_deref().unwrap_or("")
+            })
+            .collect();
+        assert_eq!(labels, vec!["42.", "43."]);
+    }
+
+    #[test]
     fn numbered_marker_width_grows_with_count() {
-        let small = numbered_marker_width(9);
-        let large = numbered_marker_width(99);
-        let huge = numbered_marker_width(999);
+        let small = numbered_marker_width(1, 9);
+        let large = numbered_marker_width(1, 99);
+        let huge = numbered_marker_width(1, 999);
         assert!(large > small, "{large} <= {small}");
         assert!(huge > large, "{huge} <= {large}");
+    }
+
+    #[test]
+    fn task_list_uses_static_checkbox_markers() {
+        let l = task_list([(true, "done"), (false, "todo")]);
+        assert_eq!(l.children.len(), 2);
+
+        let checked = &l.children[0].children[0].children[0];
+        let unchecked = &l.children[1].children[0].children[0];
+        assert_eq!(checked.kind, Kind::Custom("task_marker"));
+        assert_eq!(unchecked.kind, Kind::Custom("task_marker"));
+        assert_eq!(checked.fill, Some(tokens::PRIMARY));
+        assert_eq!(unchecked.fill, Some(tokens::CARD));
+        assert!(!checked.focusable);
+        assert!(!unchecked.focusable);
     }
 
     #[test]

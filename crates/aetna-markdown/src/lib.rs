@@ -21,12 +21,14 @@
 //! - Headings `#` … `###` (and h4–h6 clamped to h3).
 //! - Paragraphs with inline emphasis, strong, code, link, hard / soft
 //!   breaks. Soft breaks render as a space (CommonMark default).
-//! - Bulleted (`-` / `*`) and numbered (`1.`) lists, including nested.
+//! - Bulleted (`-` / `*`), numbered (`1.`), and GFM task lists,
+//!   including nested lists and non-1 ordered starts.
 //! - Block quotes.
 //! - Fenced and indented code blocks.
 //! - Horizontal rules.
-//! - Inline + block images render as block-level [`aetna_core::image`]
-//!   today. Inline-image-in-Inlines is a Phase 2 follow-up.
+//! - GFM tables.
+//! - Inline + block images render as block-level alt-text placeholders
+//!   today. Real image resolution and inline images are Phase 2 follow-ups.
 //!
 //! Syntax highlighting (default-on `highlighting` feature): fenced code
 //! blocks with a recognised language tag (`` ```rust ``, `` ```python ``,
@@ -40,14 +42,19 @@
 //! `default-features = false` opts out of the highlighter and shrinks
 //! the dependency surface.
 //!
+//! [`md_with_options`] exposes output-changing parser extensions. Today
+//! that includes smart punctuation and GFM alert blockquotes; [`md`]
+//! keeps both off by default.
+//!
 //! Deferred:
 //!
-//! - Tables (need a thin wrapper over `widgets::table`).
-//! - Footnotes, task lists, raw HTML, math (`$…$` / `$$…$$`).
+//! - Footnotes, raw HTML, math (`$…$` / `$$…$$`), definition lists,
+//!   heading attributes, metadata blocks, superscript/subscript, and
+//!   wikilinks.
 
 #[cfg(feature = "highlighting")]
 mod highlight;
 
 mod transformer;
 
-pub use transformer::md;
+pub use transformer::{MarkdownOptions, md, md_with_options};

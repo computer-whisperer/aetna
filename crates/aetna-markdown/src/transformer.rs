@@ -1,7 +1,37 @@
 //! Walk pulldown-cmark events into an Aetna `El` tree.
 
 use aetna_core::prelude::*;
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    Alignment, BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options as CmarkOptions, Parser,
+    Tag, TagEnd,
+};
+
+/// Optional markdown extensions that can change rendered output.
+///
+/// [`md`] uses `Default`, which keeps output conservative while still
+/// enabling the GFM features Aetna renders directly today: tables,
+/// strikethrough, and task lists.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MarkdownOptions {
+    /// Replace ASCII punctuation with typographic punctuation during
+    /// parsing (`--`, `---`, `...`, straight quotes).
+    pub smart_punctuation: bool,
+    /// Render GFM alert blockquotes (`[!NOTE]`, `[!WARNING]`, ...)
+    /// through Aetna's `alert` widget instead of a plain blockquote.
+    pub gfm_alerts: bool,
+}
+
+impl MarkdownOptions {
+    pub fn smart_punctuation(mut self, enabled: bool) -> Self {
+        self.smart_punctuation = enabled;
+        self
+    }
+
+    pub fn gfm_alerts(mut self, enabled: bool) -> Self {
+        self.gfm_alerts = enabled;
+        self
+    }
+}
 
 /// Render a markdown document as an Aetna `El`.
 ///
@@ -9,15 +39,26 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Par
 /// same shape an author would have hand-written. See the crate-level
 /// docs for the supported subset and the deferred features.
 pub fn md(input: &str) -> El {
-    // GFM tables + `~~strike~~` are the two pulldown-cmark options
-    // we light up. Both have direct widget-kit / inline-modifier
-    // analogs (tables -> `widgets::table`, strikethrough -> the
-    // `text_strikethrough` field on text runs). Footnotes, math, and
-    // task-list markers stay off until the markdown surface grows
-    // first-class support.
-    let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH;
-    let parser = Parser::new_ext(input, options);
-    let mut walker = Walker::new();
+    md_with_options(input, MarkdownOptions::default())
+}
+
+/// Render a markdown document with explicit extension options.
+pub fn md_with_options(input: &str, options: MarkdownOptions) -> El {
+    // GFM tables, task lists, and `~~strike~~` all have direct widget-kit
+    // / inline-modifier analogs. Footnotes and math stay off until the
+    // markdown surface grows first-class support for references and TeX.
+    let mut parser_options = CmarkOptions::ENABLE_TABLES
+        | CmarkOptions::ENABLE_STRIKETHROUGH
+        | CmarkOptions::ENABLE_TASKLISTS;
+    if options.smart_punctuation {
+        parser_options |= CmarkOptions::ENABLE_SMART_PUNCTUATION;
+    }
+    if options.gfm_alerts {
+        parser_options |= CmarkOptions::ENABLE_GFM;
+    }
+
+    let parser = Parser::new_ext(input, parser_options);
+    let mut walker = Walker::new(options);
     for event in parser {
         walker.handle(event);
     }
@@ -33,16 +74,23 @@ enum Frame {
     /// Open `<h1..h6>` — accumulates inline runs.
     Heading(HeadingLevel, Vec<El>),
     /// Open `<blockquote>` — accumulates block children.
-    BlockQuote(Vec<El>),
+    BlockQuote {
+        kind: Option<BlockQuoteKind>,
+        blocks: Vec<El>,
+    },
     /// Open `<ul>` / `<ol>` — collects items as nested block lists.
     List {
         /// `None` ↔ bullet list, `Some(start)` ↔ ordered list starting
         /// at `start` (CommonMark allows non-1 starts).
         start: Option<u64>,
-        items: Vec<Vec<El>>,
+        items: Vec<ListItem>,
     },
-    /// Open `<li>` — accumulates one item's block children.
-    Item(Vec<El>),
+    /// Open `<li>` — accumulates one item's block children plus an
+    /// optional GFM task marker.
+    Item {
+        blocks: Vec<El>,
+        task_checked: Option<bool>,
+    },
     /// Open `<pre><code>` — accumulating verbatim text. The optional
     /// `lang` is the fenced info string (`` ```rust `` → `Some("rust")`,
     /// indented blocks and bare `` ``` `` fences → `None`); when
@@ -55,17 +103,19 @@ enum Frame {
     /// style flags) so a link spanning multiple text events groups
     /// correctly under one href in the painter.
     Link(String, Vec<El>),
-    /// Open `<img>` — accumulates the alt text for placeholder
-    /// rendering. Image content loading is deferred (see crate docs).
-    Image(String),
+    /// Open `<img>` — accumulates alt text and keeps the destination
+    /// for placeholder rendering. Image content loading is deferred
+    /// (see crate docs).
+    Image {
+        alt: String,
+        dest_url: String,
+        title: String,
+    },
     /// Open `<table>` — collects the header and body rows the matching
     /// `End(Table)` folds into a `widgets::table` block.
     Table {
-        /// Per-column alignments (`:---`, `:---:`, `---:`). Carried so
-        /// a future column-align extension can be wired without
-        /// re-plumbing the walker; today the cell builders ignore them
-        /// and use the table widget's defaults.
-        #[allow(dead_code)]
+        /// Per-column alignments (`:---`, `:---:`, `---:`), applied to
+        /// header and body cell text.
         alignments: Vec<Alignment>,
         /// Header row, populated on `TagEnd::TableHead`. `None` if the
         /// document somehow ends a table without a header (CommonMark
@@ -81,7 +131,16 @@ enum Frame {
     /// Open `<th>` / `<td>`. `in_header` toggles the header-styled
     /// `table_head(...)` builder on close vs. the body-styled
     /// `table_cell(...)`.
-    TableCell { runs: Vec<El>, in_header: bool },
+    TableCell {
+        runs: Vec<El>,
+        in_header: bool,
+        alignment: Alignment,
+    },
+}
+
+struct ListItem {
+    content: El,
+    task_checked: Option<bool>,
 }
 
 /// Inline styling currently in effect for new text runs.
@@ -114,6 +173,7 @@ impl InlineState {
 }
 
 struct Walker {
+    options: MarkdownOptions,
     /// Open block-level frames + open `<a>` / `<img>` containers,
     /// innermost last. `<a>` and `<img>` are stack-tracked rather than
     /// stored as inline-state flags because they own the text events
@@ -127,8 +187,9 @@ struct Walker {
 }
 
 impl Walker {
-    fn new() -> Self {
+    fn new(options: MarkdownOptions) -> Self {
         Self {
+            options,
             stack: Vec::new(),
             inline: InlineState::default(),
             root: Vec::new(),
@@ -147,14 +208,15 @@ impl Walker {
                 self.push_inline(hard_break());
             }
             Event::Rule => self.push_block(divider()),
-            // `$…$` / `$$…$$` math, raw HTML, footnotes, task list
-            // markers — all skipped for the Phase 2 surface. Math will
-            // route through a future `aetna-latex` integration.
+            // `$…$` / `$$…$$` math, raw HTML, footnotes — all skipped
+            // for the Phase 2 surface. Math will route through a future
+            // `aetna-latex` integration.
             Event::InlineMath(text) | Event::DisplayMath(text) => {
                 self.code_span(text.into_string())
             }
             Event::Html(_) | Event::InlineHtml(_) => {}
-            Event::FootnoteReference(_) | Event::TaskListMarker(_) => {}
+            Event::FootnoteReference(_) => {}
+            Event::TaskListMarker(checked) => self.task_list_marker(checked),
         }
     }
 
@@ -162,12 +224,18 @@ impl Walker {
         match tag {
             Tag::Paragraph => self.stack.push(Frame::Paragraph(Vec::new())),
             Tag::Heading { level, .. } => self.stack.push(Frame::Heading(level, Vec::new())),
-            Tag::BlockQuote(_) => self.stack.push(Frame::BlockQuote(Vec::new())),
+            Tag::BlockQuote(kind) => self.stack.push(Frame::BlockQuote {
+                kind: kind.filter(|_| self.options.gfm_alerts),
+                blocks: Vec::new(),
+            }),
             Tag::List(start) => self.stack.push(Frame::List {
                 start,
                 items: Vec::new(),
             }),
-            Tag::Item => self.stack.push(Frame::Item(Vec::new())),
+            Tag::Item => self.stack.push(Frame::Item {
+                blocks: Vec::new(),
+                task_checked: None,
+            }),
             Tag::CodeBlock(kind) => {
                 let lang = match kind {
                     CodeBlockKind::Fenced(info) => {
@@ -195,10 +263,16 @@ impl Walker {
                 self.stack
                     .push(Frame::Link(dest_url.into_string(), Vec::new()));
             }
-            Tag::Image { .. } => {
+            Tag::Image {
+                dest_url, title, ..
+            } => {
                 // Alt text accumulates through inline events while the
                 // image frame is open; on End we fold into a placeholder.
-                self.stack.push(Frame::Image(String::new()));
+                self.stack.push(Frame::Image {
+                    alt: String::new(),
+                    dest_url: dest_url.into_string(),
+                    title: title.into_string(),
+                });
             }
             Tag::Table(alignments) => {
                 self.stack.push(Frame::Table {
@@ -214,9 +288,11 @@ impl Walker {
                 // frame is at cell-start time: a `TableHead` parent
                 // means this cell renders with the header recipe.
                 let in_header = matches!(self.stack.last(), Some(Frame::TableHead(_)));
+                let alignment = self.next_table_cell_alignment();
                 self.stack.push(Frame::TableCell {
                     runs: Vec::new(),
                     in_header,
+                    alignment,
                 });
             }
             // Footnote definitions, definition lists, and subscript /
@@ -260,8 +336,8 @@ impl Walker {
                 }
             }
             TagEnd::BlockQuote(_) => {
-                if let Some(Frame::BlockQuote(blocks)) = self.stack.pop() {
-                    self.push_block(blockquote(blocks));
+                if let Some(Frame::BlockQuote { kind, blocks }) = self.stack.pop() {
+                    self.push_block(build_blockquote(kind, blocks));
                 }
             }
             TagEnd::List(_) => {
@@ -285,10 +361,17 @@ impl Walker {
                         self.push_block(block);
                     }
                 }
-                if let Some(Frame::Item(blocks)) = self.stack.pop() {
+                if let Some(Frame::Item {
+                    blocks,
+                    task_checked,
+                }) = self.stack.pop()
+                {
                     let item_el = build_list_item(blocks);
                     if let Some(Frame::List { items, .. }) = self.stack.last_mut() {
-                        items.push(vec![item_el]);
+                        items.push(ListItem {
+                            content: item_el,
+                            task_checked,
+                        });
                     }
                 }
             }
@@ -316,12 +399,18 @@ impl Walker {
                 }
             }
             TagEnd::Image => {
-                if let Some(Frame::Image(alt)) = self.stack.pop() {
-                    let placeholder = build_image_placeholder(&alt);
-                    // Markdown allows `![alt](url)` both inline and as a
-                    // block. We always emit a block placeholder for
-                    // Phase 2; inline-image-in-Inlines lands later.
-                    self.push_block(placeholder);
+                if let Some(Frame::Image {
+                    alt,
+                    dest_url,
+                    title,
+                }) = self.stack.pop()
+                {
+                    let placeholder = build_image_placeholder(&alt, &dest_url, &title);
+                    if self.in_inline_container() {
+                        self.push_inline(placeholder);
+                    } else {
+                        self.push_block(placeholder);
+                    }
                 }
             }
             TagEnd::Table => {
@@ -346,8 +435,13 @@ impl Walker {
                 }
             }
             TagEnd::TableCell => {
-                if let Some(Frame::TableCell { runs, in_header }) = self.stack.pop() {
-                    let cell = build_table_cell(runs, in_header);
+                if let Some(Frame::TableCell {
+                    runs,
+                    in_header,
+                    alignment,
+                }) = self.stack.pop()
+                {
+                    let cell = build_table_cell(runs, in_header, alignment);
                     match self.stack.last_mut() {
                         Some(Frame::TableHead(cells)) | Some(Frame::TableRow(cells)) => {
                             cells.push(cell);
@@ -377,7 +471,7 @@ impl Walker {
             buf.push_str(&s);
             return;
         }
-        if let Some(Frame::Image(alt)) = self.stack.last_mut() {
+        if let Some(Frame::Image { alt, .. }) = self.stack.last_mut() {
             alt.push_str(&s);
             return;
         }
@@ -399,6 +493,10 @@ impl Walker {
             }
             return;
         }
+        if let Some(Frame::Image { alt, .. }) = self.stack.last_mut() {
+            alt.push_str(&s);
+            return;
+        }
         self.ensure_inline_frame();
         let run = self.inline.apply(text(s).code());
         self.push_inline(run);
@@ -418,7 +516,7 @@ impl Walker {
                 | Frame::Link(_, _)
                 | Frame::TableCell { .. },
             ) => {}
-            Some(Frame::Item(_)) => self.stack.push(Frame::Paragraph(Vec::new())),
+            Some(Frame::Item { .. }) => self.stack.push(Frame::Paragraph(Vec::new())),
             _ => {}
         }
     }
@@ -428,7 +526,7 @@ impl Walker {
     fn push_block(&mut self, el: El) {
         for frame in self.stack.iter_mut().rev() {
             match frame {
-                Frame::BlockQuote(blocks) | Frame::Item(blocks) => {
+                Frame::BlockQuote { blocks, .. } | Frame::Item { blocks, .. } => {
                     blocks.push(el);
                     return;
                 }
@@ -465,9 +563,11 @@ impl Walker {
             match frame {
                 Frame::Paragraph(runs) => self.root.push(build_paragraph(runs)),
                 Frame::Heading(level, runs) => self.root.push(build_heading(level, runs)),
-                Frame::BlockQuote(blocks) => self.root.push(blockquote(blocks)),
+                Frame::BlockQuote { kind, blocks } => {
+                    self.root.push(build_blockquote(kind, blocks))
+                }
                 Frame::List { start, items } => self.root.push(build_list(start, items)),
-                Frame::Item(blocks) => self.root.push(build_list_item(blocks)),
+                Frame::Item { blocks, .. } => self.root.push(build_list_item(blocks)),
                 Frame::CodeBlock { lang, text } => {
                     self.root.push(build_code_block(lang.as_deref(), text))
                 }
@@ -476,7 +576,13 @@ impl Walker {
                         self.root.push(run);
                     }
                 }
-                Frame::Image(alt) => self.root.push(build_image_placeholder(&alt)),
+                Frame::Image {
+                    alt,
+                    dest_url,
+                    title,
+                } => self
+                    .root
+                    .push(build_image_placeholder(&alt, &dest_url, &title)),
                 Frame::Table { head, body, .. } => self.root.push(build_table(head, body)),
                 Frame::TableHead(_) | Frame::TableRow(_) | Frame::TableCell { .. } => {
                     // Cells / rows whose enclosing table never closed
@@ -488,6 +594,45 @@ impl Walker {
             .gap(tokens::SPACE_4)
             .width(Size::Fill(1.0))
             .height(Size::Hug)
+    }
+
+    fn task_list_marker(&mut self, checked: bool) {
+        for frame in self.stack.iter_mut().rev() {
+            if let Frame::Item { task_checked, .. } = frame {
+                *task_checked = Some(checked);
+                return;
+            }
+        }
+    }
+
+    fn in_inline_container(&self) -> bool {
+        matches!(
+            self.stack.last(),
+            Some(
+                Frame::Paragraph(_)
+                    | Frame::Heading(_, _)
+                    | Frame::Link(_, _)
+                    | Frame::TableCell { .. }
+            )
+        )
+    }
+
+    fn next_table_cell_alignment(&self) -> Alignment {
+        let index = match self.stack.last() {
+            Some(Frame::TableHead(cells)) | Some(Frame::TableRow(cells)) => cells.len(),
+            _ => 0,
+        };
+        self.stack
+            .iter()
+            .rev()
+            .find_map(|frame| {
+                if let Frame::Table { alignments, .. } = frame {
+                    alignments.get(index).copied()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(Alignment::None)
     }
 }
 
@@ -559,21 +704,46 @@ fn build_heading(level: HeadingLevel, runs: Vec<El>) -> El {
         .height(Size::Hug)
 }
 
-fn build_list(start: Option<u64>, items: Vec<Vec<El>>) -> El {
-    // `items` came in as `Vec<Vec<El>>` (one outer per item), each
-    // single-element since `TagEnd::Item` already collapsed each item's
-    // blocks to a single `column([...])` (or single block) via
-    // `build_list_item`. Re-flatten.
-    let item_els: Vec<El> = items.into_iter().flatten().collect();
+fn build_blockquote(kind: Option<BlockQuoteKind>, blocks: Vec<El>) -> El {
+    let Some(kind) = kind else {
+        return blockquote(blocks);
+    };
+
+    let title = match kind {
+        BlockQuoteKind::Note => "Note",
+        BlockQuoteKind::Tip => "Tip",
+        BlockQuoteKind::Important => "Important",
+        BlockQuoteKind::Warning => "Warning",
+        BlockQuoteKind::Caution => "Caution",
+    };
+    let body = match blocks.len() {
+        0 => column(Vec::<El>::new()),
+        1 => blocks.into_iter().next().unwrap(),
+        _ => column(blocks)
+            .gap(tokens::SPACE_2)
+            .width(Size::Fill(1.0))
+            .height(Size::Hug),
+    };
+    let alert = alert([alert_title(title), body]);
+    match kind {
+        BlockQuoteKind::Note | BlockQuoteKind::Important => alert.info(),
+        BlockQuoteKind::Tip => alert.success(),
+        BlockQuoteKind::Warning => alert.warning(),
+        BlockQuoteKind::Caution => alert.destructive(),
+    }
+}
+
+fn build_list(start: Option<u64>, items: Vec<ListItem>) -> El {
     match start {
-        None => bullet_list(item_els),
-        Some(_) => {
-            // pulldown-cmark surfaces the start number, but Aetna's
-            // numbered_list always counts from 1. Rebasing the marker
-            // is a future ergonomics-only addition — uncommon enough
-            // that the simple form is the right Phase 2 default.
-            numbered_list(item_els)
+        None if !items.is_empty() && items.iter().all(|item| item.task_checked.is_some()) => {
+            task_list(
+                items
+                    .into_iter()
+                    .map(|item| (item.task_checked.unwrap_or(false), item.content)),
+            )
         }
+        None => bullet_list(items.into_iter().map(|item| item.content)),
+        Some(start) => numbered_list_from(start, items.into_iter().map(|item| item.content)),
     }
 }
 
@@ -606,39 +776,67 @@ fn build_table(head: Option<Vec<El>>, body: Vec<Vec<El>>) -> El {
 /// Wrap accumulated inline runs into a header-styled or body-styled
 /// table cell. Plain-text-only cells flow through `table_head` /
 /// `text(...)` so the cell carries the right typography defaults; mixed
-/// inline content uses `text_runs([...])` (header-style is degraded to
-/// plain-string-only for now — styled headings inside a markdown table
-/// are rare and the table widget's `table_head` doesn't accept a
-/// styled El today).
-fn build_table_cell(runs: Vec<El>, in_header: bool) -> El {
+/// inline content uses `text_runs([...])` and keeps per-run styling.
+fn build_table_cell(runs: Vec<El>, in_header: bool, alignment: Alignment) -> El {
     if in_header {
-        // Concatenate to plain text — loses inline styling in header
-        // cells. Acceptable Phase 2 simplification.
-        let label = runs
-            .iter()
-            .filter_map(|r| r.text.as_deref())
-            .collect::<String>();
-        return table_head(label);
+        let cell = if let Some(plain) = single_plain_text(&runs) {
+            table_head(plain)
+        } else if runs.is_empty() {
+            table_head("")
+        } else {
+            table_head_el(text_runs(runs).width(Size::Fill(1.0)))
+        };
+        return apply_table_alignment(cell, alignment);
     }
     if let Some(plain) = single_plain_text(&runs) {
-        return table_cell(text(plain));
+        return apply_table_alignment(table_cell(text(plain)), alignment);
     }
     if runs.is_empty() {
-        return table_cell(text(""));
+        return apply_table_alignment(table_cell(text("")), alignment);
     }
-    table_cell(text_runs(runs).width(Size::Fill(1.0)))
+    apply_table_alignment(
+        table_cell(text_runs(runs).width(Size::Fill(1.0))),
+        alignment,
+    )
 }
 
-fn build_image_placeholder(alt: &str) -> El {
-    // Phase 2 doesn't wire image loading. Surface the alt text so the
-    // page reads sensibly until inline-image support lands; muted +
-    // italic so it doesn't look like first-class content.
-    let label = if alt.is_empty() {
-        "[image]".to_string()
-    } else {
-        format!("[image: {alt}]")
+fn apply_table_alignment(mut el: El, alignment: Alignment) -> El {
+    let text_align = match alignment {
+        Alignment::None | Alignment::Left => TextAlign::Start,
+        Alignment::Center => TextAlign::Center,
+        Alignment::Right => TextAlign::End,
     };
-    paragraph(label).muted().italic()
+    apply_text_align(&mut el, text_align);
+    el
+}
+
+fn apply_text_align(el: &mut El, text_align: TextAlign) {
+    el.text_align = text_align;
+    for child in &mut el.children {
+        apply_text_align(child, text_align);
+    }
+}
+
+fn build_image_placeholder(alt: &str, dest_url: &str, title: &str) -> El {
+    // Phase 2 doesn't wire image loading. Surface the alt text plus
+    // source metadata so the page reads sensibly until image resolution
+    // lands; muted + italic so it doesn't look like first-class content.
+    let mut label = match (alt.is_empty(), dest_url.is_empty()) {
+        (true, true) => "[image]".to_string(),
+        (false, true) => format!("[image: {alt}]"),
+        (true, false) => format!("[image: {dest_url}]"),
+        (false, false) => format!("[image: {alt}] {dest_url}"),
+    };
+    if !title.is_empty() {
+        label.push_str(" \"");
+        label.push_str(title);
+        label.push('"');
+    }
+    let mut el = text(label).muted().italic();
+    if !dest_url.is_empty() {
+        el = el.link(dest_url.to_string());
+    }
+    el
 }
 
 /// Inspect a run vector and return a single plain string if every run
@@ -794,6 +992,32 @@ mod tests {
     }
 
     #[test]
+    fn ordered_list_preserves_non_one_start_number() {
+        let bs = blocks("42. alpha\n43. beta");
+        assert_eq!(bs[0].children.len(), 2);
+        let first_marker_slot = &bs[0].children[0].children[0];
+        let second_marker_slot = &bs[0].children[1].children[0];
+        assert_eq!(first_marker_slot.children[0].text.as_deref(), Some("42."));
+        assert_eq!(second_marker_slot.children[0].text.as_deref(), Some("43."));
+    }
+
+    #[test]
+    fn task_list_emits_static_task_markers() {
+        let bs = blocks("- [x] done\n- [ ] todo");
+        assert_eq!(bs.len(), 1);
+        assert_eq!(bs[0].children.len(), 2);
+
+        let checked = &bs[0].children[0].children[0].children[0];
+        let unchecked = &bs[0].children[1].children[0].children[0];
+        assert_eq!(checked.kind, Kind::Custom("task_marker"));
+        assert_eq!(unchecked.kind, Kind::Custom("task_marker"));
+        assert_eq!(checked.fill, Some(tokens::PRIMARY));
+        assert_eq!(unchecked.fill, Some(tokens::CARD));
+        assert!(!checked.focusable);
+        assert!(!unchecked.focusable);
+    }
+
+    #[test]
     fn nested_list_lives_inside_the_outer_item() {
         let input = "- outer one\n  - inner a\n  - inner b\n- outer two";
         let bs = blocks(input);
@@ -930,10 +1154,30 @@ mod tests {
 
     #[test]
     fn image_renders_as_alt_placeholder() {
-        let bs = blocks("![diagram of pipeline](pipeline.png)");
+        let bs = blocks("![diagram of pipeline](pipeline.png \"Pipeline\")");
         assert_eq!(bs.len(), 1);
-        let s = bs[0].text.as_deref().unwrap_or("");
+        assert_eq!(bs[0].kind, Kind::Inlines);
+        let run = &bs[0].children[0];
+        let s = run.text.as_deref().unwrap_or("");
         assert!(s.contains("diagram of pipeline"), "got {s:?}");
+        assert!(s.contains("pipeline.png"), "got {s:?}");
+        assert!(s.contains("Pipeline"), "got {s:?}");
+        assert_eq!(run.text_link.as_deref(), Some("pipeline.png"));
+    }
+
+    #[test]
+    fn inline_image_placeholder_preserves_order() {
+        let bs = blocks("Before ![alt](img.png) after");
+        assert_eq!(bs[0].kind, Kind::Inlines);
+        let text: String = bs[0]
+            .children
+            .iter()
+            .filter_map(|run| run.text.as_deref())
+            .collect();
+        assert!(
+            text.contains("Before [image: alt] img.png after"),
+            "got {text:?}"
+        );
     }
 
     #[test]
@@ -1006,6 +1250,46 @@ mod tests {
     }
 
     #[test]
+    fn table_alignment_applies_to_header_and_body_cells() {
+        let bs = blocks(
+            "\
+| Left | Center | Right |\n\
+|:-----|:------:|------:|\n\
+| a    | b      | c     |\n",
+        );
+        let t = &bs[0];
+        let header_row = &t.children[0].children[0];
+        let body_row = &t.children[1].children[0];
+
+        assert_eq!(header_row.children[0].text_align, TextAlign::Start);
+        assert_eq!(header_row.children[1].text_align, TextAlign::Center);
+        assert_eq!(header_row.children[2].text_align, TextAlign::End);
+        assert_eq!(body_row.children[0].text_align, TextAlign::Start);
+        assert_eq!(body_row.children[1].text_align, TextAlign::Center);
+        assert_eq!(body_row.children[2].text_align, TextAlign::End);
+    }
+
+    #[test]
+    fn table_header_cells_preserve_inline_styling() {
+        let bs = blocks(
+            "\
+| **Header** |\n\
+|------------|\n\
+| body       |\n",
+        );
+        let header_cell = &bs[0].children[0].children[0].children[0];
+        assert_eq!(header_cell.kind, Kind::Inlines);
+        assert!(
+            header_cell
+                .children
+                .iter()
+                .any(|r| r.font_weight == FontWeight::Bold
+                    && r.text_role == TextRole::Caption
+                    && r.text.as_deref() == Some("Header"))
+        );
+    }
+
+    #[test]
     fn strikethrough_inline_run_marks_text_strikethrough() {
         // GFM strikethrough is gated behind ENABLE_STRIKETHROUGH; the
         // walker already had the Tag matcher, but the parser only
@@ -1019,5 +1303,37 @@ mod tests {
             .collect();
         assert!(!strike.is_empty(), "expected a strikethrough run");
         assert_eq!(strike[0].text.as_deref(), Some("obsolete"));
+    }
+
+    #[test]
+    fn smart_punctuation_is_opt_in() {
+        let plain = blocks("Wait...");
+        assert_eq!(plain[0].text.as_deref(), Some("Wait..."));
+
+        let smart = match md_with_options(
+            "Wait...",
+            MarkdownOptions::default().smart_punctuation(true),
+        ) {
+            el if matches!(el.kind, Kind::Group) && el.axis == Axis::Column => el.children,
+            other => panic!("expected outer column, got {:?}", other.kind),
+        };
+        assert_eq!(smart[0].text.as_deref(), Some("Wait\u{2026}"));
+    }
+
+    #[test]
+    fn gfm_alerts_are_opt_in() {
+        let plain = blocks("> [!WARNING]\n> Careful.");
+        assert_eq!(plain[0].axis, Axis::Overlay);
+
+        let alert_blocks = match md_with_options(
+            "> [!WARNING]\n> Careful.",
+            MarkdownOptions::default().gfm_alerts(true),
+        ) {
+            el if matches!(el.kind, Kind::Group) && el.axis == Axis::Column => el.children,
+            other => panic!("expected outer column, got {:?}", other.kind),
+        };
+        assert_eq!(alert_blocks[0].kind, Kind::Custom("alert"));
+        assert_eq!(alert_blocks[0].children[0].text.as_deref(), Some("Warning"));
+        assert_eq!(alert_blocks[0].fill, Some(tokens::WARNING.with_alpha(38)));
     }
 }

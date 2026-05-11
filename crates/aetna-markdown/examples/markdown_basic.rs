@@ -35,6 +35,12 @@ of Aetna widgets. Inline runs cover *italic*, **bold**, `inline code`, and \
 2. Pull in `pulldown-cmark` with the GFM features the project uses.
 3. Wire the transformer through the existing widget kit.
 
+42. Preserve source start numbers in ordered lists.
+43. Keep marker spacing stable as the list continues.
+
+- [x] Render completed task markers.
+- [ ] Render pending task markers.
+
 > Markdown's shape is HTML's shape. Aetna's widget kit already mirrors \
 > most of that shape, so the transformer mostly hands events to existing \
 > constructors.

@@ -25,6 +25,12 @@ cover **bold**, *italic*, `inline code`, ~~strike~~, and \
   [links](https://aetna.dev).
 - Nested lists live inside a composite item.
 
+42. Numbered lists preserve custom starts.
+43. The next marker continues from the source.
+
+- [x] Completed task items use static checkbox markers.
+- [ ] Pending task items use the same hanging indent.
+
 ### Quote
 
 > Markdown's shape is HTML's shape. Aetna's widget kit already \

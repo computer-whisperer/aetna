@@ -104,7 +104,7 @@ pub use crate::widgets::item::{
     self, item, item_actions, item_content, item_description, item_footer, item_group, item_header,
     item_media, item_media_icon, item_separator, item_title,
 };
-pub use crate::widgets::list::{bullet_list, numbered_list};
+pub use crate::widgets::list::{bullet_list, numbered_list, numbered_list_from, task_list};
 pub use crate::widgets::numeric_input::{self, NumericInputOpts, numeric_input};
 pub use crate::widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use crate::widgets::pagination::{
@@ -134,7 +134,7 @@ pub use crate::widgets::slider::{self, SliderAction, slider};
 pub use crate::widgets::spinner::{self, spinner, spinner_with_color, spinner_with_track};
 pub use crate::widgets::switch::{self, switch};
 pub use crate::widgets::table::{
-    self, table, table_body, table_cell, table_head, table_header, table_row,
+    self, table, table_body, table_cell, table_head, table_head_el, table_header, table_row,
 };
 pub use crate::widgets::tabs::{
     self, TabsAction, tab_option_key, tab_trigger, tab_trigger_content, tabs_list,

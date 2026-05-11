@@ -94,13 +94,18 @@ where
 
 #[track_caller]
 pub fn table_head(label: impl Into<String>) -> El {
-    text(label)
+    table_head_el(text(label))
+}
+
+#[track_caller]
+pub fn table_head_el(content: impl Into<El>) -> El {
+    let mut el = content
+        .into()
         .at_loc(Location::caller())
-        .caption()
-        .font_weight(FontWeight::Medium)
-        .muted()
         .ellipsis()
-        .width(Size::Fill(1.0))
+        .width(Size::Fill(1.0));
+    apply_head_style(&mut el);
+    el
 }
 
 #[track_caller]
@@ -110,6 +115,19 @@ pub fn table_cell(content: impl Into<El>) -> El {
         .at_loc(Location::caller())
         .ellipsis()
         .width(Size::Fill(1.0))
+}
+
+fn apply_head_style(el: &mut El) {
+    if el.kind == Kind::Text {
+        el.text_role = TextRole::Caption;
+        if el.font_weight == FontWeight::Regular {
+            el.font_weight = FontWeight::Medium;
+        }
+        el.text_color = Some(tokens::MUTED_FOREGROUND);
+    }
+    for child in &mut el.children {
+        apply_head_style(child);
+    }
 }
 
 #[cfg(test)]
@@ -126,5 +144,17 @@ mod tests {
             Some(MetricsRole::TableHeader)
         );
         assert_eq!(header.children[0].align, Align::Center);
+    }
+
+    #[test]
+    fn table_head_el_styles_rich_text_children() {
+        let head = table_head_el(text_runs([text("Rich "), text("head").bold()]));
+
+        assert_eq!(head.kind, Kind::Inlines);
+        assert_eq!(head.children[0].text_role, TextRole::Caption);
+        assert_eq!(head.children[0].font_weight, FontWeight::Medium);
+        assert_eq!(head.children[1].text_role, TextRole::Caption);
+        assert_eq!(head.children[1].font_weight, FontWeight::Bold);
+        assert_eq!(head.children[1].text.as_deref(), Some("head"));
     }
 }

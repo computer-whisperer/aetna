@@ -14,7 +14,7 @@
 //!
 //! **Object rows & lists**
 //! - [`item`] — clickable resource row (recent file, repo, project, person, asset entry); `item([item_media_icon, item_content([item_title, item_description]), item_actions([...])])` inside `item_group([...])`
-//! - [`list`] — plain `bullet_list` / `numbered_list` for prose-style enumerations
+//! - [`list`] — plain `bullet_list` / `numbered_list` / `task_list` for prose-style enumerations
 //! - [`table`] — structured tabular data; `table([table_header([table_row([table_head(...)])]), table_body([...])])`
 //! - [`accordion`] — collapsible section; `accordion_item("group", "key", "Title", open, [...])` + `accordion::apply_event`
 //!
