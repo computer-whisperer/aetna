@@ -22,7 +22,7 @@ const CASES_COL_GAP_EM: f32 = 0.5;
 const RADICAL_GLYPH: char = '√';
 const THIN_MATH_SPACE_EM: f32 = 0.08;
 const MEDIUM_MATH_SPACE_EM: f32 = 0.18;
-const STRETCHY_VARIANT_CHARS: [char; 17] = [
+const STRETCHY_VARIANT_CHARS: [char; 18] = [
     '(',
     ')',
     '[',
@@ -37,6 +37,7 @@ const STRETCHY_VARIANT_CHARS: [char; 17] = [
     '⌉',
     RADICAL_GLYPH,
     '∑',
+    '∫',
     '∏',
     '⋂',
     '⋃',
@@ -199,6 +200,12 @@ impl MathOperatorInfo {
         self.movable_limits = true;
         self
     }
+
+    fn large_with_side_scripts(mut self) -> Self {
+        self.large_operator = true;
+        self.movable_limits = false;
+        self
+    }
 }
 
 fn operator_info(operator: &str) -> MathOperatorInfo {
@@ -213,7 +220,8 @@ fn operator_info(operator: &str) -> MathOperatorInfo {
         "∑" | "∏" | "⋂" | "⋃" => {
             MathOperatorInfo::new(Large, THIN_MATH_SPACE_EM, THIN_MATH_SPACE_EM).large()
         }
-        "∫" => MathOperatorInfo::new(Large, THIN_MATH_SPACE_EM, THIN_MATH_SPACE_EM),
+        "∫" => MathOperatorInfo::new(Large, THIN_MATH_SPACE_EM, THIN_MATH_SPACE_EM)
+            .large_with_side_scripts(),
         "," | "." | ";" | ":" => MathOperatorInfo::new(Punctuation, 0.0, THIN_MATH_SPACE_EM),
         _ => MathOperatorInfo::new(Ordinary, 0.0, 0.0),
     }
@@ -1034,8 +1042,9 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
             text,
             lspace,
             rspace,
+            large_operator,
             ..
-        } => layout_operator_with_spacing(text, *lspace, *rspace, ctx),
+        } => layout_operator_with_spacing(text, *lspace, *rspace, *large_operator, ctx),
         MathExpr::Text(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
         MathExpr::Space(em) => MathLayout {
             width: metrics.space_width(*em),
@@ -1118,10 +1127,38 @@ fn layout_glyph(s: &str, ctx: LayoutCtx, weight: FontWeight, italic: bool) -> Ma
 }
 
 fn layout_operator(s: &str, ctx: LayoutCtx) -> MathLayout {
-    layout_operator_with_spacing(s, None, None, ctx)
+    layout_operator_with_spacing(s, None, None, None, ctx)
 }
 
 fn layout_operator_with_spacing(
+    s: &str,
+    lspace: Option<f32>,
+    rspace: Option<f32>,
+    large_operator: Option<bool>,
+    ctx: LayoutCtx,
+) -> MathLayout {
+    let use_large_operator = large_operator.unwrap_or_else(|| is_large_operator_symbol_str(s));
+    let glyph_ctx = if matches!(ctx.display, MathDisplay::Block) && use_large_operator {
+        ctx.large_operator()
+    } else {
+        ctx
+    };
+    if matches!(ctx.display, MathDisplay::Block) && use_large_operator {
+        let operator = MathExpr::OperatorWithMetadata {
+            text: s.into(),
+            lspace,
+            rspace,
+            large_operator: Some(true),
+            movable_limits: None,
+        };
+        if let Some(layout) = layout_large_operator_variant(&operator, glyph_ctx) {
+            return layout;
+        }
+    }
+    layout_operator_glyph_with_spacing(s, lspace, rspace, glyph_ctx)
+}
+
+fn layout_operator_glyph_with_spacing(
     s: &str,
     lspace: Option<f32>,
     rspace: Option<f32>,
@@ -1140,6 +1177,21 @@ fn layout_operator_with_spacing(
         layout.width += lspace + rspace;
     }
     layout
+}
+
+fn layout_operator_expr_glyph_fallback(expr: &MathExpr, ctx: LayoutCtx) -> Option<MathLayout> {
+    match expr {
+        MathExpr::Operator(s) => Some(layout_operator_glyph_with_spacing(s, None, None, ctx)),
+        MathExpr::OperatorWithMetadata {
+            text,
+            lspace,
+            rspace,
+            ..
+        } => Some(layout_operator_glyph_with_spacing(
+            text, *lspace, *rspace, ctx,
+        )),
+        _ => None,
+    }
 }
 
 fn layout_fraction(numerator: &MathExpr, denominator: &MathExpr, ctx: LayoutCtx) -> MathLayout {
@@ -1294,7 +1346,20 @@ fn layout_scripts(
     if matches!(ctx.display, MathDisplay::Block) && is_display_limits_base(base) {
         return layout_under_over(base, sub, sup, ctx);
     }
-    let base_layout = layout_expr(base, ctx);
+    let display_large_operator =
+        matches!(ctx.display, MathDisplay::Block) && is_large_operator_base(base);
+    let base_ctx = if display_large_operator {
+        ctx.large_operator()
+    } else {
+        ctx
+    };
+    let base_layout = if display_large_operator {
+        layout_large_operator_variant(base, base_ctx)
+            .or_else(|| layout_operator_expr_glyph_fallback(base, base_ctx))
+            .unwrap_or_else(|| layout_expr(base, ctx))
+    } else {
+        layout_expr(base, base_ctx)
+    };
     let script_ctx = ctx.script();
     let sub_layout = sub.map(|expr| layout_expr(expr, script_ctx));
     let sup_layout = sup.map(|expr| layout_expr(expr, script_ctx));
@@ -1355,7 +1420,9 @@ fn layout_under_over(
         ctx
     };
     let base_layout = if center_large_operator {
-        layout_large_operator_variant(base, base_ctx).unwrap_or_else(|| layout_expr(base, base_ctx))
+        layout_large_operator_variant(base, base_ctx)
+            .or_else(|| layout_operator_expr_glyph_fallback(base, base_ctx))
+            .unwrap_or_else(|| layout_expr(base, ctx))
     } else {
         layout_expr(base, base_ctx)
     };
@@ -3141,6 +3208,10 @@ mod tests {
             "summation should expose vertical math glyph variants"
         );
         assert!(
+            constants.delimiter_variant_count('∫') > 0,
+            "integral should expose vertical math glyph variants"
+        );
+        assert!(
             constants
                 .delimiter_first_variant_glyph_id('(')
                 .is_some_and(|glyph_id| glyph_id > 0),
@@ -3461,6 +3532,11 @@ mod tests {
         assert_eq!(sum.class, MathOperatorClass::Large);
         assert!(sum.large_operator);
         assert!(sum.movable_limits);
+
+        let integral = operator_info("∫");
+        assert_eq!(integral.class, MathOperatorClass::Large);
+        assert!(integral.large_operator);
+        assert!(!integral.movable_limits);
     }
 
     #[test]
@@ -3539,6 +3615,77 @@ mod tests {
         assert!(
             (sum_center_y + metrics.math_axis_shift()).abs() < 0.75,
             "display sum should center on the parent math axis"
+        );
+    }
+
+    #[test]
+    fn display_integral_uses_open_type_variant() {
+        let display = layout_math(&parse_tex(r"\int").unwrap(), 16.0, MathDisplay::Block);
+        let inline = layout_math(&parse_tex(r"\int").unwrap(), 16.0, MathDisplay::Inline);
+        assert!(
+            display
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::GlyphId { .. })),
+            "display integral should use an OpenType operator variant"
+        );
+        assert!(
+            display.height() > inline.height() * 1.4,
+            "display integral height = {}, inline height = {}",
+            display.height(),
+            inline.height()
+        );
+    }
+
+    #[test]
+    fn mathml_largeop_false_keeps_integral_unexpanded() {
+        let expr = parse_mathml(r#"<math><mo largeop="false">∫</mo></math>"#)
+            .expect("valid MathML integral");
+        let layout = layout_math(&expr, 16.0, MathDisplay::Block);
+        assert!(
+            !layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::GlyphId { .. })),
+            "largeop=false should keep display integral on the ordinary glyph path"
+        );
+    }
+
+    #[test]
+    fn display_integral_scripts_stay_on_side_of_large_operator() {
+        let layout = layout_math(
+            &parse_tex(r"\int_0^1 f(x)dx").unwrap(),
+            16.0,
+            MathDisplay::Block,
+        );
+        let integral_rect = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::GlyphId { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .expect("large integral glyph");
+        let lower = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph { text, x, .. } if text == "0" => Some(*x),
+                _ => None,
+            })
+            .expect("lower integral script");
+        let upper = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph { text, x, .. } if text == "1" => Some(*x),
+                _ => None,
+            })
+            .expect("upper integral script");
+
+        assert!(
+            lower >= integral_rect.right() - 0.5 && upper >= integral_rect.right() - 0.5,
+            "integral scripts should stay to the side, rect = {integral_rect:?}, lower x = {lower}, upper x = {upper}"
         );
     }
 

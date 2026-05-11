@@ -67,6 +67,10 @@ Inline large operators stay compact beside prose: $\\sum_{i=1}^{n}x_i$.
 $$
 \\sum_{i=1}^{n}x_i + \\prod_{k=1}^{m}(1+x_k) + \\bigcup_{j=1}^{r}A_j
 $$
+
+$$
+\\int_0^1 f(x)dx
+$$
 ";
 
 const ERRORS_SOURCE: &str = "\
@@ -265,12 +269,14 @@ fn nested_roots_card() -> El {
 
 fn large_operator_card() -> El {
     let expr = tex_or_error(r"\sum_{i=1}^{n}x_i+\prod_{k=1}^{m}(1+x_k)");
+    let integral = tex_or_error(r"\int_0^1 f(x)dx");
     demo_card(
         "Limit sizing",
-        "Same large-operator expression at two display sizes.",
+        "Display operators use font variants; integrals keep side scripts.",
         [
             math_block(expr.clone()).font_size(18.0),
             math_block(expr).font_size(26.0),
+            math_block(integral).font_size(26.0),
         ],
     )
 }

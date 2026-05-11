@@ -187,9 +187,12 @@ percentage for index placement. The native vector radical remains as the
 fallback when a font does not expose a usable radical variant.
 
 Display-style large operators have started moving onto that same exact-glyph
-path. Sums, products, big intersections, and big unions with limits now prefer
+path. Sums, products, integrals, big intersections, and big unions now prefer
 OpenType MATH vertical variants from Noto Sans Math instead of scaling a text
-glyph, so the operator grows without getting artificially heavy.
+glyph, so the operator grows without getting artificially heavy. Operators
+with movable limits, such as sums, place display scripts above and below the
+operator; integrals keep scripts on the side while still using the larger
+display glyph.
 
 Fenced delimiters follow the same bootstrap pattern: simple stretchable
 parentheses, brackets, braces, bars, angles, floors, and ceilings emit native
