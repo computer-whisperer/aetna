@@ -1,6 +1,6 @@
 [package]
 name = "aetna-web"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 description = "Aetna — wasm browser entry point for the shared Showcase app"
 license = "MIT OR Apache-2.0"
@@ -14,12 +14,12 @@ readme = "README.md"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-aetna-core = { version = "0.3.1", path = "../aetna-core" }
-aetna-wgpu = { version = "0.3.1", path = "../aetna-wgpu" }
+aetna-core = { version = "0.3.2", path = "../aetna-core" }
+aetna-wgpu = { version = "0.3.2", path = "../aetna-wgpu" }
 # `aetna-fixtures` is the home of the shared `Showcase` App impl;
 # depending on it from native, vulkano, and wasm gives every target one
 # backend-neutral fixture without pulling in a native demo harness.
-aetna-fixtures = { version = "0.3.1", path = "../aetna-fixtures" }
+aetna-fixtures = { version = "0.3.2", path = "../aetna-fixtures" }
 wgpu = "29"
 winit = "0.30"
 

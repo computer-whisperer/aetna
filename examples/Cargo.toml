@@ -1,6 +1,6 @@
 [package]
 name = "aetna-examples"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 description = "Aetna — interactive examples built from the reusable host and fixture crates"
 license = "MIT OR Apache-2.0"
@@ -9,10 +9,10 @@ publish = false
 # Binaries auto-discovered from `src/bin/*.rs`.
 
 [dependencies]
-aetna-core = { version = "0.3.1", path = "../crates/aetna-core" }
-aetna-fixtures = { version = "0.3.1", path = "../crates/aetna-fixtures" }
-aetna-wgpu = { version = "0.3.1", path = "../crates/aetna-wgpu" }
-aetna-winit-wgpu = { version = "0.3.1", path = "../crates/aetna-winit-wgpu" }
+aetna-core = { version = "0.3.2", path = "../crates/aetna-core" }
+aetna-fixtures = { version = "0.3.2", path = "../crates/aetna-fixtures" }
+aetna-wgpu = { version = "0.3.2", path = "../crates/aetna-wgpu" }
+aetna-winit-wgpu = { version = "0.3.2", path = "../crates/aetna-winit-wgpu" }
 wgpu = "29"
 # Off by default. The `profiling` feature pulls these in and forwards
 # `aetna-winit-wgpu/profiling` (which transitively turns on the wgpu

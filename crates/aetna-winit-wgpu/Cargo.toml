@@ -1,6 +1,6 @@
 [package]
 name = "aetna-winit-wgpu"
-version = "0.3.1"
+version = "0.3.2"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -17,8 +17,8 @@ categories = ["gui"]
 path = "src/lib.rs"
 
 [dependencies]
-aetna-core = { version = "0.3.1", path = "../aetna-core" }
-aetna-wgpu = { version = "0.3.1", path = "../aetna-wgpu" }
+aetna-core = { version = "0.3.2", path = "../aetna-core" }
+aetna-wgpu = { version = "0.3.2", path = "../aetna-wgpu" }
 # `open` shells out to xdg-open / `start` / `open` for the
 # `App::drain_link_opens` host path. Tiny crate, well-maintained, no
 # blocking IO inside the call (it spawns the platform launcher).

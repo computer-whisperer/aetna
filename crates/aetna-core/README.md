@@ -2,7 +2,7 @@
 
 # aetna-core
 
-![Aetna showcase — Settings section, headless wgpu render](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/showcase_settings.png)
+![Aetna hero demo — release console rendered headlessly through the wgpu backend](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/aetna_hero.png)
 
 Backend-agnostic UI primitives for Aetna apps.
 
