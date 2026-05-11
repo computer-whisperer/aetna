@@ -497,6 +497,16 @@ fn fold_event_local(
             replace_selection(value, selection, &to_insert);
             true
         }
+        UiEventKind::MiddleClick => {
+            let Some(byte) = caret_byte_at(value, event, opts) else {
+                return false;
+            };
+            *selection = TextSelection::caret(byte);
+            if let Some(insert) = event.text.as_deref() {
+                replace_selection_with(value, selection, insert, opts);
+            }
+            true
+        }
         UiEventKind::KeyDown => {
             let Some(kp) = event.key_press.as_ref() else {
                 return false;
@@ -1098,6 +1108,21 @@ mod tests {
             modifiers: KeyModifiers::default(),
             click_count: 0,
             kind: UiEventKind::Drag,
+        }
+    }
+
+    fn ev_middle_click(target: UiTarget, pointer: (f32, f32), text: Option<&str>) -> UiEvent {
+        UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: Some(pointer),
+            key_press: None,
+            text: text.map(str::to_string),
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 1,
+            kind: UiEventKind::MiddleClick,
         }
     }
 
@@ -1787,6 +1812,21 @@ mod tests {
         };
         assert!(!apply_event(&mut value, &mut sel, &click));
         assert_eq!(sel, TextSelection::range(0, 5));
+    }
+
+    #[test]
+    fn apply_middle_click_inserts_event_text_at_pointer() {
+        let mut value = String::from("world");
+        let mut sel = TextSelection::caret(value.len());
+        let target = ti_target();
+        let pointer = (
+            target.rect.x + tokens::SPACE_3,
+            target.rect.y + target.rect.h * 0.5,
+        );
+        let event = ev_middle_click(target, pointer, Some("hello "));
+        assert!(apply_event(&mut value, &mut sel, &event));
+        assert_eq!(value, "hello world");
+        assert_eq!(sel, TextSelection::caret("hello ".len()));
     }
 
     #[test]

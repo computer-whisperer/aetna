@@ -401,6 +401,16 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
             replace_selection(value, selection, &filtered);
             true
         }
+        UiEventKind::MiddleClick => {
+            let Some(byte) = caret_byte_at(value, event) else {
+                return false;
+            };
+            *selection = TextSelection::caret(byte);
+            if let Some(insert) = event.text.as_deref() {
+                replace_selection(value, selection, insert);
+            }
+            true
+        }
         UiEventKind::KeyDown => {
             let Some(kp) = event.key_press.as_ref() else {
                 return false;
@@ -769,6 +779,26 @@ mod tests {
         }
     }
 
+    fn ev_middle_click(local: (f32, f32), text: Option<&str>) -> UiEvent {
+        let target = ta_target();
+        let pointer = (
+            target.rect.x + tokens::SPACE_3 + local.0,
+            target.rect.y + tokens::SPACE_2 + local.1,
+        );
+        UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: Some(pointer),
+            key_press: None,
+            text: text.map(str::to_string),
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 1,
+            kind: UiEventKind::MiddleClick,
+        }
+    }
+
     #[test]
     fn text_area_declares_text_cursor() {
         let el = text_area("hello", TextSelection::caret(0));
@@ -782,6 +812,16 @@ mod tests {
         assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::Enter)));
         assert_eq!(value, "he\nllo");
         assert_eq!(sel, TextSelection::caret(3));
+    }
+
+    #[test]
+    fn middle_click_inserts_event_text_at_pointer() {
+        let mut value = String::from("world");
+        let mut sel = TextSelection::caret(value.len());
+        let event = ev_middle_click((0.0, tokens::TEXT_SM.line_height * 0.5), Some("hello "));
+        assert!(apply_event(&mut value, &mut sel, &event));
+        assert_eq!(value, "hello world");
+        assert_eq!(sel, TextSelection::caret("hello ".len()));
     }
 
     #[test]
