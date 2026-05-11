@@ -15,11 +15,13 @@ subscript example $x_1+x_2$ and a square root $\\sqrt{x_1+x_2}$.
 Display math should center in the available width:
 
 $$
-\\sum_{i=1}^{n} x_i + \\frac{a^2+b^2}{\\sqrt{x_1+x_2}}
+\\sum_{i=1}^{n} x_i + \\frac{a^2+b^2}{\\sqrt{x_1+x_2}} + \\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}
 $$
 
 The first TeX slice intentionally covers the structural basics:
-$\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, $\\sqrt[3]{x+1}$, $\\left(\\frac{a}{b}\\right)$, and $y_{n+1}=y_n+x^2$.
+$\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, $\\sqrt[3]{x+1}$, $\\left(\\frac{a}{b}\\right)$, $\\begin{pmatrix}1&0\\\\0&1\\end{pmatrix}$, and $y_{n+1}=y_n+x^2$.
+
+Aligned TeX arrays now feed the same native table layout: $\\begin{array}{lr}x&100\\\\xx&2\\end{array}$.
 ";
 
 const MATHML_SOURCE: &str = r#"
@@ -54,14 +56,14 @@ const MATHML_SOURCE: &str = r#"
     </munderover>
     <mo>+</mo>
     <mfenced open="[" close="]">
-      <mtable>
+      <mtable columnalign="left right" columnspacing="0.5em" rowspacing="0.2em">
         <mtr>
           <mtd><mi>a</mi></mtd>
-          <mtd><mi>b</mi></mtd>
+          <mtd><mn>100</mn></mtd>
         </mtr>
         <mtr>
-          <mtd><mi>c</mi></mtd>
-          <mtd><mi>d</mi></mtd>
+          <mtd><mi>aa</mi></mtd>
+          <mtd><mn>2</mn></mtd>
         </mtr>
       </mtable>
     </mfenced>

@@ -18,12 +18,21 @@ const FRACTION_GAP_EM: f32 = 0.18;
 const SQRT_GAP_EM: f32 = 0.10;
 const TABLE_COL_GAP_EM: f32 = 0.8;
 const TABLE_ROW_GAP_EM: f32 = 0.35;
+const CASES_COL_GAP_EM: f32 = 0.5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum MathDisplay {
     #[default]
     Inline,
     Block,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum MathColumnAlignment {
+    Left,
+    #[default]
+    Center,
+    Right,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -61,6 +70,9 @@ pub enum MathExpr {
     },
     Table {
         rows: Vec<Vec<MathExpr>>,
+        column_alignments: Vec<MathColumnAlignment>,
+        column_gap: Option<f32>,
+        row_gap: Option<f32>,
     },
     Error(String),
 }
@@ -227,13 +239,19 @@ impl MathMetrics {
             }
     }
 
-    fn fraction_axis_shift(self) -> f32 {
-        self.size
-            * if matches!(self.display, MathDisplay::Block) {
-                0.18
-            } else {
-                0.28
-            }
+    fn math_axis_shift(self) -> f32 {
+        if matches!(self.display, MathDisplay::Block)
+            && let Some(axis) = self.operator_axis_shift()
+        {
+            return axis;
+        }
+        self.size * 0.28
+    }
+
+    fn operator_axis_shift(self) -> Option<f32> {
+        let layout = math_glyph_layout("+", self.size, FontWeight::Regular);
+        let baseline = layout.lines.first()?.baseline;
+        Some((baseline - layout.line_height * 0.5).max(self.size * 0.2))
     }
 
     fn sqrt_gap(self) -> f32 {
@@ -288,12 +306,12 @@ impl MathMetrics {
         self.size * 0.12
     }
 
-    fn table_col_gap(self) -> f32 {
-        self.size * TABLE_COL_GAP_EM
+    fn table_col_gap(self, gap_em: Option<f32>) -> f32 {
+        self.size * gap_em.unwrap_or(TABLE_COL_GAP_EM)
     }
 
-    fn table_row_gap(self) -> f32 {
-        self.size * TABLE_ROW_GAP_EM
+    fn table_row_gap(self, gap_em: Option<f32>) -> f32 {
+        self.size * gap_em.unwrap_or(TABLE_ROW_GAP_EM)
     }
 
     fn delimiter_gap(self) -> f32 {
@@ -393,7 +411,12 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
             layout_under_over(base, under.as_deref(), over.as_deref(), ctx)
         }
         MathExpr::Fenced { open, close, body } => layout_fenced(open, close, body, ctx),
-        MathExpr::Table { rows } => layout_table(rows, ctx),
+        MathExpr::Table {
+            rows,
+            column_alignments,
+            column_gap,
+            row_gap,
+        } => layout_table(rows, column_alignments, *column_gap, *row_gap, ctx),
         MathExpr::Error(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
     }
 }
@@ -473,7 +496,7 @@ fn layout_fraction(numerator: &MathExpr, denominator: &MathExpr, ctx: LayoutCtx)
     // The math axis sits above the prose baseline. Keeping the fraction
     // rule on that axis makes inline fractions read as part of the line
     // instead of hanging mostly below it.
-    let axis_shift = metrics.fraction_axis_shift();
+    let axis_shift = metrics.math_axis_shift();
     let rule_center_y = -axis_shift;
     let width = num.width.max(den.width) + pad * 2.0;
     let num_x = (width - num.width) * 0.5;
@@ -596,7 +619,9 @@ fn layout_under_over(
     over: Option<&MathExpr>,
     ctx: LayoutCtx,
 ) -> MathLayout {
-    let base_ctx = if matches!(ctx.display, MathDisplay::Block) && is_large_operator_base(base) {
+    let center_large_operator =
+        matches!(ctx.display, MathDisplay::Block) && is_large_operator_base(base);
+    let base_ctx = if center_large_operator {
         ctx.large_operator()
     } else {
         ctx
@@ -611,19 +636,26 @@ fn layout_under_over(
         .max(under_layout.as_ref().map(|l| l.width).unwrap_or(0.0))
         .max(over_layout.as_ref().map(|l| l.width).unwrap_or(0.0));
     let base_x = (width - base_layout.width) * 0.5;
+    let base_dy = if center_large_operator {
+        base_ctx.metrics().math_axis_shift() - ctx.metrics().math_axis_shift()
+    } else {
+        0.0
+    };
+    let base_top = -base_layout.ascent + base_dy;
+    let base_bottom = base_layout.descent + base_dy;
     let mut atoms = Vec::new();
-    let mut ascent = base_layout.ascent;
-    let mut descent = base_layout.descent;
-    translate_atoms(&mut atoms, base_layout.atoms, base_x, 0.0);
+    let mut ascent = -base_top;
+    let mut descent = base_bottom;
+    translate_atoms(&mut atoms, base_layout.atoms, base_x, base_dy);
     if let Some(over) = over_layout {
         let over_x = (width - over.width) * 0.5;
-        let over_dy = -base_layout.ascent - gap - over.descent;
+        let over_dy = base_top - gap - over.descent;
         ascent = ascent.max(-over_dy + over.ascent);
         translate_atoms(&mut atoms, over.atoms, over_x, over_dy);
     }
     if let Some(under) = under_layout {
         let under_x = (width - under.width) * 0.5;
-        let under_dy = base_layout.descent + gap + under.ascent;
+        let under_dy = base_bottom + gap + under.ascent;
         descent = descent.max(under_dy + under.descent);
         translate_atoms(&mut atoms, under.atoms, under_x, under_dy);
     }
@@ -735,7 +767,13 @@ fn is_vector_delimiter(delimiter: &str) -> bool {
     )
 }
 
-fn layout_table(rows: &[Vec<MathExpr>], ctx: LayoutCtx) -> MathLayout {
+fn layout_table(
+    rows: &[Vec<MathExpr>],
+    column_alignments: &[MathColumnAlignment],
+    column_gap: Option<f32>,
+    row_gap: Option<f32>,
+    ctx: LayoutCtx,
+) -> MathLayout {
     if rows.is_empty() {
         return MathLayout {
             width: 0.0,
@@ -760,8 +798,8 @@ fn layout_table(rows: &[Vec<MathExpr>], ctx: LayoutCtx) -> MathLayout {
             row_descents[row_index] = row_descents[row_index].max(cell.descent);
         }
     }
-    let col_gap = metrics.table_col_gap();
-    let row_gap = metrics.table_row_gap();
+    let col_gap = metrics.table_col_gap(column_gap);
+    let row_gap = metrics.table_row_gap(row_gap);
     let width = col_widths.iter().sum::<f32>() + col_gap * col_count.saturating_sub(1) as f32;
     let row_heights: Vec<f32> = row_ascents
         .iter()
@@ -769,14 +807,24 @@ fn layout_table(rows: &[Vec<MathExpr>], ctx: LayoutCtx) -> MathLayout {
         .map(|(ascent, descent)| ascent + descent)
         .collect();
     let height = row_heights.iter().sum::<f32>() + row_gap * rows.len().saturating_sub(1) as f32;
-    let baseline_origin = height * 0.5;
+    let baseline_origin = height * 0.5 + metrics.math_axis_shift();
     let mut atoms = Vec::new();
     let mut row_top = 0.0;
     for (row_index, row) in cell_layouts.into_iter().enumerate() {
         let row_baseline = row_top + row_ascents[row_index];
         let mut col_left = 0.0;
         for (col_index, cell) in row.into_iter().enumerate() {
-            let cell_x = col_left + (col_widths[col_index] - cell.width) * 0.5;
+            let col_extra = col_widths[col_index] - cell.width;
+            let align = column_alignments
+                .get(col_index)
+                .copied()
+                .unwrap_or_default();
+            let cell_x = col_left
+                + match align {
+                    MathColumnAlignment::Left => 0.0,
+                    MathColumnAlignment::Center => col_extra * 0.5,
+                    MathColumnAlignment::Right => col_extra,
+                };
             translate_atoms(
                 &mut atoms,
                 cell.atoms,
@@ -1018,7 +1066,61 @@ fn parse_mathml_table(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPar
         }
         rows.push(row);
     }
-    Ok(MathExpr::Table { rows })
+    let column_alignments = parse_mathml_column_alignments(node.attribute("columnalign"))?;
+    let column_gap = parse_mathml_table_spacing(node.attribute("columnspacing"))?;
+    let row_gap = parse_mathml_table_spacing(node.attribute("rowspacing"))?;
+    Ok(MathExpr::Table {
+        rows,
+        column_alignments,
+        column_gap,
+        row_gap,
+    })
+}
+
+fn parse_mathml_column_alignments(
+    value: Option<&str>,
+) -> Result<Vec<MathColumnAlignment>, MathParseError> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    value
+        .split_whitespace()
+        .map(|token| match token {
+            "left" => Ok(MathColumnAlignment::Left),
+            "center" => Ok(MathColumnAlignment::Center),
+            "right" => Ok(MathColumnAlignment::Right),
+            "decimal" => Ok(MathColumnAlignment::Right),
+            other => Err(MathParseError {
+                message: format!("unsupported MathML columnalign value {other:?}"),
+                byte: 0,
+            }),
+        })
+        .collect()
+}
+
+fn parse_mathml_table_spacing(value: Option<&str>) -> Result<Option<f32>, MathParseError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let Some(first) = value.split_whitespace().next() else {
+        return Ok(None);
+    };
+    parse_mathml_em_length(first).map(Some)
+}
+
+fn parse_mathml_em_length(value: &str) -> Result<f32, MathParseError> {
+    let number = value.strip_suffix("em").unwrap_or(value);
+    let parsed = number.parse::<f32>().map_err(|_| MathParseError {
+        message: format!("unsupported MathML table spacing value {value:?}"),
+        byte: 0,
+    })?;
+    if parsed.is_sign_negative() {
+        return Err(MathParseError {
+            message: format!("negative MathML table spacing value {value:?}"),
+            byte: 0,
+        });
+    }
+    Ok(parsed)
 }
 
 fn parse_mathml_fenced(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathParseError> {
@@ -1179,6 +1281,117 @@ impl<'a> TexParser<'a> {
         Ok(MathExpr::row(items))
     }
 
+    fn parse_table_environment(
+        &mut self,
+        env: &str,
+        column_alignments: Vec<MathColumnAlignment>,
+        column_gap: Option<f32>,
+        row_gap: Option<f32>,
+    ) -> Result<MathExpr, MathParseError> {
+        let mut rows = Vec::new();
+        let mut row = Vec::new();
+        let mut cell = Vec::new();
+
+        loop {
+            self.skip_ws();
+            if self.peek().is_none() {
+                return Err(self.error(&format!("unclosed \\begin{{{env}}}")));
+            }
+            if self.starts_with_command("end") {
+                self.consume_environment_end(env)?;
+                if !row.is_empty() || !cell.is_empty() || rows.is_empty() {
+                    row.push(MathExpr::row(std::mem::take(&mut cell)));
+                    rows.push(row);
+                }
+                break;
+            }
+            if self.peek() == Some('&') {
+                self.bump();
+                row.push(MathExpr::row(std::mem::take(&mut cell)));
+                continue;
+            }
+            if self.starts_with_row_separator() {
+                self.consume_row_separator()?;
+                row.push(MathExpr::row(std::mem::take(&mut cell)));
+                rows.push(std::mem::take(&mut row));
+                continue;
+            }
+
+            cell.push(self.parse_atom_with_scripts()?);
+        }
+
+        self.validate_tex_table_shape(env, &rows, &column_alignments)?;
+
+        let table = MathExpr::Table {
+            rows,
+            column_alignments,
+            column_gap,
+            row_gap,
+        };
+        Ok(match env {
+            "matrix" | "array" => table,
+            "pmatrix" => MathExpr::Fenced {
+                open: Some("(".into()),
+                close: Some(")".into()),
+                body: Arc::new(table),
+            },
+            "bmatrix" => MathExpr::Fenced {
+                open: Some("[".into()),
+                close: Some("]".into()),
+                body: Arc::new(table),
+            },
+            "Bmatrix" => MathExpr::Fenced {
+                open: Some("{".into()),
+                close: Some("}".into()),
+                body: Arc::new(table),
+            },
+            "vmatrix" => MathExpr::Fenced {
+                open: Some("|".into()),
+                close: Some("|".into()),
+                body: Arc::new(table),
+            },
+            "Vmatrix" => MathExpr::Fenced {
+                open: Some("‖".into()),
+                close: Some("‖".into()),
+                body: Arc::new(table),
+            },
+            "cases" => MathExpr::Fenced {
+                open: Some("{".into()),
+                close: None,
+                body: Arc::new(table),
+            },
+            _ => return Err(self.error(&format!("unsupported math environment {env}"))),
+        })
+    }
+
+    fn validate_tex_table_shape(
+        &self,
+        env: &str,
+        rows: &[Vec<MathExpr>],
+        column_alignments: &[MathColumnAlignment],
+    ) -> Result<(), MathParseError> {
+        let Some(first_row) = rows.first() else {
+            return Ok(());
+        };
+        let expected_cols = first_row.len();
+        for (row_index, row) in rows.iter().enumerate().skip(1) {
+            if row.len() != expected_cols {
+                return Err(self.error(&format!(
+                    "inconsistent column count in {env}: row {} has {}, expected {expected_cols}",
+                    row_index + 1,
+                    row.len()
+                )));
+            }
+        }
+        if !column_alignments.is_empty() && column_alignments.len() != expected_cols {
+            return Err(self.error(&format!(
+                "{env} alignment spec has {} columns, but table has {expected_cols}",
+                column_alignments.len()
+            )));
+        }
+        Ok(())
+    }
+
     fn parse_atom_with_scripts(&mut self) -> Result<MathExpr, MathParseError> {
         let mut base = self.parse_atom()?;
         let mut sub = None;
@@ -1280,6 +1493,27 @@ impl<'a> TexParser<'a> {
                 Ok(MathExpr::Fenced { open, close, body })
             }
             "right" => Err(self.error("unexpected \\right")),
+            "begin" => {
+                let env = self.parse_environment_name()?;
+                match env.as_str() {
+                    "matrix" | "pmatrix" | "bmatrix" | "Bmatrix" | "vmatrix" | "Vmatrix"
+                    | "cases" => {
+                        let options = default_tex_table_options(&env);
+                        self.parse_table_environment(
+                            &env,
+                            options.column_alignments,
+                            options.column_gap,
+                            options.row_gap,
+                        )
+                    }
+                    "array" => {
+                        let column_alignments = self.parse_array_column_alignments()?;
+                        self.parse_table_environment(&env, column_alignments, None, None)
+                    }
+                    _ => Err(self.error(&format!("unsupported math environment {env}"))),
+                }
+            }
+            "end" => Err(self.error("unexpected \\end")),
             "cdot" => Ok(MathExpr::Operator("·".into())),
             "times" => Ok(MathExpr::Operator("×".into())),
             "div" => Ok(MathExpr::Operator("÷".into())),
@@ -1347,6 +1581,63 @@ impl<'a> TexParser<'a> {
             None => return Err(self.error("expected delimiter")),
         };
         Ok(Some(delimiter))
+    }
+
+    fn parse_environment_name(&mut self) -> Result<String, MathParseError> {
+        self.skip_ws();
+        self.expect('{')?;
+        let name = self.take_while(|c| c != '}');
+        self.expect('}')?;
+        if name.is_empty() {
+            return Err(self.error("expected environment name"));
+        }
+        Ok(name)
+    }
+
+    fn parse_array_column_alignments(
+        &mut self,
+    ) -> Result<Vec<MathColumnAlignment>, MathParseError> {
+        self.skip_ws();
+        self.expect('{')?;
+        let mut alignments = Vec::new();
+        loop {
+            match self.bump() {
+                Some('}') => break,
+                Some('l') => alignments.push(MathColumnAlignment::Left),
+                Some('c') => alignments.push(MathColumnAlignment::Center),
+                Some('r') => alignments.push(MathColumnAlignment::Right),
+                Some('|') | Some(' ') | Some('\t') | Some('\n') | Some('\r') => {}
+                Some(ch) => {
+                    return Err(
+                        self.error(&format!("unsupported array alignment specifier {ch:?}"))
+                    );
+                }
+                None => return Err(self.error("unclosed array alignment spec")),
+            }
+        }
+        Ok(alignments)
+    }
+
+    fn consume_environment_end(&mut self, expected: &str) -> Result<(), MathParseError> {
+        self.consume_command("end")?;
+        let found = self.parse_environment_name()?;
+        if found == expected {
+            Ok(())
+        } else {
+            Err(self.error(&format!("expected \\end{{{expected}}}")))
+        }
+    }
+
+    fn starts_with_row_separator(&self) -> bool {
+        self.input[self.pos..].starts_with(r"\\")
+    }
+
+    fn consume_row_separator(&mut self) -> Result<(), MathParseError> {
+        if !self.starts_with_row_separator() {
+            return Err(self.error(r"expected \\"));
+        }
+        self.expect('\\')?;
+        self.expect('\\')
     }
 
     fn skip_ws(&mut self) {
@@ -1431,6 +1722,27 @@ fn delimiter_command(command: &str) -> Option<String> {
         _ => return None,
     };
     Some(delimiter.to_string())
+}
+
+struct TexTableOptions {
+    column_alignments: Vec<MathColumnAlignment>,
+    column_gap: Option<f32>,
+    row_gap: Option<f32>,
+}
+
+fn default_tex_table_options(env: &str) -> TexTableOptions {
+    match env {
+        "cases" => TexTableOptions {
+            column_alignments: vec![MathColumnAlignment::Left, MathColumnAlignment::Left],
+            column_gap: Some(CASES_COL_GAP_EM),
+            row_gap: None,
+        },
+        _ => TexTableOptions {
+            column_alignments: Vec::new(),
+            column_gap: None,
+            row_gap: None,
+        },
+    }
 }
 
 trait Tap: Sized {
@@ -1563,6 +1875,13 @@ mod tests {
                 .any(|atom| matches!(atom, MathAtom::Glyph { text, size, .. } if text == "∑" && *size > 16.0)),
             "display sum should use a larger operator glyph"
         );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Glyph { text, y_baseline, .. } if text == "∑" && *y_baseline > 0.0)),
+            "display sum should shift the enlarged operator down to the parent math axis"
+        );
     }
 
     #[test]
@@ -1594,6 +1913,278 @@ mod tests {
     fn rejects_unmatched_tex_right_fence() {
         let err = parse_tex(r"x \right)").expect_err("invalid unmatched fence");
         assert!(err.message.contains("unexpected \\right"));
+    }
+
+    #[test]
+    fn parses_tex_matrix_environment() {
+        let expr = parse_tex(r"\begin{matrix}a&b\\c&d\end{matrix}").expect("valid matrix");
+        match expr {
+            MathExpr::Table {
+                rows,
+                column_alignments,
+                ..
+            } => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0].len(), 2);
+                assert_eq!(rows[1].len(), 2);
+                assert_eq!(rows[0][0], MathExpr::Identifier("a".into()));
+                assert_eq!(rows[1][1], MathExpr::Identifier("d".into()));
+                assert!(column_alignments.is_empty());
+            }
+            other => panic!("expected table expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_tex_bmatrix_as_fenced_table() {
+        let expr =
+            parse_tex(r"\begin{bmatrix}a&b\\c&d\end{bmatrix}").expect("valid bracketed matrix");
+        match expr {
+            MathExpr::Fenced { open, close, body } => {
+                assert_eq!(open.as_deref(), Some("["));
+                assert_eq!(close.as_deref(), Some("]"));
+                match body.as_ref() {
+                    MathExpr::Table { rows, .. } => {
+                        assert_eq!(rows.len(), 2);
+                        assert_eq!(rows[0].len(), 2);
+                    }
+                    other => panic!("expected table body, got {other:?}"),
+                }
+            }
+            other => panic!("expected fenced matrix, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_tex_cases_as_left_braced_table() {
+        let expr = parse_tex(r"\begin{cases}x&x>0\\-x&x<0\end{cases}").expect("valid cases");
+        match expr {
+            MathExpr::Fenced { open, close, body } => {
+                assert_eq!(open.as_deref(), Some("{"));
+                assert_eq!(close.as_deref(), None);
+                match body.as_ref() {
+                    MathExpr::Table {
+                        column_alignments,
+                        column_gap,
+                        ..
+                    } => {
+                        assert_eq!(
+                            column_alignments,
+                            &vec![MathColumnAlignment::Left, MathColumnAlignment::Left]
+                        );
+                        assert_eq!(*column_gap, Some(CASES_COL_GAP_EM));
+                    }
+                    other => panic!("expected table body, got {other:?}"),
+                }
+            }
+            other => panic!("expected left-braced cases table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_tex_array_column_alignments() {
+        let expr = parse_tex(r"\begin{array}{lr}x&100\\xx&2\end{array}").expect("valid array");
+        match expr {
+            MathExpr::Table {
+                rows,
+                column_alignments,
+                ..
+            } => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(
+                    column_alignments,
+                    vec![MathColumnAlignment::Left, MathColumnAlignment::Right]
+                );
+            }
+            other => panic!("expected array table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ignores_trailing_tex_table_row_separator() {
+        let expr = parse_tex(r"\begin{matrix}a&b\\c&d\\\end{matrix}")
+            .expect("valid matrix with trailing row separator");
+        match expr {
+            MathExpr::Table { rows, .. } => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0].len(), 2);
+                assert_eq!(rows[1].len(), 2);
+            }
+            other => panic!("expected table expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_inconsistent_tex_table_columns() {
+        let err =
+            parse_tex(r"\begin{matrix}a&b\\c\end{matrix}").expect_err("invalid ragged matrix");
+        assert!(err.message.contains("inconsistent column count"));
+    }
+
+    #[test]
+    fn rejects_mismatched_tex_array_alignment_spec() {
+        let err = parse_tex(r"\begin{array}{lr}x&100&z\\xx&2&y\end{array}")
+            .expect_err("invalid array alignment spec");
+        assert!(err.message.contains("alignment spec has 2 columns"));
+    }
+
+    #[test]
+    fn table_layout_honors_column_alignment() {
+        let left_aligned = layout_math(
+            &MathExpr::Table {
+                rows: vec![
+                    vec![MathExpr::Identifier("x".into())],
+                    vec![MathExpr::Identifier("xxxx".into())],
+                ],
+                column_alignments: vec![MathColumnAlignment::Left],
+                column_gap: None,
+                row_gap: None,
+            },
+            16.0,
+            MathDisplay::Inline,
+        );
+        let right_aligned = layout_math(
+            &MathExpr::Table {
+                rows: vec![
+                    vec![MathExpr::Identifier("x".into())],
+                    vec![MathExpr::Identifier("xxxx".into())],
+                ],
+                column_alignments: vec![MathColumnAlignment::Right],
+                column_gap: None,
+                row_gap: None,
+            },
+            16.0,
+            MathDisplay::Inline,
+        );
+        let left_x = left_aligned
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph { text, x, .. } if text == "x" => Some(*x),
+                _ => None,
+            })
+            .expect("left-aligned first cell glyph");
+        let right_x = right_aligned
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph { text, x, .. } if text == "x" => Some(*x),
+                _ => None,
+            })
+            .expect("right-aligned first cell glyph");
+
+        assert!(left_x < 0.1, "left-aligned glyph x = {left_x}");
+        assert!(
+            right_x > left_x + 10.0,
+            "right alignment should shift narrow cells across wider columns"
+        );
+    }
+
+    #[test]
+    fn table_layout_honors_table_spacing() {
+        let loose = layout_math(
+            &MathExpr::Table {
+                rows: vec![
+                    vec![
+                        MathExpr::Identifier("a".into()),
+                        MathExpr::Identifier("b".into()),
+                    ],
+                    vec![
+                        MathExpr::Identifier("c".into()),
+                        MathExpr::Identifier("d".into()),
+                    ],
+                ],
+                column_alignments: Vec::new(),
+                column_gap: Some(2.0),
+                row_gap: Some(1.0),
+            },
+            16.0,
+            MathDisplay::Inline,
+        );
+        let tight = layout_math(
+            &MathExpr::Table {
+                rows: vec![
+                    vec![
+                        MathExpr::Identifier("a".into()),
+                        MathExpr::Identifier("b".into()),
+                    ],
+                    vec![
+                        MathExpr::Identifier("c".into()),
+                        MathExpr::Identifier("d".into()),
+                    ],
+                ],
+                column_alignments: Vec::new(),
+                column_gap: Some(0.25),
+                row_gap: Some(0.1),
+            },
+            16.0,
+            MathDisplay::Inline,
+        );
+
+        assert!(
+            loose.width > tight.width + 20.0,
+            "loose width = {}, tight width = {}",
+            loose.width,
+            tight.width
+        );
+        assert!(
+            loose.height() > tight.height() + 10.0,
+            "loose height = {}, tight height = {}",
+            loose.height(),
+            tight.height()
+        );
+    }
+
+    #[test]
+    fn table_layout_centers_on_math_axis() {
+        let layout = layout_math(
+            &MathExpr::Table {
+                rows: vec![
+                    vec![
+                        MathExpr::Identifier("a".into()),
+                        MathExpr::Identifier("b".into()),
+                    ],
+                    vec![
+                        MathExpr::Identifier("c".into()),
+                        MathExpr::Identifier("d".into()),
+                    ],
+                ],
+                column_alignments: Vec::new(),
+                column_gap: None,
+                row_gap: None,
+            },
+            16.0,
+            MathDisplay::Block,
+        );
+        let visual_center_y = (layout.descent - layout.ascent) * 0.5;
+        assert!(
+            visual_center_y < -2.0,
+            "table visual center should sit on the math axis above baseline, got {visual_center_y}"
+        );
+    }
+
+    #[test]
+    fn display_math_axis_tracks_rendered_plus_center() {
+        let size = 14.0;
+        let metrics = LayoutCtx {
+            size,
+            display: MathDisplay::Block,
+        }
+        .metrics();
+        let plus = math_glyph_layout("+", size, FontWeight::Regular);
+        let expected = plus.lines.first().unwrap().baseline - plus.line_height * 0.5;
+
+        assert!(
+            (metrics.math_axis_shift() - expected).abs() < 0.1,
+            "axis = {}, plus center = {expected}",
+            metrics.math_axis_shift()
+        );
+    }
+
+    #[test]
+    fn rejects_mismatched_tex_environment_end() {
+        let err = parse_tex(r"\begin{matrix}a\end{pmatrix}").expect_err("invalid environment");
+        assert!(err.message.contains(r"expected \end{matrix}"));
     }
 
     #[test]
@@ -1736,7 +2327,7 @@ mod tests {
         )
         .expect("valid mathml");
         match expr {
-            MathExpr::Table { rows } => {
+            MathExpr::Table { rows, .. } => {
                 assert_eq!(rows.len(), 2);
                 assert_eq!(rows[0].len(), 2);
                 assert_eq!(rows[1].len(), 2);
@@ -1754,6 +2345,66 @@ mod tests {
         assert!(layout.width > 20.0, "width = {}", layout.width);
         assert!(layout.ascent > 10.0, "ascent = {}", layout.ascent);
         assert!(layout.descent > 10.0, "descent = {}", layout.descent);
+    }
+
+    #[test]
+    fn parses_mathml_table_column_alignment() {
+        let expr = parse_mathml(
+            r#"
+            <math>
+              <mtable columnalign="left right">
+                <mtr>
+                  <mtd><mi>x</mi></mtd>
+                  <mtd><mn>100</mn></mtd>
+                </mtr>
+              </mtable>
+            </math>
+            "#,
+        )
+        .expect("valid aligned mathml table");
+        match expr {
+            MathExpr::Table {
+                column_alignments, ..
+            } => {
+                assert_eq!(
+                    column_alignments,
+                    vec![MathColumnAlignment::Left, MathColumnAlignment::Right]
+                );
+            }
+            other => panic!("expected table expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_mathml_table_spacing() {
+        let expr = parse_mathml(
+            r#"
+            <math>
+              <mtable columnspacing="0.5em" rowspacing="0.2em">
+                <mtr>
+                  <mtd><mi>a</mi></mtd>
+                  <mtd><mi>b</mi></mtd>
+                </mtr>
+                <mtr>
+                  <mtd><mi>c</mi></mtd>
+                  <mtd><mi>d</mi></mtd>
+                </mtr>
+              </mtable>
+            </math>
+            "#,
+        )
+        .expect("valid spaced mathml table");
+        match expr {
+            MathExpr::Table {
+                column_gap,
+                row_gap,
+                ..
+            } => {
+                assert_eq!(column_gap, Some(0.5));
+                assert_eq!(row_gap, Some(0.2));
+            }
+            other => panic!("expected table expression, got {other:?}"),
+        }
     }
 
     #[test]

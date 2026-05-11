@@ -126,6 +126,9 @@ The supported TeX subset is deliberately small:
 - superscripts and subscripts
 - display-style limits for common large operators such as `\sum`
 - simple `\left...\right` fences
+- matrix-like environments lowered to the shared table IR: `matrix`,
+  `pmatrix`, `bmatrix`, `Bmatrix`, `vmatrix`, `Vmatrix`, and `cases`
+- `array` environments with simple `l`, `c`, and `r` column alignment specs
 
 The supported MathML subset mirrors that same IR:
 
@@ -137,6 +140,8 @@ The supported MathML subset mirrors that same IR:
 - `munder`, `mover`, `munderover`
 - `mfenced`
 - `mtable`, `mtr`, `mtd`
+- table-level `columnalign` values `left`, `center`, `right`, and `decimal`
+- table-level `columnspacing` and `rowspacing` when expressed as `em` values
 
 This is enough to render smoke examples such as:
 
@@ -144,6 +149,8 @@ This is enough to render smoke examples such as:
 $e^{i\pi}+1=0$
 $$\frac{a^2+b^2}{\sqrt{x_1+x_2}}$$
 \left(\frac{a}{b}\right)
+\begin{bmatrix} a & b \\ c & d \end{bmatrix}
+\begin{array}{lr} x & 100 \\ xx & 2 \end{array}
 ```
 
 ## Visual Findings So Far
@@ -173,6 +180,24 @@ parentheses, brackets, braces, bars, angles, floors, and ceilings emit native
 vector atoms instead of scaled text glyphs, so tall fences do not become
 artificially bold. They still need OpenType MATH delimiter variants /
 assemblies for production-quality shapes.
+
+The TeX matrix adapter is now intentionally narrow: it recognizes the common
+LaTeX matrix environments, treats `&` as a cell separator and `\\` as a row
+separator inside those environments, then lowers the result into `Table` plus
+optional `Fenced` nodes. This keeps markdown, MathML, and future importers on
+the same core layout path. The same table path now carries per-column
+alignment and table gap metadata, with TeX `array`, TeX `cases`, MathML
+`columnalign`, and MathML spacing attributes as the first importers. TeX
+table-like environments accept a trailing row separator, but otherwise require
+consistent row widths; malformed table source becomes a math parse error
+instead of being guessed into shape.
+
+Display math currently derives its bootstrap math axis from the rendered `+`
+glyph, so fractions, display operators, and table-like structures share the
+same visual centerline while math glyphs are still routed through the text
+stack. Once math glyph selection moves fully onto the bundled math face, this
+should be replaced with the OpenType MATH `AxisHeight` constant from that same
+rendered face.
 
 ## Next Work Packages
 
