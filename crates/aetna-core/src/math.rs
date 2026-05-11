@@ -374,13 +374,13 @@ impl MathMetrics {
     }
 
     fn math_axis_shift(self) -> f32 {
-        if matches!(self.display, MathDisplay::Block)
-            && let Some(axis) = self.operator_axis_shift()
-        {
-            return axis;
-        }
         self.font_constants()
             .and_then(|constants| constants.axis_height(self.size))
+            .or_else(|| {
+                matches!(self.display, MathDisplay::Block)
+                    .then(|| self.operator_axis_shift())
+                    .flatten()
+            })
             .unwrap_or(self.size * 0.28)
     }
 
@@ -3802,19 +3802,25 @@ mod tests {
     }
 
     #[test]
-    fn display_math_axis_tracks_rendered_plus_center() {
+    fn math_axis_prefers_open_type_axis_height() {
         let size = 14.0;
         let metrics = LayoutCtx {
             size,
             display: MathDisplay::Block,
         }
         .metrics();
-        let plus = math_glyph_layout("+", size, FontWeight::Regular);
-        let expected = plus.lines.first().unwrap().baseline - plus.line_height * 0.5;
+        let expected = metrics
+            .font_constants()
+            .and_then(|constants| constants.axis_height(size))
+            .unwrap_or_else(|| {
+                metrics
+                    .operator_axis_shift()
+                    .expect("operator axis fallback")
+            });
 
         assert!(
             (metrics.math_axis_shift() - expected).abs() < 0.1,
-            "axis = {}, plus center = {expected}",
+            "axis = {}, expected = {expected}",
             metrics.math_axis_shift()
         );
     }

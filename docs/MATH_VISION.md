@@ -211,12 +211,11 @@ table-like environments accept a trailing row separator, but otherwise require
 consistent row widths; malformed table source becomes a math parse error
 instead of being guessed into shape.
 
-Display math currently derives its bootstrap math axis from the rendered `+`
-glyph, so fractions, display operators, and table-like structures share the
-same visual centerline while math glyphs are still routed through the text
-stack. Once math glyph selection moves fully onto the bundled math face, this
-should be replaced with the OpenType MATH `AxisHeight` constant from that same
-rendered face.
+Display math now takes its primary math axis from Noto Sans Math's OpenType
+MATH `AxisHeight` constant, with the earlier rendered `+` centerline retained
+as a fallback when the bundled math table is unavailable. Fractions, display
+operators, and table-like structures therefore share a centerline from the
+same metrics source as the other OpenType-backed math spacing constants.
 
 ## Next Work Packages
 
