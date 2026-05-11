@@ -20,7 +20,7 @@ const TABLE_COL_GAP_EM: f32 = 0.8;
 const TABLE_ROW_GAP_EM: f32 = 0.35;
 const CASES_COL_GAP_EM: f32 = 0.5;
 const RADICAL_GLYPH: char = '√';
-const STRETCHY_VARIANT_CHARS: [char; 13] = [
+const STRETCHY_VARIANT_CHARS: [char; 17] = [
     '(',
     ')',
     '[',
@@ -34,6 +34,10 @@ const STRETCHY_VARIANT_CHARS: [char; 13] = [
     '⌈',
     '⌉',
     RADICAL_GLYPH,
+    '∑',
+    '∏',
+    '⋂',
+    '⋃',
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -350,6 +354,16 @@ impl MathMetrics {
 
     fn radical_variant_for_height(self, target_height: f32) -> Option<OpenTypeDelimiterVariant> {
         self.stretchy_variant_for_height(RADICAL_GLYPH, target_height)
+    }
+
+    fn large_operator_variant_for_height(
+        self,
+        operator: &str,
+        target_height: f32,
+    ) -> Option<OpenTypeDelimiterVariant> {
+        let operator = single_char(operator)?;
+        is_large_operator_symbol(operator)
+            .then(|| self.stretchy_variant_for_height(operator, target_height))?
     }
 
     fn root_offset_x(self, index_width: f32) -> f32 {
@@ -1207,7 +1221,11 @@ fn layout_under_over(
     } else {
         ctx
     };
-    let base_layout = layout_expr(base, base_ctx);
+    let base_layout = if center_large_operator {
+        layout_large_operator_variant(base, base_ctx).unwrap_or_else(|| layout_expr(base, base_ctx))
+    } else {
+        layout_expr(base, base_ctx)
+    };
     let script_ctx = ctx.script();
     let under_layout = under.map(|expr| layout_expr(expr, script_ctx));
     let over_layout = over.map(|expr| layout_expr(expr, script_ctx));
@@ -1259,7 +1277,59 @@ fn is_display_limits_base(expr: &MathExpr) -> bool {
 }
 
 fn is_large_operator_base(expr: &MathExpr) -> bool {
-    matches!(expr, MathExpr::Operator(s) if matches!(s.as_str(), "∑" | "∏" | "⋂" | "⋃"))
+    matches!(expr, MathExpr::Operator(s) if is_large_operator_symbol_str(s))
+}
+
+fn is_large_operator_symbol_str(s: &str) -> bool {
+    single_char(s).is_some_and(is_large_operator_symbol)
+}
+
+fn is_large_operator_symbol(ch: char) -> bool {
+    matches!(ch, '∑' | '∏' | '⋂' | '⋃')
+}
+
+fn layout_large_operator_variant(expr: &MathExpr, ctx: LayoutCtx) -> Option<MathLayout> {
+    let MathExpr::Operator(operator) = expr else {
+        return None;
+    };
+    let metrics = ctx.metrics();
+    let variant = metrics.large_operator_variant_for_height(operator, ctx.size)?;
+    let bbox = variant.bbox?;
+    let constants = metrics.font_constants()?;
+    let scale = metrics.size / constants.units_per_em;
+    let view_box = glyph_advance_view_box(bbox, variant.horizontal_advance, None)?;
+    let glyph_width = view_box.w * scale;
+    let glyph_height = view_box.h * scale;
+    if glyph_width <= 0.0 || glyph_height <= 0.0 {
+        return None;
+    }
+    let width = (variant.horizontal_advance as f32 * scale).max(glyph_width);
+    let target_center_y = -metrics.math_axis_shift();
+    let glyph_center_y = view_box.y * scale + glyph_height * 0.5;
+    let glyph_y = target_center_y - glyph_center_y;
+    let side = metrics.operator_side_bearing(operator);
+    let rect = Rect::new(
+        side + (width - glyph_width) * 0.5,
+        glyph_y + view_box.y * scale,
+        glyph_width,
+        glyph_height,
+    );
+    Some(MathLayout {
+        width: width + side * 2.0,
+        ascent: -rect.y,
+        descent: rect.y + rect.h,
+        atoms: vec![MathAtom::GlyphId {
+            glyph_id: variant.glyph_id,
+            rect,
+            view_box,
+        }],
+    })
+}
+
+fn single_char(s: &str) -> Option<char> {
+    let mut chars = s.chars();
+    let ch = chars.next()?;
+    chars.next().is_none().then_some(ch)
 }
 
 fn layout_fenced(
@@ -2721,6 +2791,10 @@ mod tests {
             "radical should expose vertical math glyph variants"
         );
         assert!(
+            constants.delimiter_variant_count('∑') > 0,
+            "summation should expose vertical math glyph variants"
+        );
+        assert!(
             constants
                 .delimiter_first_variant_glyph_id('(')
                 .is_some_and(|glyph_id| glyph_id > 0),
@@ -2901,16 +2975,17 @@ mod tests {
             display: MathDisplay::Block,
         }
         .metrics();
-        let sum_y = layout
+        let sum_center_y = layout
             .atoms
             .iter()
             .find_map(|atom| match atom {
                 MathAtom::Glyph {
                     text, y_baseline, ..
                 } if text == "∑" => Some(*y_baseline),
+                MathAtom::GlyphId { rect, .. } => Some(rect.y + rect.h * 0.5),
                 _ => None,
             })
-            .expect("sum baseline");
+            .expect("sum center");
         let upper_y = layout
             .atoms
             .iter()
@@ -2946,30 +3021,27 @@ mod tests {
             "sum lower limit should sit below the operator"
         );
         assert!(
-            sum_y - upper_y >= metrics.upper_limit_baseline_rise() - 0.1,
+            sum_center_y - upper_y >= metrics.upper_limit_baseline_rise() - 0.1,
             "upper limit rise = {}, min = {}",
-            sum_y - upper_y,
+            sum_center_y - upper_y,
             metrics.upper_limit_baseline_rise()
         );
         assert!(
-            lower_y - sum_y >= metrics.lower_limit_baseline_drop() - 0.1,
+            lower_y - sum_center_y >= metrics.lower_limit_baseline_drop() - 0.1,
             "lower limit drop = {}, min = {}",
-            lower_y - sum_y,
+            lower_y - sum_center_y,
             metrics.lower_limit_baseline_drop()
         );
         assert!(
             layout
                 .atoms
                 .iter()
-                .any(|atom| matches!(atom, MathAtom::Glyph { text, size, .. } if text == "∑" && *size > 16.0)),
-            "display sum should use a larger operator glyph"
+                .any(|atom| matches!(atom, MathAtom::GlyphId { .. })),
+            "display sum should use an OpenType operator variant"
         );
         assert!(
-            layout
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, MathAtom::Glyph { text, y_baseline, .. } if text == "∑" && *y_baseline > 0.0)),
-            "display sum should shift the enlarged operator down to the parent math axis"
+            (sum_center_y + metrics.math_axis_shift()).abs() < 0.75,
+            "display sum should center on the parent math axis"
         );
     }
 

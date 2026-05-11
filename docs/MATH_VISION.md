@@ -176,6 +176,11 @@ stretchy delimiters, then extends the overbar as a rule over the radicand. The
 native vector radical remains as the fallback when a font does not expose a
 usable radical variant.
 
+Display-style large operators have started moving onto that same exact-glyph
+path. Sums, products, big intersections, and big unions with limits now prefer
+OpenType MATH vertical variants from Noto Sans Math instead of scaling a text
+glyph, so the operator grows without getting artificially heavy.
+
 Fenced delimiters follow the same bootstrap pattern: simple stretchable
 parentheses, brackets, braces, bars, angles, floors, and ceilings emit native
 vector atoms instead of scaled text glyphs when the enclosed expression crosses
@@ -255,7 +260,8 @@ math layout emits that glyph ID and draw-op resolution converts the bundled
 Noto Sans Math outline into a mask vector. When no delimiter variant is tall
 enough, the layout repeats OpenType assembly extender parts, distributes
 connector overlap so the final height tracks the target expression, and emits
-each assembly piece through the same glyph-id outline path.
+each assembly piece through the same glyph-id outline path. Display-style sums
+and sibling large operators with limits now use the same variant glyph bridge.
 
 ### 3. Inline Layout Quality
 
