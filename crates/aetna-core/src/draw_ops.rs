@@ -804,6 +804,15 @@ fn push_math_ops(
                     n, points, *thickness, origin_x, baseline_y, scissor, color, i, out,
                 );
             }
+            crate::math::MathAtom::Delimiter {
+                delimiter,
+                rect,
+                thickness,
+            } => {
+                push_math_delimiter_op(
+                    n, delimiter, *rect, *thickness, origin_x, baseline_y, scissor, color, i, out,
+                );
+            }
         }
     }
 }
@@ -860,6 +869,147 @@ fn push_math_radical_op(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
+fn push_math_delimiter_op(
+    n: &El,
+    delimiter: &str,
+    atom_rect: Rect,
+    thickness: f32,
+    origin_x: f32,
+    baseline_y: f32,
+    scissor: Option<Rect>,
+    color: Color,
+    atom_index: usize,
+    out: &mut Vec<DrawOp>,
+) {
+    use crate::vector::{
+        PathBuilder, VectorAsset, VectorLineCap, VectorLineJoin, VectorRenderMode,
+    };
+
+    let pad = thickness * 0.5;
+    let rect = Rect::new(
+        origin_x + atom_rect.x - pad,
+        baseline_y + atom_rect.y - pad,
+        atom_rect.w + pad * 2.0,
+        atom_rect.h + pad * 2.0,
+    );
+    let w = atom_rect.w;
+    let h = atom_rect.h;
+    let x = |v: f32| v + pad;
+    let y = |v: f32| v + pad;
+    let base = PathBuilder::new();
+    let path = match delimiter {
+        "(" => base.move_to(x(w * 0.86), y(0.0)).cubic_to(
+            x(w * 0.10),
+            y(h * 0.10),
+            x(w * 0.10),
+            y(h * 0.90),
+            x(w * 0.86),
+            y(h),
+        ),
+        ")" => base.move_to(x(w * 0.14), y(0.0)).cubic_to(
+            x(w * 0.90),
+            y(h * 0.10),
+            x(w * 0.90),
+            y(h * 0.90),
+            x(w * 0.14),
+            y(h),
+        ),
+        "[" => base
+            .move_to(x(w * 0.88), y(0.0))
+            .line_to(x(w * 0.12), y(0.0))
+            .line_to(x(w * 0.12), y(h))
+            .line_to(x(w * 0.88), y(h)),
+        "]" => base
+            .move_to(x(w * 0.12), y(0.0))
+            .line_to(x(w * 0.88), y(0.0))
+            .line_to(x(w * 0.88), y(h))
+            .line_to(x(w * 0.12), y(h)),
+        "{" => base
+            .move_to(x(w * 0.86), y(0.0))
+            .cubic_to(
+                x(w * 0.20),
+                y(h * 0.04),
+                x(w * 0.56),
+                y(h * 0.39),
+                x(w * 0.18),
+                y(h * 0.48),
+            )
+            .quad_to(x(w * 0.04), y(h * 0.50), x(w * 0.18), y(h * 0.52))
+            .cubic_to(
+                x(w * 0.56),
+                y(h * 0.61),
+                x(w * 0.20),
+                y(h * 0.96),
+                x(w * 0.86),
+                y(h),
+            ),
+        "}" => base
+            .move_to(x(w * 0.14), y(0.0))
+            .cubic_to(
+                x(w * 0.80),
+                y(h * 0.04),
+                x(w * 0.44),
+                y(h * 0.39),
+                x(w * 0.82),
+                y(h * 0.48),
+            )
+            .quad_to(x(w * 0.96), y(h * 0.50), x(w * 0.82), y(h * 0.52))
+            .cubic_to(
+                x(w * 0.44),
+                y(h * 0.61),
+                x(w * 0.80),
+                y(h * 0.96),
+                x(w * 0.14),
+                y(h),
+            ),
+        "|" => base.move_to(x(w * 0.5), y(0.0)).line_to(x(w * 0.5), y(h)),
+        "‖" => base
+            .move_to(x(w * 0.34), y(0.0))
+            .line_to(x(w * 0.34), y(h))
+            .move_to(x(w * 0.66), y(0.0))
+            .line_to(x(w * 0.66), y(h)),
+        "⟨" => base
+            .move_to(x(w * 0.84), y(0.0))
+            .line_to(x(w * 0.18), y(h * 0.5))
+            .line_to(x(w * 0.84), y(h)),
+        "⟩" => base
+            .move_to(x(w * 0.16), y(0.0))
+            .line_to(x(w * 0.82), y(h * 0.5))
+            .line_to(x(w * 0.16), y(h)),
+        "⌊" => base
+            .move_to(x(w * 0.18), y(0.0))
+            .line_to(x(w * 0.18), y(h))
+            .line_to(x(w * 0.88), y(h)),
+        "⌋" => base
+            .move_to(x(w * 0.82), y(0.0))
+            .line_to(x(w * 0.82), y(h))
+            .line_to(x(w * 0.12), y(h)),
+        "⌈" => base
+            .move_to(x(w * 0.88), y(0.0))
+            .line_to(x(w * 0.18), y(0.0))
+            .line_to(x(w * 0.18), y(h)),
+        "⌉" => base
+            .move_to(x(w * 0.12), y(0.0))
+            .line_to(x(w * 0.82), y(0.0))
+            .line_to(x(w * 0.82), y(h)),
+        _ => return,
+    }
+    .stroke_solid(color, thickness)
+    .stroke_line_cap(VectorLineCap::Round)
+    .stroke_line_join(VectorLineJoin::Round)
+    .build();
+
+    let asset = VectorAsset::from_paths([0.0, 0.0, rect.w, rect.h], vec![path]);
+    out.push(DrawOp::Vector {
+        id: format!("{}.math-delimiter.{atom_index}", n.computed_id),
+        rect,
+        scissor,
+        asset: std::sync::Arc::new(asset),
+        render_mode: VectorRenderMode::Painted,
+    });
+}
+
 fn push_inline_mixed_ops(
     n: &El,
     rect: Rect,
@@ -872,10 +1022,12 @@ fn push_inline_mixed_ops(
     let mut line_ascent = n.font_size * 0.82;
     let mut line_descent = n.font_size * 0.22;
     let line_advance = |ascent: f32, descent: f32| (ascent + descent).max(n.line_height);
+    let mut pending_text = PendingInlineText::default();
 
     for (i, child) in n.children.iter().enumerate() {
         match child.kind {
             Kind::HardBreak => {
+                pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
                 baseline_y += line_advance(line_ascent, line_descent);
                 x = 0.0;
                 line_ascent = n.font_size * 0.82;
@@ -895,6 +1047,7 @@ fn push_inline_mixed_ops(
                             && x > 0.0
                             && x + w > rect.w
                         {
+                            pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
                             baseline_y += line_advance(line_ascent, line_descent);
                             x = 0.0;
                             line_ascent = n.font_size * 0.82;
@@ -905,9 +1058,14 @@ fn push_inline_mixed_ops(
                         }
                         line_ascent = line_ascent.max(ascent);
                         line_descent = line_descent.max(descent);
-                        push_inline_text_chunk(
-                            n, child, chunk, i, chunk_i, rect, scissor, opacity, x, baseline_y, out,
-                        );
+                        if is_space && pending_text.is_empty() {
+                            x += w;
+                            continue;
+                        }
+                        if !pending_text.can_push(child) {
+                            pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
+                        }
+                        pending_text.push(child, i, chunk_i, chunk, x);
                         x += w;
                     }
                 }
@@ -919,11 +1077,13 @@ fn push_inline_mixed_ops(
                         crate::math::layout_math(expr, child.font_size, child.math_display);
                     if matches!(n.text_wrap, TextWrap::Wrap) && x > 0.0 && x + layout.width > rect.w
                     {
+                        pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
                         baseline_y += line_advance(line_ascent, line_descent);
                         x = 0.0;
                         line_ascent = n.font_size * 0.82;
                         line_descent = n.font_size * 0.22;
                     }
+                    pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
                     line_ascent = line_ascent.max(layout.ascent);
                     line_descent = line_descent.max(layout.descent);
                     let math_rect = Rect::new(
@@ -939,17 +1099,103 @@ fn push_inline_mixed_ops(
             _ => {
                 let (w, ascent, descent) = inline_child_paint_metrics(child);
                 if matches!(n.text_wrap, TextWrap::Wrap) && x > 0.0 && x + w > rect.w {
+                    pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
                     baseline_y += line_advance(line_ascent, line_descent);
                     x = 0.0;
                     line_ascent = n.font_size * 0.82;
                     line_descent = n.font_size * 0.22;
                 }
+                pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
                 line_ascent = line_ascent.max(ascent);
                 line_descent = line_descent.max(descent);
                 x += w;
             }
         }
     }
+    pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
+}
+
+#[derive(Default)]
+struct PendingInlineText {
+    text: String,
+    x: f32,
+    child_index: usize,
+    chunk_index: usize,
+    child: Option<El>,
+}
+
+impl PendingInlineText {
+    fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+
+    fn can_push(&self, child: &El) -> bool {
+        self.child
+            .as_ref()
+            .map(|existing| same_inline_text_style(existing, child))
+            .unwrap_or(true)
+    }
+
+    fn push(&mut self, child: &El, child_index: usize, chunk_index: usize, text: &str, x: f32) {
+        if text.is_empty() {
+            return;
+        }
+        if self.child.is_none() {
+            self.x = x;
+            self.child_index = child_index;
+            self.chunk_index = chunk_index;
+            self.child = Some(child.clone());
+        }
+        self.text.push_str(text);
+    }
+
+    fn flush(
+        &mut self,
+        parent: &El,
+        rect: Rect,
+        scissor: Option<Rect>,
+        opacity: f32,
+        baseline_y: f32,
+        out: &mut Vec<DrawOp>,
+    ) {
+        let Some(child) = self.child.as_ref() else {
+            return;
+        };
+        if !self.text.is_empty() {
+            push_inline_text_chunk(
+                parent,
+                child,
+                &self.text,
+                self.child_index,
+                self.chunk_index,
+                rect,
+                scissor,
+                opacity,
+                self.x,
+                baseline_y,
+                out,
+            );
+        }
+        self.clear();
+    }
+
+    fn clear(&mut self) {
+        self.text.clear();
+        self.child = None;
+    }
+}
+
+fn same_inline_text_style(a: &El, b: &El) -> bool {
+    a.font_size == b.font_size
+        && a.line_height == b.line_height
+        && a.font_family == b.font_family
+        && a.mono_font_family == b.mono_font_family
+        && a.font_weight == b.font_weight
+        && a.font_mono == b.font_mono
+        && a.text_color == b.text_color
+        && a.text_underline == b.text_underline
+        && a.text_strikethrough == b.text_strikethrough
+        && a.text_link == b.text_link
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2123,6 +2369,41 @@ mod tests {
             panic!("expected glyph run");
         };
         assert_eq!(*wrap, TextWrap::Wrap);
+    }
+
+    #[test]
+    fn inline_math_batches_same_style_text_runs() {
+        let expr = crate::math::parse_tex("x_1+x_2").expect("valid tex");
+        let mut root = crate::text_runs([
+            crate::text("Alpha beta gamma "),
+            crate::math_inline(expr),
+            crate::text(" delta epsilon"),
+        ])
+        .width(Size::Fixed(600.0));
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 600.0, 80.0));
+
+        let ops = draw_ops(&root, &state);
+        let inline_runs: Vec<(&str, Rect)> = ops
+            .iter()
+            .filter_map(|op| {
+                let DrawOp::GlyphRun { id, text, rect, .. } = op else {
+                    return None;
+                };
+                if id.contains(".inline-text.") {
+                    return Some((text.as_str(), *rect));
+                }
+                None
+            })
+            .collect();
+
+        assert_eq!(inline_runs.len(), 2);
+        assert_eq!(inline_runs[0].0, "Alpha beta gamma ");
+        assert_eq!(inline_runs[1].0, "delta epsilon");
+        assert!(
+            inline_runs[1].1.x > inline_runs[0].1.right(),
+            "post-math text keeps the leading-space advance without painting a separate space run"
+        );
     }
 
     #[test]

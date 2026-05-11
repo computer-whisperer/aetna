@@ -60,6 +60,7 @@ like a small subset of MathML Core:
 - `Root`
 - `Scripts`
 - `UnderOver`
+- `Fenced`
 - `Table`
 - `Error`
 
@@ -103,6 +104,8 @@ lower cleanly during `draw_ops`.
 The current in-progress implementation has:
 
 - `aetna_core::math::{MathExpr, MathDisplay, MathLayout, MathAtom}`
+- an internal `MathMetrics` layer that centralizes current math sizing
+  constants before they are replaced with OpenType MATH values
 - a small `parse_tex` helper in core for the initial vertical slice
 - a small `parse_mathml` / `parse_mathml_with_display` adapter for the
   matching Presentation MathML subset
@@ -122,6 +125,7 @@ The supported TeX subset is deliberately small:
 - `\sqrt` and indexed `\sqrt[n]{...}`
 - superscripts and subscripts
 - display-style limits for common large operators such as `\sum`
+- simple `\left...\right` fences
 
 The supported MathML subset mirrors that same IR:
 
@@ -131,6 +135,7 @@ The supported MathML subset mirrors that same IR:
 - `msqrt`, `mroot`
 - `msub`, `msup`, `msubsup`
 - `munder`, `mover`, `munderover`
+- `mfenced`
 - `mtable`, `mtr`, `mtd`
 
 This is enough to render smoke examples such as:
@@ -138,6 +143,7 @@ This is enough to render smoke examples such as:
 ```text
 $e^{i\pi}+1=0$
 $$\frac{a^2+b^2}{\sqrt{x_1+x_2}}$$
+\left(\frac{a}{b}\right)
 ```
 
 ## Visual Findings So Far
@@ -146,9 +152,14 @@ The first visual fixture was valuable. It exposed two issues immediately:
 
 - Mixed inline paragraphs cannot treat text runs as atomic when math appears
   inside them. The current fix tokenizes text into word/space chunks while
-  keeping math expressions atomic.
+  keeping math expressions atomic, then batches same-style text back into
+  line-local glyph runs so ordinary prose spacing is not degraded by the math
+  embed path.
 - Inline built-up fractions need a math axis above the prose baseline. The
   current fraction layout raises the rule and tightens inline fraction spacing.
+- SVG fixture PNGs must render with the same bundled font family that core
+  layout measured. The SVG bundle path emits resolved Aetna family names, and
+  `tools/svg_to_png.sh` supplies fontconfig paths for the bundled faces.
 
 The radical rendering has moved past the first `√` glyph plus separate overbar
 rule. The current implementation emits one vector-backed radical atom so the
@@ -156,6 +167,12 @@ check, stem, and overbar are visually joined in SVG and native backends. This
 is good enough for the bootstrap fixture, but the metrics are still heuristic;
 the final path should come from OpenType MATH constants and glyph variants or a
 better native assembly.
+
+Fenced delimiters follow the same bootstrap pattern: simple stretchable
+parentheses, brackets, braces, bars, angles, floors, and ceilings emit native
+vector atoms instead of scaled text glyphs, so tall fences do not become
+artificially bold. They still need OpenType MATH delimiter variants /
+assemblies for production-quality shapes.
 
 ## Next Work Packages
 
@@ -186,6 +203,14 @@ Move layout constants toward OpenType MATH data:
 The bundled Noto Sans Math face is already available through the default
 symbols font bundle, so the missing piece is reading and applying math-table
 metrics.
+
+The first preparatory step is in place: current heuristic values flow through
+an internal metrics helper instead of being embedded directly in every layout
+function. That helper now reads the bundled Noto Sans Math MATH table for the
+low-risk values that are already close to the tuned heuristics: script scale,
+fraction rule thickness, and radical rule thickness. The next step is widening
+that bridge to the axis, fraction gaps/shifts, radical gaps, and delimiter
+assemblies.
 
 ### 3. Inline Layout Quality
 

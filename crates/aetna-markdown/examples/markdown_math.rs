@@ -19,7 +19,7 @@ $$
 $$
 
 The first TeX slice intentionally covers the structural basics:
-$\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, $\\sqrt[3]{x+1}$, and $y_{n+1}=y_n+x^2$.
+$\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, $\\sqrt[3]{x+1}$, $\\left(\\frac{a}{b}\\right)$, and $y_{n+1}=y_n+x^2$.
 ";
 
 const MATHML_SOURCE: &str = r#"
@@ -53,16 +53,18 @@ const MATHML_SOURCE: &str = r#"
       <mi>n</mi>
     </munderover>
     <mo>+</mo>
-    <mtable>
-      <mtr>
-        <mtd><mi>a</mi></mtd>
-        <mtd><mi>b</mi></mtd>
-      </mtr>
-      <mtr>
-        <mtd><mi>c</mi></mtd>
-        <mtd><mi>d</mi></mtd>
-      </mtr>
-    </mtable>
+    <mfenced open="[" close="]">
+      <mtable>
+        <mtr>
+          <mtd><mi>a</mi></mtd>
+          <mtd><mi>b</mi></mtd>
+        </mtr>
+        <mtr>
+          <mtd><mi>c</mi></mtd>
+          <mtd><mi>d</mi></mtd>
+        </mtr>
+      </mtable>
+    </mfenced>
   </mrow>
 </math>
 "#;

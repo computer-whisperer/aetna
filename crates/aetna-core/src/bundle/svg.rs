@@ -620,9 +620,9 @@ fn emit_glyph_run(
         TextWrap::Wrap => rect.y,
     };
     let family = if mono {
-        mono_family.css_stack()
+        mono_family.family_name()
     } else {
-        family.css_stack()
+        family.family_name()
     };
     let weight_str = match weight {
         FontWeight::Regular => "400",
@@ -744,9 +744,9 @@ fn emit_attributed_text(
     );
     for (text, style) in runs {
         let family = if style.mono {
-            style.mono_family.css_stack()
+            style.mono_family.family_name()
         } else {
-            style.family.css_stack()
+            style.family.family_name()
         };
         let weight_str = match style.weight {
             FontWeight::Regular => "400",
@@ -1101,6 +1101,19 @@ mod tests {
         assert!(
             svg.contains(r#"data-icon="check""#),
             "expected built-in `data-icon=\"check\"`, got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn text_emits_resolved_font_family_for_fixture_renderers() {
+        let svg = render(crate::text("Hello"));
+        assert!(
+            svg.contains(r#"font-family="Inter Variable""#),
+            "SVG fixture text should emit the resolved Aetna family for fontconfig renderers, got:\n{svg}"
+        );
+        assert!(
+            !svg.contains("ui-sans-serif"),
+            "browser-style font stacks make rsvg/resvg fall back to different metrics:\n{svg}"
         );
     }
 

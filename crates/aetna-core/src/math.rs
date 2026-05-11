@@ -54,6 +54,11 @@ pub enum MathExpr {
         under: Option<Arc<MathExpr>>,
         over: Option<Arc<MathExpr>>,
     },
+    Fenced {
+        open: Option<String>,
+        close: Option<String>,
+        body: Arc<MathExpr>,
+    },
     Table {
         rows: Vec<Vec<MathExpr>>,
     },
@@ -102,6 +107,11 @@ pub enum MathAtom {
         points: [[f32; 2]; 5],
         thickness: f32,
     },
+    Delimiter {
+        delimiter: String,
+        rect: Rect,
+        thickness: f32,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -113,21 +123,243 @@ struct LayoutCtx {
 impl LayoutCtx {
     fn script(self) -> Self {
         Self {
-            size: (self.size * SCRIPT_SCALE).max(6.0),
+            size: self.metrics().script_size(),
             display: MathDisplay::Inline,
         }
     }
 
-    fn rule_thickness(self) -> f32 {
-        (DEFAULT_RULE_THICKNESS * self.size / 16.0).max(0.75)
-    }
-
     fn large_operator(self) -> Self {
         Self {
-            size: self.size * LARGE_OPERATOR_SCALE,
+            size: self.metrics().large_operator_size(),
             display: self.display,
         }
     }
+
+    fn metrics(self) -> MathMetrics {
+        MathMetrics {
+            size: self.size,
+            display: self.display,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MathMetrics {
+    size: f32,
+    display: MathDisplay,
+}
+
+impl MathMetrics {
+    fn font_constants(self) -> Option<OpenTypeMathConstants> {
+        open_type_math_constants()
+    }
+
+    fn script_size(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.script_scale(self.size))
+            .unwrap_or(self.size * SCRIPT_SCALE)
+            .max(6.0)
+    }
+
+    fn large_operator_size(self) -> f32 {
+        self.size * LARGE_OPERATOR_SCALE
+    }
+
+    fn rule_thickness(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.fraction_rule_thickness(self.size))
+            .unwrap_or(DEFAULT_RULE_THICKNESS * self.size / 16.0)
+            .max(0.75)
+    }
+
+    fn radical_rule_thickness(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.radical_rule_thickness(self.size))
+            .unwrap_or_else(|| self.rule_thickness())
+            .max(0.75)
+    }
+
+    fn default_ascent(self) -> f32 {
+        self.size * 0.75
+    }
+
+    fn default_descent(self) -> f32 {
+        self.size * 0.25
+    }
+
+    fn glyph_ascent(self) -> f32 {
+        self.size * 0.82
+    }
+
+    fn glyph_descent(self) -> f32 {
+        self.size * 0.22
+    }
+
+    fn space_width(self, em: f32) -> f32 {
+        self.size * em
+    }
+
+    fn operator_side_bearing(self, operator: &str) -> f32 {
+        match operator {
+            "+" | "-" | "=" | "<" | ">" | "≤" | "≥" | "≠" | "×" | "÷" | "→" | "←" | "↔" | "∪"
+            | "∩" | "⋃" | "⋂" => self.size * 0.18,
+            "∑" | "∏" | "∫" => self.size * 0.12,
+            "," | "." | ";" | ":" => self.size * 0.08,
+            _ => 0.0,
+        }
+    }
+
+    fn fraction_pad(self) -> f32 {
+        self.size
+            * if matches!(self.display, MathDisplay::Block) {
+                FRACTION_PAD_EM
+            } else {
+                FRACTION_PAD_EM * 0.65
+            }
+    }
+
+    fn fraction_gap(self) -> f32 {
+        self.size
+            * if matches!(self.display, MathDisplay::Block) {
+                FRACTION_GAP_EM
+            } else {
+                FRACTION_GAP_EM * 0.55
+            }
+    }
+
+    fn fraction_axis_shift(self) -> f32 {
+        self.size
+            * if matches!(self.display, MathDisplay::Block) {
+                0.18
+            } else {
+                0.28
+            }
+    }
+
+    fn sqrt_gap(self) -> f32 {
+        self.size * SQRT_GAP_EM
+    }
+
+    fn radical_width(self) -> f32 {
+        self.size * 0.72
+    }
+
+    fn radical_left_flair_y(self) -> f32 {
+        -self.size * 0.03
+    }
+
+    fn radical_hook_x(self) -> f32 {
+        self.size * 0.12
+    }
+
+    fn radical_hook_y(self) -> f32 {
+        -self.size * 0.1
+    }
+
+    fn radical_tick_x(self) -> f32 {
+        self.size * 0.24
+    }
+
+    fn radical_tick_y(self, inner_descent: f32) -> f32 {
+        (inner_descent * 0.75).max(self.size * 0.13)
+    }
+
+    fn root_offset_x(self, index_width: f32) -> f32 {
+        index_width * 0.55
+    }
+
+    fn root_index_shift(self, root_ascent: f32) -> f32 {
+        -root_ascent * 0.52
+    }
+
+    fn script_gap(self) -> f32 {
+        self.size * 0.06
+    }
+
+    fn superscript_shift(self, base_ascent: f32, sup_descent: f32) -> f32 {
+        -(base_ascent * 0.58).max(sup_descent + self.size * 0.18)
+    }
+
+    fn subscript_shift(self, base_descent: f32, sub_ascent: f32) -> f32 {
+        (base_descent + sub_ascent * 0.72).max(self.size * 0.28)
+    }
+
+    fn under_over_gap(self) -> f32 {
+        self.size * 0.12
+    }
+
+    fn table_col_gap(self) -> f32 {
+        self.size * TABLE_COL_GAP_EM
+    }
+
+    fn table_row_gap(self) -> f32 {
+        self.size * TABLE_ROW_GAP_EM
+    }
+
+    fn delimiter_gap(self) -> f32 {
+        self.size * 0.08
+    }
+
+    fn delimiter_overshoot(self) -> f32 {
+        (self.size * 0.08).max(self.rule_thickness())
+    }
+
+    fn delimiter_width(self) -> f32 {
+        self.size * 0.42
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct OpenTypeMathConstants {
+    units_per_em: f32,
+    script_percent_scale_down: i16,
+    fraction_rule_thickness: i16,
+    radical_rule_thickness: i16,
+}
+
+impl OpenTypeMathConstants {
+    fn font_units(self, value: i16, size: f32) -> Option<f32> {
+        (value > 0 && self.units_per_em > 0.0).then(|| value as f32 / self.units_per_em * size)
+    }
+
+    fn script_scale(self, size: f32) -> Option<f32> {
+        (self.script_percent_scale_down > 0)
+            .then(|| size * self.script_percent_scale_down as f32 / 100.0)
+    }
+
+    fn fraction_rule_thickness(self, size: f32) -> Option<f32> {
+        self.font_units(self.fraction_rule_thickness, size)
+    }
+
+    fn radical_rule_thickness(self, size: f32) -> Option<f32> {
+        self.font_units(self.radical_rule_thickness, size)
+    }
+}
+
+fn open_type_math_constants() -> Option<OpenTypeMathConstants> {
+    #[cfg(feature = "symbols")]
+    {
+        static CONSTANTS: std::sync::OnceLock<Option<OpenTypeMathConstants>> =
+            std::sync::OnceLock::new();
+        *CONSTANTS
+            .get_or_init(|| parse_open_type_math_constants(aetna_fonts::NOTO_SANS_MATH_REGULAR))
+    }
+    #[cfg(not(feature = "symbols"))]
+    {
+        None
+    }
+}
+
+#[cfg(feature = "symbols")]
+fn parse_open_type_math_constants(font: &[u8]) -> Option<OpenTypeMathConstants> {
+    let face = ttf_parser::Face::parse(font, 0).ok()?;
+    let constants = face.tables().math?.constants?;
+    Some(OpenTypeMathConstants {
+        units_per_em: face.units_per_em() as f32,
+        script_percent_scale_down: constants.script_percent_scale_down(),
+        fraction_rule_thickness: constants.fraction_rule_thickness().value,
+        radical_rule_thickness: constants.radical_rule_thickness().value,
+    })
 }
 
 pub fn layout_math(expr: &MathExpr, size: f32, display: MathDisplay) -> MathLayout {
@@ -135,6 +367,7 @@ pub fn layout_math(expr: &MathExpr, size: f32, display: MathDisplay) -> MathLayo
 }
 
 fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
+    let metrics = ctx.metrics();
     match expr {
         MathExpr::Row(children) => layout_row(children, ctx),
         MathExpr::Identifier(s) => layout_glyph(s, ctx, FontWeight::Regular, true),
@@ -142,9 +375,9 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
         MathExpr::Operator(s) => layout_operator(s, ctx),
         MathExpr::Text(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
         MathExpr::Space(em) => MathLayout {
-            width: ctx.size * *em,
-            ascent: ctx.size * 0.75,
-            descent: ctx.size * 0.25,
+            width: metrics.space_width(*em),
+            ascent: metrics.default_ascent(),
+            descent: metrics.default_descent(),
             atoms: Vec::new(),
         },
         MathExpr::Fraction {
@@ -159,6 +392,7 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
         MathExpr::UnderOver { base, under, over } => {
             layout_under_over(base, under.as_deref(), over.as_deref(), ctx)
         }
+        MathExpr::Fenced { open, close, body } => layout_fenced(open, close, body, ctx),
         MathExpr::Table { rows } => layout_table(rows, ctx),
         MathExpr::Error(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
     }
@@ -166,8 +400,9 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
 
 fn layout_row(children: &[MathExpr], ctx: LayoutCtx) -> MathLayout {
     let mut width = 0.0;
-    let mut ascent: f32 = ctx.size * 0.75;
-    let mut descent: f32 = ctx.size * 0.25;
+    let metrics = ctx.metrics();
+    let mut ascent: f32 = metrics.default_ascent();
+    let mut descent: f32 = metrics.default_descent();
     let mut atoms = Vec::new();
     for child in children {
         let child_layout = layout_expr(child, ctx);
@@ -196,8 +431,8 @@ fn layout_glyph(s: &str, ctx: LayoutCtx, weight: FontWeight, italic: bool) -> Ma
     let measured = text_metrics::measure_text(s, ctx.size, weight, false, TextWrap::NoWrap, None);
     MathLayout {
         width: measured.width,
-        ascent: ctx.size * 0.82,
-        descent: ctx.size * 0.22,
+        ascent: ctx.metrics().glyph_ascent(),
+        descent: ctx.metrics().glyph_descent(),
         atoms: vec![MathAtom::Glyph {
             text: s.to_string(),
             x: 0.0,
@@ -211,7 +446,7 @@ fn layout_glyph(s: &str, ctx: LayoutCtx, weight: FontWeight, italic: bool) -> Ma
 
 fn layout_operator(s: &str, ctx: LayoutCtx) -> MathLayout {
     let mut layout = layout_glyph(s, ctx, FontWeight::Regular, false);
-    let side = operator_side_bearing(s, ctx.size);
+    let side = ctx.metrics().operator_side_bearing(s);
     if side > 0.0 {
         for atom in &mut layout.atoms {
             if let MathAtom::Glyph { x, .. } = atom {
@@ -223,18 +458,8 @@ fn layout_operator(s: &str, ctx: LayoutCtx) -> MathLayout {
     layout
 }
 
-fn operator_side_bearing(s: &str, size: f32) -> f32 {
-    match s {
-        "+" | "-" | "=" | "<" | ">" | "≤" | "≥" | "≠" | "×" | "÷" | "→" | "←" | "↔" | "∪" | "∩"
-        | "⋃" | "⋂" => size * 0.18,
-        "∑" | "∏" | "∫" => size * 0.12,
-        "," | "." | ";" | ":" => size * 0.08,
-        _ => 0.0,
-    }
-}
-
 fn layout_fraction(numerator: &MathExpr, denominator: &MathExpr, ctx: LayoutCtx) -> MathLayout {
-    let display_fraction = matches!(ctx.display, MathDisplay::Block);
+    let metrics = ctx.metrics();
     let child_ctx = if matches!(ctx.display, MathDisplay::Block) {
         ctx
     } else {
@@ -242,23 +467,13 @@ fn layout_fraction(numerator: &MathExpr, denominator: &MathExpr, ctx: LayoutCtx)
     };
     let num = layout_expr(numerator, child_ctx);
     let den = layout_expr(denominator, child_ctx);
-    let pad = ctx.size
-        * if display_fraction {
-            FRACTION_PAD_EM
-        } else {
-            FRACTION_PAD_EM * 0.65
-        };
-    let gap = ctx.size
-        * if display_fraction {
-            FRACTION_GAP_EM
-        } else {
-            FRACTION_GAP_EM * 0.55
-        };
-    let rule = ctx.rule_thickness();
+    let pad = metrics.fraction_pad();
+    let gap = metrics.fraction_gap();
+    let rule = metrics.rule_thickness();
     // The math axis sits above the prose baseline. Keeping the fraction
     // rule on that axis makes inline fractions read as part of the line
     // instead of hanging mostly below it.
-    let axis_shift = ctx.size * if display_fraction { 0.18 } else { 0.28 };
+    let axis_shift = metrics.fraction_axis_shift();
     let rule_center_y = -axis_shift;
     let width = num.width.max(den.width) + pad * 2.0;
     let num_x = (width - num.width) * 0.5;
@@ -282,20 +497,21 @@ fn layout_fraction(numerator: &MathExpr, denominator: &MathExpr, ctx: LayoutCtx)
 }
 
 fn layout_sqrt(child: &MathExpr, ctx: LayoutCtx) -> MathLayout {
+    let metrics = ctx.metrics();
     let inner = layout_expr(child, ctx);
-    let gap = ctx.size * SQRT_GAP_EM;
-    let rule = ctx.rule_thickness();
-    let radical_w = ctx.size * 0.72;
+    let gap = metrics.sqrt_gap();
+    let rule = metrics.radical_rule_thickness();
+    let radical_w = metrics.radical_width();
     let inner_x = radical_w + gap;
     let bar_y = -inner.ascent - gap - rule * 0.5;
-    let tick_y = (inner.descent * 0.75).max(ctx.size * 0.13);
+    let tick_y = metrics.radical_tick_y(inner.descent);
     let end_x = inner_x + inner.width;
     let mut atoms = Vec::new();
     atoms.push(MathAtom::Radical {
         points: [
-            [0.0, -ctx.size * 0.03],
-            [ctx.size * 0.12, -ctx.size * 0.1],
-            [ctx.size * 0.24, tick_y],
+            [0.0, metrics.radical_left_flair_y()],
+            [metrics.radical_hook_x(), metrics.radical_hook_y()],
+            [metrics.radical_tick_x(), tick_y],
             [radical_w, bar_y],
             [end_x, bar_y],
         ],
@@ -311,10 +527,11 @@ fn layout_sqrt(child: &MathExpr, ctx: LayoutCtx) -> MathLayout {
 }
 
 fn layout_root(base: &MathExpr, index: &MathExpr, ctx: LayoutCtx) -> MathLayout {
+    let metrics = ctx.metrics();
     let root = layout_sqrt(base, ctx);
     let index = layout_expr(index, ctx.script());
-    let root_x = index.width * 0.55;
-    let index_dy = -root.ascent * 0.52;
+    let root_x = metrics.root_offset_x(index.width);
+    let index_dy = metrics.root_index_shift(root.ascent);
     let mut atoms = Vec::new();
     translate_atoms(&mut atoms, index.atoms, 0.0, index_dy);
     translate_atoms(&mut atoms, root.atoms, root_x, 0.0);
@@ -339,15 +556,16 @@ fn layout_scripts(
     let script_ctx = ctx.script();
     let sub_layout = sub.map(|expr| layout_expr(expr, script_ctx));
     let sup_layout = sup.map(|expr| layout_expr(expr, script_ctx));
-    let script_gap = ctx.size * 0.06;
+    let metrics = ctx.metrics();
+    let script_gap = metrics.script_gap();
     let script_x = base_layout.width + script_gap;
     let sup_dy = sup_layout
         .as_ref()
-        .map(|sup| -(base_layout.ascent * 0.58).max(sup.descent + ctx.size * 0.18))
+        .map(|sup| metrics.superscript_shift(base_layout.ascent, sup.descent))
         .unwrap_or(0.0);
     let sub_dy = sub_layout
         .as_ref()
-        .map(|sub| (base_layout.descent + sub.ascent * 0.72).max(ctx.size * 0.28))
+        .map(|sub| metrics.subscript_shift(base_layout.descent, sub.ascent))
         .unwrap_or(0.0);
     let mut atoms = Vec::new();
     translate_atoms(&mut atoms, base_layout.atoms, 0.0, 0.0);
@@ -387,7 +605,7 @@ fn layout_under_over(
     let script_ctx = ctx.script();
     let under_layout = under.map(|expr| layout_expr(expr, script_ctx));
     let over_layout = over.map(|expr| layout_expr(expr, script_ctx));
-    let gap = ctx.size * 0.12;
+    let gap = ctx.metrics().under_over_gap();
     let width = base_layout
         .width
         .max(under_layout.as_ref().map(|l| l.width).unwrap_or(0.0))
@@ -429,6 +647,94 @@ fn is_large_operator_base(expr: &MathExpr) -> bool {
     matches!(expr, MathExpr::Operator(s) if matches!(s.as_str(), "∑" | "∏" | "⋂" | "⋃"))
 }
 
+fn layout_fenced(
+    open: &Option<String>,
+    close: &Option<String>,
+    body: &MathExpr,
+    ctx: LayoutCtx,
+) -> MathLayout {
+    let body_layout = layout_expr(body, ctx);
+    let delimiter_rect = delimiter_rect(&body_layout, ctx);
+    let metrics = ctx.metrics();
+    let gap = metrics.delimiter_gap();
+    let open_layout = open
+        .as_deref()
+        .map(|delimiter| layout_delimiter(delimiter, delimiter_rect, ctx));
+    let close_layout = close
+        .as_deref()
+        .map(|delimiter| layout_delimiter(delimiter, delimiter_rect, ctx));
+    let open_width = open_layout
+        .as_ref()
+        .map(|layout| layout.width + gap)
+        .unwrap_or(0.0);
+    let close_width = close_layout
+        .as_ref()
+        .map(|layout| layout.width + gap)
+        .unwrap_or(0.0);
+    let delimiter_ascent = open_layout
+        .as_ref()
+        .into_iter()
+        .chain(close_layout.as_ref())
+        .map(|layout| layout.ascent)
+        .fold(0.0, f32::max);
+    let delimiter_descent = open_layout
+        .as_ref()
+        .into_iter()
+        .chain(close_layout.as_ref())
+        .map(|layout| layout.descent)
+        .fold(0.0, f32::max);
+    let mut atoms = Vec::new();
+    if let Some(open) = open_layout {
+        translate_atoms(&mut atoms, open.atoms, 0.0, 0.0);
+    }
+    translate_atoms(&mut atoms, body_layout.atoms, open_width, 0.0);
+    if let Some(close) = close_layout {
+        translate_atoms(
+            &mut atoms,
+            close.atoms,
+            open_width + body_layout.width + gap,
+            0.0,
+        );
+    }
+    MathLayout {
+        width: open_width + body_layout.width + close_width,
+        ascent: body_layout.ascent.max(delimiter_ascent),
+        descent: body_layout.descent.max(delimiter_descent),
+        atoms,
+    }
+}
+
+fn delimiter_rect(body: &MathLayout, ctx: LayoutCtx) -> Rect {
+    let metrics = ctx.metrics();
+    let overshoot = metrics.delimiter_overshoot();
+    let top = -body.ascent - overshoot;
+    let bottom = body.descent + overshoot;
+    Rect::new(0.0, top, metrics.delimiter_width(), bottom - top)
+}
+
+fn layout_delimiter(delimiter: &str, rect: Rect, ctx: LayoutCtx) -> MathLayout {
+    if !is_vector_delimiter(delimiter) {
+        return layout_glyph(delimiter, ctx, FontWeight::Regular, false);
+    }
+    MathLayout {
+        width: rect.w,
+        ascent: -rect.y,
+        descent: rect.y + rect.h,
+        atoms: vec![MathAtom::Delimiter {
+            delimiter: delimiter.to_string(),
+            rect,
+            thickness: ctx.metrics().rule_thickness(),
+        }],
+    }
+}
+
+fn is_vector_delimiter(delimiter: &str) -> bool {
+    matches!(
+        delimiter,
+        "(" | ")" | "[" | "]" | "{" | "}" | "|" | "‖" | "⟨" | "⟩" | "⌊" | "⌋" | "⌈" | "⌉"
+    )
+}
+
 fn layout_table(rows: &[Vec<MathExpr>], ctx: LayoutCtx) -> MathLayout {
     if rows.is_empty() {
         return MathLayout {
@@ -442,10 +748,11 @@ fn layout_table(rows: &[Vec<MathExpr>], ctx: LayoutCtx) -> MathLayout {
         .iter()
         .map(|row| row.iter().map(|cell| layout_expr(cell, ctx)).collect())
         .collect();
+    let metrics = ctx.metrics();
     let col_count = cell_layouts.iter().map(Vec::len).max().unwrap_or(0);
     let mut col_widths = vec![0.0_f32; col_count];
-    let mut row_ascents = vec![ctx.size * 0.75; rows.len()];
-    let mut row_descents = vec![ctx.size * 0.25; rows.len()];
+    let mut row_ascents = vec![metrics.default_ascent(); rows.len()];
+    let mut row_descents = vec![metrics.default_descent(); rows.len()];
     for (row_index, row) in cell_layouts.iter().enumerate() {
         for (col_index, cell) in row.iter().enumerate() {
             col_widths[col_index] = col_widths[col_index].max(cell.width);
@@ -453,8 +760,8 @@ fn layout_table(rows: &[Vec<MathExpr>], ctx: LayoutCtx) -> MathLayout {
             row_descents[row_index] = row_descents[row_index].max(cell.descent);
         }
     }
-    let col_gap = ctx.size * TABLE_COL_GAP_EM;
-    let row_gap = ctx.size * TABLE_ROW_GAP_EM;
+    let col_gap = metrics.table_col_gap();
+    let row_gap = metrics.table_row_gap();
     let width = col_widths.iter().sum::<f32>() + col_gap * col_count.saturating_sub(1) as f32;
     let row_heights: Vec<f32> = row_ascents
         .iter()
@@ -510,6 +817,15 @@ fn translate_atoms(out: &mut Vec<MathAtom>, atoms: Vec<MathAtom>, dx: f32, dy: f
         },
         MathAtom::Radical { points, thickness } => MathAtom::Radical {
             points: points.map(|[x, y]| [x + dx, y + dy]),
+            thickness,
+        },
+        MathAtom::Delimiter {
+            delimiter,
+            rect,
+            thickness,
+        } => MathAtom::Delimiter {
+            delimiter,
+            rect: Rect::new(rect.x + dx, rect.y + dy, rect.w, rect.h),
             thickness,
         },
     }));
@@ -586,6 +902,7 @@ fn parse_mathml_node(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPars
         "munder" => parse_mathml_under_over(node, true, false),
         "mover" => parse_mathml_under_over(node, false, true),
         "munderover" => parse_mathml_under_over(node, true, true),
+        "mfenced" => parse_mathml_fenced(node),
         "mtable" => parse_mathml_table(node),
         "mtr" => Ok(MathExpr::row(
             mathml_element_children(node)
@@ -704,6 +1021,42 @@ fn parse_mathml_table(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPar
     Ok(MathExpr::Table { rows })
 }
 
+fn parse_mathml_fenced(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathParseError> {
+    let open = parse_fence_attr(node.attribute("open").unwrap_or("("));
+    let close = parse_fence_attr(node.attribute("close").unwrap_or(")"));
+    let separator = match node.attribute("separators") {
+        Some(value) => value
+            .chars()
+            .find(|ch| !ch.is_whitespace())
+            .map(|ch| ch.to_string()),
+        None => Some(",".to_string()),
+    };
+    let children = parse_mathml_children(node)?;
+    let mut body = Vec::new();
+    for (index, child) in children.into_iter().enumerate() {
+        if index > 0
+            && let Some(separator) = &separator
+        {
+            body.push(MathExpr::Operator(separator.clone()));
+        }
+        body.push(child);
+    }
+    Ok(MathExpr::Fenced {
+        open,
+        close,
+        body: Arc::new(MathExpr::row(body)),
+    })
+}
+
+fn parse_fence_attr(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() || value == "." {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
 fn require_mathml_tag(node: roxmltree::Node<'_, '_>, expected: &str) -> Result<(), MathParseError> {
     if node.tag_name().name() == expected {
         Ok(())
@@ -783,6 +1136,9 @@ impl<'a> TexParser<'a> {
         let mut items = Vec::new();
         loop {
             self.skip_ws();
+            if self.starts_with_command("right") {
+                return Err(self.error("unexpected \\right"));
+            }
             match self.peek() {
                 None => {
                     if until.is_some() {
@@ -800,6 +1156,25 @@ impl<'a> TexParser<'a> {
                     items.push(atom);
                 }
             }
+        }
+        Ok(MathExpr::row(items))
+    }
+
+    fn parse_row_until_right(&mut self) -> Result<MathExpr, MathParseError> {
+        let mut items = Vec::new();
+        loop {
+            self.skip_ws();
+            if self.peek().is_none() {
+                return Err(self.error("unclosed \\left"));
+            }
+            if self.starts_with_command("right") {
+                break;
+            }
+            if self.peek() == Some('}') {
+                return Err(self.error("unexpected closing brace"));
+            }
+            let atom = self.parse_atom_with_scripts()?;
+            items.push(atom);
         }
         Ok(MathExpr::row(items))
     }
@@ -897,6 +1272,14 @@ impl<'a> TexParser<'a> {
                     None => MathExpr::Sqrt(base),
                 })
             }
+            "left" => {
+                let open = self.parse_delimiter()?;
+                let body = Arc::new(self.parse_row_until_right()?);
+                self.consume_command("right")?;
+                let close = self.parse_delimiter()?;
+                Ok(MathExpr::Fenced { open, close, body })
+            }
+            "right" => Err(self.error("unexpected \\right")),
             "cdot" => Ok(MathExpr::Operator("·".into())),
             "times" => Ok(MathExpr::Operator("×".into())),
             "div" => Ok(MathExpr::Operator("÷".into())),
@@ -946,6 +1329,26 @@ impl<'a> TexParser<'a> {
         self.parse_row(Some(']')).map(Some)
     }
 
+    fn parse_delimiter(&mut self) -> Result<Option<String>, MathParseError> {
+        self.skip_ws();
+        let delimiter = match self.bump() {
+            Some('.') => return Ok(None),
+            Some('\\') => {
+                let name = self.take_while(|c| c.is_ascii_alphabetic());
+                if name.is_empty() {
+                    self.bump()
+                        .ok_or_else(|| self.error("expected delimiter after escape"))?
+                        .to_string()
+                } else {
+                    delimiter_command(&name).unwrap_or_else(|| format!("\\{name}"))
+                }
+            }
+            Some(ch) => ch.to_string(),
+            None => return Err(self.error("expected delimiter")),
+        };
+        Ok(Some(delimiter))
+    }
+
     fn skip_ws(&mut self) {
         while matches!(self.peek(), Some(ch) if ch.is_whitespace()) {
             self.bump();
@@ -967,6 +1370,30 @@ impl<'a> TexParser<'a> {
         self.input[start..self.pos].to_string()
     }
 
+    fn starts_with_command(&self, command: &str) -> bool {
+        let rest = &self.input[self.pos..];
+        let Some(after_slash) = rest.strip_prefix('\\') else {
+            return false;
+        };
+        let Some(after_command) = after_slash.strip_prefix(command) else {
+            return false;
+        };
+        !matches!(after_command.chars().next(), Some(ch) if ch.is_ascii_alphabetic())
+    }
+
+    fn consume_command(&mut self, command: &str) -> Result<(), MathParseError> {
+        if !self.starts_with_command(command) {
+            return Err(self.error(&format!("expected \\{command}")));
+        }
+        self.expect('\\')?;
+        let found = self.take_while(|c| c.is_ascii_alphabetic());
+        if found == command {
+            Ok(())
+        } else {
+            Err(self.error(&format!("expected \\{command}")))
+        }
+    }
+
     fn peek(&self) -> Option<char> {
         self.input[self.pos..].chars().next()
     }
@@ -983,6 +1410,27 @@ impl<'a> TexParser<'a> {
             byte: self.pos,
         }
     }
+}
+
+fn delimiter_command(command: &str) -> Option<String> {
+    let delimiter = match command {
+        "lbrace" => "{",
+        "rbrace" => "}",
+        "lparen" => "(",
+        "rparen" => ")",
+        "lbrack" => "[",
+        "rbrack" => "]",
+        "langle" => "⟨",
+        "rangle" => "⟩",
+        "vert" => "|",
+        "Vert" => "‖",
+        "lfloor" => "⌊",
+        "rfloor" => "⌋",
+        "lceil" => "⌈",
+        "rceil" => "⌉",
+        _ => return None,
+    };
+    Some(delimiter.to_string())
 }
 
 trait Tap: Sized {
@@ -1018,6 +1466,30 @@ pub(crate) fn resolved_math_color(color: Option<Color>) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "symbols")]
+    #[test]
+    fn loads_bundled_open_type_math_constants() {
+        let constants = open_type_math_constants().expect("bundled math font has a MATH table");
+        assert!(
+            constants
+                .script_scale(16.0)
+                .is_some_and(|size| size > 6.0 && size < 16.0),
+            "script scale should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .fraction_rule_thickness(16.0)
+                .is_some_and(|thickness| thickness > 0.75 && thickness < 2.0),
+            "fraction rule thickness should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .radical_rule_thickness(16.0)
+                .is_some_and(|thickness| thickness > 0.75 && thickness < 2.0),
+            "radical rule thickness should come from Noto Sans Math"
+        );
+    }
 
     #[test]
     fn parses_fraction_with_scripts() {
@@ -1091,6 +1563,37 @@ mod tests {
                 .any(|atom| matches!(atom, MathAtom::Glyph { text, size, .. } if text == "∑" && *size > 16.0)),
             "display sum should use a larger operator glyph"
         );
+    }
+
+    #[test]
+    fn parses_tex_left_right_fences() {
+        let expr = parse_tex(r"\left(\frac{a}{b}\right)").expect("valid fenced tex");
+        match expr {
+            MathExpr::Fenced { open, close, body } => {
+                assert_eq!(open.as_deref(), Some("("));
+                assert_eq!(close.as_deref(), Some(")"));
+                assert!(matches!(*body, MathExpr::Fraction { .. }));
+            }
+            other => panic!("expected fenced expression, got {other:?}"),
+        }
+        let layout = layout_math(
+            &parse_tex(r"\left(\frac{a}{b}\right)").unwrap(),
+            16.0,
+            MathDisplay::Inline,
+        );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Delimiter { delimiter, rect, thickness } if delimiter == "(" && rect.h > 16.0 && *thickness < 2.0)),
+            "fence should emit a stretched vector delimiter with normal stroke weight"
+        );
+    }
+
+    #[test]
+    fn rejects_unmatched_tex_right_fence() {
+        let err = parse_tex(r"x \right)").expect_err("invalid unmatched fence");
+        assert!(err.message.contains("unexpected \\right"));
     }
 
     #[test]
@@ -1181,6 +1684,35 @@ mod tests {
                 assert_eq!(*over.unwrap(), MathExpr::Identifier("n".into()));
             }
             other => panic!("expected under/over expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_mathml_fenced_expression() {
+        let expr = parse_mathml(
+            r#"
+            <math>
+              <mfenced open="[" close="]" separators=",">
+                <mi>a</mi>
+                <mi>b</mi>
+              </mfenced>
+            </math>
+            "#,
+        )
+        .expect("valid mathml fenced expression");
+        match expr {
+            MathExpr::Fenced { open, close, body } => {
+                assert_eq!(open.as_deref(), Some("["));
+                assert_eq!(close.as_deref(), Some("]"));
+                match body.as_ref() {
+                    MathExpr::Row(children) => {
+                        assert_eq!(children.len(), 3);
+                        assert_eq!(children[1], MathExpr::Operator(",".into()));
+                    }
+                    other => panic!("expected row body, got {other:?}"),
+                }
+            }
+            other => panic!("expected fenced expression, got {other:?}"),
         }
     }
 
