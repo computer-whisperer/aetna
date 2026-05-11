@@ -19,6 +19,10 @@ path = "src/lib.rs"
 [dependencies]
 aetna-core = { version = "0.3.1", path = "../aetna-core" }
 aetna-wgpu = { version = "0.3.1", path = "../aetna-wgpu" }
+# `open` shells out to xdg-open / `start` / `open` for the
+# `App::drain_link_opens` host path. Tiny crate, well-maintained, no
+# blocking IO inside the call (it spawns the platform launcher).
+open = "5"
 pollster = "0.4"
 wgpu = "29"
 winit = "0.30"

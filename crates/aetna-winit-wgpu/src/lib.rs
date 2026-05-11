@@ -176,6 +176,10 @@ impl<A: App> App for BasicApp<A> {
         self.0.drain_scroll_requests()
     }
 
+    fn drain_link_opens(&mut self) -> Vec<String> {
+        self.0.drain_link_opens()
+    }
+
     fn shaders(&self) -> Vec<aetna_core::AppShader> {
         self.0.shaders()
     }
@@ -794,6 +798,9 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                     .push_focus_requests(self.app.drain_focus_requests());
                                 gfx.renderer
                                     .push_scroll_requests(self.app.drain_scroll_requests());
+                                for url in self.app.drain_link_opens() {
+                                    open_link(&url);
+                                }
                                 (tree, palette)
                             };
                             let prepare = {
@@ -990,6 +997,16 @@ fn pointer_button(b: MouseButton) -> Option<PointerButton> {
         // Back / Forward / Other → not surfaced; apps that need them can
         // grow the enum.
         _ => None,
+    }
+}
+
+/// Open a URL surfaced by `App::drain_link_opens` through the OS's
+/// default URL handler — `xdg-open` on Linux, `start` on Windows,
+/// `open` on macOS — via the `open` crate. Failures (no handler
+/// installed, sandboxed environment) are logged rather than panicking.
+fn open_link(url: &str) {
+    if let Err(err) = open::that_detached(url) {
+        eprintln!("aetna-winit-wgpu: failed to open {url}: {err}");
     }
 }
 
