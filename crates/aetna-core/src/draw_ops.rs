@@ -811,7 +811,7 @@ fn push_math_ops(
 #[allow(clippy::too_many_arguments)]
 fn push_math_radical_op(
     n: &El,
-    points: &[[f32; 2]; 4],
+    points: &[[f32; 2]; 5],
     thickness: f32,
     origin_x: f32,
     baseline_y: f32,
@@ -834,7 +834,7 @@ fn push_math_radical_op(
         .fold(f32::NEG_INFINITY, f32::max);
     let pad = thickness * 0.5;
     let local = |p: [f32; 2]| [p[0] - min_x + pad, p[1] - min_y + pad];
-    let [p0, p1, p2, p3] = points.map(local);
+    let [p0, p1, p2, p3, p4] = points.map(local);
     let rect = Rect::new(
         origin_x + min_x - pad,
         baseline_y + min_y - pad,
@@ -846,6 +846,7 @@ fn push_math_radical_op(
         .line_to(p1[0], p1[1])
         .line_to(p2[0], p2[1])
         .line_to(p3[0], p3[1])
+        .line_to(p4[0], p4[1])
         .stroke_solid(color, thickness)
         .stroke_line_join(VectorLineJoin::Miter)
         .build();

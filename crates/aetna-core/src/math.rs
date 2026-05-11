@@ -88,7 +88,7 @@ pub enum MathAtom {
         rect: Rect,
     },
     Radical {
-        points: [[f32; 2]; 4],
+        points: [[f32; 2]; 5],
         thickness: f32,
     },
 }
@@ -271,8 +271,9 @@ fn layout_sqrt(child: &MathExpr, ctx: LayoutCtx) -> MathLayout {
     let mut atoms = Vec::new();
     atoms.push(MathAtom::Radical {
         points: [
-            [0.0, -ctx.size * 0.02],
-            [ctx.size * 0.2, tick_y],
+            [0.0, -ctx.size * 0.03],
+            [ctx.size * 0.12, -ctx.size * 0.1],
+            [ctx.size * 0.24, tick_y],
             [radical_w, bar_y],
             [end_x, bar_y],
         ],
