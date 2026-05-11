@@ -1152,20 +1152,45 @@ fn push_inline_mixed_ops(
     out: &mut Vec<DrawOp>,
 ) {
     let mut x = 0.0;
-    let mut baseline_y = rect.y + n.font_size * 0.82;
+    let mut line_top = 0.0;
     let mut line_ascent = n.font_size * 0.82;
     let mut line_descent = n.font_size * 0.22;
     let line_advance = |ascent: f32, descent: f32| (ascent + descent).max(n.line_height);
-    let mut pending_text = PendingInlineText::default();
+    let mut line_items = Vec::new();
+
+    let finish_line = |line_items: &mut Vec<InlineMixedItem>,
+                       out: &mut Vec<DrawOp>,
+                       line_top: &mut f32,
+                       x: &mut f32,
+                       line_ascent: &mut f32,
+                       line_descent: &mut f32| {
+        flush_inline_mixed_line(
+            n,
+            rect,
+            scissor,
+            opacity,
+            *line_top,
+            *line_ascent,
+            line_items,
+            out,
+        );
+        *line_top += line_advance(*line_ascent, *line_descent);
+        *x = 0.0;
+        *line_ascent = n.font_size * 0.82;
+        *line_descent = n.font_size * 0.22;
+    };
 
     for (i, child) in n.children.iter().enumerate() {
         match child.kind {
             Kind::HardBreak => {
-                pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
-                baseline_y += line_advance(line_ascent, line_descent);
-                x = 0.0;
-                line_ascent = n.font_size * 0.82;
-                line_descent = n.font_size * 0.22;
+                finish_line(
+                    &mut line_items,
+                    out,
+                    &mut line_top,
+                    &mut x,
+                    &mut line_ascent,
+                    &mut line_descent,
+                );
                 continue;
             }
             Kind::Text => {
@@ -1181,25 +1206,26 @@ fn push_inline_mixed_ops(
                             && x > 0.0
                             && x + w > rect.w
                         {
-                            pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
-                            baseline_y += line_advance(line_ascent, line_descent);
-                            x = 0.0;
-                            line_ascent = n.font_size * 0.82;
-                            line_descent = n.font_size * 0.22;
+                            finish_line(
+                                &mut line_items,
+                                out,
+                                &mut line_top,
+                                &mut x,
+                                &mut line_ascent,
+                                &mut line_descent,
+                            );
                         }
                         if matches!(n.text_wrap, TextWrap::Wrap) && is_space && x + w > rect.w {
                             continue;
                         }
                         line_ascent = line_ascent.max(ascent);
                         line_descent = line_descent.max(descent);
-                        if is_space && pending_text.is_empty() {
+                        if is_space && !matches!(line_items.last(), Some(InlineMixedItem::Text(_)))
+                        {
                             x += w;
                             continue;
                         }
-                        if !pending_text.can_push(child) {
-                            pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
-                        }
-                        pending_text.push(child, i, chunk_i, chunk, x);
+                        push_inline_text_item(&mut line_items, child, i, chunk_i, chunk, x);
                         x += w;
                     }
                 }
@@ -1211,111 +1237,144 @@ fn push_inline_mixed_ops(
                         crate::math::layout_math(expr, child.font_size, child.math_display);
                     if matches!(n.text_wrap, TextWrap::Wrap) && x > 0.0 && x + layout.width > rect.w
                     {
-                        pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
-                        baseline_y += line_advance(line_ascent, line_descent);
-                        x = 0.0;
-                        line_ascent = n.font_size * 0.82;
-                        line_descent = n.font_size * 0.22;
+                        finish_line(
+                            &mut line_items,
+                            out,
+                            &mut line_top,
+                            &mut x,
+                            &mut line_ascent,
+                            &mut line_descent,
+                        );
                     }
-                    pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
                     line_ascent = line_ascent.max(layout.ascent);
                     line_descent = line_descent.max(layout.descent);
-                    let math_rect = Rect::new(
-                        rect.x + x,
-                        baseline_y - layout.ascent,
-                        layout.width,
-                        layout.height(),
-                    );
-                    push_math_ops(child, expr, math_rect, scissor, opacity, out);
-                    x += layout.width;
+                    let width = layout.width;
+                    line_items.push(InlineMixedItem::Math {
+                        child: child.clone(),
+                        expr: expr.clone(),
+                        x,
+                        layout,
+                    });
+                    x += width;
                 }
             }
             _ => {
                 let (w, ascent, descent) = inline_child_paint_metrics(child);
                 if matches!(n.text_wrap, TextWrap::Wrap) && x > 0.0 && x + w > rect.w {
-                    pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
-                    baseline_y += line_advance(line_ascent, line_descent);
-                    x = 0.0;
-                    line_ascent = n.font_size * 0.82;
-                    line_descent = n.font_size * 0.22;
+                    finish_line(
+                        &mut line_items,
+                        out,
+                        &mut line_top,
+                        &mut x,
+                        &mut line_ascent,
+                        &mut line_descent,
+                    );
                 }
-                pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
                 line_ascent = line_ascent.max(ascent);
                 line_descent = line_descent.max(descent);
                 x += w;
             }
         }
     }
-    pending_text.flush(n, rect, scissor, opacity, baseline_y, out);
+    flush_inline_mixed_line(
+        n,
+        rect,
+        scissor,
+        opacity,
+        line_top,
+        line_ascent,
+        &mut line_items,
+        out,
+    );
 }
 
-#[derive(Default)]
-struct PendingInlineText {
+enum InlineMixedItem {
+    Text(InlineTextItem),
+    Math {
+        child: El,
+        expr: std::sync::Arc<crate::math::MathExpr>,
+        x: f32,
+        layout: crate::math::MathLayout,
+    },
+}
+
+struct InlineTextItem {
+    child: El,
     text: String,
     x: f32,
     child_index: usize,
     chunk_index: usize,
-    child: Option<El>,
 }
 
-impl PendingInlineText {
-    fn is_empty(&self) -> bool {
-        self.text.is_empty()
+fn push_inline_text_item(
+    items: &mut Vec<InlineMixedItem>,
+    child: &El,
+    child_index: usize,
+    chunk_index: usize,
+    text: &str,
+    x: f32,
+) {
+    if text.is_empty() {
+        return;
     }
-
-    fn can_push(&self, child: &El) -> bool {
-        self.child
-            .as_ref()
-            .map(|existing| same_inline_text_style(existing, child))
-            .unwrap_or(true)
+    if let Some(InlineMixedItem::Text(prev)) = items.last_mut()
+        && same_inline_text_style(&prev.child, child)
+    {
+        prev.text.push_str(text);
+        return;
     }
+    items.push(InlineMixedItem::Text(InlineTextItem {
+        child: child.clone(),
+        text: text.to_string(),
+        x,
+        child_index,
+        chunk_index,
+    }));
+}
 
-    fn push(&mut self, child: &El, child_index: usize, chunk_index: usize, text: &str, x: f32) {
-        if text.is_empty() {
-            return;
-        }
-        if self.child.is_none() {
-            self.x = x;
-            self.child_index = child_index;
-            self.chunk_index = chunk_index;
-            self.child = Some(child.clone());
-        }
-        self.text.push_str(text);
-    }
-
-    fn flush(
-        &mut self,
-        parent: &El,
-        rect: Rect,
-        scissor: Option<Rect>,
-        opacity: f32,
-        baseline_y: f32,
-        out: &mut Vec<DrawOp>,
-    ) {
-        let Some(child) = self.child.as_ref() else {
-            return;
-        };
-        if !self.text.is_empty() {
-            push_inline_text_chunk(
-                parent,
+fn flush_inline_mixed_line(
+    parent: &El,
+    rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+    line_top: f32,
+    line_ascent: f32,
+    items: &mut Vec<InlineMixedItem>,
+    out: &mut Vec<DrawOp>,
+) {
+    let baseline_y = rect.y + line_top + line_ascent;
+    for item in items.drain(..) {
+        match item {
+            InlineMixedItem::Text(item) => {
+                push_inline_text_chunk(
+                    parent,
+                    &item.child,
+                    &item.text,
+                    item.child_index,
+                    item.chunk_index,
+                    rect,
+                    scissor,
+                    opacity,
+                    item.x,
+                    baseline_y,
+                    out,
+                );
+            }
+            InlineMixedItem::Math {
                 child,
-                &self.text,
-                self.child_index,
-                self.chunk_index,
-                rect,
-                scissor,
-                opacity,
-                self.x,
-                baseline_y,
-                out,
-            );
+                expr,
+                x,
+                layout,
+            } => {
+                let math_rect = Rect::new(
+                    rect.x + x,
+                    baseline_y - layout.ascent,
+                    layout.width,
+                    layout.height(),
+                );
+                push_math_ops(&child, &expr, math_rect, scissor, opacity, out);
+            }
         }
-        self.clear();
-    }
-
-    fn clear(&mut self) {
-        self.text.clear();
-        self.child = None;
     }
 }
 
@@ -2537,6 +2596,35 @@ mod tests {
         assert!(
             inline_runs[1].1.x > inline_runs[0].1.right(),
             "post-math text keeps the leading-space advance without painting a separate space run"
+        );
+    }
+
+    #[test]
+    fn inline_math_uses_line_ascent_for_mixed_baseline() {
+        let expr = crate::math::parse_tex(r"\frac{a+b}{c+d}").expect("valid tex");
+        let mut root = crate::text_runs([
+            crate::text("Before "),
+            crate::math_inline(expr),
+            crate::text(" after"),
+        ])
+        .width(Size::Fixed(600.0));
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 600.0, 120.0));
+
+        let ops = draw_ops(&root, &state);
+        let min_math_y = ops
+            .iter()
+            .filter_map(|op| match op {
+                DrawOp::GlyphRun { id, rect, .. } if id.contains(".math-glyph.") => Some(rect.y),
+                DrawOp::Quad { id, rect, .. } if id.contains(".math-rule.") => Some(rect.y),
+                DrawOp::Vector { id, rect, .. } if id.contains(".math-") => Some(rect.y),
+                _ => None,
+            })
+            .fold(f32::INFINITY, f32::min);
+
+        assert!(
+            min_math_y >= -3.0,
+            "built-up inline math should sit inside the line box, min y = {min_math_y}"
         );
     }
 
