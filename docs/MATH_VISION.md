@@ -181,9 +181,10 @@ The radical rendering has moved past the first `√` glyph plus separate overbar
 rule and the later heuristic-only vector radical. The current implementation
 queries the bundled Noto Sans Math MATH table for a vertical radical variant,
 emits that exact glyph outline through the same glyph-id vector path used by
-stretchy delimiters, then extends the overbar as a rule over the radicand. The
-native vector radical remains as the fallback when a font does not expose a
-usable radical variant.
+stretchy delimiters, then extends the overbar as a rule over the radicand.
+Indexed roots also use the font's radical degree kerns and degree-bottom raise
+percentage for index placement. The native vector radical remains as the
+fallback when a font does not expose a usable radical variant.
 
 Display-style large operators have started moving onto that same exact-glyph
 path. Sums, products, big intersections, and big unions with limits now prefer
@@ -230,7 +231,9 @@ The first OpenType-backed radical path is in place:
 
 Remaining work is polish: use more of the MATH radical constants, validate
 larger nested roots, and decide whether radical assemblies are needed for cases
-where variants cannot cover the requested height.
+where variants cannot cover the requested height. The root-degree constants are
+now applied; remaining radical constants include extra ascender and any later
+assembly-specific behavior.
 
 This should be treated as part of the math layout project, not as a markdown
 transformer concern.

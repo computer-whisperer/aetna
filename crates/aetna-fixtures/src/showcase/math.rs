@@ -252,8 +252,14 @@ fn coverage_grid() -> El {
 fn nested_roots_card() -> El {
     demo_card(
         "Nested roots",
-        "Radical variants and overbars through nested TeX roots.",
-        [math_block(tex_or_error(r"\sqrt{1+\sqrt{x+\sqrt[3]{y+1}}}"))],
+        "Radical variants, root indices, and overbars through nested TeX roots.",
+        [
+            math_block(tex_or_error(r"\sqrt{1+\sqrt{x+\sqrt[3]{y+1}}}")),
+            math_block(tex_or_error(
+                r"\sqrt[12]{\frac{1+\sqrt{x}}{1+\sqrt[3]{y+\sqrt{z}}}}",
+            ))
+            .font_size(18.0),
+        ],
     )
 }
 

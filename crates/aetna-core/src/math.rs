@@ -438,11 +438,24 @@ impl MathMetrics {
     }
 
     fn root_offset_x(self, index_width: f32) -> f32 {
-        index_width * 0.55
+        self.font_constants()
+            .map(|constants| {
+                let before = constants
+                    .radical_kern_before_degree(self.size)
+                    .unwrap_or(0.0);
+                let after = constants
+                    .radical_kern_after_degree(self.size)
+                    .unwrap_or(0.0);
+                (before + index_width + after).max(index_width * 0.35)
+            })
+            .unwrap_or(index_width * 0.55)
     }
 
-    fn root_index_shift(self, root_ascent: f32) -> f32 {
-        -root_ascent * 0.52
+    fn root_index_shift(self, root_ascent: f32, index_descent: f32) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.radical_degree_bottom_raise_fraction())
+            .map(|raise| -root_ascent * raise - index_descent)
+            .unwrap_or(-root_ascent * 0.52)
     }
 
     fn script_gap(self) -> f32 {
@@ -598,6 +611,9 @@ struct OpenTypeMathConstants {
     radical_rule_thickness: i16,
     radical_vertical_gap: i16,
     radical_display_style_vertical_gap: i16,
+    radical_kern_before_degree: i16,
+    radical_kern_after_degree: i16,
+    radical_degree_bottom_raise_percent: i16,
     delimited_sub_formula_min_height: u16,
     min_connector_overlap: u16,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -655,6 +671,10 @@ impl OpenTypeDelimiterVariants {
 impl OpenTypeMathConstants {
     fn font_units(&self, value: i16, size: f32) -> Option<f32> {
         (value > 0 && self.units_per_em > 0.0).then(|| value as f32 / self.units_per_em * size)
+    }
+
+    fn signed_font_units(&self, value: i16, size: f32) -> Option<f32> {
+        (value != 0 && self.units_per_em > 0.0).then(|| value as f32 / self.units_per_em * size)
     }
 
     fn script_scale(&self, size: f32) -> Option<f32> {
@@ -753,6 +773,19 @@ impl OpenTypeMathConstants {
             self.radical_vertical_gap
         };
         self.font_units(value, size)
+    }
+
+    fn radical_kern_before_degree(&self, size: f32) -> Option<f32> {
+        self.signed_font_units(self.radical_kern_before_degree, size)
+    }
+
+    fn radical_kern_after_degree(&self, size: f32) -> Option<f32> {
+        self.signed_font_units(self.radical_kern_after_degree, size)
+    }
+
+    fn radical_degree_bottom_raise_fraction(&self) -> Option<f32> {
+        (self.radical_degree_bottom_raise_percent > 0)
+            .then(|| self.radical_degree_bottom_raise_percent as f32 / 100.0)
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -910,6 +943,9 @@ fn parse_open_type_math_constants(font: &[u8]) -> Option<OpenTypeMathConstants> 
         radical_rule_thickness: constants.radical_rule_thickness().value,
         radical_vertical_gap: constants.radical_vertical_gap().value,
         radical_display_style_vertical_gap: constants.radical_display_style_vertical_gap().value,
+        radical_kern_before_degree: constants.radical_kern_before_degree().value,
+        radical_kern_after_degree: constants.radical_kern_after_degree().value,
+        radical_degree_bottom_raise_percent: constants.radical_degree_bottom_raise_percent(),
         delimited_sub_formula_min_height: constants.delimited_sub_formula_min_height(),
         min_connector_overlap: math
             .variants
@@ -1237,7 +1273,7 @@ fn layout_root(base: &MathExpr, index: &MathExpr, ctx: LayoutCtx) -> MathLayout 
     let root = layout_sqrt(base, ctx);
     let index = layout_expr(index, ctx.script());
     let root_x = metrics.root_offset_x(index.width);
-    let index_dy = metrics.root_index_shift(root.ascent);
+    let index_dy = metrics.root_index_shift(root.ascent, index.descent);
     let mut atoms = Vec::new();
     translate_atoms(&mut atoms, index.atoms, 0.0, index_dy);
     translate_atoms(&mut atoms, root.atoms, root_x, 0.0);
@@ -3064,6 +3100,24 @@ mod tests {
         );
         assert!(
             constants
+                .radical_kern_before_degree(16.0)
+                .is_some_and(|kern| kern > 0.0 && kern < 8.0),
+            "radical degree before-kern should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .radical_kern_after_degree(16.0)
+                .is_some_and(|kern| kern < 0.0 && kern > -8.0),
+            "radical degree after-kern should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .radical_degree_bottom_raise_fraction()
+                .is_some_and(|raise| raise > 0.0 && raise < 1.0),
+            "radical degree raise should come from Noto Sans Math"
+        );
+        assert!(
+            constants
                 .min_connector_overlap(16.0)
                 .is_some_and(|overlap| overlap > 0.0),
             "delimiter connector overlap should come from Noto Sans Math"
@@ -3255,6 +3309,69 @@ mod tests {
         assert!(
             has_radical_shape(&layout),
             "indexed root should emit a radical shape atom"
+        );
+    }
+
+    #[test]
+    fn indexed_root_uses_open_type_degree_metrics() {
+        let ctx = LayoutCtx {
+            size: 16.0,
+            display: MathDisplay::Inline,
+        };
+        let metrics = ctx.metrics();
+        let base = parse_tex(r"x+1").expect("valid root base");
+        let index_expr = MathExpr::Number("3".into());
+        let root = layout_sqrt(&base, ctx);
+        let index = layout_expr(&index_expr, ctx.script());
+        let layout = layout_root(&base, &index_expr, ctx);
+        let constants = metrics.font_constants().expect("bundled math constants");
+        let expected_root_x = (constants
+            .radical_kern_before_degree(ctx.size)
+            .unwrap_or(0.0)
+            + index.width
+            + constants.radical_kern_after_degree(ctx.size).unwrap_or(0.0))
+        .max(index.width * 0.35);
+        let expected_index_dy = -root.ascent
+            * constants
+                .radical_degree_bottom_raise_fraction()
+                .expect("root degree raise")
+            - index.descent;
+        let index_atom = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph {
+                    text,
+                    x,
+                    y_baseline,
+                    ..
+                } if text == "3" => Some((*x, *y_baseline)),
+                _ => None,
+            })
+            .expect("root index glyph");
+        let root_x = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::GlyphId { rect, .. } => Some(rect.x),
+                MathAtom::Radical { points, .. } => Some(points[0][0]),
+                _ => None,
+            })
+            .expect("root radical atom");
+
+        assert!(
+            (index_atom.0 - 0.0).abs() < 0.1,
+            "index x = {}",
+            index_atom.0
+        );
+        assert!(
+            (index_atom.1 - expected_index_dy).abs() < 0.1,
+            "index baseline = {}, expected {expected_index_dy}",
+            index_atom.1
+        );
+        assert!(
+            (root_x - expected_root_x).abs() < 0.1,
+            "root x = {root_x}, expected {expected_root_x}"
         );
     }
 
