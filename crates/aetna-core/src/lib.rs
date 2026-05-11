@@ -51,6 +51,7 @@ pub mod icons;
 pub mod image;
 pub mod ir;
 pub mod layout;
+pub mod math;
 pub mod metrics;
 #[doc(hidden)]
 pub mod paint;
@@ -96,6 +97,10 @@ pub use hit_test::{hit_test, hit_test_target};
 pub use icons::{IconStroke, all_icon_names, icon, icon_path, icon_strokes, icon_vector_asset};
 pub use ir::{DrawOp, TextAnchor};
 pub use layout::{LayoutCtx, LayoutFn, VirtualItems, VirtualMode, layout};
+pub use math::{
+    MathAtom, MathDisplay, MathExpr, MathLayout, MathParseError, layout_math, parse_mathml,
+    parse_mathml_with_display, parse_tex,
+};
 pub use metrics::{ComponentSize, MetricsRole, ThemeMetrics};
 pub use shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
 pub use state::{AnimationMode, UiState, WidgetState};
@@ -125,8 +130,8 @@ pub use theme::Theme;
 pub use tree::{
     Align, Axis, Color, Corners, El, FontFamily, FontWeight, IconName, InteractionState, Justify,
     Kind, Rect, Sides, Size, Source, SurfaceRole, TextAlign, TextOverflow, TextRole, TextWrap,
-    column, divider, hard_break, row, scroll, spacer, stack, surface, text_runs, vector,
-    virtual_list, virtual_list_dyn,
+    column, divider, hard_break, math, math_block, math_inline, row, scroll, spacer, stack,
+    surface, text_runs, vector, virtual_list, virtual_list_dyn,
 };
 pub use vector::{IconMaterial, VectorRenderMode};
 // Vector path / mesh tessellation types are internal-tooling surface.

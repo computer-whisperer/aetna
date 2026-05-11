@@ -30,6 +30,10 @@ pub use crate::icons::{all_icon_names, icon};
 pub use crate::image::{Image, ImageFit};
 pub use crate::ir::{DrawOp, TextAnchor};
 pub use crate::layout::{LayoutCtx, LayoutFn, VirtualItems, VirtualMode};
+pub use crate::math::{
+    MathAtom, MathDisplay, MathExpr, MathLayout, MathParseError, layout_math, parse_mathml,
+    parse_mathml_with_display, parse_tex,
+};
 pub use crate::metrics::{ComponentSize, MetricsRole, ThemeMetrics};
 pub use crate::palette::Palette;
 pub use crate::shader::{ShaderBinding, ShaderHandle, StockShader, UniformBlock, UniformValue};
@@ -51,8 +55,9 @@ pub use crate::tokens;
 pub use crate::tree::{
     Align, Axis, Color, Corners, El, FontFamily, FontWeight, HoverAlpha, IconName,
     InteractionState, Justify, Kind, Rect, Sides, Size, Source, SurfaceRole, TextAlign,
-    TextOverflow, TextRole, TextWrap, column, divider, hard_break, image, row, scroll, spacer,
-    stack, surface, text_runs, vector, virtual_list, virtual_list_dyn,
+    TextOverflow, TextRole, TextWrap, column, divider, hard_break, image, math, math_block,
+    math_inline, row, scroll, spacer, stack, surface, text_runs, vector, virtual_list,
+    virtual_list_dyn,
 };
 pub use crate::vector::VectorRenderMode;
 pub use crate::vector::{

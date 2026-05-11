@@ -3,6 +3,7 @@
 use crate::anim::Timing;
 use crate::image::{Image, ImageFit};
 use crate::layout::{LayoutFn, VirtualItems};
+use crate::math::{MathDisplay, MathExpr};
 use crate::metrics::{ComponentSize, MetricsRole};
 use crate::shader::ShaderBinding;
 use crate::style::StyleProfile;
@@ -301,6 +302,13 @@ pub struct El {
     /// standalone text Els — author wraps in a styled `row()` for
     /// chip-shaped surfaces. Author-set via [`Self::background`].
     pub text_bg: Option<Color>,
+
+    // Math
+    /// Native math expression rendered through Aetna's math box layout.
+    /// Set by [`crate::tree::math`], [`crate::tree::math_inline`], and
+    /// [`crate::tree::math_block`].
+    pub math: Option<std::sync::Arc<MathExpr>>,
+    pub math_display: MathDisplay,
 
     // Icon
     pub icon: Option<crate::svg_icon::IconSource>,

@@ -4,9 +4,11 @@
 //! stays focused on fields and chainable modifiers.
 
 use std::panic::Location;
+use std::sync::Arc;
 
 use crate::image::Image;
 use crate::layout::VirtualItems;
+use crate::math::{MathDisplay, MathExpr};
 
 use super::layout_types::{Align, Axis, Size};
 use super::node::El;
@@ -190,6 +192,31 @@ pub fn hard_break() -> El {
     El::new(Kind::HardBreak)
         .at_loc(Location::caller())
         .width(Size::Hug)
+        .height(Size::Hug)
+}
+
+#[track_caller]
+pub fn math(expr: impl Into<Arc<MathExpr>>) -> El {
+    math_inline(expr)
+}
+
+#[track_caller]
+pub fn math_inline(expr: impl Into<Arc<MathExpr>>) -> El {
+    El::new(Kind::Math)
+        .at_loc(Location::caller())
+        .math_expr(expr)
+        .math_display(MathDisplay::Inline)
+        .width(Size::Hug)
+        .height(Size::Hug)
+}
+
+#[track_caller]
+pub fn math_block(expr: impl Into<Arc<MathExpr>>) -> El {
+    El::new(Kind::Math)
+        .at_loc(Location::caller())
+        .math_expr(expr)
+        .math_display(MathDisplay::Block)
+        .width(Size::Fill(1.0))
         .height(Size::Hug)
 }
 

@@ -27,6 +27,10 @@
 //! - Fenced and indented code blocks.
 //! - Horizontal rules.
 //! - GFM tables.
+//! - Optional native math (`$…$` / `$$…$$`) via
+//!   `MarkdownOptions::math(true)`. The first renderer slice supports
+//!   a focused TeX subset: rows, identifiers / numbers / operators,
+//!   `\frac`, `\sqrt`, superscripts, and subscripts.
 //! - Inline + block images render as block-level alt-text placeholders
 //!   today. Real image resolution and inline images are Phase 2 follow-ups.
 //!
@@ -48,7 +52,7 @@
 //!
 //! Deferred:
 //!
-//! - Footnotes, raw HTML, math (`$…$` / `$$…$$`), definition lists,
+//! - Footnotes, raw HTML, full TeX / MathML import, definition lists,
 //!   heading attributes, metadata blocks, superscript/subscript, and
 //!   wikilinks.
 

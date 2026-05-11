@@ -127,6 +127,7 @@ fn kind_str(k: &Kind) -> &str {
         Kind::VirtualList => "VirtualList",
         Kind::Inlines => "Inlines",
         Kind::HardBreak => "HardBreak",
+        Kind::Math => "Math",
         Kind::Image => "Image",
         Kind::Surface => "Surface",
         Kind::Vector => "Vector",

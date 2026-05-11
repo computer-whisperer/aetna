@@ -40,6 +40,7 @@ nalgebra = { version = "0.34", default-features = false, features = ["std"] }
 # actually use, and the layout pass touches these maps once per node
 # per frame.
 rustc-hash = "2"
+roxmltree = "0.21"
 swash = "0.2"
 ttf-parser = "0.25.1"
 # Optional — pulled in only when the `profiling` feature is on.

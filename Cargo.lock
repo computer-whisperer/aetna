@@ -38,6 +38,7 @@ dependencies = [
  "lru",
  "lyon_tessellation",
  "nalgebra",
+ "roxmltree 0.21.1",
  "rustc-hash 2.1.2",
  "swash",
  "tracing",

@@ -4,6 +4,7 @@
 //! default-policy changes without scanning the whole node surface.
 
 use crate::image::ImageFit;
+use crate::math::MathDisplay;
 use crate::style::StyleProfile;
 
 use super::geometry::{Corners, Sides};
@@ -82,6 +83,8 @@ impl Default for El {
             text_underline: false,
             text_strikethrough: false,
             text_link: None,
+            math: None,
+            math_display: MathDisplay::Inline,
             icon: None,
             icon_stroke_width: 2.0,
             image: None,

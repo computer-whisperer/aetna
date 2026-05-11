@@ -25,6 +25,9 @@ pub enum Kind {
     Inlines,
     /// Forced line break inside a `Kind::Inlines` block.
     HardBreak,
+    /// Native mathematical notation. Carries a [`crate::math::MathExpr`]
+    /// and renders through Aetna's math box layout.
+    Math,
     /// Raster image element.
     Image,
     /// App-owned GPU texture composited into the paint stream. Backed

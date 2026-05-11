@@ -314,6 +314,7 @@ fn role_token(k: &Kind) -> &'static str {
         Kind::VirtualList => "virtual_list",
         Kind::Inlines => "inlines",
         Kind::HardBreak => "hard_break",
+        Kind::Math => "math",
         Kind::Image => "image",
         Kind::Surface => "surface",
         Kind::Vector => "vector",
@@ -1229,6 +1230,17 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
         // it's a no-op layout-wise.
         return apply_min(c, 0.0, 0.0);
     }
+    if matches!(c.kind, Kind::Math) {
+        if let Some(expr) = &c.math {
+            let layout = crate::math::layout_math(expr, c.font_size, c.math_display);
+            return apply_min(
+                c,
+                layout.width + c.padding.left + c.padding.right,
+                layout.height() + c.padding.top + c.padding.bottom,
+            );
+        }
+        return apply_min(c, 0.0, 0.0);
+    }
     if c.icon.is_some() {
         return apply_min(
             c,
@@ -1453,6 +1465,9 @@ fn apply_min(c: &El, mut w: f32, mut h: f32) -> (f32, f32) {
 /// 1-2 characters of a boundary the rendered glyphs may straddle the
 /// laid-out rect by a fraction of a glyph.
 fn inline_paragraph_intrinsic(node: &El, available_width: Option<f32>) -> (f32, f32) {
+    if node.children.iter().any(|c| matches!(c.kind, Kind::Math)) {
+        return inline_mixed_intrinsic(node, available_width);
+    }
     let concat = concat_inline_text(&node.children);
     let size = inline_paragraph_size(node);
     let line_height = inline_paragraph_line_height(node);
@@ -1490,6 +1505,162 @@ fn inline_paragraph_intrinsic(node: &El, available_width: Option<f32>) -> (f32, 
         .unwrap_or(layout.width + node.padding.left + node.padding.right);
     let h = layout.height + node.padding.top + node.padding.bottom;
     apply_min(node, w, h)
+}
+
+fn inline_mixed_intrinsic(node: &El, available_width: Option<f32>) -> (f32, f32) {
+    let wrap_width = match node.text_wrap {
+        TextWrap::Wrap => available_width.or(match node.width {
+            Size::Fixed(v) => Some(v),
+            Size::Fill(_) | Size::Hug => None,
+        }),
+        TextWrap::NoWrap => None,
+    }
+    .map(|w| (w - node.padding.left - node.padding.right).max(1.0));
+
+    let mut line_w: f32 = 0.0;
+    let mut max_w: f32 = 0.0;
+    let mut line_ascent: f32 = node.font_size * 0.82;
+    let mut line_descent: f32 = node.font_size * 0.22;
+    let mut total_h: f32 = 0.0;
+    let finish_line = |line_w: &mut f32,
+                       max_w: &mut f32,
+                       line_ascent: &mut f32,
+                       line_descent: &mut f32,
+                       total_h: &mut f32| {
+        *max_w = (*max_w).max(*line_w);
+        *total_h += *line_ascent + *line_descent;
+        *line_w = 0.0;
+        *line_ascent = node.font_size * 0.82;
+        *line_descent = node.font_size * 0.22;
+    };
+
+    for child in &node.children {
+        match child.kind {
+            Kind::HardBreak => {
+                finish_line(
+                    &mut line_w,
+                    &mut max_w,
+                    &mut line_ascent,
+                    &mut line_descent,
+                    &mut total_h,
+                );
+                continue;
+            }
+            Kind::Text => {
+                let text = child.text.as_deref().unwrap_or("");
+                for chunk in inline_text_chunks(text) {
+                    let is_space = chunk.chars().all(char::is_whitespace);
+                    if is_space && line_w == 0.0 {
+                        continue;
+                    }
+                    let (w, ascent, descent) = inline_text_chunk_metrics(child, chunk);
+                    if let Some(limit) = wrap_width
+                        && !is_space
+                        && line_w > 0.0
+                        && line_w + w > limit
+                    {
+                        finish_line(
+                            &mut line_w,
+                            &mut max_w,
+                            &mut line_ascent,
+                            &mut line_descent,
+                            &mut total_h,
+                        );
+                    }
+                    if let Some(limit) = wrap_width
+                        && is_space
+                        && line_w + w > limit
+                    {
+                        continue;
+                    }
+                    line_w += w;
+                    line_ascent = line_ascent.max(ascent);
+                    line_descent = line_descent.max(descent);
+                }
+                continue;
+            }
+            _ => {}
+        }
+        let (w, ascent, descent) = inline_child_metrics(child);
+        if let Some(limit) = wrap_width
+            && line_w > 0.0
+            && line_w + w > limit
+        {
+            finish_line(
+                &mut line_w,
+                &mut max_w,
+                &mut line_ascent,
+                &mut line_descent,
+                &mut total_h,
+            );
+        }
+        line_w += w;
+        line_ascent = line_ascent.max(ascent);
+        line_descent = line_descent.max(descent);
+    }
+    finish_line(
+        &mut line_w,
+        &mut max_w,
+        &mut line_ascent,
+        &mut line_descent,
+        &mut total_h,
+    );
+    let w = wrap_width.map(|limit| max_w.min(limit)).unwrap_or(max_w)
+        + node.padding.left
+        + node.padding.right;
+    let h = total_h + node.padding.top + node.padding.bottom;
+    apply_min(node, w, h)
+}
+
+fn inline_text_chunks(text: &str) -> Vec<&str> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut last_space = None;
+    for (i, ch) in text.char_indices() {
+        let is_space = ch.is_whitespace();
+        match last_space {
+            None => last_space = Some(is_space),
+            Some(prev) if prev != is_space => {
+                chunks.push(&text[start..i]);
+                start = i;
+                last_space = Some(is_space);
+            }
+            _ => {}
+        }
+    }
+    if start < text.len() {
+        chunks.push(&text[start..]);
+    }
+    chunks
+}
+
+fn inline_text_chunk_metrics(child: &El, text: &str) -> (f32, f32, f32) {
+    let layout = text_metrics::layout_text_with_line_height_and_family(
+        text,
+        child.font_size,
+        child.line_height,
+        child.font_family,
+        child.font_weight,
+        child.font_mono,
+        TextWrap::NoWrap,
+        None,
+    );
+    (layout.width, child.font_size * 0.82, child.font_size * 0.22)
+}
+
+fn inline_child_metrics(child: &El) -> (f32, f32, f32) {
+    match child.kind {
+        Kind::Text => inline_text_chunk_metrics(child, child.text.as_deref().unwrap_or("")),
+        Kind::Math => {
+            if let Some(expr) = &child.math {
+                let layout = crate::math::layout_math(expr, child.font_size, child.math_display);
+                (layout.width, layout.ascent, layout.descent)
+            } else {
+                (0.0, 0.0, 0.0)
+            }
+        }
+        _ => (0.0, 0.0, 0.0),
+    }
 }
 
 /// Walk an Inlines paragraph's children and produce the source-order

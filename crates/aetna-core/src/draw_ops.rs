@@ -595,12 +595,36 @@ fn push_node(
         });
     }
 
+    if matches!(n.kind, Kind::Math) {
+        if let Some(expr) = &n.math {
+            push_math_ops(
+                n,
+                expr,
+                inner_painted_rect.inset(n.padding),
+                own_scissor,
+                opacity,
+                out,
+            );
+        }
+        return;
+    }
+
     // Attributed paragraph: aggregate child Text/HardBreak runs into one
     // DrawOp::AttributedText so cosmic-text shapes the runs together
     // (wrapping crosses run boundaries like real prose). Skip recursion
     // into children — they're encoded in the runs and don't paint
     // independently.
     if matches!(n.kind, Kind::Inlines) {
+        if n.children.iter().any(|c| matches!(c.kind, Kind::Math)) {
+            push_inline_mixed_ops(
+                n,
+                inner_painted_rect.inset(n.padding),
+                own_scissor,
+                opacity,
+                out,
+            );
+            return;
+        }
         let glyph_rect = inner_painted_rect.inset(n.padding);
         let runs = collect_inline_runs(n, opacity);
         let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
@@ -695,6 +719,291 @@ fn push_node(
             shader: ShaderHandle::Stock(StockShader::RoundedRect),
             uniforms,
         });
+    }
+}
+
+fn push_math_ops(
+    n: &El,
+    expr: &crate::math::MathExpr,
+    rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+    out: &mut Vec<DrawOp>,
+) {
+    let layout = crate::math::layout_math(expr, n.font_size * n.scale, n.math_display);
+    let origin_x = match n.math_display {
+        crate::math::MathDisplay::Inline => rect.x,
+        crate::math::MathDisplay::Block => rect.x + ((rect.w - layout.width) * 0.5).max(0.0),
+    };
+    let baseline_y = rect.y + layout.ascent;
+    let color = opaque(crate::math::resolved_math_color(n.text_color), opacity);
+    for (i, atom) in layout.atoms.iter().enumerate() {
+        match atom {
+            crate::math::MathAtom::Glyph {
+                text,
+                x,
+                y_baseline,
+                size,
+                weight,
+                ..
+            } => {
+                let glyph_layout = crate::math::math_glyph_layout(text, *size, *weight);
+                let glyph_baseline = glyph_layout
+                    .lines
+                    .first()
+                    .map(|line| line.baseline)
+                    .unwrap_or_else(|| crate::text::metrics::line_height(*size) * 0.75);
+                let glyph_rect = Rect::new(
+                    origin_x + x,
+                    baseline_y + y_baseline - glyph_baseline,
+                    glyph_layout.width,
+                    glyph_layout.height,
+                );
+                out.push(DrawOp::GlyphRun {
+                    id: format!("{}.math-glyph.{i}", n.computed_id),
+                    rect: glyph_rect,
+                    scissor,
+                    shader: ShaderHandle::Stock(StockShader::Text),
+                    color,
+                    text: text.clone(),
+                    size: *size,
+                    line_height: crate::text::metrics::line_height(*size),
+                    family: n.font_family,
+                    mono_family: n.mono_font_family,
+                    weight: *weight,
+                    mono: false,
+                    wrap: TextWrap::NoWrap,
+                    anchor: TextAnchor::Start,
+                    layout: glyph_layout,
+                    underline: false,
+                    strikethrough: false,
+                    link: None,
+                });
+            }
+            crate::math::MathAtom::Rule { rect: atom_rect } => {
+                let rule_rect = Rect::new(
+                    origin_x + atom_rect.x,
+                    baseline_y + atom_rect.y,
+                    atom_rect.w,
+                    atom_rect.h,
+                );
+                let mut uniforms = UniformBlock::new();
+                uniforms.insert("fill", UniformValue::Color(color));
+                uniforms.insert("radius", UniformValue::F32(0.0));
+                uniforms.insert("inner_rect", inner_rect_uniform(rule_rect));
+                out.push(DrawOp::Quad {
+                    id: format!("{}.math-rule.{i}", n.computed_id),
+                    rect: rule_rect,
+                    scissor,
+                    shader: ShaderHandle::Stock(StockShader::RoundedRect),
+                    uniforms,
+                });
+            }
+        }
+    }
+}
+
+fn push_inline_mixed_ops(
+    n: &El,
+    rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+    out: &mut Vec<DrawOp>,
+) {
+    let mut x = 0.0;
+    let mut baseline_y = rect.y + n.font_size * 0.82;
+    let mut line_ascent = n.font_size * 0.82;
+    let mut line_descent = n.font_size * 0.22;
+    let line_advance = |ascent: f32, descent: f32| (ascent + descent).max(n.line_height);
+
+    for (i, child) in n.children.iter().enumerate() {
+        match child.kind {
+            Kind::HardBreak => {
+                baseline_y += line_advance(line_ascent, line_descent);
+                x = 0.0;
+                line_ascent = n.font_size * 0.82;
+                line_descent = n.font_size * 0.22;
+                continue;
+            }
+            Kind::Text => {
+                if let Some(text) = &child.text {
+                    for (chunk_i, chunk) in inline_text_chunks(text).into_iter().enumerate() {
+                        let is_space = chunk.chars().all(char::is_whitespace);
+                        if is_space && x == 0.0 {
+                            continue;
+                        }
+                        let (w, ascent, descent) = inline_text_chunk_paint_metrics(child, chunk);
+                        if matches!(n.text_wrap, TextWrap::Wrap)
+                            && !is_space
+                            && x > 0.0
+                            && x + w > rect.w
+                        {
+                            baseline_y += line_advance(line_ascent, line_descent);
+                            x = 0.0;
+                            line_ascent = n.font_size * 0.82;
+                            line_descent = n.font_size * 0.22;
+                        }
+                        if matches!(n.text_wrap, TextWrap::Wrap) && is_space && x + w > rect.w {
+                            continue;
+                        }
+                        line_ascent = line_ascent.max(ascent);
+                        line_descent = line_descent.max(descent);
+                        push_inline_text_chunk(
+                            n, child, chunk, i, chunk_i, rect, scissor, opacity, x, baseline_y, out,
+                        );
+                        x += w;
+                    }
+                }
+                continue;
+            }
+            Kind::Math => {
+                if let Some(expr) = &child.math {
+                    let layout =
+                        crate::math::layout_math(expr, child.font_size, child.math_display);
+                    if matches!(n.text_wrap, TextWrap::Wrap) && x > 0.0 && x + layout.width > rect.w
+                    {
+                        baseline_y += line_advance(line_ascent, line_descent);
+                        x = 0.0;
+                        line_ascent = n.font_size * 0.82;
+                        line_descent = n.font_size * 0.22;
+                    }
+                    line_ascent = line_ascent.max(layout.ascent);
+                    line_descent = line_descent.max(layout.descent);
+                    let math_rect = Rect::new(
+                        rect.x + x,
+                        baseline_y - layout.ascent,
+                        layout.width,
+                        layout.height(),
+                    );
+                    push_math_ops(child, expr, math_rect, scissor, opacity, out);
+                    x += layout.width;
+                }
+            }
+            _ => {
+                let (w, ascent, descent) = inline_child_paint_metrics(child);
+                if matches!(n.text_wrap, TextWrap::Wrap) && x > 0.0 && x + w > rect.w {
+                    baseline_y += line_advance(line_ascent, line_descent);
+                    x = 0.0;
+                    line_ascent = n.font_size * 0.82;
+                    line_descent = n.font_size * 0.22;
+                }
+                line_ascent = line_ascent.max(ascent);
+                line_descent = line_descent.max(descent);
+                x += w;
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_inline_text_chunk(
+    parent: &El,
+    child: &El,
+    text: &str,
+    child_index: usize,
+    chunk_index: usize,
+    rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+    x: f32,
+    baseline_y: f32,
+    out: &mut Vec<DrawOp>,
+) {
+    let size = child.font_size * parent.scale;
+    let glyph_layout = crate::text::metrics::layout_text_with_line_height_and_family(
+        text,
+        size,
+        child.line_height * parent.scale,
+        child.font_family,
+        child.font_weight,
+        child.font_mono,
+        TextWrap::NoWrap,
+        None,
+    );
+    let glyph_baseline = glyph_layout
+        .lines
+        .first()
+        .map(|line| line.baseline)
+        .unwrap_or_else(|| crate::text::metrics::line_height(size) * 0.75);
+    let color = opaque(child.text_color.unwrap_or(tokens::FOREGROUND), opacity);
+    out.push(DrawOp::GlyphRun {
+        id: format!(
+            "{}.inline-text.{child_index}.{chunk_index}",
+            parent.computed_id
+        ),
+        rect: Rect::new(
+            rect.x + x,
+            baseline_y - glyph_baseline,
+            glyph_layout.width,
+            glyph_layout.height,
+        ),
+        scissor,
+        shader: ShaderHandle::Stock(StockShader::Text),
+        color,
+        text: text.to_string(),
+        size,
+        line_height: child.line_height * parent.scale,
+        family: child.font_family,
+        mono_family: child.mono_font_family,
+        weight: child.font_weight,
+        mono: child.font_mono,
+        wrap: TextWrap::NoWrap,
+        anchor: TextAnchor::Start,
+        layout: glyph_layout,
+        underline: child.text_underline || child.text_link.is_some(),
+        strikethrough: child.text_strikethrough,
+        link: child.text_link.clone(),
+    });
+}
+
+fn inline_text_chunks(text: &str) -> Vec<&str> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut last_space = None;
+    for (i, ch) in text.char_indices() {
+        let is_space = ch.is_whitespace();
+        match last_space {
+            None => last_space = Some(is_space),
+            Some(prev) if prev != is_space => {
+                chunks.push(&text[start..i]);
+                start = i;
+                last_space = Some(is_space);
+            }
+            _ => {}
+        }
+    }
+    if start < text.len() {
+        chunks.push(&text[start..]);
+    }
+    chunks
+}
+
+fn inline_text_chunk_paint_metrics(child: &El, text: &str) -> (f32, f32, f32) {
+    let layout = crate::text::metrics::layout_text_with_line_height_and_family(
+        text,
+        child.font_size,
+        child.line_height,
+        child.font_family,
+        child.font_weight,
+        child.font_mono,
+        TextWrap::NoWrap,
+        None,
+    );
+    (layout.width, child.font_size * 0.82, child.font_size * 0.22)
+}
+
+fn inline_child_paint_metrics(child: &El) -> (f32, f32, f32) {
+    match child.kind {
+        Kind::Text => inline_text_chunk_paint_metrics(child, child.text.as_deref().unwrap_or("")),
+        Kind::Math => {
+            if let Some(expr) = &child.math {
+                let layout = crate::math::layout_math(expr, child.font_size, child.math_display);
+                (layout.width, layout.ascent, layout.descent)
+            } else {
+                (0.0, 0.0, 0.0)
+            }
+        }
+        _ => (0.0, 0.0, 0.0),
     }
 }
 

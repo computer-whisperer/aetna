@@ -19,6 +19,9 @@ pub struct MarkdownOptions {
     /// Render GFM alert blockquotes (`[!NOTE]`, `[!WARNING]`, ...)
     /// through Aetna's `alert` widget instead of a plain blockquote.
     pub gfm_alerts: bool,
+    /// Parse `$...$` and `$$...$$` as native Aetna math instead of
+    /// leaving pulldown-cmark's math extension disabled.
+    pub math: bool,
 }
 
 impl MarkdownOptions {
@@ -29,6 +32,11 @@ impl MarkdownOptions {
 
     pub fn gfm_alerts(mut self, enabled: bool) -> Self {
         self.gfm_alerts = enabled;
+        self
+    }
+
+    pub fn math(mut self, enabled: bool) -> Self {
+        self.math = enabled;
         self
     }
 }
@@ -55,6 +63,9 @@ pub fn md_with_options(input: &str, options: MarkdownOptions) -> El {
     }
     if options.gfm_alerts {
         parser_options |= CmarkOptions::ENABLE_GFM;
+    }
+    if options.math {
+        parser_options |= CmarkOptions::ENABLE_MATH;
     }
 
     let parser = Parser::new_ext(input, parser_options);
@@ -208,12 +219,8 @@ impl Walker {
                 self.push_inline(hard_break());
             }
             Event::Rule => self.push_block(divider()),
-            // `$…$` / `$$…$$` math, raw HTML, footnotes — all skipped
-            // for the Phase 2 surface. Math will route through a future
-            // `aetna-latex` integration.
-            Event::InlineMath(text) | Event::DisplayMath(text) => {
-                self.code_span(text.into_string())
-            }
+            Event::InlineMath(text) => self.inline_math(text.into_string()),
+            Event::DisplayMath(text) => self.display_math(text.into_string()),
             Event::Html(_) | Event::InlineHtml(_) => {}
             Event::FootnoteReference(_) => {}
             Event::TaskListMarker(checked) => self.task_list_marker(checked),
@@ -502,6 +509,17 @@ impl Walker {
         self.push_inline(run);
     }
 
+    fn inline_math(&mut self, source: String) {
+        let expr = parse_tex_or_error(&source);
+        self.ensure_inline_frame();
+        self.push_inline(math_inline(expr));
+    }
+
+    fn display_math(&mut self, source: String) {
+        let expr = parse_tex_or_error(&source);
+        self.push_block(math_block(expr));
+    }
+
     /// Lazily open a `Paragraph` frame so an inline event arriving
     /// directly under an `Item` (CommonMark's tight-list shape — no
     /// wrapping `<p>`) has somewhere to land. The matching
@@ -663,6 +681,13 @@ fn build_code_block(lang: Option<&str>, text: String) -> El {
     #[cfg(not(feature = "highlighting"))]
     let _ = lang;
     code_block(body)
+}
+
+fn parse_tex_or_error(source: &str) -> MathExpr {
+    match parse_tex(source) {
+        Ok(expr) => expr,
+        Err(err) => MathExpr::Error(format!("math parse error at {}: {}", err.byte, err.message)),
+    }
 }
 
 /// Build a paragraph block. A single plain `text(...)` run can become
@@ -896,6 +921,13 @@ mod tests {
         }
     }
 
+    fn blocks_with_options(input: &str, options: MarkdownOptions) -> Vec<El> {
+        match md_with_options(input, options) {
+            el if matches!(el.kind, Kind::Group) && el.axis == Axis::Column => el.children,
+            other => panic!("expected outer column, got {:?}", other.kind),
+        }
+    }
+
     #[test]
     fn empty_document_yields_an_empty_column() {
         let bs = blocks("");
@@ -951,6 +983,24 @@ mod tests {
             runs.iter()
                 .any(|r| r.text_role == TextRole::Code && r.text.as_deref() == Some("code"))
         );
+    }
+
+    #[test]
+    fn math_option_routes_inline_and_display_math_to_math_nodes() {
+        let bs = blocks_with_options(
+            "Euler $e^{i\\pi}+1=0$\n\n$$\\frac{a}{b}$$",
+            MarkdownOptions::default().math(true),
+        );
+        assert_eq!(bs.len(), 2);
+        assert_eq!(bs[0].kind, Kind::Inlines);
+        assert!(
+            bs[0]
+                .children
+                .iter()
+                .any(|child| matches!(child.kind, Kind::Math) && child.math.is_some())
+        );
+        assert_eq!(bs[1].kind, Kind::Math);
+        assert_eq!(bs[1].math_display, MathDisplay::Block);
     }
 
     #[test]

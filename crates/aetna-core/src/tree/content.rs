@@ -301,4 +301,14 @@ impl El {
         self.text_link = Some(url.into());
         self
     }
+
+    pub fn math_expr(mut self, expr: impl Into<std::sync::Arc<crate::math::MathExpr>>) -> Self {
+        self.math = Some(expr.into());
+        self
+    }
+
+    pub fn math_display(mut self, display: crate::math::MathDisplay) -> Self {
+        self.math_display = display;
+        self
+    }
 }
