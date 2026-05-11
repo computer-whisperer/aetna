@@ -20,6 +20,8 @@ const TABLE_COL_GAP_EM: f32 = 0.8;
 const TABLE_ROW_GAP_EM: f32 = 0.35;
 const CASES_COL_GAP_EM: f32 = 0.5;
 const RADICAL_GLYPH: char = '√';
+const THIN_MATH_SPACE_EM: f32 = 0.08;
+const MEDIUM_MATH_SPACE_EM: f32 = 0.18;
 const STRETCHY_VARIANT_CHARS: [char; 17] = [
     '(',
     ')',
@@ -62,6 +64,11 @@ pub enum MathExpr {
     Identifier(String),
     Number(String),
     Operator(String),
+    OperatorWithSpacing {
+        text: String,
+        lspace: Option<f32>,
+        rspace: Option<f32>,
+    },
     Text(String),
     Space(f32),
     Fraction {
@@ -156,6 +163,60 @@ pub enum MathAtom {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MathOperatorClass {
+    Ordinary,
+    Binary,
+    Relation,
+    Large,
+    Punctuation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MathOperatorInfo {
+    class: MathOperatorClass,
+    lspace_em: f32,
+    rspace_em: f32,
+    large_operator: bool,
+    movable_limits: bool,
+}
+
+impl MathOperatorInfo {
+    fn new(class: MathOperatorClass, lspace_em: f32, rspace_em: f32) -> Self {
+        Self {
+            class,
+            lspace_em,
+            rspace_em,
+            large_operator: false,
+            movable_limits: false,
+        }
+    }
+
+    fn large(mut self) -> Self {
+        self.large_operator = true;
+        self.movable_limits = true;
+        self
+    }
+}
+
+fn operator_info(operator: &str) -> MathOperatorInfo {
+    use MathOperatorClass::*;
+    match operator {
+        "+" | "-" | "±" | "∓" | "·" | "×" | "÷" | "∪" | "∩" => {
+            MathOperatorInfo::new(Binary, MEDIUM_MATH_SPACE_EM, MEDIUM_MATH_SPACE_EM)
+        }
+        "=" | "<" | ">" | "≤" | "≥" | "≠" | "≈" | "∼" | "→" | "←" | "↔" => {
+            MathOperatorInfo::new(Relation, MEDIUM_MATH_SPACE_EM, MEDIUM_MATH_SPACE_EM)
+        }
+        "∑" | "∏" | "⋂" | "⋃" => {
+            MathOperatorInfo::new(Large, THIN_MATH_SPACE_EM, THIN_MATH_SPACE_EM).large()
+        }
+        "∫" => MathOperatorInfo::new(Large, THIN_MATH_SPACE_EM, THIN_MATH_SPACE_EM),
+        "," | "." | ";" | ":" => MathOperatorInfo::new(Punctuation, 0.0, THIN_MATH_SPACE_EM),
+        _ => MathOperatorInfo::new(Ordinary, 0.0, 0.0),
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct LayoutCtx {
     size: f32,
@@ -241,14 +302,17 @@ impl MathMetrics {
         self.size * em
     }
 
-    fn operator_side_bearing(self, operator: &str) -> f32 {
-        match operator {
-            "+" | "-" | "=" | "<" | ">" | "≤" | "≥" | "≠" | "×" | "÷" | "→" | "←" | "↔" | "∪"
-            | "∩" | "⋃" | "⋂" => self.size * 0.18,
-            "∑" | "∏" | "∫" => self.size * 0.12,
-            "," | "." | ";" | ":" => self.size * 0.08,
-            _ => 0.0,
-        }
+    fn operator_spacing_with_overrides(
+        self,
+        operator: &str,
+        lspace_em: Option<f32>,
+        rspace_em: Option<f32>,
+    ) -> (f32, f32) {
+        let info = operator_info(operator);
+        (
+            self.size * lspace_em.unwrap_or(info.lspace_em),
+            self.size * rspace_em.unwrap_or(info.rspace_em),
+        )
     }
 
     fn fraction_pad(self) -> f32 {
@@ -928,6 +992,11 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
         MathExpr::Identifier(s) => layout_glyph(s, ctx, FontWeight::Regular, true),
         MathExpr::Number(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
         MathExpr::Operator(s) => layout_operator(s, ctx),
+        MathExpr::OperatorWithSpacing {
+            text,
+            lspace,
+            rspace,
+        } => layout_operator_with_spacing(text, *lspace, *rspace, ctx),
         MathExpr::Text(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
         MathExpr::Space(em) => MathLayout {
             width: metrics.space_width(*em),
@@ -1010,15 +1079,26 @@ fn layout_glyph(s: &str, ctx: LayoutCtx, weight: FontWeight, italic: bool) -> Ma
 }
 
 fn layout_operator(s: &str, ctx: LayoutCtx) -> MathLayout {
+    layout_operator_with_spacing(s, None, None, ctx)
+}
+
+fn layout_operator_with_spacing(
+    s: &str,
+    lspace: Option<f32>,
+    rspace: Option<f32>,
+    ctx: LayoutCtx,
+) -> MathLayout {
     let mut layout = layout_glyph(s, ctx, FontWeight::Regular, false);
-    let side = ctx.metrics().operator_side_bearing(s);
-    if side > 0.0 {
+    let (lspace, rspace) = ctx
+        .metrics()
+        .operator_spacing_with_overrides(s, lspace, rspace);
+    if lspace > 0.0 || rspace > 0.0 {
         for atom in &mut layout.atoms {
             if let MathAtom::Glyph { x, .. } = atom {
-                *x += side;
+                *x += lspace;
             }
         }
-        layout.width += side * 2.0;
+        layout.width += lspace + rspace;
     }
     layout
 }
@@ -1338,27 +1418,39 @@ fn layout_accent_mark(accent: &MathExpr, ctx: LayoutCtx) -> MathLayout {
 
 fn is_display_limits_base(expr: &MathExpr) -> bool {
     match expr {
-        MathExpr::Operator(_) => is_large_operator_base(expr),
+        MathExpr::Operator(_) | MathExpr::OperatorWithSpacing { .. } => {
+            is_large_operator_base(expr)
+        }
         MathExpr::Text(s) => matches!(s.as_str(), "lim" | "max" | "min" | "sup" | "inf"),
         _ => false,
     }
 }
 
 fn is_large_operator_base(expr: &MathExpr) -> bool {
-    matches!(expr, MathExpr::Operator(s) if is_large_operator_symbol_str(s))
+    match expr {
+        MathExpr::Operator(s) => is_large_operator_symbol_str(s),
+        MathExpr::OperatorWithSpacing { text, .. } => is_large_operator_symbol_str(text),
+        _ => false,
+    }
 }
 
 fn is_large_operator_symbol_str(s: &str) -> bool {
-    single_char(s).is_some_and(is_large_operator_symbol)
+    operator_info(s).large_operator
 }
 
 fn is_large_operator_symbol(ch: char) -> bool {
-    matches!(ch, '∑' | '∏' | '⋂' | '⋃')
+    operator_info(&ch.to_string()).large_operator
 }
 
 fn layout_large_operator_variant(expr: &MathExpr, ctx: LayoutCtx) -> Option<MathLayout> {
-    let MathExpr::Operator(operator) = expr else {
-        return None;
+    let (operator, lspace_override, rspace_override) = match expr {
+        MathExpr::Operator(operator) => (operator.as_str(), None, None),
+        MathExpr::OperatorWithSpacing {
+            text,
+            lspace,
+            rspace,
+        } => (text.as_str(), *lspace, *rspace),
+        _ => return None,
     };
     let metrics = ctx.metrics();
     let variant = metrics.large_operator_variant_for_height(operator, ctx.size)?;
@@ -1375,15 +1467,16 @@ fn layout_large_operator_variant(expr: &MathExpr, ctx: LayoutCtx) -> Option<Math
     let target_center_y = -metrics.math_axis_shift();
     let glyph_center_y = view_box.y * scale + glyph_height * 0.5;
     let glyph_y = target_center_y - glyph_center_y;
-    let side = metrics.operator_side_bearing(operator);
+    let (lspace, rspace) =
+        metrics.operator_spacing_with_overrides(operator, lspace_override, rspace_override);
     let rect = Rect::new(
-        side + (width - glyph_width) * 0.5,
+        lspace + (width - glyph_width) * 0.5,
         glyph_y + view_box.y * scale,
         glyph_width,
         glyph_height,
     );
     Some(MathLayout {
-        width: width + side * 2.0,
+        width: width + lspace + rspace,
         ascent: -rect.y,
         descent: rect.y + rect.h,
         atoms: vec![MathAtom::GlyphId {
@@ -1886,7 +1979,7 @@ fn parse_mathml_node(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPars
         "math" | "mrow" => Ok(MathExpr::row(parse_mathml_children(node)?)),
         "mi" => Ok(MathExpr::Identifier(normalized_node_text(node))),
         "mn" => Ok(MathExpr::Number(normalized_node_text(node))),
-        "mo" => Ok(MathExpr::Operator(normalized_node_text(node))),
+        "mo" => parse_mathml_operator(node),
         "mtext" => Ok(MathExpr::Text(normalized_node_text(node))),
         "mspace" => Ok(MathExpr::Space(parse_mathml_space(node))),
         "mfrac" => {
@@ -1936,6 +2029,20 @@ fn parse_mathml_children(node: roxmltree::Node<'_, '_>) -> Result<Vec<MathExpr>,
         .into_iter()
         .map(parse_mathml_node)
         .collect()
+}
+
+fn parse_mathml_operator(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathParseError> {
+    let operator = normalized_node_text(node);
+    let lspace = node.attribute("lspace").and_then(parse_em_length);
+    let rspace = node.attribute("rspace").and_then(parse_em_length);
+    if lspace.is_none() && rspace.is_none() {
+        return Ok(MathExpr::Operator(operator));
+    }
+    Ok(MathExpr::OperatorWithSpacing {
+        text: operator,
+        lspace,
+        rspace,
+    })
 }
 
 fn parse_mathml_semantics(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathParseError> {
@@ -3173,6 +3280,24 @@ mod tests {
     }
 
     #[test]
+    fn operator_metadata_covers_spacing_and_large_ops() {
+        let plus = operator_info("+");
+        assert_eq!(plus.class, MathOperatorClass::Binary);
+        assert!(plus.lspace_em > 0.0);
+        assert!(plus.rspace_em > 0.0);
+
+        let comma = operator_info(",");
+        assert_eq!(comma.class, MathOperatorClass::Punctuation);
+        assert_eq!(comma.lspace_em, 0.0);
+        assert!(comma.rspace_em > 0.0);
+
+        let sum = operator_info("∑");
+        assert_eq!(sum.class, MathOperatorClass::Large);
+        assert!(sum.large_operator);
+        assert!(sum.movable_limits);
+    }
+
+    #[test]
     fn display_sum_scripts_layout_as_limits() {
         let expr = parse_tex(r"\sum_{i=1}^{n} x_i").expect("valid tex");
         let layout = layout_math(&expr, 16.0, MathDisplay::Block);
@@ -3737,6 +3862,28 @@ mod tests {
             }
             other => panic!("expected under/over expression, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_mathml_operator_spacing_attributes() {
+        let expr = parse_mathml(r#"<math><mo lspace="0em" rspace="0.5em">+</mo></math>"#)
+            .expect("valid spaced operator");
+        assert_eq!(
+            expr,
+            MathExpr::OperatorWithSpacing {
+                text: "+".into(),
+                lspace: Some(0.0),
+                rspace: Some(0.5),
+            }
+        );
+
+        let default_width =
+            layout_math(&MathExpr::Operator("+".into()), 16.0, MathDisplay::Inline).width;
+        let custom_width = layout_math(&expr, 16.0, MathDisplay::Inline).width;
+        assert!(
+            custom_width > default_width,
+            "custom width = {custom_width}, default width = {default_width}"
+        );
     }
 
     #[test]

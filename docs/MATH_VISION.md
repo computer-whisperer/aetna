@@ -53,6 +53,7 @@ like a small subset of MathML Core:
 - `Identifier`
 - `Number`
 - `Operator`
+- `OperatorWithSpacing`
 - `Text`
 - `Space`
 - `Fraction`
@@ -69,7 +70,6 @@ Expected expansions:
 
 - `Style`
 - `Phantom`
-- explicit operator metadata
 - source spans / original source for copy and diagnostics
 
 ### Layout IR
@@ -145,6 +145,7 @@ The supported MathML subset mirrors that same IR:
 - `mtable`, `mtr`, `mtd`
 - table-level `columnalign` values `left`, `center`, `right`, and `decimal`
 - table-level `columnspacing` and `rowspacing` when expressed as `em` values
+- operator-level `lspace` and `rspace` on `mo`
 
 This is enough to render smoke examples such as:
 
