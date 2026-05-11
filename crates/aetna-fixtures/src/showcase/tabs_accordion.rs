@@ -58,7 +58,8 @@ pub fn view(state: &State) -> El {
         accordion_demo(state),
     ])
     .gap(tokens::SPACE_4)
-    .align(Align::Stretch)])
+    .align(Align::Stretch)
+    .padding(Sides::right(tokens::SCROLLBAR_HITBOX_WIDTH))])
     .height(Size::Fill(1.0))
 }
 

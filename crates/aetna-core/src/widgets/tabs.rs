@@ -312,6 +312,9 @@ where
     I: IntoIterator<Item = E>,
     E: Into<El>,
 {
+    let mut triggers: Vec<El> = triggers.into_iter().map(Into::into).collect();
+    apply_edge_radii(&mut triggers);
+
     El::new(Kind::Custom("tabs_list"))
         .at_loc(caller)
         .metrics_role(MetricsRole::TabList)
@@ -325,6 +328,43 @@ where
         .default_padding(Sides::all(tokens::SPACE_1))
         .width(Size::Fill(1.0))
         .height(Size::Hug)
+}
+
+fn apply_edge_radii(triggers: &mut [El]) {
+    match triggers {
+        [] => {}
+        [only] => {
+            set_trigger_radius(only, Corners::all(tokens::RADIUS_MD));
+        }
+        [first, middle @ .., last] => {
+            set_trigger_radius(
+                first,
+                Corners {
+                    tl: tokens::RADIUS_MD,
+                    tr: tokens::RADIUS_SM,
+                    br: tokens::RADIUS_SM,
+                    bl: tokens::RADIUS_MD,
+                },
+            );
+            for trigger in middle {
+                set_trigger_radius(trigger, Corners::all(tokens::RADIUS_SM));
+            }
+            set_trigger_radius(
+                last,
+                Corners {
+                    tl: tokens::RADIUS_SM,
+                    tr: tokens::RADIUS_MD,
+                    br: tokens::RADIUS_MD,
+                    bl: tokens::RADIUS_SM,
+                },
+            );
+        }
+    }
+}
+
+fn set_trigger_radius(trigger: &mut El, radius: Corners) {
+    trigger.radius = radius;
+    trigger.explicit_radius = true;
 }
 
 #[cfg(test)]
@@ -584,6 +624,28 @@ mod tests {
         );
         assert_eq!(list.fill, Some(tokens::MUTED));
         assert_eq!(list.radius, crate::tree::Corners::all(tokens::RADIUS_MD));
+        assert_eq!(
+            list.children[0].radius,
+            crate::tree::Corners {
+                tl: tokens::RADIUS_MD,
+                tr: tokens::RADIUS_SM,
+                br: tokens::RADIUS_SM,
+                bl: tokens::RADIUS_MD,
+            }
+        );
+        assert!(
+            list.children[0].explicit_radius,
+            "edge trigger radius must survive the metrics pass"
+        );
+        assert_eq!(
+            list.children[1].radius,
+            crate::tree::Corners {
+                tl: tokens::RADIUS_SM,
+                tr: tokens::RADIUS_MD,
+                br: tokens::RADIUS_MD,
+                bl: tokens::RADIUS_SM,
+            }
+        );
         // Row axis with a small gap so triggers are visually distinct.
         assert_eq!(list.axis, Axis::Row);
         // The list itself is not focusable or keyed — only its

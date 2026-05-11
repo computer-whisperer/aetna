@@ -181,7 +181,10 @@ pub fn view(state: &State) -> El {
                 .ghost()
                 .tooltip("Open settings")
                 .key("status-settings"),
-            badge("3").info().tooltip("3 unread notifications"),
+            badge("3")
+                .info()
+                .tooltip("3 unread notifications")
+                .key("status-unread-badge"),
         ])
         .gap(tokens::SPACE_2)
         .align(Align::Center),
