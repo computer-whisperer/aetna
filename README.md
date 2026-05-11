@@ -59,7 +59,7 @@ The architectural decision: `El` is the author's description of the scene; every
 | App trait + hit-test + automatic hover/press | `cargo run -p aetna-examples --bin counter` (interactive); `crates/aetna-wgpu/out/counter.wgpu.png` |
 | HiDPI text + shaped core layout + paragraph wrapping + text alignment | bundled Inter + JetBrains Mono by default (Roboto opt-in), `cosmic-text` core layout + swash rasterization, core-owned glyph atlas. SVG fallback (`crates/aetna-core/out/settings.svg`) aligned with wgpu output |
 | Clip + modal/overlay | `cargo run -p aetna-core --example modal` → `crates/aetna-core/out/modal.svg` |
-| Scroll viewport | `cargo run -p aetna-core --example scroll_list` → `crates/aetna-core/out/scroll_list.svg`; `cargo run -p aetna-examples --bin scroll_list` (interactive, wheel) |
+| Scroll viewport | `cargo run -p aetna-core --example scroll_list` → `crates/aetna-core/out/scroll_list.svg`; `cargo run -p aetna-examples --bin scroll_list` (interactive, wheel). `scroll([...]).pin_end()` opts in to the chat-log "stick to bottom" behaviour — offset follows new tail children, releases when the user scrolls up, re-engages on wheel-back-to-bottom. |
 | Host-painted regions | reserve a keyed node in the tree, call `Runner::rect_of_key("viewport")` after `prepare()`, and let the host renderer paint into that rect |
 | Focus traversal + keyboard routing | Tab / Shift+Tab / Enter / Space / Escape in any interactive demo |
 | Hotkey system | `cargo run -p aetna-examples --bin hotkey_picker` — `j`/`k` movement, Ctrl+L, `/`, etc., zero per-key matching in the app |

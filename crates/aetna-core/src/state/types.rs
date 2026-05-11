@@ -388,6 +388,20 @@ pub(crate) struct ScrollState {
     /// resolver compute the target offset correctly even on first
     /// frame and for unmeasured `virtual_list_dyn` rows.
     pub(crate) pending_requests: Vec<crate::scroll::ScrollRequest>,
+    /// "Pin currently engaged" bit for scroll containers built with
+    /// [`crate::tree::El::pin_end`]. Keyed by `computed_id`. When set,
+    /// the next layout pass snaps the stored offset to `max_offset`
+    /// before clamping; a user scroll or programmatic offset write that
+    /// lands away from the tail clears it. Entries persist across
+    /// frames as long as the container stays mounted; switching a
+    /// container away from `pin_end()` removes its entry.
+    pub(crate) pin_active: FxHashMap<String, bool>,
+    /// Previous-frame `max_offset` for pin-end containers, used to
+    /// distinguish "user (or programmatic write) moved the offset off
+    /// the tail" from "content grew past the previous tail while we
+    /// were pinned." Lives outside [`Self::metrics`] because that map
+    /// is rebuilt every layout pass.
+    pub(crate) pin_prev_max: FxHashMap<String, f32>,
 }
 
 /// Runtime queue for toast notifications. Apps provide fire-and-forget

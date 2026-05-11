@@ -521,6 +521,7 @@ fn write_virtual_scroll_state(node: &El, inner: Rect, total_h: f32, ui_state: &m
         .get(&node.computed_id)
         .copied()
         .unwrap_or(0.0);
+    let stored = resolve_pin_end(node, stored, max_offset, ui_state);
     let offset = stored.clamp(0.0, max_offset);
     ui_state
         .scroll
@@ -803,6 +804,7 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
         .get(&node.computed_id)
         .copied()
         .unwrap_or(0.0);
+    let stored = resolve_pin_end(node, stored, max_offset, ui_state);
     let clamped = stored.clamp(0.0, max_offset);
     if clamped > 0.0 {
         for c in &node.children {
@@ -823,6 +825,66 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
     );
 
     write_thumb_rect(node, inner, content_h, max_offset, clamped, ui_state);
+}
+
+/// Stored offset within this much of `max_offset` counts as "at the
+/// tail" for [`El::pin_end`]. Wheel deltas are integer pixels, so a
+/// half-pixel slack absorbs floating-point rounding without admitting
+/// any deliberate user scroll.
+const PIN_END_EPSILON: f32 = 0.5;
+
+/// Apply [`El::pin_end`] semantics to `stored`. Reads the previous
+/// frame's `max_offset` from `scroll.metrics` to decide whether the
+/// stored offset has moved off the tail since last frame (user wheel /
+/// drag / programmatic write), and updates `scroll.pin_active`
+/// accordingly. Returns the offset that should be clamped + written
+/// downstream — `max_offset` when the pin is engaged, the input
+/// `stored` otherwise.
+///
+/// First frame for an opted-in container starts pinned, so a freshly
+/// mounted `scroll([...]).pin_end()` paints with its tail visible.
+fn resolve_pin_end(node: &El, stored: f32, max_offset: f32, ui_state: &mut UiState) -> f32 {
+    if !node.pin_end {
+        ui_state.scroll.pin_active.remove(&node.computed_id);
+        ui_state.scroll.pin_prev_max.remove(&node.computed_id);
+        return stored;
+    }
+    let prev_max = ui_state
+        .scroll
+        .pin_prev_max
+        .get(&node.computed_id)
+        .copied();
+    let prev_active = ui_state.scroll.pin_active.get(&node.computed_id).copied();
+    let active = match prev_active {
+        None => true,
+        Some(prev) => {
+            let prev_max = prev_max.unwrap_or(0.0);
+            if prev && stored < prev_max - PIN_END_EPSILON {
+                // Wheel / drag / EnsureVisible moved the offset off
+                // the tail since last frame.
+                false
+            } else if !prev && prev_max > 0.0 && stored >= prev_max - PIN_END_EPSILON {
+                // Returned to (or past) the previous tail (wheel-back,
+                // jump-to-latest EnsureVisible, programmatic
+                // set_scroll_offset). Compared against `prev_max`
+                // rather than the current `max_offset` so a wheel-back
+                // to the bottom re-engages even when content grew
+                // between frames.
+                true
+            } else {
+                prev
+            }
+        }
+    };
+    ui_state
+        .scroll
+        .pin_active
+        .insert(node.computed_id.clone(), active);
+    ui_state
+        .scroll
+        .pin_prev_max
+        .insert(node.computed_id.clone(), max_offset);
+    if active { max_offset } else { stored }
 }
 
 /// Walk pending `ScrollRequest::EnsureVisible` requests and pop any

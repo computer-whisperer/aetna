@@ -55,6 +55,7 @@ impl Default for El {
             paint_overflow: Sides::zero(),
             clip: false,
             scrollable: false,
+            pin_end: false,
             arrow_nav_siblings: false,
             tooltip: None,
             cursor: None,

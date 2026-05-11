@@ -270,3 +270,189 @@ fn scroll_request_last_match_wins_when_multiple_target_same_list() {
 
     assert!((state.scroll_offset(&tree.computed_id) - 1500.0).abs() < 0.5);
 }
+
+fn chat_tree(rows: usize, row_h: f32, pin: bool) -> El {
+    let kids: Vec<El> = (0..rows)
+        .map(|i| {
+            button(format!("m{i}"))
+                .key(format!("m{i}"))
+                .height(Size::Fixed(row_h))
+        })
+        .collect();
+    let mut s = scroll(kids).key("chat").height(Size::Fixed(100.0));
+    if pin {
+        s = s.pin_end();
+    }
+    s
+}
+
+#[test]
+fn pin_end_starts_at_tail_on_first_layout() {
+    // Four 40px rows = content_h 160; viewport 100 → max_offset 60.
+    // pin_end means first frame paints with the tail visible.
+    let mut tree = chat_tree(4, 40.0, true);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    let offset = state.scroll_offset(&tree.computed_id);
+    assert!(
+        (offset - 60.0).abs() < 0.5,
+        "expected first-frame offset = max_offset 60, got {offset}"
+    );
+}
+
+#[test]
+fn without_pin_end_first_layout_starts_at_head() {
+    // Same geometry, no .pin_end() — offset should default to 0.
+    let mut tree = chat_tree(4, 40.0, false);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    assert!((state.scroll_offset(&tree.computed_id) - 0.0).abs() < 0.5);
+}
+
+#[test]
+fn pin_end_follows_content_growth() {
+    // Frame 1: 3 rows × 40px = 120; viewport 100 → max=20; pinned → 20.
+    let mut tree = chat_tree(3, 40.0, true);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    assert!((state.scroll_offset(&tree.computed_id) - 20.0).abs() < 0.5);
+
+    // Frame 2: a new message arrives. 4 rows × 40 = 160; max=60.
+    // Pin is still engaged → offset snaps to the new max.
+    let mut tree = chat_tree(4, 40.0, true);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    let offset = state.scroll_offset(&tree.computed_id);
+    assert!(
+        (offset - 60.0).abs() < 0.5,
+        "expected offset to track new tail 60, got {offset}"
+    );
+}
+
+#[test]
+fn pin_end_releases_when_user_scrolls_up() {
+    let mut tree = chat_tree(5, 40.0, true);
+    let mut state = UiState::new();
+    // Frame 1: pinned at max = 200 - 100 = 100.
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    assert!((state.scroll_offset(&tree.computed_id) - 100.0).abs() < 0.5);
+
+    // User wheels up by 40 (negative dy moves content up — but wheel
+    // convention here is `dy` is added to the offset, so we send -40 to
+    // scroll toward the head).
+    let center = (100.0, 50.0);
+    state.pointer_wheel(&tree, center, -40.0);
+    assert!((state.scroll_offset(&tree.computed_id) - 60.0).abs() < 0.5);
+
+    // Next layout: pin should release; offset stays at 60 even though
+    // content grew.
+    let mut tree = chat_tree(6, 40.0, true);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    let offset = state.scroll_offset(&tree.computed_id);
+    assert!(
+        (offset - 60.0).abs() < 0.5,
+        "expected pin to release and offset to stay at 60, got {offset}"
+    );
+}
+
+#[test]
+fn pin_end_re_engages_when_user_returns_to_tail() {
+    let mut tree = chat_tree(5, 40.0, true);
+    let mut state = UiState::new();
+    // Frame 1: pinned at max=100.
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    // Scroll up to 60, layout to commit the release.
+    state.pointer_wheel(&tree, (100.0, 50.0), -40.0);
+    let mut tree = chat_tree(5, 40.0, true);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    assert!((state.scroll_offset(&tree.computed_id) - 60.0).abs() < 0.5);
+
+    // User scrolls back down to the tail (wheel by +40 brings stored
+    // back to 100).
+    state.pointer_wheel(&tree, (100.0, 50.0), 40.0);
+
+    // Now content grows: 7 rows × 40 = 280; max = 180. Pin re-engaged
+    // on the previous frame's return to tail, so the offset tracks the
+    // new max.
+    let mut tree = chat_tree(7, 40.0, true);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    let offset = state.scroll_offset(&tree.computed_id);
+    assert!(
+        (offset - 180.0).abs() < 0.5,
+        "expected pin to re-engage and offset to track new tail 180, got {offset}"
+    );
+}
+
+#[test]
+fn pin_end_survives_viewport_resize() {
+    // First frame at viewport_h=100, 5 rows × 40 = 200; max=100; pinned.
+    let mut tree = chat_tree(5, 40.0, true);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    assert!((state.scroll_offset(&tree.computed_id) - 100.0).abs() < 0.5);
+
+    // Viewport grows to 150 (sidebar dragged narrower / window resize).
+    // New max = 200 - 150 = 50. Pin still engaged → snap to 50.
+    let mut tree = chat_tree(5, 40.0, true);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 150.0));
+    let offset = state.scroll_offset(&tree.computed_id);
+    assert!(
+        (offset - 50.0).abs() < 0.5,
+        "expected pin to follow viewport resize to new max 50, got {offset}"
+    );
+}
+
+#[test]
+fn pin_end_off_does_not_follow_content_growth() {
+    // No .pin_end(). Stored offset stays where the user (or default)
+    // last put it; content growth does not move it.
+    let mut tree = chat_tree(3, 40.0, false);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    assert!((state.scroll_offset(&tree.computed_id) - 0.0).abs() < 0.5);
+
+    let mut tree = chat_tree(6, 40.0, false);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    let offset = state.scroll_offset(&tree.computed_id);
+    assert!(
+        (offset - 0.0).abs() < 0.5,
+        "expected offset to stay at head without pin_end, got {offset}"
+    );
+}
+
+#[test]
+fn pin_end_releases_on_ensure_visible_to_non_tail_anchor() {
+    // Pinned, then an EnsureVisible request targets the first message.
+    let mut tree = chat_tree(6, 40.0, true);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    assert!((state.scroll_offset(&tree.computed_id) - 140.0).abs() < 0.5);
+
+    state.push_scroll_requests(vec![ScrollRequest::ensure_visible("chat", 0.0, 40.0)]);
+    let mut tree = chat_tree(6, 40.0, true);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    let offset = state.scroll_offset(&tree.computed_id);
+    assert!(
+        offset < 60.0,
+        "EnsureVisible toward the head should release the pin and scroll up; got {offset}"
+    );
+
+    // Content grows; pin is no longer engaged, offset should not track
+    // the new tail.
+    let mut tree = chat_tree(10, 40.0, true);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    let after = state.scroll_offset(&tree.computed_id);
+    assert!(
+        after < 100.0,
+        "expected pin released; growth should not drag offset to new tail, got {after}"
+    );
+}
+
+#[test]
+fn pin_end_with_short_content_is_a_no_op_clamp() {
+    // Content shorter than viewport: max_offset = 0, no scrolling.
+    // pin_end should not break this case — offset stays at 0.
+    let mut tree = chat_tree(1, 40.0, true);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+    assert!((state.scroll_offset(&tree.computed_id) - 0.0).abs() < 0.5);
+}

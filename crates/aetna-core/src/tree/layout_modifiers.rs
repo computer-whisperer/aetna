@@ -158,6 +158,23 @@ impl El {
         self
     }
 
+    /// Stick this scroll viewport's offset to the tail of its content
+    /// the way chat logs and activity feeds do — when new children land
+    /// below the current bottom, the offset follows them; when the user
+    /// scrolls up, the pin releases; when the user scrolls back to the
+    /// bottom, it re-engages. Mirrors `egui::ScrollArea::stick_to_bottom`.
+    ///
+    /// On first layout the offset starts at `max_offset`, so a freshly
+    /// mounted `scroll([...]).pin_end()` paints with its tail visible
+    /// rather than its head. Programmatic
+    /// [`crate::scroll::ScrollRequest::EnsureVisible`] requests that
+    /// resolve away from the tail also release the pin, so a
+    /// "jump-to-message N" action behaves as the user expects.
+    pub fn pin_end(mut self) -> Self {
+        self.pin_end = true;
+        self
+    }
+
     /// Treat this element's focusable children as a single
     /// arrow-navigable group.
     pub fn arrow_nav_siblings(mut self) -> Self {
