@@ -59,11 +59,11 @@ like a small subset of MathML Core:
 - `Sqrt`
 - `Root`
 - `Scripts`
+- `UnderOver`
 - `Error`
 
 Expected expansions:
 
-- `UnderOver`
 - `Table`
 - `Style`
 - `Phantom`
@@ -121,6 +121,7 @@ The supported TeX subset is deliberately small:
 - `\frac`
 - `\sqrt` and indexed `\sqrt[n]{...}`
 - superscripts and subscripts
+- display-style limits for common large operators such as `\sum`
 
 The supported MathML subset mirrors that same IR:
 
@@ -129,6 +130,7 @@ The supported MathML subset mirrors that same IR:
 - `mfrac`
 - `msqrt`, `mroot`
 - `msub`, `msup`, `msubsup`
+- `munder`, `mover`, `munderover`
 
 This is enough to render smoke examples such as:
 

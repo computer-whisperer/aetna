@@ -46,6 +46,11 @@ pub enum MathExpr {
         sub: Option<Arc<MathExpr>>,
         sup: Option<Arc<MathExpr>>,
     },
+    UnderOver {
+        base: Arc<MathExpr>,
+        under: Option<Arc<MathExpr>>,
+        over: Option<Arc<MathExpr>>,
+    },
     Error(String),
 }
 
@@ -138,6 +143,9 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
         MathExpr::Scripts { base, sub, sup } => {
             layout_scripts(base, sub.as_deref(), sup.as_deref(), ctx)
         }
+        MathExpr::UnderOver { base, under, over } => {
+            layout_under_over(base, under.as_deref(), over.as_deref(), ctx)
+        }
         MathExpr::Error(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
     }
 }
@@ -203,9 +211,9 @@ fn layout_operator(s: &str, ctx: LayoutCtx) -> MathLayout {
 
 fn operator_side_bearing(s: &str, size: f32) -> f32 {
     match s {
-        "+" | "-" | "=" | "<" | ">" | "≤" | "≥" | "≠" | "×" | "÷" | "→" | "←" | "↔" => {
-            size * 0.18
-        }
+        "+" | "-" | "=" | "<" | ">" | "≤" | "≥" | "≠" | "×" | "÷" | "→" | "←" | "↔" | "∪" | "∩"
+        | "⋃" | "⋂" => size * 0.18,
+        "∑" | "∏" | "∫" => size * 0.12,
         "," | "." | ";" | ":" => size * 0.08,
         _ => 0.0,
     }
@@ -310,6 +318,9 @@ fn layout_scripts(
     sup: Option<&MathExpr>,
     ctx: LayoutCtx,
 ) -> MathLayout {
+    if matches!(ctx.display, MathDisplay::Block) && is_display_limits_base(base) {
+        return layout_under_over(base, sub, sup, ctx);
+    }
     let base_layout = layout_expr(base, ctx);
     let script_ctx = ctx.script();
     let sub_layout = sub.map(|expr| layout_expr(expr, script_ctx));
@@ -344,6 +355,54 @@ fn layout_scripts(
         ascent,
         descent,
         atoms,
+    }
+}
+
+fn layout_under_over(
+    base: &MathExpr,
+    under: Option<&MathExpr>,
+    over: Option<&MathExpr>,
+    ctx: LayoutCtx,
+) -> MathLayout {
+    let base_layout = layout_expr(base, ctx);
+    let script_ctx = ctx.script();
+    let under_layout = under.map(|expr| layout_expr(expr, script_ctx));
+    let over_layout = over.map(|expr| layout_expr(expr, script_ctx));
+    let gap = ctx.size * 0.12;
+    let width = base_layout
+        .width
+        .max(under_layout.as_ref().map(|l| l.width).unwrap_or(0.0))
+        .max(over_layout.as_ref().map(|l| l.width).unwrap_or(0.0));
+    let base_x = (width - base_layout.width) * 0.5;
+    let mut atoms = Vec::new();
+    let mut ascent = base_layout.ascent;
+    let mut descent = base_layout.descent;
+    translate_atoms(&mut atoms, base_layout.atoms, base_x, 0.0);
+    if let Some(over) = over_layout {
+        let over_x = (width - over.width) * 0.5;
+        let over_dy = -base_layout.ascent - gap - over.descent;
+        ascent = ascent.max(-over_dy + over.ascent);
+        translate_atoms(&mut atoms, over.atoms, over_x, over_dy);
+    }
+    if let Some(under) = under_layout {
+        let under_x = (width - under.width) * 0.5;
+        let under_dy = base_layout.descent + gap + under.ascent;
+        descent = descent.max(under_dy + under.descent);
+        translate_atoms(&mut atoms, under.atoms, under_x, under_dy);
+    }
+    MathLayout {
+        width,
+        ascent,
+        descent,
+        atoms,
+    }
+}
+
+fn is_display_limits_base(expr: &MathExpr) -> bool {
+    match expr {
+        MathExpr::Operator(s) => matches!(s.as_str(), "∑" | "∏" | "⋂" | "⋃"),
+        MathExpr::Text(s) => matches!(s.as_str(), "lim" | "max" | "min" | "sup" | "inf"),
+        _ => false,
     }
 }
 
@@ -442,6 +501,9 @@ fn parse_mathml_node(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPars
         "msub" => parse_mathml_scripts(node, true, false),
         "msup" => parse_mathml_scripts(node, false, true),
         "msubsup" => parse_mathml_scripts(node, true, true),
+        "munder" => parse_mathml_under_over(node, true, false),
+        "mover" => parse_mathml_under_over(node, false, true),
+        "munderover" => parse_mathml_under_over(node, true, true),
         unsupported => Ok(MathExpr::Error(format!(
             "unsupported MathML element <{unsupported}>"
         ))),
@@ -503,6 +565,30 @@ fn parse_mathml_scripts(
         base,
         sub: sub.transpose()?,
         sup: sup.transpose()?,
+    })
+}
+
+fn parse_mathml_under_over(
+    node: roxmltree::Node<'_, '_>,
+    has_under: bool,
+    has_over: bool,
+) -> Result<MathExpr, MathParseError> {
+    let children = mathml_element_children(node);
+    let expected = 1 + usize::from(has_under) + usize::from(has_over);
+    require_mathml_arity(node, &children, expected)?;
+    let base = Arc::new(parse_mathml_node(children[0])?);
+    let under = has_under.then(|| {
+        let index = 1;
+        parse_mathml_node(children[index]).map(Arc::new)
+    });
+    let over = has_over.then(|| {
+        let index = if has_under { 2 } else { 1 };
+        parse_mathml_node(children[index]).map(Arc::new)
+    });
+    Ok(MathExpr::UnderOver {
+        base,
+        under: under.transpose()?,
+        over: over.transpose()?,
     })
 }
 
@@ -694,6 +780,13 @@ impl<'a> TexParser<'a> {
             "ne" | "neq" => Ok(MathExpr::Operator("≠".into())),
             "to" | "rightarrow" => Ok(MathExpr::Operator("→".into())),
             "leftarrow" => Ok(MathExpr::Operator("←".into())),
+            "sum" => Ok(MathExpr::Operator("∑".into())),
+            "prod" => Ok(MathExpr::Operator("∏".into())),
+            "int" => Ok(MathExpr::Operator("∫".into())),
+            "cup" => Ok(MathExpr::Operator("∪".into())),
+            "cap" => Ok(MathExpr::Operator("∩".into())),
+            "bigcup" => Ok(MathExpr::Operator("⋃".into())),
+            "bigcap" => Ok(MathExpr::Operator("⋂".into())),
             "infty" => Ok(MathExpr::Identifier("∞".into())),
             "pi" => Ok(MathExpr::Identifier("π".into())),
             "theta" => Ok(MathExpr::Identifier("θ".into())),
@@ -705,7 +798,9 @@ impl<'a> TexParser<'a> {
             "gamma" => Ok(MathExpr::Identifier("γ".into())),
             "Delta" => Ok(MathExpr::Identifier("Δ".into())),
             "Omega" => Ok(MathExpr::Identifier("Ω".into())),
-            "sin" | "cos" | "tan" | "log" | "ln" | "lim" => Ok(MathExpr::Text(name)),
+            "sin" | "cos" | "tan" | "log" | "ln" | "lim" | "max" | "min" | "sup" | "inf" => {
+                Ok(MathExpr::Text(name))
+            }
             _ => Ok(MathExpr::Identifier(format!("\\{name}"))),
         }
     }
@@ -846,6 +941,26 @@ mod tests {
     }
 
     #[test]
+    fn display_sum_scripts_layout_as_limits() {
+        let expr = parse_tex(r"\sum_{i=1}^{n} x_i").expect("valid tex");
+        let layout = layout_math(&expr, 16.0, MathDisplay::Block);
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Glyph { text, y_baseline, .. } if text == "n" && *y_baseline < 0.0)),
+            "sum upper limit should sit above the operator"
+        );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Glyph { text, y_baseline, .. } if text == "i" && *y_baseline > 0.0)),
+            "sum lower limit should sit below the operator"
+        );
+    }
+
+    #[test]
     fn reports_unclosed_group() {
         let err = parse_tex(r"\frac{1}{x").expect_err("invalid tex");
         assert!(err.message.contains("unclosed group"));
@@ -909,6 +1024,30 @@ mod tests {
                 assert!(matches!(*base, MathExpr::Row(_)));
             }
             other => panic!("expected indexed root, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_mathml_under_over() {
+        let expr = parse_mathml(
+            r#"
+            <math>
+              <munderover>
+                <mo>∑</mo>
+                <mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow>
+                <mi>n</mi>
+              </munderover>
+            </math>
+            "#,
+        )
+        .expect("valid mathml");
+        match expr {
+            MathExpr::UnderOver { base, under, over } => {
+                assert_eq!(*base, MathExpr::Operator("∑".into()));
+                assert!(matches!(*under.unwrap(), MathExpr::Row(_)));
+                assert_eq!(*over.unwrap(), MathExpr::Identifier("n".into()));
+            }
+            other => panic!("expected under/over expression, got {other:?}"),
         }
     }
 

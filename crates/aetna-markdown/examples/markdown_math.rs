@@ -15,7 +15,7 @@ subscript example $x_1+x_2$ and a square root $\\sqrt{x_1+x_2}$.
 Display math should center in the available width:
 
 $$
-\\frac{a^2+b^2}{\\sqrt{x_1+x_2}}
+\\sum_{i=1}^{n} x_i + \\frac{a^2+b^2}{\\sqrt{x_1+x_2}}
 $$
 
 The first TeX slice intentionally covers the structural basics:
@@ -46,6 +46,12 @@ const MATHML_SOURCE: &str = r#"
       </mrow>
       <mn>3</mn>
     </mroot>
+    <mo>+</mo>
+    <munderover>
+      <mo>∑</mo>
+      <mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow>
+      <mi>n</mi>
+    </munderover>
   </mrow>
 </math>
 "#;
