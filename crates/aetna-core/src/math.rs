@@ -230,7 +230,25 @@ impl MathMetrics {
             }
     }
 
-    fn fraction_gap(self) -> f32 {
+    fn fraction_numerator_gap(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| {
+                constants
+                    .fraction_numerator_gap(self.size, matches!(self.display, MathDisplay::Block))
+            })
+            .unwrap_or_else(|| self.fraction_gap_fallback())
+    }
+
+    fn fraction_denominator_gap(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| {
+                constants
+                    .fraction_denominator_gap(self.size, matches!(self.display, MathDisplay::Block))
+            })
+            .unwrap_or_else(|| self.fraction_gap_fallback())
+    }
+
+    fn fraction_gap_fallback(self) -> f32 {
         self.size
             * if matches!(self.display, MathDisplay::Block) {
                 FRACTION_GAP_EM
@@ -245,7 +263,9 @@ impl MathMetrics {
         {
             return axis;
         }
-        self.size * 0.28
+        self.font_constants()
+            .and_then(|constants| constants.axis_height(self.size))
+            .unwrap_or(self.size * 0.28)
     }
 
     fn operator_axis_shift(self) -> Option<f32> {
@@ -255,7 +275,12 @@ impl MathMetrics {
     }
 
     fn sqrt_gap(self) -> f32 {
-        self.size * SQRT_GAP_EM
+        self.font_constants()
+            .and_then(|constants| {
+                constants
+                    .radical_vertical_gap(self.size, matches!(self.display, MathDisplay::Block))
+            })
+            .unwrap_or(self.size * SQRT_GAP_EM)
     }
 
     fn radical_width(self) -> f32 {
@@ -291,19 +316,65 @@ impl MathMetrics {
     }
 
     fn script_gap(self) -> f32 {
-        self.size * 0.06
+        self.font_constants()
+            .and_then(|constants| constants.space_after_script(self.size))
+            .unwrap_or(self.size * 0.06)
     }
 
     fn superscript_shift(self, base_ascent: f32, sup_descent: f32) -> f32 {
-        -(base_ascent * 0.58).max(sup_descent + self.size * 0.18)
+        let min_shift = self
+            .font_constants()
+            .and_then(|constants| constants.superscript_shift_up(self.size))
+            .unwrap_or(0.0);
+        let bottom_min = self
+            .font_constants()
+            .and_then(|constants| constants.superscript_bottom_min(self.size))
+            .unwrap_or(self.size * 0.18);
+        -(base_ascent * 0.58)
+            .max(min_shift)
+            .max(sup_descent + bottom_min)
     }
 
     fn subscript_shift(self, base_descent: f32, sub_ascent: f32) -> f32 {
-        (base_descent + sub_ascent * 0.72).max(self.size * 0.28)
+        let min_shift = self
+            .font_constants()
+            .and_then(|constants| constants.subscript_shift_down(self.size))
+            .unwrap_or(self.size * 0.28);
+        (base_descent + sub_ascent * 0.72).max(min_shift)
+    }
+
+    fn sub_superscript_gap(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.sub_superscript_gap_min(self.size))
+            .unwrap_or(self.size * 0.08)
     }
 
     fn under_over_gap(self) -> f32 {
         self.size * 0.12
+    }
+
+    fn upper_limit_gap(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.upper_limit_gap_min(self.size))
+            .unwrap_or_else(|| self.under_over_gap())
+    }
+
+    fn upper_limit_baseline_rise(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.upper_limit_baseline_rise_min(self.size))
+            .unwrap_or(self.size * 0.35)
+    }
+
+    fn lower_limit_gap(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.lower_limit_gap_min(self.size))
+            .unwrap_or_else(|| self.under_over_gap())
+    }
+
+    fn lower_limit_baseline_drop(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.lower_limit_baseline_drop_min(self.size))
+            .unwrap_or(self.size * 0.35)
     }
 
     fn table_col_gap(self, gap_em: Option<f32>) -> f32 {
@@ -331,8 +402,24 @@ impl MathMetrics {
 struct OpenTypeMathConstants {
     units_per_em: f32,
     script_percent_scale_down: i16,
+    axis_height: i16,
+    subscript_shift_down: i16,
+    superscript_shift_up: i16,
+    superscript_bottom_min: i16,
+    sub_superscript_gap_min: i16,
+    space_after_script: i16,
+    upper_limit_gap_min: i16,
+    upper_limit_baseline_rise_min: i16,
+    lower_limit_gap_min: i16,
+    lower_limit_baseline_drop_min: i16,
     fraction_rule_thickness: i16,
+    fraction_numerator_gap_min: i16,
+    fraction_num_display_style_gap_min: i16,
+    fraction_denominator_gap_min: i16,
+    fraction_denom_display_style_gap_min: i16,
     radical_rule_thickness: i16,
+    radical_vertical_gap: i16,
+    radical_display_style_vertical_gap: i16,
 }
 
 impl OpenTypeMathConstants {
@@ -349,8 +436,75 @@ impl OpenTypeMathConstants {
         self.font_units(self.fraction_rule_thickness, size)
     }
 
+    fn axis_height(self, size: f32) -> Option<f32> {
+        self.font_units(self.axis_height, size)
+    }
+
+    fn subscript_shift_down(self, size: f32) -> Option<f32> {
+        self.font_units(self.subscript_shift_down, size)
+    }
+
+    fn superscript_shift_up(self, size: f32) -> Option<f32> {
+        self.font_units(self.superscript_shift_up, size)
+    }
+
+    fn superscript_bottom_min(self, size: f32) -> Option<f32> {
+        self.font_units(self.superscript_bottom_min, size)
+    }
+
+    fn sub_superscript_gap_min(self, size: f32) -> Option<f32> {
+        self.font_units(self.sub_superscript_gap_min, size)
+    }
+
+    fn space_after_script(self, size: f32) -> Option<f32> {
+        self.font_units(self.space_after_script, size)
+    }
+
+    fn upper_limit_gap_min(self, size: f32) -> Option<f32> {
+        self.font_units(self.upper_limit_gap_min, size)
+    }
+
+    fn upper_limit_baseline_rise_min(self, size: f32) -> Option<f32> {
+        self.font_units(self.upper_limit_baseline_rise_min, size)
+    }
+
+    fn lower_limit_gap_min(self, size: f32) -> Option<f32> {
+        self.font_units(self.lower_limit_gap_min, size)
+    }
+
+    fn lower_limit_baseline_drop_min(self, size: f32) -> Option<f32> {
+        self.font_units(self.lower_limit_baseline_drop_min, size)
+    }
+
+    fn fraction_numerator_gap(self, size: f32, display: bool) -> Option<f32> {
+        let value = if display {
+            self.fraction_num_display_style_gap_min
+        } else {
+            self.fraction_numerator_gap_min
+        };
+        self.font_units(value, size)
+    }
+
+    fn fraction_denominator_gap(self, size: f32, display: bool) -> Option<f32> {
+        let value = if display {
+            self.fraction_denom_display_style_gap_min
+        } else {
+            self.fraction_denominator_gap_min
+        };
+        self.font_units(value, size)
+    }
+
     fn radical_rule_thickness(self, size: f32) -> Option<f32> {
         self.font_units(self.radical_rule_thickness, size)
+    }
+
+    fn radical_vertical_gap(self, size: f32, display: bool) -> Option<f32> {
+        let value = if display {
+            self.radical_display_style_vertical_gap
+        } else {
+            self.radical_vertical_gap
+        };
+        self.font_units(value, size)
     }
 }
 
@@ -375,8 +529,26 @@ fn parse_open_type_math_constants(font: &[u8]) -> Option<OpenTypeMathConstants> 
     Some(OpenTypeMathConstants {
         units_per_em: face.units_per_em() as f32,
         script_percent_scale_down: constants.script_percent_scale_down(),
+        axis_height: constants.axis_height().value,
+        subscript_shift_down: constants.subscript_shift_down().value,
+        superscript_shift_up: constants.superscript_shift_up().value,
+        superscript_bottom_min: constants.superscript_bottom_min().value,
+        sub_superscript_gap_min: constants.sub_superscript_gap_min().value,
+        space_after_script: constants.space_after_script().value,
+        upper_limit_gap_min: constants.upper_limit_gap_min().value,
+        upper_limit_baseline_rise_min: constants.upper_limit_baseline_rise_min().value,
+        lower_limit_gap_min: constants.lower_limit_gap_min().value,
+        lower_limit_baseline_drop_min: constants.lower_limit_baseline_drop_min().value,
         fraction_rule_thickness: constants.fraction_rule_thickness().value,
+        fraction_numerator_gap_min: constants.fraction_numerator_gap_min().value,
+        fraction_num_display_style_gap_min: constants.fraction_num_display_style_gap_min().value,
+        fraction_denominator_gap_min: constants.fraction_denominator_gap_min().value,
+        fraction_denom_display_style_gap_min: constants
+            .fraction_denom_display_style_gap_min()
+            .value,
         radical_rule_thickness: constants.radical_rule_thickness().value,
+        radical_vertical_gap: constants.radical_vertical_gap().value,
+        radical_display_style_vertical_gap: constants.radical_display_style_vertical_gap().value,
     })
 }
 
@@ -491,7 +663,8 @@ fn layout_fraction(numerator: &MathExpr, denominator: &MathExpr, ctx: LayoutCtx)
     let num = layout_expr(numerator, child_ctx);
     let den = layout_expr(denominator, child_ctx);
     let pad = metrics.fraction_pad();
-    let gap = metrics.fraction_gap();
+    let num_gap = metrics.fraction_numerator_gap();
+    let den_gap = metrics.fraction_denominator_gap();
     let rule = metrics.rule_thickness();
     // The math axis sits above the prose baseline. Keeping the fraction
     // rule on that axis makes inline fractions read as part of the line
@@ -501,8 +674,8 @@ fn layout_fraction(numerator: &MathExpr, denominator: &MathExpr, ctx: LayoutCtx)
     let width = num.width.max(den.width) + pad * 2.0;
     let num_x = (width - num.width) * 0.5;
     let den_x = (width - den.width) * 0.5;
-    let num_dy = rule_center_y - gap - rule * 0.5 - num.descent;
-    let den_dy = rule_center_y + gap + rule * 0.5 + den.ascent;
+    let num_dy = rule_center_y - num_gap - rule * 0.5 - num.descent;
+    let den_dy = rule_center_y + den_gap + rule * 0.5 + den.ascent;
     let ascent = -num_dy + num.ascent;
     let descent = den_dy + den.descent;
     let mut atoms = Vec::new();
@@ -586,10 +759,19 @@ fn layout_scripts(
         .as_ref()
         .map(|sup| metrics.superscript_shift(base_layout.ascent, sup.descent))
         .unwrap_or(0.0);
-    let sub_dy = sub_layout
+    let mut sub_dy = sub_layout
         .as_ref()
         .map(|sub| metrics.subscript_shift(base_layout.descent, sub.ascent))
         .unwrap_or(0.0);
+    if let (Some(sub), Some(sup)) = (&sub_layout, &sup_layout) {
+        let sup_bottom = sup_dy + sup.descent;
+        let sub_top = sub_dy - sub.ascent;
+        let gap = sub_top - sup_bottom;
+        let min_gap = metrics.sub_superscript_gap();
+        if gap < min_gap {
+            sub_dy += min_gap - gap;
+        }
+    }
     let mut atoms = Vec::new();
     translate_atoms(&mut atoms, base_layout.atoms, 0.0, 0.0);
     let mut script_width: f32 = 0.0;
@@ -630,7 +812,7 @@ fn layout_under_over(
     let script_ctx = ctx.script();
     let under_layout = under.map(|expr| layout_expr(expr, script_ctx));
     let over_layout = over.map(|expr| layout_expr(expr, script_ctx));
-    let gap = ctx.metrics().under_over_gap();
+    let metrics = ctx.metrics();
     let width = base_layout
         .width
         .max(under_layout.as_ref().map(|l| l.width).unwrap_or(0.0))
@@ -649,13 +831,15 @@ fn layout_under_over(
     translate_atoms(&mut atoms, base_layout.atoms, base_x, base_dy);
     if let Some(over) = over_layout {
         let over_x = (width - over.width) * 0.5;
-        let over_dy = base_top - gap - over.descent;
+        let over_dy = (base_top - metrics.upper_limit_gap() - over.descent)
+            .min(base_dy - metrics.upper_limit_baseline_rise());
         ascent = ascent.max(-over_dy + over.ascent);
         translate_atoms(&mut atoms, over.atoms, over_x, over_dy);
     }
     if let Some(under) = under_layout {
         let under_x = (width - under.width) * 0.5;
-        let under_dy = base_bottom + gap + under.ascent;
+        let under_dy = (base_bottom + metrics.lower_limit_gap() + under.ascent)
+            .max(base_dy + metrics.lower_limit_baseline_drop());
         descent = descent.max(under_dy + under.descent);
         translate_atoms(&mut atoms, under.atoms, under_x, under_dy);
     }
@@ -1797,9 +1981,63 @@ mod tests {
         );
         assert!(
             constants
+                .axis_height(16.0)
+                .is_some_and(|axis| axis > 1.0 && axis < 8.0),
+            "axis height should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .superscript_shift_up(16.0)
+                .is_some_and(|shift| shift > 1.0 && shift < 16.0),
+            "superscript shift should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .subscript_shift_down(16.0)
+                .is_some_and(|shift| shift > 1.0 && shift < 16.0),
+            "subscript shift should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .space_after_script(16.0)
+                .is_some_and(|space| space > 0.1 && space < 4.0),
+            "script spacing should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .upper_limit_gap_min(16.0)
+                .is_some_and(|gap| gap > 0.5 && gap < 8.0),
+            "upper limit gap should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .lower_limit_baseline_drop_min(16.0)
+                .is_some_and(|drop| drop > 1.0 && drop < 20.0),
+            "lower limit baseline drop should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .fraction_numerator_gap(16.0, true)
+                .is_some_and(|gap| gap > 0.5 && gap < 8.0),
+            "display numerator gap should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .fraction_denominator_gap(16.0, true)
+                .is_some_and(|gap| gap > 0.5 && gap < 8.0),
+            "display denominator gap should come from Noto Sans Math"
+        );
+        assert!(
+            constants
                 .radical_rule_thickness(16.0)
                 .is_some_and(|thickness| thickness > 0.75 && thickness < 2.0),
             "radical rule thickness should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .radical_vertical_gap(16.0, true)
+                .is_some_and(|gap| gap > 0.5 && gap < 8.0),
+            "display radical gap should come from Noto Sans Math"
         );
     }
 
@@ -1823,6 +2061,65 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, MathAtom::Radical { .. })),
             "sqrt should emit a radical atom"
+        );
+    }
+
+    #[test]
+    fn scripts_with_sub_and_sup_keep_minimum_gap() {
+        let layout = layout_math(&parse_tex(r"x_1^2").unwrap(), 16.0, MathDisplay::Inline);
+        let sub_top = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph {
+                    text,
+                    y_baseline,
+                    size,
+                    ..
+                } if text == "1" => Some(
+                    y_baseline
+                        - LayoutCtx {
+                            size: *size,
+                            display: MathDisplay::Inline,
+                        }
+                        .metrics()
+                        .glyph_ascent(),
+                ),
+                _ => None,
+            })
+            .expect("subscript top");
+        let sup_bottom = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph {
+                    text,
+                    y_baseline,
+                    size,
+                    ..
+                } if text == "2" => Some(
+                    y_baseline
+                        + LayoutCtx {
+                            size: *size,
+                            display: MathDisplay::Inline,
+                        }
+                        .metrics()
+                        .glyph_descent(),
+                ),
+                _ => None,
+            })
+            .expect("superscript bottom");
+        let min_gap = LayoutCtx {
+            size: 16.0,
+            display: MathDisplay::Inline,
+        }
+        .metrics()
+        .sub_superscript_gap();
+
+        assert!(
+            sub_top - sup_bottom >= min_gap - 0.1,
+            "script gap = {}, min = {min_gap}",
+            sub_top - sup_bottom
         );
     }
 
@@ -1854,6 +2151,41 @@ mod tests {
     fn display_sum_scripts_layout_as_limits() {
         let expr = parse_tex(r"\sum_{i=1}^{n} x_i").expect("valid tex");
         let layout = layout_math(&expr, 16.0, MathDisplay::Block);
+        let metrics = LayoutCtx {
+            size: 16.0,
+            display: MathDisplay::Block,
+        }
+        .metrics();
+        let sum_y = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph {
+                    text, y_baseline, ..
+                } if text == "∑" => Some(*y_baseline),
+                _ => None,
+            })
+            .expect("sum baseline");
+        let upper_y = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph {
+                    text, y_baseline, ..
+                } if text == "n" => Some(*y_baseline),
+                _ => None,
+            })
+            .expect("upper limit baseline");
+        let lower_y = layout
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                MathAtom::Glyph {
+                    text, y_baseline, ..
+                } if text == "i" => Some(*y_baseline),
+                _ => None,
+            })
+            .expect("lower limit baseline");
         assert!(
             layout
                 .atoms
@@ -1867,6 +2199,18 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, MathAtom::Glyph { text, y_baseline, .. } if text == "i" && *y_baseline > 0.0)),
             "sum lower limit should sit below the operator"
+        );
+        assert!(
+            sum_y - upper_y >= metrics.upper_limit_baseline_rise() - 0.1,
+            "upper limit rise = {}, min = {}",
+            sum_y - upper_y,
+            metrics.upper_limit_baseline_rise()
+        );
+        assert!(
+            lower_y - sum_y >= metrics.lower_limit_baseline_drop() - 0.1,
+            "lower limit drop = {}, min = {}",
+            lower_y - sum_y,
+            metrics.lower_limit_baseline_drop()
         );
         assert!(
             layout

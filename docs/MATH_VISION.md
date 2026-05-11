@@ -233,9 +233,10 @@ The first preparatory step is in place: current heuristic values flow through
 an internal metrics helper instead of being embedded directly in every layout
 function. That helper now reads the bundled Noto Sans Math MATH table for the
 low-risk values that are already close to the tuned heuristics: script scale,
-fraction rule thickness, and radical rule thickness. The next step is widening
-that bridge to the axis, fraction gaps/shifts, radical gaps, and delimiter
-assemblies.
+axis height, fraction rule thickness, fraction numerator/denominator gaps,
+script shifts/gaps, upper/lower limit placement, radical rule thickness, and
+radical vertical gaps. The next step is widening that bridge to full fraction
+shifts and delimiter assemblies.
 
 ### 3. Inline Layout Quality
 
