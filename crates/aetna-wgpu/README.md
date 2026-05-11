@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/aetna_badge_icon.svg" alt="Aetna badge icon" width="96">
+
 # aetna-wgpu
 
 ![Liquid-glass section — custom shader sampling the wgpu backdrop](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/showcase_glass.png)

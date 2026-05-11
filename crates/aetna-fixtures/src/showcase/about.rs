@@ -11,9 +11,18 @@
 //! transitions) so a visitor's first interaction shows off the
 //! library's animation envelope.
 
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use aetna_core::prelude::*;
+
+/// Aetna badge icon — embedded SVG with its own gradient stops, so the
+/// brand colors stay constant across every theme rather than tinting
+/// through `currentColor`.
+const AETNA_BADGE_ICON_SVG: &str = include_str!("../../../../assets/aetna_badge_icon.svg");
+static AETNA_BADGE_ICON: LazyLock<SvgIcon> = LazyLock::new(|| {
+    SvgIcon::parse(AETNA_BADGE_ICON_SVG).expect("aetna_badge_icon.svg parses")
+});
 
 const SEVERITY_KEY: &str = "about-severity";
 const MESSAGE_KEY: &str = "about-message";
@@ -110,7 +119,13 @@ impl Default for State {
 
 pub fn view(state: &State) -> El {
     scroll([column([
-        h1("Aetna"),
+        row([
+            icon((*AETNA_BADGE_ICON).clone()).icon_size(64.0),
+            h1("Aetna"),
+        ])
+        .gap(tokens::SPACE_4)
+        .align(Align::Center)
+        .height(Size::Hug),
         paragraph(
             "Aetna is a GPU UI rendering library that mounts inside an \
              existing Vulkan or wgpu host rather than owning the device, \

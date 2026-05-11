@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/aetna_badge_icon.svg" alt="Aetna badge icon" width="96">
+
 # aetna-vulkano
 
 ![Showcase — Settings section. The same fixture renders identically through wgpu and vulkano](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/showcase_settings.png)

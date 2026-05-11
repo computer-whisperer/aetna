@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/aetna_badge_icon.svg" alt="Aetna badge icon" width="96">
+
 # aetna-core
 
 ![Aetna showcase — Settings section, headless wgpu render](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/showcase_settings.png)

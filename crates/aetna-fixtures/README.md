@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/aetna_badge_icon.svg" alt="Aetna badge icon" width="96">
+
 # aetna-fixtures
 
 ![Showcase — Forms section: progress bar, checkboxes, radio group](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/showcase_forms.png)

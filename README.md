@@ -1,3 +1,5 @@
+<img src="assets/aetna_badge_icon.svg" alt="Aetna badge icon" width="96">
+
 # Aetna
 
 ![Aetna hero demo — release console rendered headlessly through the wgpu backend](assets/aetna_hero.png)

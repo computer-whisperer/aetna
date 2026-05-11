@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/aetna_badge_icon.svg" alt="Aetna badge icon" width="96">
+
 # aetna-winit-wgpu
 
 ![Settings section — running through the native winit + wgpu host](https://raw.githubusercontent.com/computer-whisperer/aetna/main/assets/showcase_settings.png)
