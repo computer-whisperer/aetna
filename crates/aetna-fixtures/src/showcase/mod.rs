@@ -341,7 +341,11 @@ impl App for Showcase {
         }
 
         // Sidebar diagnostics toggle.
-        if switch::apply_event(&mut self.diagnostics_visible, &event, DIAGNOSTICS_TOGGLE_KEY) {
+        if switch::apply_event(
+            &mut self.diagnostics_visible,
+            &event,
+            DIAGNOSTICS_TOGGLE_KEY,
+        ) {
             return;
         }
 

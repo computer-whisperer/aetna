@@ -849,11 +849,7 @@ fn resolve_pin_end(node: &El, stored: f32, max_offset: f32, ui_state: &mut UiSta
         ui_state.scroll.pin_prev_max.remove(&node.computed_id);
         return stored;
     }
-    let prev_max = ui_state
-        .scroll
-        .pin_prev_max
-        .get(&node.computed_id)
-        .copied();
+    let prev_max = ui_state.scroll.pin_prev_max.get(&node.computed_id).copied();
     let prev_active = ui_state.scroll.pin_active.get(&node.computed_id).copied();
     let active = match prev_active {
         None => true,

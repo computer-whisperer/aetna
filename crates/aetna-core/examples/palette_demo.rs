@@ -16,11 +16,7 @@ fn main() -> std::io::Result<()> {
     let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("out");
 
     let variants = [
-        (
-            "palette_demo.aetna_dark",
-            "Aetna dark",
-            Theme::aetna_dark(),
-        ),
+        ("palette_demo.aetna_dark", "Aetna dark", Theme::aetna_dark()),
         (
             "palette_demo.aetna_light",
             "Aetna light",

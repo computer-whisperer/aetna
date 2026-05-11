@@ -2506,14 +2506,12 @@ mod tests {
         // own width/gap config and no slot wrappers and no
         // `.padding(...)` on the card. The row's rect is flush against
         // the card's top stroke (and L/R via Size::Fill(1.0)).
-        let root = crate::widgets::card::card([
-            crate::row([
-                crate::text("some title").bold(),
-                crate::text("description line").muted(),
-            ])
-            .gap(crate::tokens::SPACE_2)
-            .width(Size::Fill(1.0)),
+        let root = crate::widgets::card::card([crate::row([
+            crate::text("some title").bold(),
+            crate::text("description line").muted(),
         ])
+        .gap(crate::tokens::SPACE_2)
+        .width(Size::Fill(1.0))])
         .width(Size::Fixed(200.0))
         .height(Size::Fixed(80.0));
 
@@ -2539,8 +2537,9 @@ mod tests {
     fn card_with_explicit_padding_does_not_report_unpadded_surface_panel() {
         // The "dense list-row card" fix from the issue: pad the card
         // itself (the bare slot recipe's SPACE_6 feels too generous).
-        let root = crate::widgets::card::card([crate::row([crate::text("title").bold()])
-            .width(Size::Fill(1.0))])
+        let root = crate::widgets::card::card([
+            crate::row([crate::text("title").bold()]).width(Size::Fill(1.0))
+        ])
         .padding(Sides::all(crate::tokens::SPACE_4))
         .width(Size::Fixed(200.0))
         .height(Size::Fixed(60.0));

@@ -54,11 +54,9 @@ fn sidebar_chrome(app: &Showcase) -> El {
         // thumb at the scroll's right edge while pulling the focusable
         // buttons inward — fixing the `ScrollbarObscuresFocusable`
         // findings the lint flagged on every nav item.
-        scroll([
-            column(groups.collect::<Vec<_>>())
-                .gap(tokens::SPACE_3)
-                .padding(Sides::right(tokens::SCROLLBAR_HITBOX_WIDTH)),
-        ])
+        scroll([column(groups.collect::<Vec<_>>())
+            .gap(tokens::SPACE_3)
+            .padding(Sides::right(tokens::SCROLLBAR_HITBOX_WIDTH))])
         .key("nav-scroll")
         .height(Size::Fill(1.0)),
         diagnostics_toggle(app.diagnostics_visible),

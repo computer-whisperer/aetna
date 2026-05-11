@@ -20,9 +20,8 @@ use aetna_core::prelude::*;
 /// brand colors stay constant across every theme rather than tinting
 /// through `currentColor`.
 const AETNA_BADGE_ICON_SVG: &str = include_str!("../../../../assets/aetna_badge_icon.svg");
-static AETNA_BADGE_ICON: LazyLock<SvgIcon> = LazyLock::new(|| {
-    SvgIcon::parse(AETNA_BADGE_ICON_SVG).expect("aetna_badge_icon.svg parses")
-});
+static AETNA_BADGE_ICON: LazyLock<SvgIcon> =
+    LazyLock::new(|| SvgIcon::parse(AETNA_BADGE_ICON_SVG).expect("aetna_badge_icon.svg parses"));
 
 const SEVERITY_KEY: &str = "about-severity";
 const MESSAGE_KEY: &str = "about-message";
@@ -308,9 +307,7 @@ fn accents_card(state: &State) -> El {
             )
             .small()
             .muted(),
-            row(swatches)
-                .gap(tokens::SPACE_3)
-                .align(Align::Stretch),
+            row(swatches).gap(tokens::SPACE_3).align(Align::Stretch),
         ])
         .gap(tokens::SPACE_4)
         .align(Align::Stretch)],
@@ -413,7 +410,10 @@ mod tests {
         on_event(&mut s, click("about-accent-0"));
         assert_eq!(s.accent_active, Some(0));
         on_event(&mut s, click("about-accent-0"));
-        assert_eq!(s.accent_active, None, "click on the promoted swatch demotes it");
+        assert_eq!(
+            s.accent_active, None,
+            "click on the promoted swatch demotes it"
+        );
     }
 
     #[test]
