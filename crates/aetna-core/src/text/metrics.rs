@@ -721,6 +721,76 @@ pub fn selection_rects_with_family(
     })
 }
 
+pub fn visual_line_byte_range(
+    text: &str,
+    byte_index: usize,
+    size: f32,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> (usize, usize) {
+    visual_line_byte_range_with_family(
+        text,
+        byte_index,
+        size,
+        FontFamily::default(),
+        weight,
+        wrap,
+        available_width,
+    )
+}
+
+pub fn visual_line_byte_range_with_family(
+    text: &str,
+    byte_index: usize,
+    size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    wrap: TextWrap,
+    available_width: Option<f32>,
+) -> (usize, usize) {
+    let byte_index = clamp_to_char_boundary(text, byte_index.min(text.len()));
+    let (target_line, byte_in_line) = byte_to_line_position(text, byte_index);
+    let hard_line_start = line_position_to_byte(text, target_line, 0);
+    let hard_line_end = line_end_byte(text, hard_line_start);
+    FONT_SYSTEM.with_borrow_mut(|font_system| {
+        let buffer = build_buffer(
+            font_system,
+            text,
+            size,
+            family,
+            weight,
+            wrap,
+            available_width,
+        );
+        let mut last_range = None;
+        for run in buffer.layout_runs() {
+            if run.line_i != target_line {
+                continue;
+            }
+            let Some((start, end)) = layout_run_byte_range(&run) else {
+                continue;
+            };
+            last_range = Some((start, end));
+            if start <= byte_in_line && byte_in_line < end {
+                return (
+                    line_position_to_byte(text, target_line, start),
+                    line_position_to_byte(text, target_line, end),
+                );
+            }
+        }
+        if let Some((start, end)) = last_range
+            && byte_index >= line_position_to_byte(text, target_line, start)
+        {
+            return (
+                line_position_to_byte(text, target_line, start),
+                line_position_to_byte(text, target_line, end),
+            );
+        }
+        (hard_line_start, hard_line_end)
+    })
+}
+
 /// Convert a global byte offset in `text` to the (BufferLine index,
 /// byte-in-line) pair that cosmic-text uses for cursors. `\n`
 /// characters are *not* part of any line — they just bump the line
@@ -759,6 +829,24 @@ fn line_position_to_byte(text: &str, line: usize, byte_in_line: usize) -> usize 
     } else {
         text.len()
     }
+}
+
+fn line_end_byte(text: &str, line_start: usize) -> usize {
+    text[line_start..]
+        .find('\n')
+        .map(|i| line_start + i)
+        .unwrap_or(text.len())
+}
+
+fn layout_run_byte_range(run: &cosmic_text::LayoutRun<'_>) -> Option<(usize, usize)> {
+    let start = run.glyphs.iter().map(|glyph| glyph.start).min()?;
+    let end = run
+        .glyphs
+        .iter()
+        .map(|glyph| glyph.end)
+        .max()
+        .unwrap_or(start);
+    Some((start, end))
 }
 
 fn clamp_to_char_boundary(text: &str, mut byte: usize) -> usize {
@@ -1556,6 +1644,29 @@ mod tests {
         assert!(
             (y - line_h).abs() < 0.01,
             "expected second line y={line_h}, got {y}; rects={rects:?}"
+        );
+    }
+
+    #[test]
+    fn visual_line_byte_range_respects_soft_wraps() {
+        let text = "alpha beta gamma";
+        let beta = text.find("beta").unwrap();
+        let width = line_width("alpha", 16.0, FontWeight::Regular, false) + 2.0;
+        let (lo, hi) = visual_line_byte_range(
+            text,
+            beta,
+            16.0,
+            FontWeight::Regular,
+            TextWrap::Wrap,
+            Some(width),
+        );
+        assert!(
+            lo > 0 && hi < text.len(),
+            "soft-wrapped visual line should be narrower than the hard line: {lo}..{hi}"
+        );
+        assert!(
+            (lo..hi).contains(&beta),
+            "range {lo}..{hi} should contain beta byte {beta}"
         );
     }
 

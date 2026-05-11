@@ -60,11 +60,14 @@ use crate::event::{UiEvent, UiEventKind, UiKey};
 use crate::metrics::MetricsRole;
 use crate::selection::{Selection, SelectionPoint, SelectionRange};
 use crate::style::StyleProfile;
-use crate::text::metrics::TextGeometry;
+use crate::text::metrics::{self, TextGeometry};
 use crate::tokens;
 use crate::tree::*;
 use crate::widgets::text::text;
 use crate::widgets::text_input::{TextSelection, replace_selection};
+
+pub(crate) const TEXT_AREA_SELECTION_LAYER: &str = "text_area_selection_layer";
+pub(crate) const TEXT_AREA_CARET_LAYER: &str = "text_area_caret_layer";
 
 /// Build a multi-line text area that participates in the global
 /// [`crate::selection::Selection`]. The widget reads its caret +
@@ -93,37 +96,10 @@ pub fn text_area(value: &str, selection: &Selection, key: &str) -> El {
 
 #[track_caller]
 fn build_text_area(key: &str, value: &str, view: Option<TextSelection>) -> El {
-    let selection = view.unwrap_or_default();
-    let head = clamp_to_char_boundary(value, selection.head.min(value.len()));
-    let anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
-    let lo = anchor.min(head);
-    let hi = anchor.max(head);
+    let mut content_children: Vec<El> = Vec::with_capacity(3);
 
-    let mut content_children: Vec<El> = Vec::with_capacity(8);
-
-    // Selection bands (one per visual line covered by the selection).
-    // We use `None` for the wrap width here so the layout matches the
-    // text leaf's eventual wrap. In practice the discrepancy is fine
-    // because `text_area` always wraps to the same `available_width`
-    // the layout pass passes to the text leaf — which is the container
-    // content width. The builder doesn't have access to that width, so
-    // the visual-line splits use NoWrap for the builder-time
-    // approximation. This means visible selection bands mirror
-    // BufferLine breaks (`\n`) but ignore soft wraps. Soft-wrap
-    // selection painting is a future improvement.
-    let geometry = text_area_geometry(value);
-    let rects = geometry.selection_rects(lo, hi);
-    for (rx, ry, rw, rh) in rects {
-        content_children.push(
-            El::new(Kind::Custom("text_area_selection"))
-                .style_profile(StyleProfile::Solid)
-                .fill(tokens::SELECTION_BG)
-                .dim_fill(tokens::SELECTION_BG_UNFOCUSED)
-                .radius(2.0)
-                .width(Size::Fixed(rw))
-                .height(Size::Fixed(rh))
-                .translate(rx, ry),
-        );
+    if view.is_some_and(|selection| !selection.is_collapsed()) {
+        content_children.push(text_area_paint_layer(TEXT_AREA_SELECTION_LAYER, key, value));
     }
 
     // The value rendered as one wrapped, shaped run. Hug height so the
@@ -142,10 +118,8 @@ fn build_text_area(key: &str, value: &str, view: Option<TextSelection>) -> El {
     // lives in this area. See the matching gate in
     // `text_input::build_text_input` for the rationale.
     if view.is_some() {
-        let (caret_x, caret_y) = geometry.caret_xy(head);
         content_children.push(
-            caret_bar()
-                .translate(caret_x, caret_y)
+            text_area_paint_layer(TEXT_AREA_CARET_LAYER, key, value)
                 .alpha_follows_focused_ancestor()
                 .blink_when_focused(),
         );
@@ -183,7 +157,6 @@ fn build_text_area(key: &str, value: &str, view: Option<TextSelection>) -> El {
     // upcoming `ScrollRequest::EnsureVisible` helper so the
     // resolver can recognize the request by the outer text_area's
     // key without needing the inner computed_id.
-    let _ = key;
     let viewport = crate::tree::scroll([inner]);
 
     El::new(Kind::Custom("text_area"))
@@ -211,27 +184,32 @@ fn build_text_area(key: &str, value: &str, view: Option<TextSelection>) -> El {
         .child(viewport)
 }
 
-fn caret_bar() -> El {
-    El::new(Kind::Custom("text_area_caret"))
+fn text_area_paint_layer(kind: &'static str, key: &str, value: &str) -> El {
+    let mut layer = El::new(Kind::Custom(kind))
         .style_profile(StyleProfile::Solid)
-        .fill(tokens::FOREGROUND)
-        .width(Size::Fixed(2.0))
-        .height(Size::Fixed(line_height_px()))
-        .radius(1.0)
+        .width(Size::Fill(1.0))
+        .height(Size::Fill(1.0));
+    layer.text_link = Some(key.to_string());
+    layer.tooltip = Some(value.to_string());
+    layer
 }
 
 fn line_height_px() -> f32 {
     tokens::TEXT_SM.line_height
 }
 
-fn text_area_geometry(value: &str) -> TextGeometry<'_> {
+fn text_area_geometry(value: &str, available_width: Option<f32>) -> TextGeometry<'_> {
     TextGeometry::new(
         value,
         tokens::TEXT_SM.size,
         FontWeight::Regular,
         false,
-        TextWrap::NoWrap,
-        None,
+        if available_width.is_some() {
+            TextWrap::Wrap
+        } else {
+            TextWrap::NoWrap
+        },
+        available_width,
     )
 }
 
@@ -332,7 +310,7 @@ pub fn caret_scroll_request_for(
 ) -> Option<crate::scroll::ScrollRequest> {
     let view = selection.within(key)?;
     let head = clamp_to_char_boundary(value, view.head.min(value.len()));
-    let geometry = text_area_geometry(value);
+    let geometry = text_area_geometry(value, None);
     let (_, caret_y) = geometry.caret_xy(head);
     Some(crate::scroll::ScrollRequest::ensure_visible(
         key,
@@ -382,6 +360,7 @@ pub fn apply_event(
 fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &UiEvent) -> bool {
     selection.anchor = clamp_to_char_boundary(value, selection.anchor.min(value.len()));
     selection.head = clamp_to_char_boundary(value, selection.head.min(value.len()));
+    let wrap_width = wrap_width_for_event(event);
     match event.kind {
         UiEventKind::TextInput => {
             let Some(insert) = event.text.as_deref() else {
@@ -402,7 +381,7 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
             true
         }
         UiEventKind::MiddleClick => {
-            let Some(byte) = caret_byte_at(value, event) else {
+            let Some(byte) = caret_byte_at_with_width(value, event, wrap_width) else {
                 return false;
             };
             *selection = TextSelection::caret(byte);
@@ -495,7 +474,7 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
                     true
                 }
                 UiKey::ArrowUp => {
-                    let new = move_caret_vertically(value, selection.head, -1);
+                    let new = move_caret_vertically(value, selection.head, -1, wrap_width);
                     if new == selection.head {
                         return false;
                     }
@@ -506,7 +485,7 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
                     true
                 }
                 UiKey::ArrowDown => {
-                    let new = move_caret_vertically(value, selection.head, 1);
+                    let new = move_caret_vertically(value, selection.head, 1, wrap_width);
                     if new == selection.head {
                         return false;
                     }
@@ -517,7 +496,7 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
                     true
                 }
                 UiKey::Home => {
-                    let line_start = current_line_start(value, selection.head);
+                    let (line_start, _) = visual_line_range(value, selection.head, wrap_width);
                     if selection.head == line_start
                         && (mods.shift || selection.anchor == line_start)
                     {
@@ -530,7 +509,7 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
                     true
                 }
                 UiKey::End => {
-                    let line_end = current_line_end(value, selection.head);
+                    let (_, line_end) = visual_line_range(value, selection.head, wrap_width);
                     if selection.head == line_end && (mods.shift || selection.anchor == line_end) {
                         return false;
                     }
@@ -557,7 +536,7 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
             // the pointer is *now* without scrolling — off by the
             // current offset.
             let local_y = py - target.rect.y - tokens::SPACE_2 + target.scroll_offset_y;
-            let pos = caret_from_xy(value, local_x, local_y);
+            let pos = caret_from_xy(value, local_x, local_y, wrap_width);
             // Multi-click: 2 = word at caret, ≥3 = line containing
             // caret (delimited by '\n'). Shift+multi-click falls
             // through to the extend behavior, same as text_input.
@@ -591,7 +570,7 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
             let local_x = px - target.rect.x - tokens::SPACE_3;
             // See PointerDown above for the scroll_offset_y rationale.
             let local_y = py - target.rect.y - tokens::SPACE_2 + target.scroll_offset_y;
-            selection.head = caret_from_xy(value, local_x, local_y);
+            selection.head = caret_from_xy(value, local_x, local_y, wrap_width);
             true
         }
         UiEventKind::Click => false,
@@ -603,8 +582,13 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
 /// `direction` (-1 = up, +1 = down) from `byte_index`. Returns the
 /// input unchanged when there is no line in that direction (already at
 /// the first / last visual line).
-fn move_caret_vertically(value: &str, byte_index: usize, direction: i32) -> usize {
-    let geometry = text_area_geometry(value);
+fn move_caret_vertically(
+    value: &str,
+    byte_index: usize,
+    direction: i32,
+    available_width: Option<f32>,
+) -> usize {
+    let geometry = text_area_geometry(value, available_width);
     let (x, y) = geometry.caret_xy(byte_index);
     let line_h = geometry.line_height();
     let target_y = y + direction as f32 * line_h;
@@ -628,6 +612,14 @@ fn move_caret_vertically(value: &str, byte_index: usize, direction: i32) -> usiz
 /// pointer or target rect. Used by Linux middle-click paste flows.
 #[track_caller]
 pub fn caret_byte_at(value: &str, event: &UiEvent) -> Option<usize> {
+    caret_byte_at_with_width(value, event, wrap_width_for_event(event))
+}
+
+fn caret_byte_at_with_width(
+    value: &str,
+    event: &UiEvent,
+    available_width: Option<f32>,
+) -> Option<usize> {
     let (px, py) = event.pointer?;
     let target = event.target.as_ref()?;
     let local_x = px - target.rect.x - tokens::SPACE_3;
@@ -636,11 +628,11 @@ pub fn caret_byte_at(value: &str, event: &UiEvent) -> Option<usize> {
     // to the nearest descendant scroll's stored offset, so we get
     // content-space y rather than viewport-space y.
     let local_y = py - target.rect.y - tokens::SPACE_2 + target.scroll_offset_y;
-    Some(caret_from_xy(value, local_x, local_y))
+    Some(caret_from_xy(value, local_x, local_y, available_width))
 }
 
-fn caret_from_xy(value: &str, x: f32, y: f32) -> usize {
-    let geometry = text_area_geometry(value);
+fn caret_from_xy(value: &str, x: f32, y: f32, available_width: Option<f32>) -> usize {
+    let geometry = text_area_geometry(value, available_width);
     let line_h = geometry.line_height();
     let probe_y = y.max(line_h * 0.5);
     let Some(byte) = geometry.hit_byte(x.max(0.0), probe_y) else {
@@ -649,19 +641,30 @@ fn caret_from_xy(value: &str, x: f32, y: f32) -> usize {
     byte
 }
 
-fn current_line_start(value: &str, byte_index: usize) -> usize {
-    value[..byte_index.min(value.len())]
-        .rfind('\n')
-        .map(|i| i + 1)
-        .unwrap_or(0)
+fn visual_line_range(
+    value: &str,
+    byte_index: usize,
+    available_width: Option<f32>,
+) -> (usize, usize) {
+    metrics::visual_line_byte_range(
+        value,
+        byte_index,
+        tokens::TEXT_SM.size,
+        FontWeight::Regular,
+        if available_width.is_some() {
+            TextWrap::Wrap
+        } else {
+            TextWrap::NoWrap
+        },
+        available_width,
+    )
 }
 
-fn current_line_end(value: &str, byte_index: usize) -> usize {
-    let from = byte_index.min(value.len());
-    value[from..]
-        .find('\n')
-        .map(|i| from + i)
-        .unwrap_or(value.len())
+fn wrap_width_for_event(event: &UiEvent) -> Option<f32> {
+    event
+        .target
+        .as_ref()
+        .map(|target| (target.rect.w - 2.0 * tokens::SPACE_3).max(1.0))
 }
 
 fn clamp_to_char_boundary(s: &str, idx: usize) -> usize {
@@ -740,6 +743,25 @@ mod tests {
             text: None,
             selection: None,
             modifiers,
+            click_count: 0,
+            kind: UiEventKind::KeyDown,
+        }
+    }
+
+    fn ev_key_with_target(key: UiKey, target: crate::event::UiTarget) -> UiEvent {
+        UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: None,
+            key_press: Some(KeyPress {
+                key,
+                modifiers: KeyModifiers::default(),
+                repeat: false,
+            }),
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
             click_count: 0,
             kind: UiEventKind::KeyDown,
         }
@@ -864,6 +886,33 @@ mod tests {
     }
 
     #[test]
+    fn home_and_end_respect_soft_wrapped_visual_lines() {
+        let mut value = String::from("alpha beta gamma");
+        let gamma = value.find("gamma").unwrap();
+        let mut target = ta_target();
+        target.rect.w = 80.0;
+
+        let mut sel = TextSelection::caret(gamma + 2);
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_target(UiKey::Home, target.clone())
+        ));
+        assert!(
+            sel.head > 0 && sel.head <= gamma,
+            "Home should move to the soft line start near gamma, got {:?}",
+            sel
+        );
+
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_target(UiKey::End, target)
+        ));
+        assert_eq!(sel, TextSelection::caret(value.len()));
+    }
+
+    #[test]
     fn shift_arrow_down_extends_selection_anchor_stays() {
         let mut value = String::from("alpha\nbravo");
         let mut sel = TextSelection::caret(2);
@@ -979,7 +1028,7 @@ mod tests {
         // The offset must keep the caret line within the viewport —
         // it should sit between `offset` and `offset + viewport_h`.
         let line_h = line_height_px();
-        let caret_y = text_area_geometry(&value).caret_xy(caret_byte).1;
+        let caret_y = text_area_geometry(&value, None).caret_xy(caret_byte).1;
         assert!(
             caret_y >= offset && caret_y + line_h <= offset + metrics.viewport_h + 0.5,
             "caret y={caret_y} not inside viewport [{offset}, {}]; line_h={line_h}",
@@ -1303,6 +1352,42 @@ mod tests {
             glyph_scissor.h <= 48.0 + 0.5,
             "glyph scissor h={} should be clipped to the outer 48 px content area",
             glyph_scissor.h
+        );
+    }
+
+    #[test]
+    fn selection_band_for_soft_wrapped_text_uses_wrapped_line_y() {
+        let value = "alpha beta gamma";
+        let start = value.find("gamma").unwrap();
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new(TEST_KEY, start),
+                head: SelectionPoint::new(TEST_KEY, value.len()),
+            }),
+        };
+        let mut root = super::text_area(value, &sel, TEST_KEY)
+            .height(Size::Fixed(90.0))
+            .width(Size::Fixed(80.0));
+        let mut ui_state = crate::state::UiState::new();
+        ui_state.current_selection = sel;
+        crate::layout::layout(&mut root, &mut ui_state, Rect::new(0.0, 0.0, 80.0, 90.0));
+
+        let ops = crate::draw_ops::draw_ops(&root, &ui_state);
+        let band_y = ops
+            .iter()
+            .find_map(|op| {
+                if let crate::DrawOp::Quad { id, rect, .. } = op
+                    && id.contains("selection-band")
+                {
+                    Some(rect.y)
+                } else {
+                    None
+                }
+            })
+            .expect("wrapped text selection should emit a selection band");
+        assert!(
+            band_y > tokens::SPACE_2 + 1.0,
+            "selection band should be below the first visual line, got y={band_y}"
         );
     }
 

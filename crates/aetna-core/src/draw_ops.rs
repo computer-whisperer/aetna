@@ -21,6 +21,7 @@ use crate::text::metrics as text_metrics;
 use crate::theme::Theme;
 use crate::tokens;
 use crate::tree::*;
+use crate::widgets::text_area::{TEXT_AREA_CARET_LAYER, TEXT_AREA_SELECTION_LAYER};
 
 /// Walk the laid-out tree and emit draw ops in paint order.
 pub fn draw_ops(root: &El, ui_state: &UiState) -> Vec<DrawOp> {
@@ -287,6 +288,24 @@ fn push_node(
     } else {
         inherited_scissor
     };
+
+    if matches!(
+        n.kind,
+        Kind::Custom(TEXT_AREA_SELECTION_LAYER) | Kind::Custom(TEXT_AREA_CARET_LAYER)
+    ) {
+        push_text_area_editor_overlay(
+            n,
+            ui_state,
+            theme,
+            out,
+            inner_painted_rect,
+            own_scissor,
+            opacity,
+            inherited_focus_envelope,
+            painted_font_size,
+            weight,
+        );
+    }
 
     // Surface paint. Either a custom shader override, or the implicit
     // `stock::rounded_rect` driven by the El's fill/stroke/radius/shadow.
@@ -1568,6 +1587,88 @@ fn inline_paragraph_line_height(node: &El) -> f32 {
         }
     }
     line_height
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_text_area_editor_overlay(
+    n: &El,
+    ui_state: &UiState,
+    theme: &Theme,
+    out: &mut Vec<DrawOp>,
+    rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+    focus_envelope: f32,
+    font_size: f32,
+    weight: FontWeight,
+) {
+    let (Some(key), Some(value)) = (n.text_link.as_deref(), n.tooltip.as_deref()) else {
+        return;
+    };
+    let Some(view) = ui_state.current_selection.within(key) else {
+        return;
+    };
+    match n.kind {
+        Kind::Custom(TEXT_AREA_SELECTION_LAYER) => {
+            if view.is_collapsed() {
+                return;
+            }
+            let (lo, hi) = view.ordered();
+            let rects = text_metrics::selection_rects(
+                value,
+                lo.min(value.len()),
+                hi.min(value.len()),
+                font_size,
+                weight,
+                TextWrap::Wrap,
+                Some(rect.w.max(1.0)),
+            );
+            let fill = theme
+                .resolve(tokens::SELECTION_BG_UNFOCUSED)
+                .mix(theme.resolve(tokens::SELECTION_BG), focus_envelope);
+            for (i, (rx, ry, rw, rh)) in rects.into_iter().enumerate() {
+                let band = Rect::new(rect.x + rx, rect.y + ry, rw, rh);
+                let mut uniforms = UniformBlock::new();
+                uniforms.insert("fill", UniformValue::Color(opaque(fill, opacity)));
+                uniforms.insert("radius", UniformValue::F32(2.0));
+                uniforms.insert("inner_rect", inner_rect_uniform(band));
+                out.push(DrawOp::Quad {
+                    id: format!("{}.selection-band.{i}", n.computed_id),
+                    rect: band,
+                    scissor,
+                    shader: ShaderHandle::Stock(StockShader::RoundedRect),
+                    uniforms,
+                });
+            }
+        }
+        Kind::Custom(TEXT_AREA_CARET_LAYER) => {
+            let head = view.head.min(value.len());
+            let (x, y) = text_metrics::caret_xy(
+                value,
+                head,
+                font_size,
+                weight,
+                TextWrap::Wrap,
+                Some(rect.w.max(1.0)),
+            );
+            let caret = Rect::new(rect.x + x, rect.y + y, 2.0, tokens::TEXT_SM.line_height);
+            let mut uniforms = UniformBlock::new();
+            uniforms.insert(
+                "fill",
+                UniformValue::Color(opaque(theme.resolve(tokens::FOREGROUND), opacity)),
+            );
+            uniforms.insert("radius", UniformValue::F32(1.0));
+            uniforms.insert("inner_rect", inner_rect_uniform(caret));
+            out.push(DrawOp::Quad {
+                id: format!("{}.caret", n.computed_id),
+                rect: caret,
+                scissor,
+                shader: ShaderHandle::Stock(StockShader::RoundedRect),
+                uniforms,
+            });
+        }
+        _ => {}
+    }
 }
 
 fn translated(r: Rect, offset: (f32, f32)) -> Rect {
