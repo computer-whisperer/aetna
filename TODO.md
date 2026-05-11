@@ -52,6 +52,62 @@ around it.
 
 Runtime ordering: `[user main + user overlays..., library tooltips...]`.
 
+### Slice 1 — `scroll` stick-to-bottom
+
+Chat-log / activity-feed scenes want the "hug the tail while at the
+bottom, release when the user scrolls up, re-pin if they return"
+behavior egui shipped as
+`egui::ScrollArea::stick_to_bottom(true)`. The whisper-agent
+aetna port currently has no way to implement this client-side:
+
+- `App::drain_scroll_requests` can emit
+  `ScrollRequest::EnsureVisible { container_key, y, h }`, but that
+  would force-scroll even when the user has deliberately scrolled
+  up.
+- The app can't read scroll offset / viewport / content size from
+  `App::build` or `App::before_build` (`BuildCx` only carries the
+  theme; `UiState::scroll_offset` lives behind the host-private
+  `&mut UiState` the runtime owns). So an app-side
+  "auto-pin-when-at-bottom" decision has nothing to branch on.
+
+Two shapes worth weighing:
+
+- [ ] **Library-managed pin via builder.** `scroll(children).pin_end()`
+      (or `.auto_follow_tail()`) on the `Kind::Scroll` `El`. The
+      runtime tracks one per-scroll bool — set when a layout pass
+      finds the previous offset within `epsilon` of max-offset, cleared
+      by any user-initiated wheel / drag / keyboard scroll that moves
+      the offset off the tail. When the bit is set and a subsequent
+      layout pass discovers content has grown, the resolver clamps the
+      offset back to the new max. Matches the egui shape; single
+      builder, zero app bookkeeping. Recommended.
+- [ ] **App-readable scroll state.** A new `App::before_build_with(&mut
+      self, &UiState)` (or `&UiState` on `BuildCx`) so the app can
+      read `scroll_offset(key)` and decide for itself whether to push
+      an `EnsureVisible`. More general — other app patterns (jump-to-
+      latest button visibility, unread-divider placement) could lean
+      on the same read — but more surface to design, and apps still
+      have to reimplement the "was-at-tail" debounce against
+      programmatic offset jumps.
+
+Edge cases the implementer should consider:
+
+- Pin state should survive viewport resizes (e.g. sidebar drag)
+  that change the max offset without user input.
+- Programmatic `set_scroll_offset` / `EnsureVisible` requests that
+  land at the tail should set the bit (so a "jump to latest"
+  button activates pinning).
+- A scroll container mounted with `pin_end()` should start pinned
+  to the tail on first layout, not at offset 0.
+- Cooperation with `EnsureVisible` to a non-tail anchor: presumably
+  the explicit request wins and clears the pin until the user
+  returns to the tail.
+
+The whisper-agent aetna port needs this for the chat log; the same
+shape would close the related Markdown-viewer "streaming text
+sometimes scrolls flat to the top of the body" symptom the port
+also observes.
+
 ## Deferred
 
 Out of scope; flagged so they don't get rediscovered:
