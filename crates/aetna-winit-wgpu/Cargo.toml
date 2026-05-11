@@ -19,6 +19,10 @@ path = "src/lib.rs"
 [dependencies]
 aetna-core = { version = "0.3.2", path = "../aetna-core" }
 aetna-wgpu = { version = "0.3.2", path = "../aetna-wgpu" }
+# `arboard` backs the native clipboard bridge. The core crate stays
+# backend-neutral; this host handles platform clipboard IO for common
+# selection copy shortcuts.
+arboard = { version = "3", features = ["wayland-data-control"] }
 # `open` shells out to xdg-open / `start` / `open` for the
 # `App::drain_link_opens` host path. Tiny crate, well-maintained, no
 # blocking IO inside the call (it spawns the platform launcher).

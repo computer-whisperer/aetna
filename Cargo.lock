@@ -193,6 +193,7 @@ version = "0.3.2"
 dependencies = [
  "aetna-core",
  "aetna-wgpu",
+ "arboard",
  "open",
  "pollster",
  "wgpu",

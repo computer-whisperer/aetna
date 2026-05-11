@@ -255,13 +255,30 @@ pub fn selected_text(tree: &El, selection: &Selection) -> Option<String> {
 }
 
 pub(crate) fn find_keyed_text(node: &El, key: &str) -> Option<String> {
-    if matches!(node.kind, Kind::Text | Kind::Heading)
-        && node.key.as_deref() == Some(key)
-        && let Some(t) = &node.text
-    {
-        return Some(t.clone());
+    if node.key.as_deref() == Some(key) {
+        if matches!(node.kind, Kind::Text | Kind::Heading)
+            && let Some(t) = &node.text
+        {
+            return Some(t.clone());
+        }
+        let mut out = String::new();
+        collect_text_content(node, &mut out);
+        if !out.is_empty() {
+            return Some(out);
+        }
     }
     node.children.iter().find_map(|c| find_keyed_text(c, key))
+}
+
+fn collect_text_content(node: &El, out: &mut String) {
+    if matches!(node.kind, Kind::Text | Kind::Heading)
+        && let Some(t) = &node.text
+    {
+        out.push_str(t);
+    }
+    for c in &node.children {
+        collect_text_content(c, out);
+    }
 }
 
 fn collect_keyed_text_leaves(node: &El, out: &mut Vec<(String, String)>) {
@@ -429,6 +446,18 @@ mod tests {
             }),
         };
         assert_eq!(selected_text(&tree, &sel).as_deref(), Some("world"));
+    }
+
+    #[test]
+    fn selected_text_reads_text_inside_keyed_composite_widget() {
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("name", 1),
+                head: SelectionPoint::new("name", 4),
+            }),
+        };
+        let tree = crate::widgets::text_input::text_input("hello", &sel, "name");
+        assert_eq!(selected_text(&tree, &sel).as_deref(), Some("ell"));
     }
 
     #[test]

@@ -27,6 +27,8 @@
 //!   and dispatches events back via [`App::on_event`].
 //! - Routes Tab/Shift-Tab through focus traversal and Enter/Space/Escape
 //!   through keyboard events.
+//! - Copies the current Aetna text selection to the native clipboard
+//!   on Ctrl/Cmd+C.
 //! - Requests a redraw whenever interaction state changes (mouse move,
 //!   button down/up) so hover/press visuals are immediate.
 //!
@@ -41,6 +43,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use aetna_core::widgets::text_input::{self, ClipboardKind};
 use aetna_core::{
     App, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, PointerButton, Rect, UiKey,
 };
@@ -272,6 +275,7 @@ fn run_host<A: WinitWgpuApp + 'static>(
         last_frame_at: None,
         frame_index: 0,
         backend: "?",
+        clipboard: arboard::Clipboard::new().ok(),
     };
     event_loop.run_app(&mut host)?;
     Ok(())
@@ -328,6 +332,10 @@ struct Host<A: WinitWgpuApp> {
     /// `"WebGPU"`). Captured once at adapter selection and surfaced in
     /// the diagnostic overlay.
     backend: &'static str,
+    /// Best-effort native clipboard. Initialization can fail in
+    /// display-less/headless environments; the host simply leaves copy
+    /// shortcuts as no-ops in that case.
+    clipboard: Option<arboard::Clipboard>,
 }
 
 struct Gfx {
@@ -658,6 +666,15 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             for event in
                                 gfx.renderer.key_down(key, self.modifiers, key_event.repeat)
                             {
+                                let copy_requested = text_input::clipboard_request(&event)
+                                    == Some(ClipboardKind::Copy);
+                                if copy_requested {
+                                    copy_current_selection(
+                                        &self.app,
+                                        gfx.renderer.ui_state(),
+                                        self.clipboard.as_mut(),
+                                    );
+                                }
                                 self.app.on_event(event);
                             }
                         }
@@ -1054,6 +1071,27 @@ fn bg_color(palette: &aetna_core::Palette) -> wgpu::Color {
     }
 }
 
+fn copy_current_selection<A: App>(
+    app: &A,
+    ui_state: &aetna_core::state::UiState,
+    clipboard: Option<&mut arboard::Clipboard>,
+) {
+    let Some(text) = selected_text_for_app(app, ui_state) else {
+        return;
+    };
+    let Some(clipboard) = clipboard else {
+        return;
+    };
+    let _ = clipboard.set_text(text);
+}
+
+fn selected_text_for_app<A: App>(app: &A, ui_state: &aetna_core::state::UiState) -> Option<String> {
+    let theme = app.theme();
+    let cx = aetna_core::BuildCx::new(&theme).with_ui_state(ui_state);
+    let tree = app.build(&cx);
+    aetna_core::selection::selected_text(&tree, &app.selection())
+}
+
 /// Stable, human-readable tag for the wgpu backend in use. Surfaced to
 /// apps via [`HostDiagnostics::backend`]; the showcase's debug overlay
 /// renders this as-is. `BrowserWebGpu` is collapsed to `"WebGPU"` on
@@ -1114,5 +1152,34 @@ mod tests {
         let r = sel.range.as_ref().expect("range forwarded through wrapper");
         assert_eq!(r.anchor.key, "p");
         assert_eq!(r.head.byte, 5);
+    }
+
+    #[test]
+    fn host_copy_helper_extracts_selected_text_from_app_tree() {
+        struct AppWithSelectableText;
+        impl App for AppWithSelectableText {
+            fn build(&self, _cx: &aetna_core::BuildCx) -> aetna_core::El {
+                aetna_core::widgets::text_input::text_input(
+                    "hello clipboard",
+                    &self.selection(),
+                    "copy-source",
+                )
+            }
+
+            fn selection(&self) -> Selection {
+                Selection {
+                    range: Some(SelectionRange {
+                        anchor: SelectionPoint::new("copy-source", 6),
+                        head: SelectionPoint::new("copy-source", 15),
+                    }),
+                }
+            }
+        }
+
+        let ui_state = aetna_core::state::UiState::new();
+        assert_eq!(
+            selected_text_for_app(&AppWithSelectableText, &ui_state).as_deref(),
+            Some("clipboard")
+        );
     }
 }
