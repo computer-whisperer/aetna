@@ -177,9 +177,12 @@ better native assembly.
 
 Fenced delimiters follow the same bootstrap pattern: simple stretchable
 parentheses, brackets, braces, bars, angles, floors, and ceilings emit native
-vector atoms instead of scaled text glyphs, so tall fences do not become
-artificially bold. They still need OpenType MATH delimiter variants /
-assemblies for production-quality shapes.
+vector atoms instead of scaled text glyphs when the enclosed expression crosses
+the font's `DelimitedSubFormulaMinHeight`, so tall fences do not become
+artificially bold while ordinary inline fences remain native glyphs. They still
+need OpenType MATH delimiter assemblies for arbitrarily tall production-quality
+shapes, but moderately stretched fences can already render through exact
+OpenType delimiter variant glyph outlines.
 
 The TeX matrix adapter is now intentionally narrow: it recognizes the common
 LaTeX matrix environments, treats `&` as a cell separator and `\\` as a row
@@ -238,7 +241,14 @@ script shifts/gaps, upper/lower limit placement, radical rule thickness, and
 radical vertical gaps. Fraction numerator/denominator shifts are also applied
 as minimum baseline placement constraints while the fraction rule remains on
 the shared math axis. The next step is widening that bridge to delimiter
-assemblies.
+assemblies. The parser now verifies that Noto Sans Math exposes delimiter
+variants, assemblies, connector overlap data, and the delimiter stretch
+threshold for common fences, and it preserves variant glyph IDs plus assembly
+part connector/extender metadata. Rendering now has a first exact-glyph bridge:
+when a discrete delimiter variant covers the requested height, the math layout
+emits that glyph ID and draw-op resolution converts the bundled Noto Sans Math
+outline into a mask vector. Larger sizes still use the native vector fallback
+until assembly recipes are lowered into paint atoms.
 
 ### 3. Inline Layout Quality
 

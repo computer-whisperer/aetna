@@ -780,6 +780,11 @@ fn push_math_ops(
                     link: None,
                 });
             }
+            crate::math::MathAtom::GlyphId { glyph_id, rect } => {
+                push_math_glyph_id_op(
+                    n, *glyph_id, *rect, origin_x, baseline_y, scissor, color, i, out,
+                );
+            }
             crate::math::MathAtom::Rule { rect: atom_rect } => {
                 let rule_rect = Rect::new(
                     origin_x + atom_rect.x,
@@ -815,6 +820,96 @@ fn push_math_ops(
             }
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_math_glyph_id_op(
+    n: &El,
+    glyph_id: u16,
+    atom_rect: Rect,
+    origin_x: f32,
+    baseline_y: f32,
+    scissor: Option<Rect>,
+    color: Color,
+    atom_index: usize,
+    out: &mut Vec<DrawOp>,
+) {
+    use crate::vector::{
+        VectorAsset, VectorColor, VectorFill, VectorFillRule, VectorPath, VectorRenderMode,
+        VectorSegment,
+    };
+
+    struct Outline {
+        segments: Vec<VectorSegment>,
+    }
+
+    impl ttf_parser::OutlineBuilder for Outline {
+        fn move_to(&mut self, x: f32, y: f32) {
+            self.segments.push(VectorSegment::MoveTo([x, -y]));
+        }
+
+        fn line_to(&mut self, x: f32, y: f32) {
+            self.segments.push(VectorSegment::LineTo([x, -y]));
+        }
+
+        fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
+            self.segments
+                .push(VectorSegment::QuadTo([x1, -y1], [x, -y]));
+        }
+
+        fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
+            self.segments
+                .push(VectorSegment::CubicTo([x1, -y1], [x2, -y2], [x, -y]));
+        }
+
+        fn close(&mut self) {
+            self.segments.push(VectorSegment::Close);
+        }
+    }
+
+    let Ok(face) = ttf_parser::Face::parse(aetna_fonts::NOTO_SANS_MATH_REGULAR, 0) else {
+        return;
+    };
+    let mut outline = Outline {
+        segments: Vec::new(),
+    };
+    let Some(bbox) = face.outline_glyph(ttf_parser::GlyphId(glyph_id), &mut outline) else {
+        return;
+    };
+    if outline.segments.is_empty() || atom_rect.w <= 0.0 || atom_rect.h <= 0.0 {
+        return;
+    }
+    let view_box = [
+        bbox.x_min as f32,
+        -(bbox.y_max as f32),
+        (bbox.x_max - bbox.x_min) as f32,
+        (bbox.y_max - bbox.y_min) as f32,
+    ];
+    if view_box[2] <= 0.0 || view_box[3] <= 0.0 {
+        return;
+    }
+    let path = VectorPath {
+        segments: outline.segments,
+        fill: Some(VectorFill {
+            color: VectorColor::CurrentColor,
+            opacity: 1.0,
+            rule: VectorFillRule::NonZero,
+        }),
+        stroke: None,
+    };
+    let asset = VectorAsset::from_paths(view_box, vec![path]);
+    out.push(DrawOp::Vector {
+        id: format!("{}.math-glyph-id.{atom_index}", n.computed_id),
+        rect: Rect::new(
+            origin_x + atom_rect.x,
+            baseline_y + atom_rect.y,
+            atom_rect.w,
+            atom_rect.h,
+        ),
+        scissor,
+        asset: std::sync::Arc::new(asset),
+        render_mode: VectorRenderMode::Mask { color },
+    });
 }
 
 #[allow(clippy::too_many_arguments)]

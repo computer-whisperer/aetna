@@ -19,6 +19,8 @@ const SQRT_GAP_EM: f32 = 0.10;
 const TABLE_COL_GAP_EM: f32 = 0.8;
 const TABLE_ROW_GAP_EM: f32 = 0.35;
 const CASES_COL_GAP_EM: f32 = 0.5;
+const DELIMITER_VARIANT_CHARS: [char; 12] =
+    ['(', ')', '[', ']', '{', '}', '|', '‖', '⌊', '⌋', '⌈', '⌉'];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum MathDisplay {
@@ -111,6 +113,10 @@ pub enum MathAtom {
         size: f32,
         weight: FontWeight,
         italic: bool,
+    },
+    GlyphId {
+        glyph_id: u16,
+        rect: Rect,
     },
     Rule {
         rect: Rect,
@@ -410,7 +416,31 @@ impl MathMetrics {
     }
 
     fn delimiter_overshoot(self) -> f32 {
-        (self.size * 0.08).max(self.rule_thickness())
+        (self.size * 0.08).max(self.rule_thickness()).max(
+            self.font_constants()
+                .and_then(|constants| constants.min_connector_overlap(self.size))
+                .unwrap_or(0.0),
+        )
+    }
+
+    fn delimited_sub_formula_min_height(self) -> f32 {
+        self.font_constants()
+            .and_then(|constants| constants.delimited_sub_formula_min_height(self.size))
+            .unwrap_or(self.size * 1.5)
+    }
+
+    fn should_stretch_delimiter(self, body: &MathLayout) -> bool {
+        body.height() + self.delimiter_overshoot() * 2.0 >= self.delimited_sub_formula_min_height()
+    }
+
+    fn delimiter_variant_for_height(
+        self,
+        delimiter: char,
+        target_height: f32,
+    ) -> Option<OpenTypeDelimiterVariant> {
+        self.font_constants().and_then(|constants| {
+            constants.delimiter_variant_for_height(delimiter, target_height, self.size)
+        })
     }
 
     fn delimiter_width(self) -> f32 {
@@ -418,7 +448,7 @@ impl MathMetrics {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct OpenTypeMathConstants {
     units_per_em: f32,
     script_percent_scale_down: i16,
@@ -444,63 +474,113 @@ struct OpenTypeMathConstants {
     radical_rule_thickness: i16,
     radical_vertical_gap: i16,
     radical_display_style_vertical_gap: i16,
+    delimited_sub_formula_min_height: u16,
+    min_connector_overlap: u16,
+    #[cfg_attr(not(test), allow(dead_code))]
+    delimiter_variants: Vec<OpenTypeDelimiterVariants>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Clone, Debug)]
+struct OpenTypeDelimiterVariants {
+    delimiter: char,
+    variants: Vec<OpenTypeDelimiterVariant>,
+    assembly_parts: Vec<OpenTypeDelimiterAssemblyPart>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Clone, Copy, Debug)]
+struct OpenTypeDelimiterVariant {
+    glyph_id: u16,
+    advance: u16,
+    horizontal_advance: u16,
+    bbox: Option<OpenTypeGlyphBBox>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Clone, Copy, Debug)]
+struct OpenTypeDelimiterAssemblyPart {
+    glyph_id: u16,
+    start_connector_length: u16,
+    end_connector_length: u16,
+    full_advance: u16,
+    extender: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct OpenTypeGlyphBBox {
+    x_min: i16,
+    y_min: i16,
+    x_max: i16,
+    y_max: i16,
+}
+
+impl OpenTypeDelimiterVariants {
+    fn max_advance(&self) -> u16 {
+        self.variants
+            .iter()
+            .map(|variant| variant.advance)
+            .chain(self.assembly_parts.iter().map(|part| part.full_advance))
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 impl OpenTypeMathConstants {
-    fn font_units(self, value: i16, size: f32) -> Option<f32> {
+    fn font_units(&self, value: i16, size: f32) -> Option<f32> {
         (value > 0 && self.units_per_em > 0.0).then(|| value as f32 / self.units_per_em * size)
     }
 
-    fn script_scale(self, size: f32) -> Option<f32> {
+    fn script_scale(&self, size: f32) -> Option<f32> {
         (self.script_percent_scale_down > 0)
             .then(|| size * self.script_percent_scale_down as f32 / 100.0)
     }
 
-    fn fraction_rule_thickness(self, size: f32) -> Option<f32> {
+    fn fraction_rule_thickness(&self, size: f32) -> Option<f32> {
         self.font_units(self.fraction_rule_thickness, size)
     }
 
-    fn axis_height(self, size: f32) -> Option<f32> {
+    fn axis_height(&self, size: f32) -> Option<f32> {
         self.font_units(self.axis_height, size)
     }
 
-    fn subscript_shift_down(self, size: f32) -> Option<f32> {
+    fn subscript_shift_down(&self, size: f32) -> Option<f32> {
         self.font_units(self.subscript_shift_down, size)
     }
 
-    fn superscript_shift_up(self, size: f32) -> Option<f32> {
+    fn superscript_shift_up(&self, size: f32) -> Option<f32> {
         self.font_units(self.superscript_shift_up, size)
     }
 
-    fn superscript_bottom_min(self, size: f32) -> Option<f32> {
+    fn superscript_bottom_min(&self, size: f32) -> Option<f32> {
         self.font_units(self.superscript_bottom_min, size)
     }
 
-    fn sub_superscript_gap_min(self, size: f32) -> Option<f32> {
+    fn sub_superscript_gap_min(&self, size: f32) -> Option<f32> {
         self.font_units(self.sub_superscript_gap_min, size)
     }
 
-    fn space_after_script(self, size: f32) -> Option<f32> {
+    fn space_after_script(&self, size: f32) -> Option<f32> {
         self.font_units(self.space_after_script, size)
     }
 
-    fn upper_limit_gap_min(self, size: f32) -> Option<f32> {
+    fn upper_limit_gap_min(&self, size: f32) -> Option<f32> {
         self.font_units(self.upper_limit_gap_min, size)
     }
 
-    fn upper_limit_baseline_rise_min(self, size: f32) -> Option<f32> {
+    fn upper_limit_baseline_rise_min(&self, size: f32) -> Option<f32> {
         self.font_units(self.upper_limit_baseline_rise_min, size)
     }
 
-    fn lower_limit_gap_min(self, size: f32) -> Option<f32> {
+    fn lower_limit_gap_min(&self, size: f32) -> Option<f32> {
         self.font_units(self.lower_limit_gap_min, size)
     }
 
-    fn lower_limit_baseline_drop_min(self, size: f32) -> Option<f32> {
+    fn lower_limit_baseline_drop_min(&self, size: f32) -> Option<f32> {
         self.font_units(self.lower_limit_baseline_drop_min, size)
     }
 
-    fn fraction_numerator_shift(self, size: f32, display: bool) -> Option<f32> {
+    fn fraction_numerator_shift(&self, size: f32, display: bool) -> Option<f32> {
         let value = if display {
             self.fraction_numerator_display_style_shift_up
         } else {
@@ -509,7 +589,7 @@ impl OpenTypeMathConstants {
         self.font_units(value, size)
     }
 
-    fn fraction_denominator_shift(self, size: f32, display: bool) -> Option<f32> {
+    fn fraction_denominator_shift(&self, size: f32, display: bool) -> Option<f32> {
         let value = if display {
             self.fraction_denominator_display_style_shift_down
         } else {
@@ -518,7 +598,7 @@ impl OpenTypeMathConstants {
         self.font_units(value, size)
     }
 
-    fn fraction_numerator_gap(self, size: f32, display: bool) -> Option<f32> {
+    fn fraction_numerator_gap(&self, size: f32, display: bool) -> Option<f32> {
         let value = if display {
             self.fraction_num_display_style_gap_min
         } else {
@@ -527,7 +607,7 @@ impl OpenTypeMathConstants {
         self.font_units(value, size)
     }
 
-    fn fraction_denominator_gap(self, size: f32, display: bool) -> Option<f32> {
+    fn fraction_denominator_gap(&self, size: f32, display: bool) -> Option<f32> {
         let value = if display {
             self.fraction_denom_display_style_gap_min
         } else {
@@ -536,17 +616,109 @@ impl OpenTypeMathConstants {
         self.font_units(value, size)
     }
 
-    fn radical_rule_thickness(self, size: f32) -> Option<f32> {
+    fn radical_rule_thickness(&self, size: f32) -> Option<f32> {
         self.font_units(self.radical_rule_thickness, size)
     }
 
-    fn radical_vertical_gap(self, size: f32, display: bool) -> Option<f32> {
+    fn radical_vertical_gap(&self, size: f32, display: bool) -> Option<f32> {
         let value = if display {
             self.radical_display_style_vertical_gap
         } else {
             self.radical_vertical_gap
         };
         self.font_units(value, size)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn delimiter_variant_count(&self, delimiter: char) -> usize {
+        self.delimiter_variants
+            .iter()
+            .find(|variants| variants.delimiter == delimiter)
+            .map(|variants| variants.variants.len())
+            .unwrap_or(0)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn delimiter_assembly_part_count(&self, delimiter: char) -> usize {
+        self.delimiter_variants
+            .iter()
+            .find(|variants| variants.delimiter == delimiter)
+            .map(|variants| variants.assembly_parts.len())
+            .unwrap_or(0)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn delimiter_max_advance(&self, delimiter: char, size: f32) -> Option<f32> {
+        let advance = self
+            .delimiter_variants
+            .iter()
+            .find(|variants| variants.delimiter == delimiter)?
+            .max_advance();
+        (advance > 0 && self.units_per_em > 0.0).then(|| advance as f32 / self.units_per_em * size)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn delimiter_extender_part_count(&self, delimiter: char) -> usize {
+        self.delimiter_variants
+            .iter()
+            .find(|variants| variants.delimiter == delimiter)
+            .map(|variants| {
+                variants
+                    .assembly_parts
+                    .iter()
+                    .filter(|part| part.extender)
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    fn delimiter_variant_for_height(
+        &self,
+        delimiter: char,
+        target_height: f32,
+        size: f32,
+    ) -> Option<OpenTypeDelimiterVariant> {
+        let variants = self
+            .delimiter_variants
+            .iter()
+            .find(|variants| variants.delimiter == delimiter)?;
+        variants.variants.iter().copied().find(|variant| {
+            self.units_per_em > 0.0
+                && variant.advance as f32 / self.units_per_em * size >= target_height
+        })
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn delimiter_first_variant_glyph_id(&self, delimiter: char) -> Option<u16> {
+        self.delimiter_variants
+            .iter()
+            .find(|variants| variants.delimiter == delimiter)?
+            .variants
+            .first()
+            .map(|variant| variant.glyph_id)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn delimiter_has_assembly_connectors(&self, delimiter: char) -> bool {
+        self.delimiter_variants
+            .iter()
+            .find(|variants| variants.delimiter == delimiter)
+            .is_some_and(|variants| {
+                variants.assembly_parts.iter().any(|part| {
+                    part.glyph_id > 0
+                        && (part.start_connector_length > 0 || part.end_connector_length > 0)
+                })
+            })
+    }
+
+    fn min_connector_overlap(&self, size: f32) -> Option<f32> {
+        (self.min_connector_overlap > 0 && self.units_per_em > 0.0)
+            .then(|| self.min_connector_overlap as f32 / self.units_per_em * size)
+    }
+
+    fn delimited_sub_formula_min_height(&self, size: f32) -> Option<f32> {
+        (self.delimited_sub_formula_min_height > 0 && self.units_per_em > 0.0)
+            .then(|| self.delimited_sub_formula_min_height as f32 / self.units_per_em * size)
     }
 }
 
@@ -555,8 +727,9 @@ fn open_type_math_constants() -> Option<OpenTypeMathConstants> {
     {
         static CONSTANTS: std::sync::OnceLock<Option<OpenTypeMathConstants>> =
             std::sync::OnceLock::new();
-        *CONSTANTS
+        CONSTANTS
             .get_or_init(|| parse_open_type_math_constants(aetna_fonts::NOTO_SANS_MATH_REGULAR))
+            .clone()
     }
     #[cfg(not(feature = "symbols"))]
     {
@@ -567,7 +740,8 @@ fn open_type_math_constants() -> Option<OpenTypeMathConstants> {
 #[cfg(feature = "symbols")]
 fn parse_open_type_math_constants(font: &[u8]) -> Option<OpenTypeMathConstants> {
     let face = ttf_parser::Face::parse(font, 0).ok()?;
-    let constants = face.tables().math?.constants?;
+    let math = face.tables().math?;
+    let constants = math.constants?;
     Some(OpenTypeMathConstants {
         units_per_em: face.units_per_em() as f32,
         script_percent_scale_down: constants.script_percent_scale_down(),
@@ -599,7 +773,68 @@ fn parse_open_type_math_constants(font: &[u8]) -> Option<OpenTypeMathConstants> 
         radical_rule_thickness: constants.radical_rule_thickness().value,
         radical_vertical_gap: constants.radical_vertical_gap().value,
         radical_display_style_vertical_gap: constants.radical_display_style_vertical_gap().value,
+        delimited_sub_formula_min_height: constants.delimited_sub_formula_min_height(),
+        min_connector_overlap: math
+            .variants
+            .map(|variants| variants.min_connector_overlap)
+            .unwrap_or(0),
+        delimiter_variants: parse_open_type_delimiter_variants(&face, math.variants),
     })
+}
+
+#[cfg(feature = "symbols")]
+fn parse_open_type_delimiter_variants(
+    face: &ttf_parser::Face<'_>,
+    variants: Option<ttf_parser::math::Variants<'_>>,
+) -> Vec<OpenTypeDelimiterVariants> {
+    let Some(variants) = variants else {
+        return Vec::new();
+    };
+    DELIMITER_VARIANT_CHARS
+        .into_iter()
+        .filter_map(|delimiter| {
+            let glyph = face.glyph_index(delimiter)?;
+            let construction = variants.vertical_constructions.get(glyph)?;
+            let glyph_variants = construction
+                .variants
+                .into_iter()
+                .map(|variant| OpenTypeDelimiterVariant {
+                    glyph_id: variant.variant_glyph.0,
+                    advance: variant.advance_measurement,
+                    horizontal_advance: face.glyph_hor_advance(variant.variant_glyph).unwrap_or(0),
+                    bbox: face.glyph_bounding_box(variant.variant_glyph).map(|bbox| {
+                        OpenTypeGlyphBBox {
+                            x_min: bbox.x_min,
+                            y_min: bbox.y_min,
+                            x_max: bbox.x_max,
+                            y_max: bbox.y_max,
+                        }
+                    }),
+                })
+                .collect();
+            let assembly_parts = construction
+                .assembly
+                .map(|assembly| {
+                    assembly
+                        .parts
+                        .into_iter()
+                        .map(|part| OpenTypeDelimiterAssemblyPart {
+                            glyph_id: part.glyph_id.0,
+                            start_connector_length: part.start_connector_length,
+                            end_connector_length: part.end_connector_length,
+                            full_advance: part.full_advance,
+                            extender: part.part_flags.extender(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Some(OpenTypeDelimiterVariants {
+                delimiter,
+                variants: glyph_variants,
+                assembly_parts,
+            })
+        })
+        .collect()
 }
 
 pub fn layout_math(expr: &MathExpr, size: f32, display: MathDisplay) -> MathLayout {
@@ -925,12 +1160,13 @@ fn layout_fenced(
     let delimiter_rect = delimiter_rect(&body_layout, ctx);
     let metrics = ctx.metrics();
     let gap = metrics.delimiter_gap();
+    let stretch_delimiters = metrics.should_stretch_delimiter(&body_layout);
     let open_layout = open
         .as_deref()
-        .map(|delimiter| layout_delimiter(delimiter, delimiter_rect, ctx));
+        .map(|delimiter| layout_delimiter(delimiter, delimiter_rect, stretch_delimiters, ctx));
     let close_layout = close
         .as_deref()
-        .map(|delimiter| layout_delimiter(delimiter, delimiter_rect, ctx));
+        .map(|delimiter| layout_delimiter(delimiter, delimiter_rect, stretch_delimiters, ctx));
     let open_width = open_layout
         .as_ref()
         .map(|layout| layout.width + gap)
@@ -980,9 +1216,20 @@ fn delimiter_rect(body: &MathLayout, ctx: LayoutCtx) -> Rect {
     Rect::new(0.0, top, metrics.delimiter_width(), bottom - top)
 }
 
-fn layout_delimiter(delimiter: &str, rect: Rect, ctx: LayoutCtx) -> MathLayout {
-    if !is_vector_delimiter(delimiter) {
+fn layout_delimiter(delimiter: &str, rect: Rect, stretch: bool, ctx: LayoutCtx) -> MathLayout {
+    if !stretch || !is_vector_delimiter(delimiter) {
         return layout_glyph(delimiter, ctx, FontWeight::Regular, false);
+    }
+    if let Some(delimiter) = delimiter
+        .chars()
+        .next()
+        .filter(|_| delimiter.chars().count() == 1)
+        && let Some(variant) = ctx
+            .metrics()
+            .delimiter_variant_for_height(delimiter, rect.h)
+        && let Some(layout) = layout_delimiter_variant(variant, rect, ctx)
+    {
+        return layout;
     }
     MathLayout {
         width: rect.w,
@@ -1001,6 +1248,42 @@ fn is_vector_delimiter(delimiter: &str) -> bool {
         delimiter,
         "(" | ")" | "[" | "]" | "{" | "}" | "|" | "‖" | "⟨" | "⟩" | "⌊" | "⌋" | "⌈" | "⌉"
     )
+}
+
+fn layout_delimiter_variant(
+    variant: OpenTypeDelimiterVariant,
+    target_rect: Rect,
+    ctx: LayoutCtx,
+) -> Option<MathLayout> {
+    let bbox = variant.bbox?;
+    let metrics = ctx.metrics();
+    let constants = metrics.font_constants()?;
+    let scale = metrics.size / constants.units_per_em;
+    let width = (variant.horizontal_advance as f32 * scale).max(target_rect.w);
+    let glyph_top = -(bbox.y_max as f32) * scale;
+    let glyph_width = (bbox.x_max - bbox.x_min) as f32 * scale;
+    let glyph_height = (bbox.y_max - bbox.y_min) as f32 * scale;
+    if glyph_width <= 0.0 || glyph_height <= 0.0 {
+        return None;
+    }
+    let target_center_y = target_rect.y + target_rect.h * 0.5;
+    let glyph_center_y = glyph_top + glyph_height * 0.5;
+    let glyph_y = target_center_y - glyph_center_y;
+    let rect = Rect::new(
+        (width - glyph_width) * 0.5,
+        glyph_y + glyph_top,
+        glyph_width,
+        glyph_height,
+    );
+    Some(MathLayout {
+        width,
+        ascent: (-rect.y).max(-target_rect.y),
+        descent: (rect.y + rect.h).max(target_rect.y + target_rect.h),
+        atoms: vec![MathAtom::GlyphId {
+            glyph_id: variant.glyph_id,
+            rect,
+        }],
+    })
 }
 
 fn layout_table(
@@ -1095,6 +1378,10 @@ fn translate_atoms(out: &mut Vec<MathAtom>, atoms: Vec<MathAtom>, dx: f32, dy: f
             size,
             weight,
             italic,
+        },
+        MathAtom::GlyphId { glyph_id, rect } => MathAtom::GlyphId {
+            glyph_id,
+            rect: Rect::new(rect.x + dx, rect.y + dy, rect.w, rect.h),
         },
         MathAtom::Rule { rect } => MathAtom::Rule {
             rect: Rect::new(rect.x + dx, rect.y + dy, rect.w, rect.h),
@@ -2103,6 +2390,46 @@ mod tests {
                 .is_some_and(|gap| gap > 0.5 && gap < 8.0),
             "display radical gap should come from Noto Sans Math"
         );
+        assert!(
+            constants
+                .min_connector_overlap(16.0)
+                .is_some_and(|overlap| overlap > 0.0),
+            "delimiter connector overlap should come from Noto Sans Math"
+        );
+        assert!(
+            constants
+                .delimited_sub_formula_min_height(16.0)
+                .is_some_and(|height| height > 8.0 && height < 40.0),
+            "delimiter stretch threshold should come from Noto Sans Math"
+        );
+        assert!(
+            constants.delimiter_variant_count('(') > 0,
+            "left paren should expose vertical delimiter variants"
+        );
+        assert!(
+            constants
+                .delimiter_first_variant_glyph_id('(')
+                .is_some_and(|glyph_id| glyph_id > 0),
+            "left paren variants should preserve glyph IDs"
+        );
+        assert!(
+            constants.delimiter_assembly_part_count('{') > 0,
+            "left brace should expose a vertical delimiter assembly"
+        );
+        assert!(
+            constants.delimiter_extender_part_count('{') > 0,
+            "left brace assembly should expose extender parts"
+        );
+        assert!(
+            constants.delimiter_has_assembly_connectors('{'),
+            "left brace assembly should preserve connector metadata"
+        );
+        assert!(
+            constants
+                .delimiter_max_advance('(', 16.0)
+                .is_some_and(|advance| advance > 16.0),
+            "delimiter variant advances should scale into px"
+        );
     }
 
     #[test]
@@ -2350,7 +2677,7 @@ mod tests {
             other => panic!("expected fenced expression, got {other:?}"),
         }
         let layout = layout_math(
-            &parse_tex(r"\left(\frac{a}{b}\right)").unwrap(),
+            &parse_tex(r"\left(\begin{matrix}a\\b\\c\end{matrix}\right)").unwrap(),
             16.0,
             MathDisplay::Inline,
         );
@@ -2360,6 +2687,52 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, MathAtom::Delimiter { delimiter, rect, thickness } if delimiter == "(" && rect.h > 16.0 && *thickness < 2.0)),
             "fence should emit a stretched vector delimiter with normal stroke weight"
+        );
+    }
+
+    #[test]
+    fn simple_tex_left_right_fences_remain_glyphs() {
+        let layout = layout_math(
+            &parse_tex(r"\left(x\right)").unwrap(),
+            16.0,
+            MathDisplay::Inline,
+        );
+        assert!(
+            !layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Delimiter { .. })),
+            "simple fences should stay as glyphs below the font stretch threshold"
+        );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Glyph { text, .. } if text == "(")),
+            "left fence should emit a glyph atom"
+        );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Glyph { text, .. } if text == ")")),
+            "right fence should emit a glyph atom"
+        );
+    }
+
+    #[test]
+    fn stretched_tex_fences_use_open_type_variant_glyphs() {
+        let layout = layout_math(
+            &parse_tex(r"\left(\begin{matrix}a&b\\c&d\end{matrix}\right)").unwrap(),
+            16.0,
+            MathDisplay::Inline,
+        );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::GlyphId { .. })),
+            "moderately stretched fences should use exact OpenType delimiter variant glyphs"
         );
     }
 
