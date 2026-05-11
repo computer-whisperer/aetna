@@ -19,23 +19,34 @@ $$
 $$
 
 The first TeX slice intentionally covers the structural basics:
-$\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, and $y_{n+1}=y_n+x^2$.
+$\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, $\\sqrt[3]{x+1}$, and $y_{n+1}=y_n+x^2$.
 ";
 
 const MATHML_SOURCE: &str = r#"
 <math display="block">
-  <mfrac>
-    <mrow>
-      <msup><mi>a</mi><mn>2</mn></msup>
-      <mo>+</mo>
-      <msup><mi>b</mi><mn>2</mn></msup>
-    </mrow>
-    <msqrt>
-      <msub><mi>x</mi><mn>1</mn></msub>
-      <mo>+</mo>
-      <msub><mi>x</mi><mn>2</mn></msub>
-    </msqrt>
-  </mfrac>
+  <mrow>
+    <mfrac>
+      <mrow>
+        <msup><mi>a</mi><mn>2</mn></msup>
+        <mo>+</mo>
+        <msup><mi>b</mi><mn>2</mn></msup>
+      </mrow>
+      <msqrt>
+        <msub><mi>x</mi><mn>1</mn></msub>
+        <mo>+</mo>
+        <msub><mi>x</mi><mn>2</mn></msub>
+      </msqrt>
+    </mfrac>
+    <mo>+</mo>
+    <mroot>
+      <mrow>
+        <mi>x</mi>
+        <mo>+</mo>
+        <mn>1</mn>
+      </mrow>
+      <mn>3</mn>
+    </mroot>
+  </mrow>
 </math>
 "#;
 

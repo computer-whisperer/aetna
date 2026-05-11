@@ -37,6 +37,10 @@ pub enum MathExpr {
         denominator: Arc<MathExpr>,
     },
     Sqrt(Arc<MathExpr>),
+    Root {
+        base: Arc<MathExpr>,
+        index: Arc<MathExpr>,
+    },
     Scripts {
         base: Arc<MathExpr>,
         sub: Option<Arc<MathExpr>>,
@@ -130,6 +134,7 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
             denominator,
         } => layout_fraction(numerator, denominator, ctx),
         MathExpr::Sqrt(child) => layout_sqrt(child, ctx),
+        MathExpr::Root { base, index } => layout_root(base, index, ctx),
         MathExpr::Scripts { base, sub, sup } => {
             layout_scripts(base, sub.as_deref(), sup.as_deref(), ctx)
         }
@@ -282,6 +287,22 @@ fn layout_sqrt(child: &MathExpr, ctx: LayoutCtx) -> MathLayout {
     }
 }
 
+fn layout_root(base: &MathExpr, index: &MathExpr, ctx: LayoutCtx) -> MathLayout {
+    let root = layout_sqrt(base, ctx);
+    let index = layout_expr(index, ctx.script());
+    let root_x = index.width * 0.55;
+    let index_dy = -root.ascent * 0.52;
+    let mut atoms = Vec::new();
+    translate_atoms(&mut atoms, index.atoms, 0.0, index_dy);
+    translate_atoms(&mut atoms, root.atoms, root_x, 0.0);
+    MathLayout {
+        width: root_x + root.width,
+        ascent: root.ascent.max(-index_dy + index.ascent),
+        descent: root.descent.max(index_dy + index.descent),
+        atoms,
+    }
+}
+
 fn layout_scripts(
     base: &MathExpr,
     sub: Option<&MathExpr>,
@@ -409,6 +430,14 @@ fn parse_mathml_node(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPars
         "msqrt" => Ok(MathExpr::Sqrt(Arc::new(MathExpr::row(
             parse_mathml_children(node)?,
         )))),
+        "mroot" => {
+            let children = mathml_element_children(node);
+            require_mathml_arity(node, &children, 2)?;
+            Ok(MathExpr::Root {
+                base: Arc::new(parse_mathml_node(children[0])?),
+                index: Arc::new(parse_mathml_node(children[1])?),
+            })
+        }
         "msub" => parse_mathml_scripts(node, true, false),
         "msup" => parse_mathml_scripts(node, false, true),
         "msubsup" => parse_mathml_scripts(node, true, true),
@@ -644,7 +673,17 @@ impl<'a> TexParser<'a> {
                     denominator,
                 })
             }
-            "sqrt" => Ok(MathExpr::Sqrt(Arc::new(self.parse_required_group()?))),
+            "sqrt" => {
+                let index = self.parse_optional_bracket_group()?;
+                let base = Arc::new(self.parse_required_group()?);
+                Ok(match index {
+                    Some(index) => MathExpr::Root {
+                        base,
+                        index: Arc::new(index),
+                    },
+                    None => MathExpr::Sqrt(base),
+                })
+            }
             "cdot" => Ok(MathExpr::Operator("·".into())),
             "times" => Ok(MathExpr::Operator("×".into())),
             "div" => Ok(MathExpr::Operator("÷".into())),
@@ -674,6 +713,15 @@ impl<'a> TexParser<'a> {
         self.skip_ws();
         self.expect('{')?;
         self.parse_row(Some('}'))
+    }
+
+    fn parse_optional_bracket_group(&mut self) -> Result<Option<MathExpr>, MathParseError> {
+        self.skip_ws();
+        if self.peek() != Some('[') {
+            return Ok(None);
+        }
+        self.bump();
+        self.parse_row(Some(']')).map(Some)
     }
 
     fn skip_ws(&mut self) {
@@ -773,6 +821,30 @@ mod tests {
     }
 
     #[test]
+    fn parses_indexed_tex_root() {
+        let expr = parse_tex(r"\sqrt[3]{x+1}").expect("valid tex");
+        match expr {
+            MathExpr::Root { base, index } => {
+                assert_eq!(*index, MathExpr::Number("3".into()));
+                assert!(matches!(*base, MathExpr::Row(_)));
+            }
+            other => panic!("expected indexed root, got {other:?}"),
+        }
+        let layout = layout_math(
+            &parse_tex(r"\sqrt[3]{x+1}").unwrap(),
+            16.0,
+            MathDisplay::Inline,
+        );
+        assert!(
+            layout
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Radical { .. })),
+            "indexed root should emit a radical atom"
+        );
+    }
+
+    #[test]
     fn reports_unclosed_group() {
         let err = parse_tex(r"\frac{1}{x").expect_err("invalid tex");
         assert!(err.message.contains("unclosed group"));
@@ -815,6 +887,28 @@ mod tests {
                 .any(|atom| matches!(atom, MathAtom::Radical { .. })),
             "sqrt should emit a radical atom"
         );
+    }
+
+    #[test]
+    fn parses_mathml_indexed_root() {
+        let expr = parse_mathml(
+            r#"
+            <math>
+              <mroot>
+                <mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow>
+                <mn>3</mn>
+              </mroot>
+            </math>
+            "#,
+        )
+        .expect("valid mathml");
+        match expr {
+            MathExpr::Root { base, index } => {
+                assert_eq!(*index, MathExpr::Number("3".into()));
+                assert!(matches!(*base, MathExpr::Row(_)));
+            }
+            other => panic!("expected indexed root, got {other:?}"),
+        }
     }
 
     #[test]
