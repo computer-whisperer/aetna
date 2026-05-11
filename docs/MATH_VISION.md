@@ -122,6 +122,7 @@ The supported TeX subset is deliberately small:
 
 - rows and grouped expressions
 - identifiers, numbers, operators, and common Greek/operator commands
+- text groups such as `\text`, `\mathrm`, and `\operatorname`
 - `\frac`
 - `\sqrt` and indexed `\sqrt[n]{...}`
 - accents such as `\hat`, `\bar`, `\overline`, `\vec`, and `\tilde`

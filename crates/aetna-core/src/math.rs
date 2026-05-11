@@ -2536,6 +2536,7 @@ impl<'a> TexParser<'a> {
                 }
             }
             "end" => Err(self.error("unexpected \\end")),
+            "text" | "mathrm" | "operatorname" => Ok(MathExpr::Text(self.parse_text_group()?)),
             "cdot" => Ok(MathExpr::Operator("·".into())),
             "times" => Ok(MathExpr::Operator("×".into())),
             "div" => Ok(MathExpr::Operator("÷".into())),
@@ -2574,6 +2575,36 @@ impl<'a> TexParser<'a> {
         self.skip_ws();
         self.expect('{')?;
         self.parse_row(Some('}'))
+    }
+
+    fn parse_text_group(&mut self) -> Result<String, MathParseError> {
+        self.skip_ws();
+        self.expect('{')?;
+        let mut depth = 1;
+        let mut text = String::new();
+        while let Some(ch) = self.bump() {
+            match ch {
+                '\\' => {
+                    let escaped = self
+                        .bump()
+                        .ok_or_else(|| self.error("unclosed text group"))?;
+                    text.push(escaped);
+                }
+                '{' => {
+                    depth += 1;
+                    text.push(ch);
+                }
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(text.split_whitespace().collect::<Vec<_>>().join(" "));
+                    }
+                    text.push(ch);
+                }
+                _ => text.push(ch),
+            }
+        }
+        Err(self.error("unclosed text group"))
     }
 
     fn parse_optional_bracket_group(&mut self) -> Result<Option<MathExpr>, MathParseError> {
@@ -3118,6 +3149,26 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, MathAtom::Rule { rect } if rect.y < -10.0)),
             "overline should emit a rule above the base"
+        );
+    }
+
+    #[test]
+    fn parses_tex_text_groups() {
+        let expr = parse_tex(r"x \text{ if } y \operatorname{max}").expect("valid tex text");
+        let MathExpr::Row(children) = expr else {
+            panic!("expected row expression");
+        };
+        assert!(
+            children
+                .iter()
+                .any(|child| matches!(child, MathExpr::Text(text) if text == "if")),
+            "expected text group in {children:?}"
+        );
+        assert!(
+            children
+                .iter()
+                .any(|child| matches!(child, MathExpr::Text(text) if text == "max")),
+            "expected operatorname text in {children:?}"
         );
     }
 
