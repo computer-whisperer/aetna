@@ -109,7 +109,7 @@ The current in-progress implementation has:
 - a small `parse_tex` helper in core for the initial vertical slice
 - a small `parse_mathml` / `parse_mathml_with_display` adapter for the
   matching Presentation MathML subset
-- a native vector-backed radical atom for joined square-root check/stem/bar
+- OpenType MATH-backed radical glyph variants with a native vector fallback
 - `Kind::Math`
 - `math`, `math_inline`, and `math_block` constructors
 - layout support for standalone math nodes
@@ -169,11 +169,12 @@ The first visual fixture was valuable. It exposed two issues immediately:
   `tools/svg_to_png.sh` supplies fontconfig paths for the bundled faces.
 
 The radical rendering has moved past the first `√` glyph plus separate overbar
-rule. The current implementation emits one vector-backed radical atom so the
-check, stem, and overbar are visually joined in SVG and native backends. This
-is good enough for the bootstrap fixture, but the metrics are still heuristic;
-the final path should come from OpenType MATH constants and glyph variants or a
-better native assembly.
+rule and the later heuristic-only vector radical. The current implementation
+queries the bundled Noto Sans Math MATH table for a vertical radical variant,
+emits that exact glyph outline through the same glyph-id vector path used by
+stretchy delimiters, then extends the overbar as a rule over the radicand. The
+native vector radical remains as the fallback when a font does not expose a
+usable radical variant.
 
 Fenced delimiters follow the same bootstrap pattern: simple stretchable
 parentheses, brackets, braces, bars, angles, floors, and ceilings emit native
@@ -207,13 +208,16 @@ rendered face.
 
 ### 1. Radical Construction
 
-Replace the heuristic vector radical with a metric-backed radical assembly:
+The first OpenType-backed radical path is in place:
 
-- Prefer OpenType MATH glyph variants / assemblies from Noto Sans Math when
-  available.
-- If the text stack does not expose enough MATH-table data yet, add a native
-  vector radical path sized from the box metrics.
-- Keep the overbar and radical check visually joined at multiple font sizes.
+- Prefer Noto Sans Math vertical radical variants when available.
+- Extend the overbar with a native rule over arbitrary radicand width.
+- Fall back to the native vector radical when the font lacks MATH-table
+  radical variants.
+
+Remaining work is polish: use more of the MATH radical constants, validate
+larger nested roots, and decide whether radical assemblies are needed for cases
+where variants cannot cover the requested height.
 
 This should be treated as part of the math layout project, not as a markdown
 transformer concern.
@@ -246,12 +250,12 @@ assemblies. The parser now verifies that Noto Sans Math exposes delimiter
 variants, assemblies, connector overlap data, and the delimiter stretch
 threshold for common fences, and it preserves variant glyph IDs plus assembly
 part connector/extender metadata. Rendering now has a first exact-glyph bridge:
-when a discrete delimiter variant covers the requested height, the math layout
-emits that glyph ID and draw-op resolution converts the bundled Noto Sans Math
-outline into a mask vector. When no variant is tall enough, the layout repeats
-OpenType assembly extender parts, distributes connector overlap so the final
-height tracks the target expression, and emits each assembly piece through the
-same glyph-id outline path.
+when a discrete delimiter or radical variant covers the requested height, the
+math layout emits that glyph ID and draw-op resolution converts the bundled
+Noto Sans Math outline into a mask vector. When no delimiter variant is tall
+enough, the layout repeats OpenType assembly extender parts, distributes
+connector overlap so the final height tracks the target expression, and emits
+each assembly piece through the same glyph-id outline path.
 
 ### 3. Inline Layout Quality
 

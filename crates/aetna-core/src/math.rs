@@ -19,8 +19,22 @@ const SQRT_GAP_EM: f32 = 0.10;
 const TABLE_COL_GAP_EM: f32 = 0.8;
 const TABLE_ROW_GAP_EM: f32 = 0.35;
 const CASES_COL_GAP_EM: f32 = 0.5;
-const DELIMITER_VARIANT_CHARS: [char; 12] =
-    ['(', ')', '[', ']', '{', '}', '|', '‖', '⌊', '⌋', '⌈', '⌉'];
+const RADICAL_GLYPH: char = '√';
+const STRETCHY_VARIANT_CHARS: [char; 13] = [
+    '(',
+    ')',
+    '[',
+    ']',
+    '{',
+    '}',
+    '|',
+    '‖',
+    '⌊',
+    '⌋',
+    '⌈',
+    '⌉',
+    RADICAL_GLYPH,
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum MathDisplay {
@@ -334,6 +348,10 @@ impl MathMetrics {
         (inner_descent * 0.75).max(self.size * 0.13)
     }
 
+    fn radical_variant_for_height(self, target_height: f32) -> Option<OpenTypeDelimiterVariant> {
+        self.stretchy_variant_for_height(RADICAL_GLYPH, target_height)
+    }
+
     fn root_offset_x(self, index_width: f32) -> f32 {
         index_width * 0.55
     }
@@ -439,8 +457,16 @@ impl MathMetrics {
         delimiter: char,
         target_height: f32,
     ) -> Option<OpenTypeDelimiterVariant> {
+        self.stretchy_variant_for_height(delimiter, target_height)
+    }
+
+    fn stretchy_variant_for_height(
+        self,
+        glyph: char,
+        target_height: f32,
+    ) -> Option<OpenTypeDelimiterVariant> {
         self.font_constants().and_then(|constants| {
-            constants.delimiter_variant_for_height(delimiter, target_height, self.size)
+            constants.stretchy_variant_for_height(glyph, target_height, self.size)
         })
     }
 
@@ -683,16 +709,16 @@ impl OpenTypeMathConstants {
             .unwrap_or(0)
     }
 
-    fn delimiter_variant_for_height(
+    fn stretchy_variant_for_height(
         &self,
-        delimiter: char,
+        glyph: char,
         target_height: f32,
         size: f32,
     ) -> Option<OpenTypeDelimiterVariant> {
         let variants = self
             .delimiter_variants
             .iter()
-            .find(|variants| variants.delimiter == delimiter)?;
+            .find(|variants| variants.delimiter == glyph)?;
         variants.variants.iter().copied().find(|variant| {
             self.units_per_em > 0.0
                 && variant.advance as f32 / self.units_per_em * size >= target_height
@@ -812,7 +838,7 @@ fn parse_open_type_delimiter_variants(
     let Some(variants) = variants else {
         return Vec::new();
     };
-    DELIMITER_VARIANT_CHARS
+    STRETCHY_VARIANT_CHARS
         .into_iter()
         .filter_map(|delimiter| {
             let glyph = face.glyph_index(delimiter)?;
@@ -1015,6 +1041,14 @@ fn layout_sqrt(child: &MathExpr, ctx: LayoutCtx) -> MathLayout {
     let inner = layout_expr(child, ctx);
     let gap = metrics.sqrt_gap();
     let rule = metrics.radical_rule_thickness();
+    if let Some(layout) = layout_open_type_sqrt(inner.clone(), gap, rule, ctx) {
+        return layout;
+    }
+    layout_vector_sqrt(inner, gap, rule, ctx)
+}
+
+fn layout_vector_sqrt(inner: MathLayout, gap: f32, rule: f32, ctx: LayoutCtx) -> MathLayout {
+    let metrics = ctx.metrics();
     let radical_w = metrics.radical_width();
     let inner_x = radical_w + gap;
     let bar_y = -inner.ascent - gap - rule * 0.5;
@@ -1038,6 +1072,53 @@ fn layout_sqrt(child: &MathExpr, ctx: LayoutCtx) -> MathLayout {
         descent: tick_y + rule * 0.5,
         atoms,
     }
+}
+
+fn layout_open_type_sqrt(
+    inner: MathLayout,
+    gap: f32,
+    rule: f32,
+    ctx: LayoutCtx,
+) -> Option<MathLayout> {
+    let metrics = ctx.metrics();
+    let bar_y = -inner.ascent - gap - rule * 0.5;
+    let tick_y = metrics.radical_tick_y(inner.descent);
+    let target_height = tick_y - bar_y + rule;
+    let variant = metrics.radical_variant_for_height(target_height)?;
+    let bbox = variant.bbox?;
+    let constants = metrics.font_constants()?;
+    let scale = metrics.size / constants.units_per_em;
+    let view_box = glyph_advance_view_box(bbox, variant.horizontal_advance, None)?;
+    if view_box.w <= 0.0 || view_box.h <= 0.0 {
+        return None;
+    }
+    let radical_w = view_box.w * scale;
+    let radical_h = view_box.h * scale;
+    let radical_rect = Rect::new(0.0, bar_y - rule * 0.5, radical_w, radical_h);
+    let inner_x = radical_w + gap;
+    let end_x = inner_x + inner.width;
+    let overbar_x = (radical_w - rule * 0.5).max(0.0);
+    let mut atoms = Vec::new();
+    atoms.push(MathAtom::GlyphId {
+        glyph_id: variant.glyph_id,
+        rect: radical_rect,
+        view_box,
+    });
+    atoms.push(MathAtom::Rule {
+        rect: Rect::new(
+            overbar_x,
+            bar_y - rule * 0.5,
+            (end_x - overbar_x).max(rule),
+            rule,
+        ),
+    });
+    translate_atoms(&mut atoms, inner.atoms, inner_x, 0.0);
+    Some(MathLayout {
+        width: end_x,
+        ascent: (-bar_y + rule * 0.5).max(-radical_rect.y),
+        descent: (tick_y + rule * 0.5).max(radical_rect.y + radical_rect.h),
+        atoms,
+    })
 }
 
 fn layout_root(base: &MathExpr, index: &MathExpr, ctx: LayoutCtx) -> MathLayout {
@@ -2524,6 +2605,13 @@ pub(crate) fn resolved_math_color(color: Option<Color>) -> Color {
 mod tests {
     use super::*;
 
+    fn has_radical_shape(layout: &MathLayout) -> bool {
+        layout
+            .atoms
+            .iter()
+            .any(|atom| matches!(atom, MathAtom::Radical { .. } | MathAtom::GlyphId { .. }))
+    }
+
     #[cfg(feature = "symbols")]
     #[test]
     fn loads_bundled_open_type_math_constants() {
@@ -2629,6 +2717,10 @@ mod tests {
             "left paren should expose vertical delimiter variants"
         );
         assert!(
+            constants.delimiter_variant_count(RADICAL_GLYPH) > 0,
+            "radical should expose vertical math glyph variants"
+        );
+        assert!(
             constants
                 .delimiter_first_variant_glyph_id('(')
                 .is_some_and(|glyph_id| glyph_id > 0),
@@ -2669,11 +2761,8 @@ mod tests {
             "fraction should emit rule atoms"
         );
         assert!(
-            layout
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, MathAtom::Radical { .. })),
-            "sqrt should emit a radical atom"
+            has_radical_shape(&layout),
+            "sqrt should emit a radical shape atom"
         );
     }
 
@@ -2798,11 +2887,8 @@ mod tests {
             MathDisplay::Inline,
         );
         assert!(
-            layout
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, MathAtom::Radical { .. })),
-            "indexed root should emit a radical atom"
+            has_radical_shape(&layout),
+            "indexed root should emit a radical shape atom"
         );
     }
 
@@ -3324,11 +3410,8 @@ mod tests {
             "fraction should emit rule atoms"
         );
         assert!(
-            layout
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, MathAtom::Radical { .. })),
-            "sqrt should emit a radical atom"
+            has_radical_shape(&layout),
+            "sqrt should emit a radical shape atom"
         );
     }
 
