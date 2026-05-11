@@ -1,6 +1,6 @@
 //! Showcase — Aetna's hero demo.
 //!
-//! Sixteen pages across six groups: every shadcn-shaped widget gets a
+//! Pages across six groups: every shadcn-shaped widget gets a
 //! demo on a category page, every system-level capability (theme swap,
 //! hotkeys, animation, custom shaders, overlays, toasts) gets a page
 //! that exercises it end-to-end. The sidebar's theme picker swaps the
@@ -17,6 +17,7 @@ pub mod forms;
 pub mod hotkeys;
 pub mod layout;
 pub mod lists_tables;
+pub mod math;
 pub mod media;
 pub mod overlays;
 pub mod page_chrome;
@@ -50,6 +51,7 @@ pub enum Section {
     /// Token swatches grid for the active theme — the hero shot.
     Palette,
     Typography,
+    Math,
     Surfaces,
     Layout,
     Buttons,
@@ -79,10 +81,11 @@ pub enum Group {
 }
 
 impl Section {
-    pub const ALL: [Section; 17] = [
+    pub const ALL: [Section; 18] = [
         Section::About,
         Section::Palette,
         Section::Typography,
+        Section::Math,
         Section::Surfaces,
         Section::Layout,
         Section::Buttons,
@@ -105,6 +108,7 @@ impl Section {
             Section::About => "About",
             Section::Palette => "Palette",
             Section::Typography => "Typography",
+            Section::Math => "Math",
             Section::Surfaces => "Surfaces",
             Section::Layout => "Layout",
             Section::Buttons => "Buttons & toggles",
@@ -128,6 +132,7 @@ impl Section {
             Section::About => "about",
             Section::Palette => "palette",
             Section::Typography => "typography",
+            Section::Math => "math",
             Section::Surfaces => "surfaces",
             Section::Layout => "layout",
             Section::Buttons => "buttons",
@@ -150,7 +155,9 @@ impl Section {
         match self {
             Section::About => Group::Welcome,
             Section::Palette => Group::Theme,
-            Section::Typography | Section::Surfaces | Section::Layout => Group::Foundations,
+            Section::Typography | Section::Math | Section::Surfaces | Section::Layout => {
+                Group::Foundations
+            }
             Section::Buttons | Section::Booleans | Section::TextInputs | Section::Forms => {
                 Group::Inputs
             }
@@ -223,6 +230,7 @@ pub struct Showcase {
     pub(crate) pending_link_opens: Vec<String>,
     pub(crate) surfaces: surfaces::State,
     pub(crate) layout: layout::State,
+    pub(crate) math: math::State,
     pub(crate) buttons: buttons::State,
     pub(crate) booleans: booleans::State,
     pub(crate) text_inputs: text_inputs::State,
@@ -278,6 +286,7 @@ impl App for Showcase {
             Section::About => about::view(&self.about),
             Section::Palette => palette::view(theme.palette()),
             Section::Typography => typography::view(),
+            Section::Math => math::view(&self.math),
             Section::Surfaces => surfaces::view(&self.surfaces),
             Section::Layout => layout::view(&self.layout),
             Section::Buttons => buttons::view(&self.buttons),
@@ -368,6 +377,7 @@ impl App for Showcase {
             Section::About => about::on_event(&mut self.about, event),
             Section::Palette => {}    // static — no events
             Section::Typography => {} // static
+            Section::Math => math::on_event(&mut self.math, event),
             Section::Surfaces => surfaces::on_event(&mut self.surfaces, event),
             Section::Layout => layout::on_event(&mut self.layout, event),
             Section::Buttons => buttons::on_event(&mut self.buttons, event),
@@ -394,11 +404,13 @@ impl App for Showcase {
     fn selection(&self) -> Selection {
         // Surface whichever section currently owns a focused text
         // input — the runtime uses it to paint highlight bands and
-        // resolve clipboard ops. The About page's dispatcher is the
-        // only About-section text input today; other sections that
-        // host inputs return their own selection here as they grow.
+        // resolve clipboard ops. The About page has its own dispatcher;
+        // sections that host inputs return their own selection here.
         match self.section {
             Section::About => self.about.message_selection.clone(),
+            Section::TextInputs => self.text_inputs.selection.clone(),
+            Section::Forms => self.forms.selection.clone(),
+            Section::Math => self.math.selection.clone(),
             _ => Selection::default(),
         }
     }

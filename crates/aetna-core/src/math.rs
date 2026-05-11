@@ -2698,6 +2698,7 @@ impl<'a> TexParser<'a> {
             "gamma" => Ok(MathExpr::Identifier("γ".into())),
             "Delta" => Ok(MathExpr::Identifier("Δ".into())),
             "Omega" => Ok(MathExpr::Identifier("Ω".into())),
+            "emptyset" | "varnothing" => Ok(MathExpr::Identifier("∅".into())),
             "sin" | "cos" | "tan" | "log" | "ln" | "lim" | "max" | "min" | "sup" | "inf" => {
                 Ok(MathExpr::Text(name))
             }
@@ -3303,6 +3304,27 @@ mod tests {
                 .iter()
                 .any(|child| matches!(child, MathExpr::Text(text) if text == "max")),
             "expected operatorname text in {children:?}"
+        );
+    }
+
+    #[test]
+    fn parses_common_tex_symbol_commands() {
+        let expr =
+            parse_tex(r"\alpha+\beta\to\gamma+\emptyset+\varnothing").expect("valid tex symbols");
+        let MathExpr::Row(children) = expr else {
+            panic!("expected row expression");
+        };
+        assert!(
+            children
+                .iter()
+                .any(|child| matches!(child, MathExpr::Identifier(text) if text == "∅")),
+            "expected empty-set symbol in {children:?}"
+        );
+        assert!(
+            children.iter().all(
+                |child| !matches!(child, MathExpr::Identifier(text) if text.starts_with('\\'))
+            ),
+            "expected supported symbol commands in {children:?}"
         );
     }
 

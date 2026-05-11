@@ -6,6 +6,7 @@
 //! visible alongside the hand-authored variant.
 
 use aetna_core::prelude::*;
+use aetna_markdown::{MarkdownOptions, md_with_options};
 
 #[derive(Default)]
 pub struct State;
@@ -55,6 +56,15 @@ fn render(md: &str) -> El {
 | Blockquote | `blockquote`       |
 | Code block | `code_block`       |
 | Table      | `table`            |
+
+### Native math
+
+Inline math shares a prose baseline: $e^{i\\pi}+1=0$, \
+$x_1+x_2$, and $\\sqrt{x_1+x_2}$.
+
+$$
+\\frac{a^2+b^2}{\\sqrt{x_1+x_2}} + \\begin{bmatrix}1&0\\\\0&1\\end{bmatrix}
+$$
 ";
 
 pub fn view() -> El {
@@ -149,7 +159,7 @@ pub fn view() -> El {
         )
         .muted()
         .small(),
-        aetna_markdown::md(MARKDOWN_SOURCE),
+        md_with_options(MARKDOWN_SOURCE, MarkdownOptions::default().math(true)),
     ])
     .gap(tokens::SPACE_4)
     .align(Align::Start)

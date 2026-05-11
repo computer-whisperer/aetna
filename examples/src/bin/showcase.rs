@@ -1,4 +1,4 @@
-//! Showcase — sixteen pages across six groups, demoing every shadcn-shaped
+//! Showcase — pages across six groups, demoing every shadcn-shaped
 //! widget and every system-level capability (theme swap, animation,
 //! hotkeys, custom shaders, overlays, toasts).
 //!

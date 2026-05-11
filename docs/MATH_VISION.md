@@ -116,7 +116,9 @@ The current in-progress implementation has:
 - layout support for standalone math nodes
 - mixed inline support inside `text_runs`
 - markdown opt-in through `MarkdownOptions::math(true)`
-- a visual bundle fixture: `cargo run -p aetna-markdown --example markdown_math`
+- visual bundle fixtures:
+  - `cargo run -p aetna-markdown --example markdown_math`
+  - `cargo run -p aetna-markdown --example markdown_math_stress`
 
 The supported TeX subset is deliberately small:
 
@@ -298,14 +300,20 @@ MathML Core import should target the Aetna IR, not bypass it.
 
 ### 5. Coverage And Fixtures
 
-Add visual fixtures for:
+The first focused stress fixture is in place as
+`cargo run -p aetna-markdown --example markdown_math_stress`. It covers
+inline fractions at several font sizes, narrow wrapping near atomic math
+embeds, nested scripts, short and long radicals, Greek/operator fallback, and
+display structures. Keep extending this bundle and split it only when it stops
+being readable as a single regression image.
 
-- inline fractions at several font sizes,
-- display fractions,
-- nested scripts,
-- radicals with short and long radicands,
-- Greek and operator fallback coverage,
-- wrapping paragraphs with math near line boundaries.
+Remaining visual fixture coverage to add:
+
+- more pathological nested radicals and roots,
+- large operator limits at multiple display sizes,
+- MathML-only import cases that do not have a matching TeX source,
+- malformed-source error rendering,
+- GPU screenshots after the SVG/bundle artifact stays plausible.
 
 The bundle pipeline is the right first gate. GPU screenshots can follow once
 the SVG/bundle artifact looks plausible.
