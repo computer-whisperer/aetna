@@ -55,9 +55,19 @@ mod web_entry {
         App, BuildCx, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, Palette, PointerButton,
         Rect, UiKey,
     };
-    use aetna_wgpu::{MsaaTarget, PrepareTimings, Runner};
+    use aetna_wgpu::{PrepareTimings, Runner};
 
-    const SAMPLE_COUNT: u32 = 4;
+    // MSAA is off on the browser. The WebGL2 path doesn't advertise
+    // `MULTISAMPLED_SHADING`, so MSAA gives nothing to the SDF stock
+    // surfaces (they do their own analytic AA in the fragment shader);
+    // it would only have improved vector-icon polygon-edge AA. With it
+    // on, Firefox + Mesa's implicit MSAA resolve was mis-syncing
+    // partial regions of the swapchain — the sidebar would freeze at
+    // its previous pixels until something forced a tree reshape. WebGPU
+    // (Chromium) was unaffected but we use the same value for both
+    // browser backends to keep one code path. Revisit once the WebGL2
+    // resolve issue is understood (or once WebGPU is the only target).
+    const SAMPLE_COUNT: u32 = 1;
     use wasm_bindgen::JsCast;
     use wasm_bindgen::prelude::*;
     use web_time::Instant;
@@ -209,6 +219,23 @@ mod web_entry {
         event_loop.spawn_app(host);
     }
 
+    /// Open a URL surfaced by `App::drain_link_opens` in a new tab.
+    /// `_blank` matches what users expect for a click on an external
+    /// link in app UI; `noopener` severs the `window.opener` reference
+    /// so the opened page can't reverse-control this one. Failures are
+    /// logged rather than panicking — popup blockers and CSP rules can
+    /// reject the open and the showcase shouldn't crash because the
+    /// browser said no.
+    fn open_link(url: &str) {
+        let Some(window) = web_sys::window() else {
+            log::warn!("aetna-web: no window; dropping link open for {url}");
+            return;
+        };
+        if let Err(err) = window.open_with_url_and_target_and_features(url, "_blank", "noopener") {
+            log::warn!("aetna-web: window.open({url}) failed: {err:?}");
+        }
+    }
+
     /// Locate the `<canvas id="aetna_canvas">` element in the host
     /// page. The HTML harness in `index.html` embeds one; other host
     /// pages can mount their own as long as the id matches.
@@ -263,9 +290,16 @@ mod web_entry {
         gfx.config.height = phys_h;
         gfx.surface.configure(&gfx.device, &gfx.config);
         gfx.renderer.set_surface_size(phys_w, phys_h);
-        let extent = surface_extent(&gfx.config);
-        if !gfx.msaa.matches(extent) {
-            gfx.msaa = MsaaTarget::new(&gfx.device, gfx.render_format, extent, SAMPLE_COUNT);
+        if let Some(msaa) = gfx.msaa.as_mut() {
+            let extent = surface_extent(&gfx.config);
+            if !msaa.matches(extent) {
+                *msaa = aetna_wgpu::MsaaTarget::new(
+                    &gfx.device,
+                    gfx.render_format,
+                    extent,
+                    SAMPLE_COUNT,
+                );
+            }
         }
     }
 
@@ -326,7 +360,12 @@ mod web_entry {
         queue: wgpu::Queue,
         config: wgpu::SurfaceConfiguration,
         renderer: Runner,
-        msaa: MsaaTarget,
+        /// `None` when [`SAMPLE_COUNT`] is 1 — the renderer draws
+        /// straight into the swapchain texture and there's no resolve
+        /// pass. `Some` when MSAA is enabled, holding the
+        /// multisampled colour attachment that the swapchain texture
+        /// is the resolve target for.
+        msaa: Option<aetna_wgpu::MsaaTarget>,
         /// Format used for render-target views and pipelines. May
         /// differ from `config.format` when we re-view a linear
         /// swapchain texture as sRGB (Chromium WebGPU path) — the
@@ -668,12 +707,19 @@ mod web_entry {
                     );
                 }
 
-                let msaa = MsaaTarget::new(
-                    &device,
-                    render_format,
-                    surface_extent(&config),
-                    SAMPLE_COUNT,
-                );
+                // MSAA target only when SAMPLE_COUNT > 1; the
+                // single-sample path renders straight into the
+                // swapchain texture.
+                let msaa = if SAMPLE_COUNT > 1 {
+                    Some(aetna_wgpu::MsaaTarget::new(
+                        &device,
+                        render_format,
+                        surface_extent(&config),
+                        SAMPLE_COUNT,
+                    ))
+                } else {
+                    None
+                };
                 *gfx_slot.borrow_mut() = Some(Gfx {
                     window: window_for_async.clone(),
                     surface,
@@ -713,10 +759,16 @@ mod web_entry {
                     gfx.surface.configure(&gfx.device, &gfx.config);
                     gfx.renderer
                         .set_surface_size(gfx.config.width, gfx.config.height);
-                    let extent = surface_extent(&gfx.config);
-                    if !gfx.msaa.matches(extent) {
-                        gfx.msaa =
-                            MsaaTarget::new(&gfx.device, gfx.render_format, extent, SAMPLE_COUNT);
+                    if let Some(msaa) = gfx.msaa.as_mut() {
+                        let extent = surface_extent(&gfx.config);
+                        if !msaa.matches(extent) {
+                            *msaa = aetna_wgpu::MsaaTarget::new(
+                                &gfx.device,
+                                gfx.render_format,
+                                extent,
+                                SAMPLE_COUNT,
+                            );
+                        }
                     }
                     self.next_trigger = FrameTrigger::Resize;
                     gfx.window.request_redraw();
@@ -943,6 +995,9 @@ mod web_entry {
                             .push_focus_requests(self.app.drain_focus_requests());
                         gfx.renderer
                             .push_scroll_requests(self.app.drain_scroll_requests());
+                        for url in self.app.drain_link_opens() {
+                            open_link(&url);
+                        }
                         let t_after_build = Instant::now();
                         let prepare = gfx.renderer.prepare(
                             &gfx.device,
@@ -982,7 +1037,7 @@ mod web_entry {
                         &mut encoder,
                         &frame.texture,
                         &view,
-                        Some(&gfx.msaa.view),
+                        gfx.msaa.as_ref().map(|m| &m.view),
                         wgpu::LoadOp::Clear(bg_color(&palette)),
                     );
                     gfx.queue.submit(Some(encoder.finish()));
