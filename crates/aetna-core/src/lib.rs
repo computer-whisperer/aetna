@@ -49,6 +49,7 @@ pub mod icon_msdf;
 pub mod icon_msdf_atlas;
 pub mod icons;
 pub mod image;
+mod inline_mixed;
 pub mod ir;
 pub mod layout;
 pub mod math;

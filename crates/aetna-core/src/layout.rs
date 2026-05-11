@@ -1517,98 +1517,49 @@ fn inline_mixed_intrinsic(node: &El, available_width: Option<f32>) -> (f32, f32)
     }
     .map(|w| (w - node.padding.left - node.padding.right).max(1.0));
 
-    let mut line_w: f32 = 0.0;
-    let mut max_w: f32 = 0.0;
-    let mut line_ascent: f32 = node.font_size * 0.82;
-    let mut line_descent: f32 = node.font_size * 0.22;
-    let mut total_h: f32 = 0.0;
-    let finish_line = |line_w: &mut f32,
-                       max_w: &mut f32,
-                       line_ascent: &mut f32,
-                       line_descent: &mut f32,
-                       total_h: &mut f32| {
-        *max_w = (*max_w).max(*line_w);
-        *total_h += *line_ascent + *line_descent;
-        *line_w = 0.0;
-        *line_ascent = node.font_size * 0.82;
-        *line_descent = node.font_size * 0.22;
-    };
+    let mut breaker = crate::inline_mixed::MixedInlineBreaker::new(
+        node.text_wrap,
+        wrap_width,
+        node.font_size * 0.82,
+        node.font_size * 0.22,
+        node.line_height,
+    );
 
     for child in &node.children {
         match child.kind {
             Kind::HardBreak => {
-                finish_line(
-                    &mut line_w,
-                    &mut max_w,
-                    &mut line_ascent,
-                    &mut line_descent,
-                    &mut total_h,
-                );
+                breaker.finish_line();
                 continue;
             }
             Kind::Text => {
                 let text = child.text.as_deref().unwrap_or("");
                 for chunk in inline_text_chunks(text) {
                     let is_space = chunk.chars().all(char::is_whitespace);
-                    if is_space && line_w == 0.0 {
+                    if breaker.skips_leading_space(is_space) {
                         continue;
                     }
                     let (w, ascent, descent) = inline_text_chunk_metrics(child, chunk);
-                    if let Some(limit) = wrap_width
-                        && !is_space
-                        && line_w > 0.0
-                        && line_w + w > limit
-                    {
-                        finish_line(
-                            &mut line_w,
-                            &mut max_w,
-                            &mut line_ascent,
-                            &mut line_descent,
-                            &mut total_h,
-                        );
+                    if breaker.wraps_before(is_space, w) {
+                        breaker.finish_line();
                     }
-                    if let Some(limit) = wrap_width
-                        && is_space
-                        && line_w + w > limit
-                    {
+                    if breaker.skips_overflowing_space(is_space, w) {
                         continue;
                     }
-                    line_w += w;
-                    line_ascent = line_ascent.max(ascent);
-                    line_descent = line_descent.max(descent);
+                    breaker.push(w, ascent, descent);
                 }
                 continue;
             }
             _ => {}
         }
         let (w, ascent, descent) = inline_child_metrics(child);
-        if let Some(limit) = wrap_width
-            && line_w > 0.0
-            && line_w + w > limit
-        {
-            finish_line(
-                &mut line_w,
-                &mut max_w,
-                &mut line_ascent,
-                &mut line_descent,
-                &mut total_h,
-            );
+        if breaker.wraps_before(false, w) {
+            breaker.finish_line();
         }
-        line_w += w;
-        line_ascent = line_ascent.max(ascent);
-        line_descent = line_descent.max(descent);
+        breaker.push(w, ascent, descent);
     }
-    finish_line(
-        &mut line_w,
-        &mut max_w,
-        &mut line_ascent,
-        &mut line_descent,
-        &mut total_h,
-    );
-    let w = wrap_width.map(|limit| max_w.min(limit)).unwrap_or(max_w)
-        + node.padding.left
-        + node.padding.right;
-    let h = total_h + node.padding.top + node.padding.bottom;
+    let measurement = breaker.finish();
+    let w = measurement.width + node.padding.left + node.padding.right;
+    let h = measurement.height + node.padding.top + node.padding.bottom;
     apply_min(node, w, h)
 }
 

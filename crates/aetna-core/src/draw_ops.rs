@@ -1151,82 +1151,66 @@ fn push_inline_mixed_ops(
     opacity: f32,
     out: &mut Vec<DrawOp>,
 ) {
-    let mut x = 0.0;
-    let mut line_top = 0.0;
-    let mut line_ascent = n.font_size * 0.82;
-    let mut line_descent = n.font_size * 0.22;
-    let line_advance = |ascent: f32, descent: f32| (ascent + descent).max(n.line_height);
+    let mut breaker = crate::inline_mixed::MixedInlineBreaker::new(
+        n.text_wrap,
+        Some(rect.w),
+        n.font_size * 0.82,
+        n.font_size * 0.22,
+        n.line_height,
+    );
     let mut line_items = Vec::new();
 
-    let finish_line = |line_items: &mut Vec<InlineMixedItem>,
-                       out: &mut Vec<DrawOp>,
-                       line_top: &mut f32,
-                       x: &mut f32,
-                       line_ascent: &mut f32,
-                       line_descent: &mut f32| {
-        flush_inline_mixed_line(
-            n,
-            rect,
-            scissor,
-            opacity,
-            *line_top,
-            *line_ascent,
-            line_items,
-            out,
-        );
-        *line_top += line_advance(*line_ascent, *line_descent);
-        *x = 0.0;
-        *line_ascent = n.font_size * 0.82;
-        *line_descent = n.font_size * 0.22;
-    };
+    let finish_line =
+        |line_items: &mut Vec<InlineMixedItem>,
+         out: &mut Vec<DrawOp>,
+         breaker: &mut crate::inline_mixed::MixedInlineBreaker| {
+            let line = breaker.finish_line();
+            flush_inline_mixed_line(
+                n,
+                rect,
+                scissor,
+                opacity,
+                line.top,
+                line.ascent,
+                line_items,
+                out,
+            );
+        };
 
     for (i, child) in n.children.iter().enumerate() {
         match child.kind {
             Kind::HardBreak => {
-                finish_line(
-                    &mut line_items,
-                    out,
-                    &mut line_top,
-                    &mut x,
-                    &mut line_ascent,
-                    &mut line_descent,
-                );
+                finish_line(&mut line_items, out, &mut breaker);
                 continue;
             }
             Kind::Text => {
                 if let Some(text) = &child.text {
                     for (chunk_i, chunk) in inline_text_chunks(text).into_iter().enumerate() {
                         let is_space = chunk.chars().all(char::is_whitespace);
-                        if is_space && x == 0.0 {
+                        if breaker.skips_leading_space(is_space) {
                             continue;
                         }
                         let (w, ascent, descent) = inline_text_chunk_paint_metrics(child, chunk);
-                        if matches!(n.text_wrap, TextWrap::Wrap)
-                            && !is_space
-                            && x > 0.0
-                            && x + w > rect.w
-                        {
-                            finish_line(
-                                &mut line_items,
-                                out,
-                                &mut line_top,
-                                &mut x,
-                                &mut line_ascent,
-                                &mut line_descent,
-                            );
+                        if breaker.wraps_before(is_space, w) {
+                            finish_line(&mut line_items, out, &mut breaker);
                         }
-                        if matches!(n.text_wrap, TextWrap::Wrap) && is_space && x + w > rect.w {
+                        if breaker.skips_overflowing_space(is_space, w) {
                             continue;
                         }
-                        line_ascent = line_ascent.max(ascent);
-                        line_descent = line_descent.max(descent);
                         if is_space && !matches!(line_items.last(), Some(InlineMixedItem::Text(_)))
                         {
-                            x += w;
+                            breaker.push(w, ascent, descent);
                             continue;
                         }
-                        push_inline_text_item(&mut line_items, child, i, chunk_i, chunk, x);
-                        x += w;
+                        push_inline_text_item(
+                            &mut line_items,
+                            child,
+                            i,
+                            chunk_i,
+                            chunk,
+                            breaker.x(),
+                        );
+                        breaker.push(w, ascent, descent);
                     }
                 }
                 continue;
@@ -1235,54 +1219,38 @@ fn push_inline_mixed_ops(
                 if let Some(expr) = &child.math {
                     let layout =
                         crate::math::layout_math(expr, child.font_size, child.math_display);
-                    if matches!(n.text_wrap, TextWrap::Wrap) && x > 0.0 && x + layout.width > rect.w
-                    {
-                        finish_line(
-                            &mut line_items,
-                            out,
-                            &mut line_top,
-                            &mut x,
-                            &mut line_ascent,
-                            &mut line_descent,
-                        );
+                    if breaker.wraps_before(false, layout.width) {
+                        finish_line(&mut line_items, out, &mut breaker);
                     }
-                    line_ascent = line_ascent.max(layout.ascent);
-                    line_descent = line_descent.max(layout.descent);
                     let width = layout.width;
+                    let ascent = layout.ascent;
+                    let descent = layout.descent;
                     line_items.push(InlineMixedItem::Math {
                         child: child.clone(),
                         expr: expr.clone(),
-                        x,
+                        x: breaker.x(),
                         layout,
                     });
-                    x += width;
+                    breaker.push(width, ascent, descent);
                 }
             }
             _ => {
                 let (w, ascent, descent) = inline_child_paint_metrics(child);
-                if matches!(n.text_wrap, TextWrap::Wrap) && x > 0.0 && x + w > rect.w {
-                    finish_line(
-                        &mut line_items,
-                        out,
-                        &mut line_top,
-                        &mut x,
-                        &mut line_ascent,
-                        &mut line_descent,
-                    );
+                if breaker.wraps_before(false, w) {
+                    finish_line(&mut line_items, out, &mut breaker);
                 }
-                line_ascent = line_ascent.max(ascent);
-                line_descent = line_descent.max(descent);
-                x += w;
+                breaker.push(w, ascent, descent);
             }
         }
     }
+    let line = breaker.finish_line();
     flush_inline_mixed_line(
         n,
         rect,
         scissor,
         opacity,
-        line_top,
-        line_ascent,
+        line.top,
+        line.ascent,
         &mut line_items,
         out,
     );
@@ -2626,6 +2594,92 @@ mod tests {
             min_math_y >= -3.0,
             "built-up inline math should sit inside the line box, min y = {min_math_y}"
         );
+    }
+
+    #[test]
+    fn mixed_inline_wrap_paint_stays_inside_layout_height() {
+        let expr = crate::math::parse_tex(r"\frac{a+b}{c+d}").expect("valid tex");
+        let mut root = crate::text_runs([
+            crate::text("Alpha beta "),
+            crate::math_inline(expr),
+            crate::text(" after wrap"),
+        ])
+        .width(Size::Fixed(116.0));
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 116.0, 200.0));
+
+        let root_rect = state
+            .layout
+            .computed_rects
+            .get(&root.computed_id)
+            .copied()
+            .expect("root rect");
+        let ops = draw_ops(&root, &state);
+        let paint_bounds = mixed_inline_paint_bounds(&ops).expect("mixed inline paint bounds");
+
+        assert!(
+            paint_bounds.bottom() <= root_rect.bottom() + 3.0,
+            "paint bounds {paint_bounds:?} should fit layout rect {root_rect:?}"
+        );
+    }
+
+    #[test]
+    fn mixed_inline_hard_break_paint_stays_inside_layout_height() {
+        let expr = crate::math::parse_tex(r"\frac{a+b}{c+d}").expect("valid tex");
+        let mut root = crate::text_runs([
+            crate::text("Before "),
+            crate::math_inline(expr),
+            crate::hard_break(),
+            crate::text("after"),
+        ])
+        .width(Size::Fixed(400.0));
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
+
+        let root_rect = state
+            .layout
+            .computed_rects
+            .get(&root.computed_id)
+            .copied()
+            .expect("root rect");
+        let ops = draw_ops(&root, &state);
+        let paint_bounds = mixed_inline_paint_bounds(&ops).expect("mixed inline paint bounds");
+
+        assert!(
+            paint_bounds.bottom() <= root_rect.bottom() + 3.0,
+            "paint bounds {paint_bounds:?} should fit layout rect {root_rect:?}"
+        );
+    }
+
+    fn mixed_inline_paint_bounds(ops: &[DrawOp]) -> Option<Rect> {
+        let mut bounds: Option<Rect> = None;
+        for op in ops {
+            let candidate = match op {
+                DrawOp::GlyphRun { id, rect, .. }
+                    if id.contains(".inline-text.") || id.contains(".math-glyph.") =>
+                {
+                    Some(*rect)
+                }
+                DrawOp::Quad { id, rect, .. } if id.contains(".math-rule.") => Some(*rect),
+                DrawOp::Vector { id, rect, .. } if id.contains(".math-") => Some(*rect),
+                _ => None,
+            };
+            if let Some(rect) = candidate {
+                bounds = Some(match bounds {
+                    Some(prev) => union_rect(prev, rect),
+                    None => rect,
+                });
+            }
+        }
+        bounds
+    }
+
+    fn union_rect(a: Rect, b: Rect) -> Rect {
+        let left = a.x.min(b.x);
+        let top = a.y.min(b.y);
+        let right = a.right().max(b.right());
+        let bottom = a.bottom().max(b.bottom());
+        Rect::new(left, top, right - left, bottom - top)
     }
 
     #[test]
