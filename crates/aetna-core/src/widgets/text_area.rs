@@ -373,7 +373,10 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
             if (event.modifiers.ctrl && !event.modifiers.alt) || event.modifiers.logo {
                 return false;
             }
-            let filtered: String = insert.chars().filter(|c| !c.is_control()).collect();
+            let filtered: String = insert
+                .chars()
+                .filter(|c| *c == '\n' || !c.is_control())
+                .collect();
             if filtered.is_empty() {
                 return false;
             }
@@ -982,6 +985,27 @@ mod tests {
         };
         assert!(!apply_event(&mut value, &mut sel, &ev));
         assert_eq!(value, "first\nsecond");
+    }
+
+    #[test]
+    fn text_area_preserves_newlines_for_multiline_paste() {
+        let mut value = String::from("alpha");
+        let mut sel = TextSelection::caret(value.len());
+        let ev = UiEvent {
+            path: None,
+            key: None,
+            target: None,
+            pointer: None,
+            key_press: None,
+            text: Some("\nbeta\n".into()),
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 0,
+            kind: UiEventKind::TextInput,
+        };
+        assert!(apply_event(&mut value, &mut sel, &ev));
+        assert_eq!(value, "alpha\nbeta\n");
+        assert_eq!(sel, TextSelection::caret(value.len()));
     }
 
     #[test]
