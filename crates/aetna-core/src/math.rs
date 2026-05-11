@@ -83,6 +83,11 @@ pub enum MathExpr {
         under: Option<Arc<MathExpr>>,
         over: Option<Arc<MathExpr>>,
     },
+    Accent {
+        base: Arc<MathExpr>,
+        accent: Arc<MathExpr>,
+        stretch: bool,
+    },
     Fenced {
         open: Option<String>,
         close: Option<String>,
@@ -434,6 +439,10 @@ impl MathMetrics {
         self.font_constants()
             .and_then(|constants| constants.lower_limit_baseline_drop_min(self.size))
             .unwrap_or(self.size * 0.35)
+    }
+
+    fn accent_gap(self) -> f32 {
+        self.size * 0.06
     }
 
     fn table_col_gap(self, gap_em: Option<f32>) -> f32 {
@@ -938,6 +947,11 @@ fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
         MathExpr::UnderOver { base, under, over } => {
             layout_under_over(base, under.as_deref(), over.as_deref(), ctx)
         }
+        MathExpr::Accent {
+            base,
+            accent,
+            stretch,
+        } => layout_accent(base, accent, *stretch, ctx),
         MathExpr::Fenced { open, close, body } => layout_fenced(open, close, body, ctx),
         MathExpr::Table {
             rows,
@@ -1265,6 +1279,60 @@ fn layout_under_over(
         ascent,
         descent,
         atoms,
+    }
+}
+
+fn layout_accent(base: &MathExpr, accent: &MathExpr, stretch: bool, ctx: LayoutCtx) -> MathLayout {
+    let base_layout = layout_expr(base, ctx);
+    if stretch && is_overline_accent(accent) {
+        return layout_overline(base_layout, ctx);
+    }
+
+    let accent_layout = layout_accent_mark(accent, ctx.script());
+    let metrics = ctx.metrics();
+    let gap = metrics.accent_gap();
+    let width = base_layout.width.max(accent_layout.width);
+    let base_x = (width - base_layout.width) * 0.5;
+    let accent_x = (width - accent_layout.width) * 0.5;
+    let accent_dy = -base_layout.ascent - gap - accent_layout.descent;
+    let mut atoms = Vec::new();
+    translate_atoms(&mut atoms, base_layout.atoms, base_x, 0.0);
+    translate_atoms(&mut atoms, accent_layout.atoms, accent_x, accent_dy);
+    MathLayout {
+        width,
+        ascent: base_layout.ascent.max(-accent_dy + accent_layout.ascent),
+        descent: base_layout.descent,
+        atoms,
+    }
+}
+
+fn layout_overline(base_layout: MathLayout, ctx: LayoutCtx) -> MathLayout {
+    let metrics = ctx.metrics();
+    let rule = metrics.rule_thickness();
+    let gap = metrics.accent_gap();
+    let rule_y = -base_layout.ascent - gap - rule;
+    let mut atoms = Vec::new();
+    translate_atoms(&mut atoms, base_layout.atoms, 0.0, 0.0);
+    atoms.push(MathAtom::Rule {
+        rect: Rect::new(0.0, rule_y, base_layout.width.max(rule), rule),
+    });
+    MathLayout {
+        width: base_layout.width,
+        ascent: (-rule_y).max(base_layout.ascent),
+        descent: base_layout.descent,
+        atoms,
+    }
+}
+
+fn is_overline_accent(expr: &MathExpr) -> bool {
+    matches!(expr, MathExpr::Operator(s) | MathExpr::Text(s) | MathExpr::Identifier(s) if matches!(s.as_str(), "¯" | "‾"))
+}
+
+fn layout_accent_mark(accent: &MathExpr, ctx: LayoutCtx) -> MathLayout {
+    match accent {
+        MathExpr::Operator(s) if s == "^" => layout_operator("ˆ", ctx),
+        MathExpr::Operator(s) if s == "~" => layout_operator("˜", ctx),
+        _ => layout_expr(accent, ctx),
     }
 }
 
@@ -1844,6 +1912,7 @@ fn parse_mathml_node(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathPars
         "msup" => parse_mathml_scripts(node, false, true),
         "msubsup" => parse_mathml_scripts(node, true, true),
         "munder" => parse_mathml_under_over(node, true, false),
+        "mover" if mathml_bool_attr(node.attribute("accent")) => parse_mathml_accent(node),
         "mover" => parse_mathml_under_over(node, false, true),
         "munderover" => parse_mathml_under_over(node, true, true),
         "mfenced" => parse_mathml_fenced(node),
@@ -1956,6 +2025,23 @@ fn parse_mathml_under_over(
         under: under.transpose()?,
         over: over.transpose()?,
     })
+}
+
+fn parse_mathml_accent(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathParseError> {
+    let children = mathml_element_children(node);
+    require_mathml_arity(node, &children, 2)?;
+    let accent = parse_mathml_node(children[1])?;
+    let stretch =
+        mathml_bool_attr(children[1].attribute("stretchy")) || is_overline_accent(&accent);
+    Ok(MathExpr::Accent {
+        base: Arc::new(parse_mathml_node(children[0])?),
+        accent: Arc::new(accent),
+        stretch,
+    })
+}
+
+fn mathml_bool_attr(value: Option<&str>) -> bool {
+    matches!(value, Some("true") | Some("1"))
 }
 
 fn parse_mathml_table(node: roxmltree::Node<'_, '_>) -> Result<MathExpr, MathParseError> {
@@ -2396,6 +2482,31 @@ impl<'a> TexParser<'a> {
                     None => MathExpr::Sqrt(base),
                 })
             }
+            "hat" | "widehat" => Ok(MathExpr::Accent {
+                base: Arc::new(self.parse_required_group()?),
+                accent: Arc::new(MathExpr::Operator("ˆ".into())),
+                stretch: false,
+            }),
+            "bar" => Ok(MathExpr::Accent {
+                base: Arc::new(self.parse_required_group()?),
+                accent: Arc::new(MathExpr::Operator("¯".into())),
+                stretch: false,
+            }),
+            "overline" => Ok(MathExpr::Accent {
+                base: Arc::new(self.parse_required_group()?),
+                accent: Arc::new(MathExpr::Operator("‾".into())),
+                stretch: true,
+            }),
+            "vec" => Ok(MathExpr::Accent {
+                base: Arc::new(self.parse_required_group()?),
+                accent: Arc::new(MathExpr::Operator("→".into())),
+                stretch: false,
+            }),
+            "tilde" | "widetilde" => Ok(MathExpr::Accent {
+                base: Arc::new(self.parse_required_group()?),
+                accent: Arc::new(MathExpr::Operator("˜".into())),
+                stretch: false,
+            }),
             "left" => {
                 let open = self.parse_delimiter()?;
                 let body = Arc::new(self.parse_row_until_right()?);
@@ -2982,6 +3093,35 @@ mod tests {
     }
 
     #[test]
+    fn parses_tex_accents() {
+        let expr = parse_tex(r"\hat{x} + \overline{ab} + \vec{v}").expect("valid tex accents");
+        let MathExpr::Row(children) = expr else {
+            panic!("expected row expression");
+        };
+        assert!(
+            children
+                .iter()
+                .filter(|child| matches!(child, MathExpr::Accent { .. }))
+                .count()
+                >= 3,
+            "expected accent expressions in {children:?}"
+        );
+
+        let overline = layout_math(
+            &parse_tex(r"\overline{ab}").unwrap(),
+            16.0,
+            MathDisplay::Inline,
+        );
+        assert!(
+            overline
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, MathAtom::Rule { rect } if rect.y < -10.0)),
+            "overline should emit a rule above the base"
+        );
+    }
+
+    #[test]
     fn display_sum_scripts_layout_as_limits() {
         let expr = parse_tex(r"\sum_{i=1}^{n} x_i").expect("valid tex");
         let layout = layout_math(&expr, 16.0, MathDisplay::Block);
@@ -3545,6 +3685,33 @@ mod tests {
                 assert_eq!(*over.unwrap(), MathExpr::Identifier("n".into()));
             }
             other => panic!("expected under/over expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_mathml_accent_mover() {
+        let expr = parse_mathml(
+            r#"
+            <math>
+              <mover accent="true">
+                <mi>x</mi>
+                <mo>^</mo>
+              </mover>
+            </math>
+            "#,
+        )
+        .expect("valid mathml accent");
+        match expr {
+            MathExpr::Accent {
+                base,
+                accent,
+                stretch,
+            } => {
+                assert_eq!(*base, MathExpr::Identifier("x".into()));
+                assert_eq!(*accent, MathExpr::Operator("^".into()));
+                assert!(!stretch);
+            }
+            other => panic!("expected accent expression, got {other:?}"),
         }
     }
 

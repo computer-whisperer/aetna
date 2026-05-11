@@ -19,7 +19,7 @@ $$
 $$
 
 The first TeX slice intentionally covers the structural basics:
-$\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, $\\sqrt[3]{x+1}$, $\\left(\\frac{a}{b}\\right)$, $\\begin{pmatrix}1&0\\\\0&1\\end{pmatrix}$, and $y_{n+1}=y_n+x^2$.
+$\\frac{1}{2}$, $\\alpha+\\beta\\to\\gamma$, $\\sqrt[3]{x+1}$, $\\hat{x}+\\bar{y}+\\vec{v}$, $\\left(\\frac{a}{b}\\right)$, $\\begin{pmatrix}1&0\\\\0&1\\end{pmatrix}$, and $y_{n+1}=y_n+x^2$.
 
 Aligned TeX arrays now feed the same native table layout: $\\begin{array}{lr}x&100\\\\xx&2\\end{array}$.
 
@@ -60,6 +60,11 @@ const MATHML_SOURCE: &str = r#"
       <mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow>
       <mi>n</mi>
     </munderover>
+    <mo>+</mo>
+    <mover accent="true">
+      <mi>x</mi>
+      <mo>^</mo>
+    </mover>
     <mo>+</mo>
     <mfenced open="[" close="]">
       <mtable columnalign="left right" columnspacing="0.5em" rowspacing="0.2em">

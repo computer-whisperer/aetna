@@ -60,6 +60,7 @@ like a small subset of MathML Core:
 - `Root`
 - `Scripts`
 - `UnderOver`
+- `Accent`
 - `Fenced`
 - `Table`
 - `Error`
@@ -123,6 +124,7 @@ The supported TeX subset is deliberately small:
 - identifiers, numbers, operators, and common Greek/operator commands
 - `\frac`
 - `\sqrt` and indexed `\sqrt[n]{...}`
+- accents such as `\hat`, `\bar`, `\overline`, `\vec`, and `\tilde`
 - superscripts and subscripts
 - display-style limits for common large operators such as `\sum`
 - simple `\left...\right` fences
@@ -137,7 +139,7 @@ The supported MathML subset mirrors that same IR:
 - `mfrac`
 - `msqrt`, `mroot`
 - `msub`, `msup`, `msubsup`
-- `munder`, `mover`, `munderover`
+- `munder`, `mover`, `munderover`, with explicit accent movers
 - `mfenced`
 - `mtable`, `mtr`, `mtd`
 - table-level `columnalign` values `left`, `center`, `right`, and `decimal`
