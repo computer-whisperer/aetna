@@ -498,14 +498,22 @@ mod web_entry {
             self._resize_closure = Some(resize_closure);
             self._resize_observer = Some(observer);
 
-            // Allow both browser backends. wgpu prefers WebGPU when
-            // available (Chrome/Edge stable) and falls back to WebGL2
-            // otherwise. WebGPU is required for backdrop-sampling
-            // shaders (`liquid_glass`) because WebGL2 surfaces don't
-            // advertise `COPY_SRC` on the swapchain texture, so the
-            // snapshot copy can't run — we register backdrop shaders
-            // only when the chosen adapter's surface supports COPY_SRC,
-            // which in practice means "WebGPU was selected."
+            // Allow both browser backends. wgpu's synchronous
+            // Instance::new() can't safely decide this: if
+            // `navigator.gpu` exists, it routes the whole instance
+            // through WebGPU, even on browsers/GPUs where
+            // requestAdapter() later returns null. The async helper
+            // probes adapter creation first and removes WebGPU from the
+            // descriptor when it is not really usable, letting WebGL2
+            // handle Chrome/Linux-style partial support instead of
+            // panicking during adapter selection.
+            //
+            // WebGPU is required for backdrop-sampling shaders
+            // (`liquid_glass`) because WebGL2 surfaces don't advertise
+            // `COPY_SRC` on the swapchain texture, so the snapshot copy
+            // can't run — we register backdrop shaders only when the
+            // chosen adapter's surface supports COPY_SRC, which in
+            // practice means "WebGPU was selected."
             //
             // Firefox: as of 2026-05, Firefox's WebGPU implementation
             // still wedges its compositor on pointer events with our
@@ -515,13 +523,6 @@ mod web_entry {
             // false`); wgpu then transparently picks WebGL2 here and
             // backdrop shaders are skipped via the COPY_SRC check
             // below. Revisit when Firefox WebGPU stabilises.
-            let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
-            instance_desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-            let instance = wgpu::Instance::new(instance_desc);
-            let surface = instance
-                .create_surface(window.clone())
-                .expect("create surface");
-
             // Adapter + device requests are async on wasm; spawn the
             // setup as a future and stash the result in self.gfx so
             // subsequent resumed/window_event calls find it ready.
@@ -539,6 +540,13 @@ mod web_entry {
             let backend_slot = self.backend.clone();
             let window_for_async = window.clone();
             wasm_bindgen_futures::spawn_local(async move {
+                let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
+                instance_desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+                let instance = wgpu::util::new_instance_with_webgpu_detection(instance_desc).await;
+                let surface = instance
+                    .create_surface(window_for_async.clone())
+                    .expect("create surface");
+
                 let adapter = instance
                     .request_adapter(&wgpu::RequestAdapterOptions {
                         power_preference: wgpu::PowerPreference::default(),
@@ -566,18 +574,25 @@ mod web_entry {
 
                 // Per-sample MSAA shading is a downlevel cap. WebGL2
                 // (GLES 3.0) and most browser WebGPU adapters don't
-                // advertise it, and naga rejects shaders that use
+                // support it, and naga rejects shaders that use
                 // `@interpolate(perspective, sample)` at module
                 // creation when the cap is missing. Read the flag here
                 // and pass it to `Runner::with_caps` so stock + custom
                 // shaders downlevel cleanly on those backends.
+                //
+                // Chrome's SwiftShader WebGL2 fallback currently reports
+                // `MULTISAMPLED_SHADING` through wgpu, but the GLSL ES
+                // target still rejects the sample interpolation qualifier.
+                // Treat WebGL2 as unsupported regardless of the reported
+                // flag; WebGPU/native can keep trusting the adapter cap.
                 let downlevel = adapter.get_downlevel_capabilities();
-                let per_sample_shading = downlevel
-                    .flags
-                    .contains(wgpu::DownlevelFlags::MULTISAMPLED_SHADING);
+                let per_sample_shading = info.backend != wgpu::Backend::Gl
+                    && downlevel
+                        .flags
+                        .contains(wgpu::DownlevelFlags::MULTISAMPLED_SHADING);
                 if !per_sample_shading {
                     log::info!(
-                        "aetna-web: adapter lacks DownlevelFlags::MULTISAMPLED_SHADING; \
+                        "aetna-web: per-sample shading unavailable on selected backend; \
                          shaders will downlevel `@interpolate(perspective, sample)` to per-pixel-centre interpolation"
                     );
                 }
