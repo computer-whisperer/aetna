@@ -14,6 +14,7 @@ pub struct State {
     pub bio: String,
     pub selection: Selection,
     pub show_errors: bool,
+    pub scroll_bio_caret_into_view: bool,
 }
 
 impl Default for State {
@@ -24,6 +25,7 @@ impl Default for State {
             bio: "Building Aetna — a renderer-agnostic UI kit for Rust apps and AI agents.".into(),
             selection: Selection::default(),
             show_errors: true,
+            scroll_bio_caret_into_view: false,
         }
     }
 }
@@ -112,9 +114,22 @@ pub fn on_event(state: &mut State, e: UiEvent) {
             text_input::apply_event(&mut state.email, &mut state.selection, "forms-email", &e);
         }
         Some("forms-bio") => {
-            text_area::apply_event(&mut state.bio, &mut state.selection, "forms-bio", &e);
+            if text_area::apply_event(&mut state.bio, &mut state.selection, "forms-bio", &e) {
+                state.scroll_bio_caret_into_view = true;
+            }
         }
         _ => {}
+    }
+}
+
+pub fn drain_scroll_requests(state: &mut State) -> Vec<aetna_core::scroll::ScrollRequest> {
+    if std::mem::take(&mut state.scroll_bio_caret_into_view)
+        && let Some(req) =
+            text_area::caret_scroll_request_for(&state.bio, &state.selection, "forms-bio")
+    {
+        vec![req]
+    } else {
+        Vec::new()
     }
 }
 

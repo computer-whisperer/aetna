@@ -16,6 +16,9 @@
 //! - Arrow keys navigate; Up/Down move between lines preserving the
 //!   visual column.
 //! - Shift+arrows extend the selection (including across line breaks).
+//! - PageUp / PageDown move by one visible editor page; Shift variants
+//!   extend the selection.
+//! - Escape collapses an active selection without editing the text.
 //! - Drag across text to select. The selection band paints behind the
 //!   selected glyphs, one rectangle per visual line.
 //! - Home / End go to the start / end of the current line; Shift

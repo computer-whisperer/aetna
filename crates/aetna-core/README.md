@@ -248,6 +248,12 @@ column([
 ])
 ```
 
+When a `text_area` is fixed-height like the composer above, the app
+should queue `text_area::caret_scroll_request_for(...)` from
+`App::drain_scroll_requests` after `text_area::apply_event(...)`
+returns `true`. That lets PageUp/PageDown, arrows, paste, and typing
+keep the caret visible without emitting a scroll request every frame.
+
 If `sidebar_menu_button_with_icon` doesn't fit your row anatomy (count
 badges, nested sub-groups, custom leading icons), keep the outer
 `sidebar([...])` for the panel surface and compose the rows freely

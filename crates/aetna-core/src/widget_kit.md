@@ -345,6 +345,56 @@ That pattern is intentional. It keeps generated application code
 obvious: state lives in the app struct, `build()` projects it into an
 `El`, and `on_event()` folds routed events back into the state.
 
+`text_area` uses the same controlled `(String, Selection)` shape, with
+one extra responsibility when the area has a fixed height and can scroll
+internally: queue a caret-visibility scroll request after accepted
+editing or navigation events. The usual pattern is to set a bool when
+`text_area::apply_event(...)` returns `true`, then drain one request on
+the next frame:
+
+```rust
+use aetna_core::scroll::ScrollRequest;
+use aetna_core::prelude::*;
+
+struct Notes {
+    body: String,
+    selection: Selection,
+    scroll_body_caret_into_view: bool,
+}
+
+impl App for Notes {
+    fn build(&self, _cx: &BuildCx) -> El {
+        text_area(&self.body, &self.selection, "body").height(Size::Fixed(180.0))
+    }
+
+    fn on_event(&mut self, event: UiEvent) {
+        if event.target_key() == Some("body")
+            && text_area::apply_event(&mut self.body, &mut self.selection, "body", &event)
+        {
+            self.scroll_body_caret_into_view = true;
+        }
+    }
+
+    fn drain_scroll_requests(&mut self) -> Vec<ScrollRequest> {
+        if std::mem::take(&mut self.scroll_body_caret_into_view) {
+            text_area::caret_scroll_request_for(&self.body, &self.selection, "body")
+                .into_iter()
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn selection(&self) -> Selection {
+        self.selection.clone()
+    }
+}
+```
+
+Do not emit the caret scroll request every frame. The resolver no-ops
+when the caret is already visible, but a per-frame request would fight a
+user who manually wheels the fixed-height editor away from the caret.
+
 The same shape extends to selection-style widgets. `tabs_list("k", &self.tab, [...])` paints a segmented row of triggers; `tabs::apply_event(&mut self.tab, &event, "k", parse)` folds clicks into the app's tab field. The page body is a plain `match self.tab` — there is no implicit "tab content" sibling; Rust's match is more honest than a wrapper that hides itself when not active. The naming and routed-key shape (`{key}:tab:{value}`) mirror shadcn / Radix Tabs and the WAI-ARIA tablist pattern so an LLM author finds familiar terrain. `select_trigger` + `select_menu` follow the same rule with `{key}:option:{value}`, and `radio_group` parallels `tabs_list` with a vertical layout and `{key}:radio:{value}`.
 
 Two-state controls follow the same controlled pattern in their simplest form. `switch(self.auto_save).key("auto_save")` (track + thumb, like shadcn Switch) and `checkbox(self.agree).key("agree")` (square + check, like shadcn Checkbox) project a `bool` into a visual; `switch::apply_event(&mut self.auto_save, &event, "auto_save")` and `checkbox::apply_event` fold clicks back into the field. They share the same one-shape rule: app owns the `bool`, widget projects it, helper folds the event.

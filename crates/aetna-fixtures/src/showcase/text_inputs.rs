@@ -37,6 +37,7 @@ pub struct State {
     pub otp_code: String,
     pub command_open: bool,
     pub last_command: Option<String>,
+    pub scroll_bio_caret_into_view: bool,
 }
 
 impl Default for State {
@@ -53,6 +54,7 @@ impl Default for State {
             otp_code: "248".into(),
             command_open: false,
             last_command: None,
+            scroll_bio_caret_into_view: false,
         }
     }
 }
@@ -252,9 +254,22 @@ pub fn on_event(state: &mut State, e: UiEvent) {
             text_input::apply_event(&mut state.email, &mut state.selection, "ti-email", &e);
         }
         Some("ti-bio") => {
-            text_area::apply_event(&mut state.bio, &mut state.selection, "ti-bio", &e);
+            if text_area::apply_event(&mut state.bio, &mut state.selection, "ti-bio", &e) {
+                state.scroll_bio_caret_into_view = true;
+            }
         }
         _ => {}
+    }
+}
+
+pub fn drain_scroll_requests(state: &mut State) -> Vec<aetna_core::scroll::ScrollRequest> {
+    if std::mem::take(&mut state.scroll_bio_caret_into_view)
+        && let Some(req) =
+            text_area::caret_scroll_request_for(&state.bio, &state.selection, "ti-bio")
+    {
+        vec![req]
+    } else {
+        Vec::new()
     }
 }
 

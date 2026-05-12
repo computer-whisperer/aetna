@@ -401,6 +401,15 @@ impl App for Showcase {
         toasts
     }
 
+    fn drain_scroll_requests(&mut self) -> Vec<aetna_core::scroll::ScrollRequest> {
+        match self.section {
+            Section::Math => math::drain_scroll_requests(&mut self.math),
+            Section::TextInputs => text_inputs::drain_scroll_requests(&mut self.text_inputs),
+            Section::Forms => forms::drain_scroll_requests(&mut self.forms),
+            _ => Vec::new(),
+        }
+    }
+
     fn selection(&self) -> Selection {
         // Surface whichever section currently owns a focused text
         // input — the runtime uses it to paint highlight bands and

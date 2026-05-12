@@ -8,23 +8,37 @@
 //! profile + clipboard helpers) to the same kit primitives.
 //!
 //! ```ignore
+//! use aetna_core::scroll::ScrollRequest;
 //! use aetna_core::prelude::*;
 //!
 //! struct Notes {
 //!     body: String,
 //!     selection: Selection,
+//!     scroll_caret_into_view: bool,
 //! }
 //!
 //! impl App for Notes {
 //!     fn build(&self, _cx: &BuildCx) -> El {
-//!         text_area(&self.body, &self.selection, "body")
+//!         text_area(&self.body, &self.selection, "body").height(Size::Fixed(180.0))
 //!     }
 //!
 //!     fn on_event(&mut self, e: UiEvent) {
-//!         if e.target_key() == Some("body") {
-//!             text_area::apply_event(&mut self.body, &mut self.selection, "body", &e);
+//!         if e.target_key() == Some("body")
+//!             && text_area::apply_event(&mut self.body, &mut self.selection, "body", &e)
+//!         {
+//!             self.scroll_caret_into_view = true;
 //!         } else if let Some(selection) = e.selection.clone() {
 //!             self.selection = selection;
+//!         }
+//!     }
+//!
+//!     fn drain_scroll_requests(&mut self) -> Vec<ScrollRequest> {
+//!         if std::mem::take(&mut self.scroll_caret_into_view) {
+//!             text_area::caret_scroll_request_for(&self.body, &self.selection, "body")
+//!                 .into_iter()
+//!                 .collect()
+//!         } else {
+//!             Vec::new()
 //!         }
 //!     }
 //!
@@ -33,6 +47,14 @@
 //!     }
 //! }
 //! ```
+//!
+//! Fixed-height text areas scroll internally. If the app wants
+//! keyboard navigation (`PageUp` / `PageDown`, arrows, `Home` /
+//! `End`, text insertion, paste) to keep the caret visible, set an
+//! app-owned flag when [`apply_event`] returns `true` and drain a
+//! [`caret_scroll_request_for`] request on the next frame. Do not push
+//! that request every frame; doing so would undo a manual wheel scroll
+//! that intentionally leaves the caret offscreen.
 //!
 //! # Differences from `text_input`
 //!
@@ -213,7 +235,7 @@ fn text_area_geometry(value: &str, available_width: Option<f32>) -> TextGeometry
     )
 }
 
-/// Build a [`ScrollRequest::EnsureVisible`] for an in-flight drag
+/// Build a [`crate::scroll::ScrollRequest::EnsureVisible`] for an in-flight drag
 /// whose pointer has moved past the top or bottom edge of the
 /// text_area's visible scroll viewport. Returns `None` when the
 /// pointer is still inside the viewport, when the event isn't a
@@ -270,14 +292,15 @@ pub fn drag_autoscroll_request_for(
     }
 }
 
-/// Build a [`ScrollRequest::EnsureVisible`] that keeps the caret of
+/// Build a [`crate::scroll::ScrollRequest::EnsureVisible`] that keeps the caret of
 /// the text_area keyed `key` inside its scroll viewport. Returns
 /// `None` when the global selection doesn't currently live in this
 /// area (typing in another field shouldn't move us).
 ///
-/// Apps call this from [`crate::event::App::drain_scroll_requests`],
-/// typically gated by a "selection just moved" flag set during
-/// [`apply_event`]:
+/// Apps call this from [`crate::event::App::drain_scroll_requests`]
+/// for fixed-height text areas, typically gated by a "selection or
+/// content just changed" flag set when [`apply_event`] returns
+/// `true`:
 ///
 /// ```ignore
 /// fn on_event(&mut self, e: UiEvent) {
@@ -300,8 +323,8 @@ pub fn drag_autoscroll_request_for(
 /// ```
 ///
 /// The runtime's resolver no-ops if the caret is already inside the
-/// visible region, so calling this more often than necessary is
-/// cheap; *don't* push it every frame though — that would snap the
+/// visible region. It is fine to request after each accepted text-area
+/// event; *don't* push it every frame though — that would snap the
 /// scroll back after a manual wheel that moved the caret offscreen.
 pub fn caret_scroll_request_for(
     value: &str,
@@ -331,12 +354,18 @@ pub fn caret_scroll_request_for(
 /// - [`UiKey::Enter`] inserts `"\n"` (replaces the selection if
 ///   non-empty, otherwise inserts at the caret).
 /// - `Home` / `End` go to the start / end of the current visual line.
+/// - `PageUp` / `PageDown` move by roughly one visible page. With
+///   Shift the selection extends; without Shift it collapses to the
+///   new caret.
 /// - Pointer events use 2D coordinates: clicking inside any line
 ///   positions the caret at the hit-tested glyph column.
 ///
 /// On any mutation the selection is written back as a single-leaf
 /// range under `key`, transferring ownership of the global selection
-/// into this area.
+/// into this area. For fixed-height text areas, use the `true` return
+/// value to queue [`caret_scroll_request_for`] from
+/// [`crate::event::App::drain_scroll_requests`] so keyboard navigation
+/// keeps the caret visible.
 pub fn apply_event(
     value: &mut String,
     selection: &mut Selection,
@@ -416,6 +445,13 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
                 return true;
             }
             match kp.key {
+                UiKey::Escape => {
+                    if selection.is_collapsed() {
+                        return false;
+                    }
+                    selection.anchor = selection.head;
+                    true
+                }
                 UiKey::Enter => {
                     replace_selection(value, selection, "\n");
                     true
@@ -489,6 +525,38 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
                 }
                 UiKey::ArrowDown => {
                     let new = move_caret_vertically(value, selection.head, 1, wrap_width);
+                    if new == selection.head {
+                        return false;
+                    }
+                    selection.head = new;
+                    if !mods.shift {
+                        selection.anchor = new;
+                    }
+                    true
+                }
+                UiKey::PageUp => {
+                    let new = move_caret_vertically(
+                        value,
+                        selection.head,
+                        page_line_delta_for_event(event, -1),
+                        wrap_width,
+                    );
+                    if new == selection.head {
+                        return false;
+                    }
+                    selection.head = new;
+                    if !mods.shift {
+                        selection.anchor = new;
+                    }
+                    true
+                }
+                UiKey::PageDown => {
+                    let new = move_caret_vertically(
+                        value,
+                        selection.head,
+                        page_line_delta_for_event(event, 1),
+                        wrap_width,
+                    );
                     if new == selection.head {
                         return false;
                     }
@@ -582,9 +650,9 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
 }
 
 /// Return the byte offset of the caret position one visual line in
-/// `direction` (-1 = up, +1 = down) from `byte_index`. Returns the
-/// input unchanged when there is no line in that direction (already at
-/// the first / last visual line).
+/// `direction` from `byte_index`; larger magnitudes move multiple
+/// visual lines. Returns the input unchanged when there is no line in
+/// that direction (already at the first / last visual line).
 fn move_caret_vertically(
     value: &str,
     byte_index: usize,
@@ -606,6 +674,16 @@ fn move_caret_vertically(
         return value.len();
     };
     byte
+}
+
+fn page_line_delta_for_event(event: &UiEvent, direction: i32) -> i32 {
+    let visible_h = event
+        .target
+        .as_ref()
+        .map(|target| (target.rect.h - 2.0 * tokens::SPACE_2).max(line_height_px()))
+        .unwrap_or(line_height_px() * 10.0);
+    let lines = (visible_h / line_height_px()).floor().max(1.0) as i32;
+    direction * lines
 }
 
 /// Resolve the byte offset a pointer event maps to inside a text
@@ -770,6 +848,29 @@ mod tests {
         }
     }
 
+    fn ev_key_with_mods_and_target(
+        key: UiKey,
+        modifiers: KeyModifiers,
+        target: crate::event::UiTarget,
+    ) -> UiEvent {
+        UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: None,
+            key_press: Some(KeyPress {
+                key,
+                modifiers,
+                repeat: false,
+            }),
+            text: None,
+            selection: None,
+            modifiers,
+            click_count: 0,
+            kind: UiEventKind::KeyDown,
+        }
+    }
+
     fn ta_target() -> crate::event::UiTarget {
         crate::event::UiTarget {
             key: "ta".to_string(),
@@ -840,6 +941,16 @@ mod tests {
     }
 
     #[test]
+    fn escape_collapses_selection_without_editing() {
+        let mut value = String::from("hello");
+        let mut sel = TextSelection::range(1, 4);
+        assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::Escape)));
+        assert_eq!(value, "hello");
+        assert_eq!(sel, TextSelection::caret(4));
+        assert!(!apply_event(&mut value, &mut sel, &ev_key(UiKey::Escape)));
+    }
+
+    #[test]
     fn middle_click_inserts_event_text_at_pointer() {
         let mut value = String::from("world");
         let mut sel = TextSelection::caret(value.len());
@@ -870,6 +981,47 @@ mod tests {
         let mut sel = TextSelection::caret(2);
         assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::ArrowUp)));
         assert_eq!(sel, TextSelection::caret(0));
+    }
+
+    #[test]
+    fn page_up_down_move_by_visible_page() {
+        let mut value = String::from("a\nb\nc\nd\ne\nf");
+        let mut sel = TextSelection::caret(0);
+        let mut target = ta_target();
+        target.rect.h = line_height_px() * 3.0 + 2.0 * tokens::SPACE_2;
+
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_target(UiKey::PageDown, target.clone())
+        ));
+        assert_eq!(sel, TextSelection::caret(6));
+
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_target(UiKey::PageUp, target)
+        ));
+        assert_eq!(sel, TextSelection::caret(0));
+    }
+
+    #[test]
+    fn shift_page_down_extends_selection() {
+        let mut value = String::from("a\nb\nc\nd");
+        let mut sel = TextSelection::caret(0);
+        let mut target = ta_target();
+        target.rect.h = line_height_px() * 2.0 + 2.0 * tokens::SPACE_2;
+        let shift = KeyModifiers {
+            shift: true,
+            ..Default::default()
+        };
+
+        assert!(apply_event(
+            &mut value,
+            &mut sel,
+            &ev_key_with_mods_and_target(UiKey::PageDown, shift, target)
+        ));
+        assert_eq!(sel, TextSelection::range(0, 4));
     }
 
     #[test]

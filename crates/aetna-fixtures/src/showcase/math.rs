@@ -140,6 +140,7 @@ const PRESETS: &[Preset] = &[
 pub struct State {
     pub source: String,
     pub selection: Selection,
+    pub scroll_caret_into_view: bool,
 }
 
 impl Default for State {
@@ -147,6 +148,7 @@ impl Default for State {
         Self {
             source: DEFAULT_SOURCE.into(),
             selection: Selection::default(),
+            scroll_caret_into_view: false,
         }
     }
 }
@@ -185,7 +187,20 @@ pub fn on_event(state: &mut State, e: UiEvent) {
     }
 
     if e.target_key() == Some(SOURCE_KEY) {
-        text_area::apply_event(&mut state.source, &mut state.selection, SOURCE_KEY, &e);
+        if text_area::apply_event(&mut state.source, &mut state.selection, SOURCE_KEY, &e) {
+            state.scroll_caret_into_view = true;
+        }
+    }
+}
+
+pub fn drain_scroll_requests(state: &mut State) -> Vec<aetna_core::scroll::ScrollRequest> {
+    if std::mem::take(&mut state.scroll_caret_into_view)
+        && let Some(req) =
+            text_area::caret_scroll_request_for(&state.source, &state.selection, SOURCE_KEY)
+    {
+        vec![req]
+    } else {
+        Vec::new()
     }
 }
 

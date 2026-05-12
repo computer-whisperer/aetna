@@ -27,7 +27,7 @@
 //! - [`command`] — palette / menu rows with icon + label + shortcut; `command_row(...)` / `command_item(...)`
 //!
 //! **Inputs & forms**
-//! - [`text_input`] / [`text_area`] — controlled text editing; app owns `(value, Selection)` and calls `apply_event`
+//! - [`text_input`] / [`text_area`] — controlled text editing; app owns `(value, Selection)` and calls `apply_event`; fixed-height text areas also drain caret scroll requests after accepted events
 //! - [`numeric_input`] — number entry with stepper / formatting
 //! - [`input_otp`] — segmented one-time-password input
 //! - [`select`] — controlled dropdown; `select_trigger(key, label)` + `select_menu(key, options)` + `SelectAction`

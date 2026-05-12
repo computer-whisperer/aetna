@@ -532,6 +532,13 @@ fn fold_event_local(
                 return true;
             }
             match kp.key {
+                UiKey::Escape => {
+                    if selection.is_collapsed() {
+                        return false;
+                    }
+                    selection.anchor = selection.head;
+                    true
+                }
                 UiKey::Backspace => {
                     if !selection.is_collapsed() {
                         replace_selection(value, selection, "");
@@ -721,11 +728,16 @@ pub fn select_all(value: &str) -> TextSelection {
     }
 }
 
-/// Which clipboard operation a keypress is requesting. The library
-/// itself never touches the platform clipboard; [`clipboard_request`]
-/// just identifies the keystroke and the app dispatches the actual
-/// `set_text` / `get_text` call against whatever clipboard backend it
-/// uses (`arboard` on native, the web Clipboard API on wasm, etc.).
+/// Which clipboard operation a keypress is requesting.
+///
+/// [`clipboard_request`] just identifies the keystroke; platform
+/// clipboard access lives outside `aetna-core`. The turnkey
+/// `aetna-winit-wgpu` host handles Ctrl/Cmd+C/X/V and middle-click
+/// paste for apps that return their current [`Selection`] from
+/// [`crate::event::App::selection`]. Custom hosts or examples that
+/// manage their own clipboard can use this enum to dispatch the
+/// actual `set_text` / `get_text` call against `arboard`, the web
+/// Clipboard API, or another backend.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClipboardKind {
     /// `Ctrl+C` / `Cmd+C` — copy the current selection.
@@ -1538,6 +1550,16 @@ mod tests {
         assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::Delete)));
         assert_eq!(value, "world");
         assert_eq!(sel, TextSelection::caret(0));
+    }
+
+    #[test]
+    fn apply_escape_collapses_selection_without_editing() {
+        let mut value = String::from("hello");
+        let mut sel = TextSelection::range(1, 4);
+        assert!(apply_event(&mut value, &mut sel, &ev_key(UiKey::Escape)));
+        assert_eq!(value, "hello");
+        assert_eq!(sel, TextSelection::caret(4));
+        assert!(!apply_event(&mut value, &mut sel, &ev_key(UiKey::Escape)));
     }
 
     #[test]

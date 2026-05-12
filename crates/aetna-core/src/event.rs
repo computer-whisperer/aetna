@@ -787,17 +787,20 @@ pub trait App {
         Vec::new()
     }
 
-    /// Drain pending programmatic scroll requests targeting virtual
-    /// lists. The runtime resolves each request during layout of the
-    /// matching list, using the live viewport rect and row-height
-    /// cache (so first-frame and `virtual_list_dyn` cases work without
-    /// the app duplicating the widget's layout math). Unmatched list
-    /// keys and out-of-range row indices drop silently.
+    /// Drain pending programmatic scroll requests. The runtime
+    /// resolves each request during layout, using live viewport rects
+    /// and row-height/content geometry that apps should not duplicate.
+    /// Unmatched keys and out-of-range row indices drop silently.
     ///
-    /// Use for "reveal a row" affordances: jump-to-search-result,
-    /// reveal-selected-item, scroll-to-top-on-tab-change. Apps
-    /// typically accumulate requests in a `Vec<ScrollRequest>` field
-    /// from event handlers and `mem::take` it here.
+    /// Use [`crate::scroll::ScrollRequest::ToRow`] for virtual-list
+    /// affordances such as jump-to-search-result, reveal selected row,
+    /// or scroll-to-top-on-tab-change. Use
+    /// [`crate::scroll::ScrollRequest::EnsureVisible`] for widgets
+    /// with an internal scroll viewport, including fixed-height
+    /// [`crate::widgets::text_area`] caret-into-view after accepted
+    /// edit/navigation events. Apps typically accumulate requests in a
+    /// `Vec<ScrollRequest>` field from event handlers and
+    /// `mem::take` it here.
     ///
     /// Default: no requests.
     fn drain_scroll_requests(&mut self) -> Vec<crate::scroll::ScrollRequest> {
