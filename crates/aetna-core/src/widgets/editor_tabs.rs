@@ -376,6 +376,7 @@ pub fn editor_tab(
         .focusable()
         .cursor(Cursor::Pointer)
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .axis(Axis::Column)
         .align(Align::Stretch)
         .height(Size::Fixed(tokens::CONTROL_HEIGHT + 2.0))

@@ -78,6 +78,7 @@ pub fn input_otp(value: &str, key: &str, length: usize) -> El {
         .always_show_focus_ring()
         .capture_keys()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(Cursor::Text)
         .key(key.to_string())
         .gap(tokens::SPACE_1)

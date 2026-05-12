@@ -80,6 +80,7 @@ pub fn checkbox(value: bool) -> El {
         .metrics_role(MetricsRole::ChoiceControl)
         .focusable()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(Cursor::Pointer)
         .axis(Axis::Overlay)
         .align(Align::Center)
@@ -155,6 +156,7 @@ mod tests {
         let c = checkbox(false);
         assert!(c.focusable);
         assert!(c.paint_overflow.left > 0.0);
+        assert_eq!(c.hit_overflow, Sides::all(tokens::HIT_OVERFLOW));
     }
 
     #[test]

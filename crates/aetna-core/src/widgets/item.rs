@@ -64,6 +64,7 @@ where
         .metrics_role(MetricsRole::ListItem)
         .focusable()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(Cursor::Pointer)
         .children([rail, content])
         .axis(Axis::Overlay)

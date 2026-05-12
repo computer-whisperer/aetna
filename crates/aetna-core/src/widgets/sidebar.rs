@@ -77,7 +77,12 @@ pub fn sidebar_group_label(label: impl Into<String>) -> El {
         .semibold()
         .muted()
         .ellipsis()
-        .padding(Sides::xy(tokens::SPACE_2, tokens::SPACE_1))
+        .padding(Sides {
+            left: 0.0,
+            right: tokens::SPACE_2,
+            top: tokens::SPACE_1,
+            bottom: 0.0,
+        })
         .width(Size::Fill(1.0))
 }
 
@@ -116,6 +121,8 @@ pub fn sidebar_menu_button(label: impl Into<String>, current: bool) -> El {
         .default_gap(tokens::SPACE_2)
         .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
         .default_height(Size::Fixed(40.0))
+        .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .width(Size::Fill(1.0))
         .align(Align::Center);
     let styled = if current {
@@ -148,6 +155,8 @@ pub fn sidebar_menu_button_with_icon(
     .default_gap(tokens::SPACE_2)
     .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
     .default_height(Size::Fixed(40.0))
+    .paint_overflow(Sides::all(tokens::RING_WIDTH))
+    .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
     .width(Size::Fill(1.0))
     .align(Align::Center);
     let styled = if current {
@@ -183,6 +192,19 @@ mod tests {
     }
 
     #[test]
+    fn sidebar_group_label_reads_as_noninteractive_heading() {
+        let label = sidebar_group_label("Foundations");
+
+        assert!(label.key.is_none());
+        assert!(!label.focusable);
+        assert_eq!(label.cursor, None);
+        assert_eq!(label.padding.left, 0.0);
+        assert_eq!(label.padding.right, tokens::SPACE_2);
+        assert_eq!(label.padding.top, tokens::SPACE_1);
+        assert_eq!(label.padding.bottom, 0.0);
+    }
+
+    #[test]
     fn sidebar_menu_button_uses_list_density_and_current_treatment() {
         let current = sidebar_menu_button_with_icon("layout-dashboard", "Overview", true);
         let inactive = sidebar_menu_button("Settings", false);
@@ -192,9 +214,13 @@ mod tests {
         assert_eq!(current.height, Size::Fixed(40.0));
         assert_eq!(current.surface_role, SurfaceRole::Current);
         assert!(current.focusable);
+        assert_eq!(current.paint_overflow, Sides::all(tokens::RING_WIDTH));
+        assert_eq!(current.hit_overflow, Sides::all(tokens::HIT_OVERFLOW));
         assert!(current.animate.is_some(), "current changes should ease");
         assert_eq!(inactive.height, Size::Fixed(40.0));
         assert_eq!(inactive.padding, Sides::xy(tokens::SPACE_3, 0.0));
+        assert_eq!(inactive.paint_overflow, Sides::all(tokens::RING_WIDTH));
+        assert_eq!(inactive.hit_overflow, Sides::all(tokens::HIT_OVERFLOW));
         assert!(inactive.fill.is_none());
         assert!(inactive.animate.is_some(), "inactive changes should ease");
     }

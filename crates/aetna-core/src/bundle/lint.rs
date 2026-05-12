@@ -78,10 +78,10 @@ pub enum FindingKind {
     /// `fill=CARD + stroke=BORDER + width=SIDEBAR_WIDTH` without a Panel
     /// surface role ⇒ `sidebar()`).
     ReinventedWidget,
-    /// A focusable node's `paint_overflow` band (the focus-ring band)
-    /// would render obscured at runtime — either because the nearest
-    /// clipping ancestor's scissor cuts it, or because a later-painted
-    /// sibling's rect overlaps the bleed region and paints on top.
+    /// A focusable node's focus-ring band would render obscured at
+    /// runtime — either because the nearest clipping ancestor's scissor
+    /// cuts it, or because a later-painted sibling's rect overlaps the
+    /// bleed region and paints on top.
     ///
     /// Common fixes:
     ///
@@ -110,6 +110,16 @@ pub enum FindingKind {
     /// so the thumb sits in a reserved gutter to the right of
     /// content.
     ScrollbarObscuresFocusable,
+    /// Two sibling keyed nodes have overlapping effective pointer hit
+    /// targets because at least one of them opted into
+    /// `.hit_overflow(...)`. Hit-test resolves by paint order, so the
+    /// later-painted sibling silently owns the collision region while
+    /// the earlier sibling may still visually appear nearby.
+    ///
+    /// Fix: reduce the hit overflow, add real layout gap/padding, or
+    /// restructure so one visible row/control owns the whole intended
+    /// target area.
+    HitOverflowCollision,
     /// `.tooltip()` on a node that has no `.key()`. Tooltips fire
     /// through the hit-test pipeline, and `hit_test` only returns
     /// keyed nodes — hover skips past unkeyed leaves to the nearest
@@ -599,6 +609,12 @@ fn walk(
         nearest_clip.clone()
     };
 
+    if !matches!(n.axis, Axis::Overlay)
+        && let Some(blame) = self_blame
+    {
+        lint_hit_overflow_collisions(n, &child_clip, ui_state, r, blame);
+    }
+
     for (child_idx, c) in n.children.iter().enumerate() {
         let from_user_child = is_from_user(c.source);
         let child_blame = if from_user_child {
@@ -673,20 +689,15 @@ fn walk(
             && c.focusable
             && let Some(blame) = child_blame
         {
-            // Focus-ring obscurement: only meaningful for focusable
-            // nodes that reserve a paint_overflow band (the band is
-            // where the ring renders in the stock-shader path).
-            if has_paint_overflow(c.paint_overflow) {
-                check_focus_ring_obscured(
-                    c,
-                    c_rect,
-                    &child_clip,
-                    &n.children[child_idx + 1..],
-                    ui_state,
-                    r,
-                    blame,
-                );
-            }
+            check_focus_ring_obscured(
+                c,
+                c_rect,
+                &child_clip,
+                &n.children[child_idx + 1..],
+                ui_state,
+                r,
+                blame,
+            );
             // Independent of paint_overflow: the focusable's own rect
             // overlaps an ancestor scroll's thumb track (the thumb
             // paints on top of the control whenever it's visible).
@@ -705,8 +716,98 @@ fn walk(
     }
 }
 
-fn has_paint_overflow(s: Sides) -> bool {
-    s.left > 0.0 || s.right > 0.0 || s.top > 0.0 || s.bottom > 0.0
+fn focus_ring_overflow() -> Sides {
+    Sides::all(crate::tokens::RING_WIDTH)
+}
+
+fn has_hit_overflow(sides: Sides) -> bool {
+    sides.left > 0.5 || sides.right > 0.5 || sides.top > 0.5 || sides.bottom > 0.5
+}
+
+fn clip_rect(ctx: &ClipCtx) -> Option<Rect> {
+    match ctx {
+        ClipCtx::None => None,
+        ClipCtx::Static(rect) | ClipCtx::Scrolling { rect, .. } => Some(*rect),
+    }
+}
+
+fn clipped_rect(rect: Rect, ctx: &ClipCtx) -> Option<Rect> {
+    match clip_rect(ctx) {
+        Some(clip) => rect.intersect(clip),
+        None => Some(rect),
+    }
+}
+
+/// Detect sibling hit-target ambiguity introduced by `.hit_overflow`.
+/// Plain visual overlap is not this lint's concern; it only fires when
+/// an explicitly expanded hit rect reaches another keyed sibling's
+/// visual/effective target. Overlay stacks are skipped by the caller,
+/// since overlapping hit regions are normal for scrims, modals, and
+/// floating layers.
+fn lint_hit_overflow_collisions(
+    parent: &El,
+    child_clip: &ClipCtx,
+    ui_state: &UiState,
+    r: &mut LintReport,
+    blame: Source,
+) {
+    for (left_idx, left) in parent.children.iter().enumerate() {
+        if left.key.is_none() {
+            continue;
+        }
+        let left_rect = ui_state.rect(&left.computed_id);
+        let Some(left_hit) = clipped_rect(left_rect.outset(left.hit_overflow), child_clip) else {
+            continue;
+        };
+        for right in parent.children.iter().skip(left_idx + 1) {
+            if right.key.is_none() {
+                continue;
+            }
+            if !has_hit_overflow(left.hit_overflow) && !has_hit_overflow(right.hit_overflow) {
+                continue;
+            }
+            let right_rect = ui_state.rect(&right.computed_id);
+            let Some(right_hit) = clipped_rect(right_rect.outset(right.hit_overflow), child_clip)
+            else {
+                continue;
+            };
+            let Some(overlap) = left_hit.intersect(right_hit) else {
+                continue;
+            };
+            if overlap.w <= 0.5 || overlap.h <= 0.5 {
+                continue;
+            }
+
+            let left_visual_contains = left_rect.contains(overlap.center_x(), overlap.center_y());
+            let right_visual_contains = right_rect.contains(overlap.center_x(), overlap.center_y());
+            if left_visual_contains && right_visual_contains {
+                // Existing visual overlap is already ambiguous by
+                // construction; this lint is about invisible inflation
+                // creating a new ambiguous band.
+                continue;
+            }
+
+            let earlier = left.key.as_deref().unwrap_or("<unkeyed>");
+            let later = right.key.as_deref().unwrap_or("<unkeyed>");
+            let owner = if has_hit_overflow(right.hit_overflow) {
+                right
+            } else {
+                left
+            };
+            r.findings.push(Finding {
+                kind: FindingKind::HitOverflowCollision,
+                node_id: owner.computed_id.clone(),
+                source: blame,
+                message: format!(
+                    "expanded hit targets for sibling keys `{earlier}` and `{later}` overlap by {w:.0}x{h:.0}px — \
+                     hit-test resolves the collision by paint order, so `{later}` owns that invisible band. \
+                     Reduce `.hit_overflow(...)`, add real gap/padding, or make one visible row/control own the full intended target.",
+                    w = overlap.w,
+                    h = overlap.h,
+                ),
+            });
+        }
+    }
 }
 
 /// Detect the corner-stackup pattern: a filled child whose rect
@@ -904,7 +1005,8 @@ fn check_focus_ring_obscured(
     r: &mut LintReport,
     blame: Source,
 ) {
-    let band = n_rect.outset(n.paint_overflow);
+    let ring_overflow = focus_ring_overflow();
+    let band = n_rect.outset(ring_overflow);
 
     // 1. Clipped by ancestor scissor. For scrollable clips, only the
     // cross axis is checked — the scroll axis can bring partially
@@ -958,7 +1060,7 @@ fn check_focus_ring_obscured(
     // Skip overlay parents (siblings are intentionally stacked).
     for sib in later_siblings {
         let sib_rect = ui_state.rect(&sib.computed_id);
-        if let Some(side) = bleed_occlusion(n_rect, n.paint_overflow, sib_rect)
+        if let Some(side) = bleed_occlusion(n_rect, ring_overflow, sib_rect)
             && paints_pixels(sib)
         {
             r.findings.push(Finding {
@@ -2035,6 +2137,118 @@ mod tests {
                     && (f.message.contains("L=2") || f.message.contains("R=2"))
             }),
             "expected a FocusRingObscured clipping finding (L=2 or R=2)\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn focus_ring_lint_assumes_every_focusable_has_a_ring_band() {
+        // Regression coverage for sidebar_menu_button-style widgets:
+        // focusable controls may forget an explicit paint_overflow, but
+        // the renderer still draws a RING_WIDTH focus halo when focused.
+        // The lint should reason about that implicit band.
+        let mut root = crate::tree::scroll([crate::tree::column([El::new(Kind::Custom(
+            "raw_focusable",
+        ))
+        .key("raw")
+        .focusable()
+        .fill(crate::tokens::CARD)
+        .width(Size::Fill(1.0))
+        .height(Size::Fixed(40.0))])])
+        .width(Size::Fixed(300.0))
+        .height(Size::Fixed(120.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 120.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            report.findings.iter().any(|f| {
+                f.kind == FindingKind::FocusRingObscured
+                    && f.message.contains("clipped")
+                    && (f.message.contains("L=2") || f.message.contains("R=2"))
+            }),
+            "expected a FocusRingObscured clipping finding for implicit focus ring band\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn hit_overflow_collision_lint_fires_for_sibling_target_overlap() {
+        let root = crate::tree::row([
+            crate::button("A")
+                .key("a")
+                .hit_overflow(Sides::right(8.0))
+                .width(Size::Fixed(40.0))
+                .height(Size::Fixed(24.0)),
+            crate::button("B")
+                .key("b")
+                .width(Size::Fixed(40.0))
+                .height(Size::Fixed(24.0)),
+        ])
+        .gap(4.0);
+
+        let report = lint_one(root);
+
+        assert!(
+            report.findings.iter().any(|f| {
+                f.kind == FindingKind::HitOverflowCollision
+                    && f.message.contains("`a`")
+                    && f.message.contains("`b`")
+            }),
+            "expected HitOverflowCollision when a hit_overflow band reaches the next sibling\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn hit_overflow_collision_lint_is_quiet_when_gap_clears_band() {
+        let root = crate::tree::row([
+            crate::button("A")
+                .key("a")
+                .hit_overflow(Sides::right(8.0))
+                .width(Size::Fixed(40.0))
+                .height(Size::Fixed(24.0)),
+            crate::button("B")
+                .key("b")
+                .width(Size::Fixed(40.0))
+                .height(Size::Fixed(24.0)),
+        ])
+        .gap(12.0);
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::HitOverflowCollision),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn hit_overflow_collision_lint_skips_overlay_stacks() {
+        let root = crate::tree::stack([
+            crate::button("A")
+                .key("a")
+                .hit_overflow(Sides::all(8.0))
+                .width(Size::Fixed(40.0))
+                .height(Size::Fixed(24.0)),
+            crate::button("B")
+                .key("b")
+                .width(Size::Fixed(40.0))
+                .height(Size::Fixed(24.0)),
+        ]);
+
+        let report = lint_one(root);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::HitOverflowCollision),
+            "{}",
             report.text()
         );
     }

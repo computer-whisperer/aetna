@@ -128,6 +128,8 @@ pub fn slider(value: f32, fill_color: Color) -> El {
     .cursor_pressed(Cursor::Grabbing)
     .layout(layout)
     .default_height(Size::Fixed(DEFAULT_HEIGHT))
+    .paint_overflow(Sides::all(tokens::RING_WIDTH))
+    .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
     .width(Size::Fill(1.0))
 }
 

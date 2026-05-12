@@ -182,6 +182,7 @@ pub fn resize_handle(axis: Axis) -> El {
         .justify(Justify::Center)
         .focusable()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(cursor)
         .width(width)
         .height(height)

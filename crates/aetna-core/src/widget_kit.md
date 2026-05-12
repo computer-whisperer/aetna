@@ -280,6 +280,7 @@ overlay([
 
 - `.focusable()` — opt into Tab focus order and the focus ring. The library writes `focus_color` + `focus_width` uniforms onto your node's quad whenever the focus envelope is non-zero (animated by the runtime). The `RoundedRect` stock shader draws the ring in the `paint_overflow` band; if you bind a custom shader, you receive the same uniforms and decide what to paint with them.
 - `.paint_overflow(Sides)` — extend your painted area beyond your layout bounds. Layout-neutral (siblings don't shift, hit-testing still uses layout bounds). Use this to give the focus ring (or a drop shadow, or a glow halo, or a custom focus visual) somewhere to render outside the box.
+- `.hit_overflow(Sides)` — extend your pointer hit target beyond your layout bounds without changing paint or layout. Hover, press, cursor, tooltip, and click routing all use the expanded target, while `UiEvent::target_rect()` still reports the visual rect from layout. Stock controls use the conservative `tokens::HIT_OVERFLOW`; use larger values sparingly for intentionally bigger targets around compact chrome, not for making unrelated gutters activate nearby UI.
 - `.block_pointer()` — stop pointer events from passing through to siblings underneath. Used by modal panels and similar.
 
 The library handles `Hover` / `Press` / `Focus` envelopes automatically once `focusable` is set: hover lightens, press darkens, focus rings fade in/out. None of these are kind-keyed — they apply to any focusable node.

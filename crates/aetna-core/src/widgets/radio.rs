@@ -172,6 +172,7 @@ pub fn radio_item(
         .metrics_role(MetricsRole::ChoiceItem)
         .focusable()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(Cursor::Pointer)
         .key(routed_key)
         .axis(Axis::Row)

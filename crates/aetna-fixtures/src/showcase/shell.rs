@@ -47,17 +47,19 @@ fn sidebar_chrome(app: &Showcase) -> El {
             text("showcase").muted().small(),
         ]),
         theme_picker(app.theme_choice),
-        // Wrap the nav groups in a column with right-padding equal to
-        // the scrollbar's hitbox width so the thumb sits in a reserved
-        // gutter to the right of the buttons. Putting the padding
-        // *inside* the scroll (rather than on the sidebar) keeps the
-        // thumb at the scroll's right edge while pulling the focusable
-        // buttons inward — fixing the `ScrollbarObscuresFocusable`
-        // findings the lint flagged on every nav item.
+        // Wrap the nav groups in a column with focus-ring slack plus a
+        // right-side scrollbar gutter. Putting the padding *inside* the
+        // scroll keeps the thumb at the scroll's right edge while
+        // pulling the focusable buttons inward, so their focus rings
+        // are not scissored and the thumb cannot cover them.
         scroll([column(groups.collect::<Vec<_>>())
             .gap(tokens::SPACE_3)
-            .padding(Sides::right(tokens::SCROLLBAR_HITBOX_WIDTH))])
-        .key("nav-scroll")
+            .padding(Sides {
+                left: tokens::RING_WIDTH,
+                right: tokens::SCROLLBAR_HITBOX_WIDTH,
+                top: tokens::RING_WIDTH,
+                bottom: tokens::RING_WIDTH,
+            })])
         .height(Size::Fill(1.0)),
         diagnostics_toggle(app.diagnostics_visible),
     ])

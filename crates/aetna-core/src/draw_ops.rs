@@ -392,10 +392,16 @@ fn push_node(
         } else {
             0.0
         };
+        let focus_width = if n.focusable && focus_ring_alpha > 0.0 {
+            tokens::RING_WIDTH
+        } else {
+            0.0
+        };
         let painted_rect = inner_painted_rect.outset(combined_overflow(
             n.paint_overflow,
             effective_shadow,
             effective_stroke_width,
+            focus_width,
         ));
         out.push(DrawOp::Quad {
             id: n.computed_id.clone(),
@@ -2011,18 +2017,24 @@ fn translated(r: Rect, offset: (f32, f32)) -> Rect {
 /// at top / bottom / left / right. Per-side max with the user's
 /// `paint_overflow` so a ring outset + shadow + stroke on the
 /// same node all fit.
-fn combined_overflow(paint_overflow: Sides, shadow: f32, stroke_width: f32) -> Sides {
+fn combined_overflow(
+    paint_overflow: Sides,
+    shadow: f32,
+    stroke_width: f32,
+    focus_width: f32,
+) -> Sides {
     let stroke_halo = if stroke_width > 0.0 {
         stroke_width * 0.5 + 1.0
     } else {
         0.0
     };
-    let stroked = if stroke_halo > 0.0 {
+    let halo = stroke_halo.max(focus_width);
+    let stroked = if halo > 0.0 {
         Sides {
-            left: paint_overflow.left.max(stroke_halo),
-            right: paint_overflow.right.max(stroke_halo),
-            top: paint_overflow.top.max(stroke_halo),
-            bottom: paint_overflow.bottom.max(stroke_halo),
+            left: paint_overflow.left.max(halo),
+            right: paint_overflow.right.max(halo),
+            top: paint_overflow.top.max(halo),
+            bottom: paint_overflow.bottom.max(halo),
         }
     } else {
         paint_overflow
@@ -3972,7 +3984,7 @@ mod tests {
         // SHADOW_MD (12) should resolve to: l=12, r=12, t=8, b=18 —
         // shadow wins on left/right/bottom, paint_overflow wins on top.
         let combined =
-            super::combined_overflow(crate::tree::Sides::all(8.0), tokens::SHADOW_MD, 0.0);
+            super::combined_overflow(crate::tree::Sides::all(8.0), tokens::SHADOW_MD, 0.0, 0.0);
         assert!((combined.left - 12.0).abs() < f32::EPSILON);
         assert!((combined.right - 12.0).abs() < f32::EPSILON);
         assert!((combined.top - 8.0).abs() < f32::EPSILON);
@@ -3981,8 +3993,15 @@ mod tests {
 
     #[test]
     fn shadow_overflow_is_zero_when_shadow_is_zero() {
-        let combined = super::combined_overflow(crate::tree::Sides::zero(), 0.0, 0.0);
+        let combined = super::combined_overflow(crate::tree::Sides::zero(), 0.0, 0.0, 0.0);
         assert_eq!(combined, crate::tree::Sides::zero());
+    }
+
+    #[test]
+    fn focus_overflow_outsets_painted_rect_by_ring_width() {
+        let combined =
+            super::combined_overflow(crate::tree::Sides::zero(), 0.0, 0.0, tokens::RING_WIDTH);
+        assert_eq!(combined, crate::tree::Sides::all(tokens::RING_WIDTH));
     }
 
     #[test]
@@ -3992,7 +4011,7 @@ mod tests {
         // get clipped because the outside half of the band falls
         // outside the layout rect. Auto-widen by stroke_width/2 + 1px
         // (AA tail) so the full band rasterises symmetrically.
-        let combined = super::combined_overflow(crate::tree::Sides::zero(), 0.0, 1.0);
+        let combined = super::combined_overflow(crate::tree::Sides::zero(), 0.0, 1.0, 0.0);
         let halo = 1.0 * 0.5 + 1.0;
         assert!((combined.left - halo).abs() < f32::EPSILON);
         assert!((combined.right - halo).abs() < f32::EPSILON);
@@ -4006,7 +4025,7 @@ mod tests {
         // the bottom; stroke beats shadow on the top (blur*0.5 = 6 vs
         // 1.5? no — shadow wins there too). Use a small shadow so the
         // stroke halo wins on the top.
-        let combined = super::combined_overflow(crate::tree::Sides::zero(), 1.0, 4.0);
+        let combined = super::combined_overflow(crate::tree::Sides::zero(), 1.0, 4.0, 0.0);
         // Stroke halo = 4*0.5 + 1 = 3. Shadow blur = 1 → top = 0.5,
         // bottom = 1.5, l/r = 1. Stroke wins on every side.
         assert!(

@@ -70,6 +70,7 @@ where
         .at_loc(Location::caller())
         .width(Size::Fill(1.0))
         .height(Size::Hug)
+        .padding(Sides::x(tokens::RING_WIDTH))
         .gap(0.0)
 }
 
@@ -129,6 +130,8 @@ pub fn accordion_trigger(
     .default_gap(tokens::SPACE_2)
     .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
     .default_height(Size::Fixed(40.0))
+    .paint_overflow(Sides::all(tokens::RING_WIDTH))
+    .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
     .axis(Axis::Row)
     .align(Align::Center)
     .width(Size::Fill(1.0))
@@ -172,6 +175,8 @@ pub fn accordion_trigger_with_icon(
     .default_gap(tokens::SPACE_2)
     .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
     .default_height(Size::Fixed(40.0))
+    .paint_overflow(Sides::all(tokens::RING_WIDTH))
+    .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
     .axis(Axis::Row)
     .align(Align::Center)
     .width(Size::Fill(1.0))
@@ -230,6 +235,7 @@ mod tests {
         assert_eq!(trigger.metrics_role, Some(MetricsRole::ListItem));
         assert_eq!(trigger.align, Align::Center);
         assert!(trigger.focusable);
+        assert_eq!(trigger.paint_overflow, Sides::all(tokens::RING_WIDTH));
         assert_eq!(
             trigger.children[1].icon,
             Some(crate::IconSource::Builtin(IconName::ChevronRight))

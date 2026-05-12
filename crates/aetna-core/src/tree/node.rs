@@ -32,6 +32,17 @@ pub struct El {
     pub style_profile: StyleProfile,
     pub key: Option<String>,
     pub block_pointer: bool,
+    /// Expand this element's pointer hit target beyond its transformed
+    /// layout rect. Layout-neutral and paint-neutral: siblings don't
+    /// move, the element doesn't draw larger, and focus rings / shadows
+    /// still use [`Self::paint_overflow`].
+    ///
+    /// Use sparingly for controls with deliberately small visuals but
+    /// larger intended targets (resize handles, compact icon affordances,
+    /// row chrome). Hover, press, cursor, tooltip, and click routing all
+    /// share this expanded target, so the invisible area behaves like
+    /// the visible control. Ancestor clips still bound hit-testing.
+    pub hit_overflow: Sides,
     pub focusable: bool,
     /// Show the focus ring on this node even when focus arrived via
     /// pointer (i.e. the runtime's `focus_visible` is `false`). Default

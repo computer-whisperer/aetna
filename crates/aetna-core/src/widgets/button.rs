@@ -42,6 +42,7 @@ pub fn button(label: impl Into<String>) -> El {
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(Cursor::Pointer)
         .text(label)
         .text_align(TextAlign::Center)
@@ -65,6 +66,7 @@ pub fn icon_button(source: impl IntoIconSource) -> El {
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(Cursor::Pointer)
         .icon_source(source)
         .icon_size(tokens::ICON_SM)
@@ -87,6 +89,7 @@ pub fn button_with_icon(source: impl IntoIconSource, label: impl Into<String>) -
         .surface_role(SurfaceRole::Raised)
         .focusable()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(Cursor::Pointer)
         .axis(Axis::Row)
         .default_gap(tokens::SPACE_2)
@@ -118,5 +121,21 @@ mod tests {
         assert!(button("Save").primary().animate.is_some());
         assert!(icon_button("settings").animate.is_some());
         assert!(button_with_icon("folder", "Open").animate.is_some());
+    }
+
+    #[test]
+    fn buttons_have_conservative_default_hit_overflow() {
+        assert_eq!(
+            button("Save").hit_overflow,
+            Sides::all(tokens::HIT_OVERFLOW)
+        );
+        assert_eq!(
+            icon_button("settings").hit_overflow,
+            Sides::all(tokens::HIT_OVERFLOW)
+        );
+        assert_eq!(
+            button_with_icon("folder", "Open").hit_overflow,
+            Sides::all(tokens::HIT_OVERFLOW)
+        );
     }
 }

@@ -2,6 +2,7 @@
 
 use std::panic::Location;
 
+use super::geometry::Sides;
 use super::node::El;
 use super::semantics::{Kind, Source};
 
@@ -41,6 +42,19 @@ impl El {
 
     pub fn block_pointer(mut self) -> Self {
         self.block_pointer = true;
+        self
+    }
+
+    /// Expand this node's pointer hit target without changing layout
+    /// or paint. Hover, press, cursor, tooltip, and click routing all
+    /// use the expanded target; [`UiEvent::target_rect`][crate::UiEvent::target_rect]
+    /// still reports the node's transformed visual rect from layout.
+    ///
+    /// Keep this conservative. It is for controls whose effective
+    /// interaction region is intentionally larger than their drawn
+    /// chrome, not for making unrelated gutters activate nearby UI.
+    pub fn hit_overflow(mut self, outset: impl Into<Sides>) -> Self {
+        self.hit_overflow = outset.into();
         self
     }
 

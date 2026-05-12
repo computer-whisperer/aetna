@@ -367,6 +367,8 @@ impl UiEvent {
     }
 
     /// Rectangle of the routed target from the last layout pass.
+    /// This is the target's transformed visual rect, not any
+    /// `hit_overflow` band that may also route pointer events to it.
     pub fn target_rect(&self) -> Option<Rect> {
         self.target.as_ref().map(|t| t.rect)
     }

@@ -359,6 +359,7 @@ fn build_text_input(value: &str, view: Option<TextSelection>, opts: TextInputOpt
         .always_show_focus_ring()
         .capture_keys()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
+        .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(Cursor::Text)
         .fill(tokens::MUTED)
         .stroke(tokens::BORDER)

@@ -29,8 +29,10 @@ use crate::state::UiState;
 use crate::text::metrics;
 use crate::tree::{El, FontWeight, Kind, Rect, TextWrap};
 
-/// Find the topmost keyed node whose laid-out rect contains `point`
-/// (logical pixels). Returns `None` if the point hits no keyed node.
+/// Find the topmost keyed node whose effective hit rect contains
+/// `point` (logical pixels). Returns `None` if the point hits no keyed
+/// node. By default the effective hit rect is the transformed laid-out
+/// rect; nodes can opt into extra input area with `.hit_overflow(...)`.
 pub fn hit_test(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<String> {
     hit_test_target(root, ui_state, point).map(|target| target.key)
 }
@@ -97,9 +99,13 @@ fn hit_test_rec(
             Hit::Miss => {}
         }
     }
-    // No child hit. Self counts only if its painted rect contains the
-    // point AND it's keyed (author tagged it interactive).
-    if !painted_rect.contains(point.0, point.1) {
+    // No child hit. Self counts only if its effective hit rect contains
+    // the point AND it's keyed (author tagged it interactive). The
+    // returned target rect remains the transformed visual/layout rect:
+    // hit overflow is an input affordance, not geometry apps should
+    // use for pointer-to-value math.
+    let hit_rect = painted_rect.outset(node.hit_overflow);
+    if !hit_rect.contains(point.0, point.1) {
         return Hit::Miss;
     }
     if let Some(key) = &node.key {
@@ -956,6 +962,71 @@ mod tests {
             let hit = hit_test(&tree, &state, center);
             assert_eq!(hit.as_deref(), Some(*key));
         }
+    }
+
+    #[test]
+    fn hit_overflow_expands_pointer_target_but_not_target_rect() {
+        let mut tree = column([button("x")
+            .key("x")
+            .hit_overflow(Sides::all(8.0))
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(24.0))])
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+
+        let rect = find_rect(&tree, &state, "x").expect("button rect");
+        let target = hit_test_target(&tree, &state, (rect.x - 4.0, rect.center_y()))
+            .expect("left hit overflow should route to the button");
+        assert_eq!(target.key, "x");
+        assert_eq!(
+            target.rect, rect,
+            "hit overflow should not change UiTarget::rect used by widgets for pointer math"
+        );
+    }
+
+    #[test]
+    fn paint_overflow_does_not_expand_pointer_target() {
+        let mut tree = column([button("x")
+            .key("x")
+            .paint_overflow(Sides::all(8.0))
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(24.0))])
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+
+        let rect = find_rect(&tree, &state, "x").expect("button rect");
+        assert_eq!(
+            hit_test(&tree, &state, (rect.x - 4.0, rect.center_y())),
+            None,
+            "paint overflow is visual only; hit-test requires explicit hit_overflow"
+        );
+    }
+
+    #[test]
+    fn hit_overflow_respects_clipping_ancestor() {
+        let mut tree = column([button("x")
+            .key("x")
+            .hit_overflow(Sides::left(16.0))
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(24.0))])
+        .clip()
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(20.0, 0.0, 120.0, 80.0));
+
+        let rect = find_rect(&tree, &state, "x").expect("button rect");
+        assert_eq!(
+            hit_test(&tree, &state, (rect.x - 8.0, rect.center_y())).as_deref(),
+            Some("x"),
+            "overflow inside the ancestor clip should remain hittable"
+        );
+        assert_eq!(
+            hit_test(&tree, &state, (19.0, rect.center_y())),
+            None,
+            "ancestor clip should bound hit overflow"
+        );
     }
 
     #[test]

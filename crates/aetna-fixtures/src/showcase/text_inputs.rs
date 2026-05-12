@@ -69,7 +69,8 @@ pub fn view(state: &State) -> El {
                 text(format!("{}%", (state.volume * 100.0).round() as i32)).muted(),
             ])
             .align(Align::Center),
-            slider(state.volume, tokens::PRIMARY).key("ti-volume"),
+            column([slider(state.volume, tokens::PRIMARY).key("ti-volume")])
+                .padding(Sides::bottom(tokens::RING_WIDTH)),
             text("Drag the thumb, or focus and use ←/→ · PageUp/Down · Home/End.")
                 .small()
                 .muted(),

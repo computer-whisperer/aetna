@@ -250,6 +250,10 @@ pub const STATE_FILL_PRESS_ALPHA: f32 = 0.25;
 pub const DISABLED_ALPHA: f32 = 0.5;
 /// Ring outset (additional focus stroke beyond the element bounds).
 pub const RING_WIDTH: f32 = 2.0;
+/// Conservative default pointer hit-target outset for stock controls.
+/// Kept below [`RING_WIDTH`] so the focus-ring gutter usually has
+/// enough room for adjacent controls to expand without overlapping.
+pub const HIT_OVERFLOW: f32 = RING_WIDTH * 0.5;
 /// Background tint for selected text in `text_input` / `text_area`.
 /// Tinted accent at low alpha so glyphs stay readable through the
 /// selection rectangle.

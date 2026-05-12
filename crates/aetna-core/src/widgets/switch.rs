@@ -124,6 +124,7 @@ pub fn switch(value: bool) -> El {
     .at_loc(Location::caller())
     .focusable()
     .paint_overflow(Sides::all(tokens::RING_WIDTH))
+    .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
     .cursor(Cursor::Pointer)
     .layout(layout)
     .width(Size::Fixed(TRACK_WIDTH))
@@ -183,6 +184,7 @@ mod tests {
         let s = switch(false);
         assert!(s.focusable);
         assert!(s.paint_overflow.left > 0.0);
+        assert_eq!(s.hit_overflow, Sides::all(tokens::HIT_OVERFLOW));
     }
 
     #[test]

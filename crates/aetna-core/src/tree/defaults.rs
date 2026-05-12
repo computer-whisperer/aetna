@@ -20,6 +20,7 @@ impl Default for El {
             style_profile: StyleProfile::TextOnly,
             key: None,
             block_pointer: false,
+            hit_overflow: Sides::zero(),
             focusable: false,
             always_show_focus_ring: false,
             selectable: false,
