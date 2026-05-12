@@ -87,7 +87,7 @@ $$
 ";
 
 const STRESS_SOURCE: &str = "\
-# Inline wrapping
+# Stress cases
 
 This paragraph puts built-up math near line boundaries: \
 $\\frac{a+b}{c+d}$ should keep its baseline, \
@@ -96,6 +96,32 @@ $\\left(\\frac{a}{b}\\right)$ should not create odd prose gaps.
 
 Symbols: $\\alpha+\\beta\\to\\gamma$, $\\Delta\\le\\Omega$, and \
 $A\\cup B\\cap C\\ne\\emptyset$.
+
+$$
+\\begin{aligned}
+S &= \\sum_{k=0}^{n} r^k = 1 + r + r^2 + \\cdots + r^n \\\\
+rS &= r + r^2 + \\cdots + r^{n+1} \\\\
+S-rS &= 1-r^{n+1}
+\\end{aligned}
+$$
+
+$$
+\\nabla \\times \\mathbf{B} =
+\\mu_0 \\mathbf{J} + \\mu_0 \\varepsilon_0
+\\frac{\\partial \\mathbf{E}}{\\partial t}
+$$
+
+$$
+\\mathbb{E}[X] = \\int_{-\\infty}^{\\infty} x\\, f(x)\\, dx,
+\\qquad \\operatorname{Var}(X) = \\mathbb{E}[X^2] - (\\mathbb{E}[X])^2
+$$
+
+$$
+R(\\theta) = \\begin{pmatrix}
+\\cos\\theta & -\\sin\\theta \\\\
+\\sin\\theta & \\cos\\theta
+\\end{pmatrix}
+$$
 ";
 
 #[derive(Clone, Copy)]
@@ -387,6 +413,76 @@ mod tests {
         UiEvent::synthetic_click(key)
     }
 
+    fn collect_math_errors(el: &El, errors: &mut Vec<String>) {
+        if let Some(expr) = el.math.as_deref() {
+            collect_expr_errors(expr, errors);
+        }
+        for child in &el.children {
+            collect_math_errors(child, errors);
+        }
+    }
+
+    fn collect_expr_errors(expr: &MathExpr, errors: &mut Vec<String>) {
+        match expr {
+            MathExpr::Error(error) => errors.push(error.clone()),
+            MathExpr::Row(children) => {
+                for child in children {
+                    collect_expr_errors(child, errors);
+                }
+            }
+            MathExpr::Fraction {
+                numerator,
+                denominator,
+            } => {
+                collect_expr_errors(numerator, errors);
+                collect_expr_errors(denominator, errors);
+            }
+            MathExpr::Sqrt(child) => collect_expr_errors(child, errors),
+            MathExpr::Root { base, index } => {
+                collect_expr_errors(base, errors);
+                collect_expr_errors(index, errors);
+            }
+            MathExpr::Scripts { base, sub, sup } => {
+                collect_expr_errors(base, errors);
+                if let Some(sub) = sub {
+                    collect_expr_errors(sub, errors);
+                }
+                if let Some(sup) = sup {
+                    collect_expr_errors(sup, errors);
+                }
+            }
+            MathExpr::UnderOver { base, under, over } => {
+                collect_expr_errors(base, errors);
+                if let Some(under) = under {
+                    collect_expr_errors(under, errors);
+                }
+                if let Some(over) = over {
+                    collect_expr_errors(over, errors);
+                }
+            }
+            MathExpr::Accent { base, accent, .. } => {
+                collect_expr_errors(base, errors);
+                collect_expr_errors(accent, errors);
+            }
+            MathExpr::Fenced { body, .. } => collect_expr_errors(body, errors),
+            MathExpr::Table { rows, .. } => {
+                for row in rows {
+                    for cell in row {
+                        collect_expr_errors(cell, errors);
+                    }
+                }
+            }
+            MathExpr::Source { body, .. } => collect_expr_errors(body, errors),
+            MathExpr::Identifier(_)
+            | MathExpr::Number(_)
+            | MathExpr::Operator(_)
+            | MathExpr::OperatorWithMetadata { .. }
+            | MathExpr::Text(_)
+            | MathExpr::Space(_) => {}
+            _ => {}
+        }
+    }
+
     #[test]
     fn preset_click_replaces_source() {
         let mut state = State::default();
@@ -413,5 +509,14 @@ mod tests {
         );
 
         assert!(!matches!(expr, MathExpr::Error(_)));
+    }
+
+    #[test]
+    fn stress_preset_markdown_has_no_math_parse_errors() {
+        let doc = md_with_options(STRESS_SOURCE, MarkdownOptions::default().math(true));
+        let mut errors = Vec::new();
+        collect_math_errors(&doc, &mut errors);
+
+        assert!(errors.is_empty(), "unexpected math errors: {errors:?}");
     }
 }

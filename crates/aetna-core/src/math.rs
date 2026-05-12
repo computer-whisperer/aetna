@@ -23,6 +23,7 @@ const CASES_COL_GAP_EM: f32 = 0.5;
 const RADICAL_GLYPH: char = '√';
 const THIN_MATH_SPACE_EM: f32 = 0.08;
 const MEDIUM_MATH_SPACE_EM: f32 = 0.18;
+const THICK_MATH_SPACE_EM: f32 = 0.28;
 const STRETCHY_VARIANT_CHARS: [char; 18] = [
     '(',
     ')',
@@ -2625,7 +2626,7 @@ impl<'a> TexParser<'a> {
             row_gap,
         };
         Ok(match env {
-            "matrix" | "array" => table,
+            "matrix" | "array" | "aligned" | "align" => table,
             "pmatrix" => MathExpr::Fenced {
                 open: Some("(".into()),
                 close: Some(")".into()),
@@ -2772,15 +2773,36 @@ impl<'a> TexParser<'a> {
             let escaped = self
                 .bump()
                 .ok_or_else(|| self.error("expected escaped character"))?;
-            return Ok(MathExpr::Operator(escaped.to_string()));
+            return Ok(match escaped {
+                ',' => MathExpr::Space(THIN_MATH_SPACE_EM),
+                ':' => MathExpr::Space(MEDIUM_MATH_SPACE_EM),
+                ';' => MathExpr::Space(THICK_MATH_SPACE_EM),
+                '!' => MathExpr::Space(-THIN_MATH_SPACE_EM),
+                ' ' => MathExpr::Space(MEDIUM_MATH_SPACE_EM),
+                _ => MathExpr::Operator(escaped.to_string()),
+            });
         }
         match name.as_str() {
-            "frac" => {
+            "frac" | "tfrac" | "dfrac" => {
                 let numerator = Arc::new(self.parse_required_group()?);
                 let denominator = Arc::new(self.parse_required_group()?);
                 Ok(MathExpr::Fraction {
                     numerator,
                     denominator,
+                })
+            }
+            "binom" => {
+                let numerator = self.parse_required_group()?;
+                let denominator = self.parse_required_group()?;
+                Ok(MathExpr::Fenced {
+                    open: Some("(".into()),
+                    close: Some(")".into()),
+                    body: Arc::new(MathExpr::Table {
+                        rows: vec![vec![numerator], vec![denominator]],
+                        column_alignments: Vec::new(),
+                        column_gap: None,
+                        row_gap: None,
+                    }),
                 })
             }
             "sqrt" => {
@@ -2831,7 +2853,7 @@ impl<'a> TexParser<'a> {
                 let env = self.parse_environment_name()?;
                 match env.as_str() {
                     "matrix" | "pmatrix" | "bmatrix" | "Bmatrix" | "vmatrix" | "Vmatrix"
-                    | "cases" => {
+                    | "cases" | "aligned" | "align" => {
                         let options = default_tex_table_options(&env);
                         self.parse_table_environment(
                             &env,
@@ -2849,15 +2871,22 @@ impl<'a> TexParser<'a> {
             }
             "end" => Err(self.error("unexpected \\end")),
             "text" | "mathrm" | "operatorname" => Ok(MathExpr::Text(self.parse_text_group()?)),
+            "mathbf" | "boldsymbol" | "mathcal" => self.parse_required_group(),
+            "mathbb" => {
+                let expr = self.parse_required_group()?;
+                Ok(map_mathbb_expr(expr))
+            }
             "cdot" => Ok(MathExpr::Operator("·".into())),
             "times" => Ok(MathExpr::Operator("×".into())),
             "div" => Ok(MathExpr::Operator("÷".into())),
             "pm" => Ok(MathExpr::Operator("±".into())),
+            "approx" => Ok(MathExpr::Operator("≈".into())),
             "le" | "leq" => Ok(MathExpr::Operator("≤".into())),
             "ge" | "geq" => Ok(MathExpr::Operator("≥".into())),
             "ne" | "neq" => Ok(MathExpr::Operator("≠".into())),
             "to" | "rightarrow" => Ok(MathExpr::Operator("→".into())),
             "leftarrow" => Ok(MathExpr::Operator("←".into())),
+            "mid" => Ok(MathExpr::Operator("|".into())),
             "sum" => Ok(MathExpr::Operator("∑".into())),
             "prod" => Ok(MathExpr::Operator("∏".into())),
             "int" => Ok(MathExpr::Operator("∫".into())),
@@ -2865,6 +2894,8 @@ impl<'a> TexParser<'a> {
             "cap" => Ok(MathExpr::Operator("∩".into())),
             "bigcup" => Ok(MathExpr::Operator("⋃".into())),
             "bigcap" => Ok(MathExpr::Operator("⋂".into())),
+            "nabla" => Ok(MathExpr::Operator("∇".into())),
+            "partial" => Ok(MathExpr::Identifier("∂".into())),
             "infty" => Ok(MathExpr::Identifier("∞".into())),
             "pi" => Ok(MathExpr::Identifier("π".into())),
             "theta" => Ok(MathExpr::Identifier("θ".into())),
@@ -2874,12 +2905,36 @@ impl<'a> TexParser<'a> {
             "alpha" => Ok(MathExpr::Identifier("α".into())),
             "beta" => Ok(MathExpr::Identifier("β".into())),
             "gamma" => Ok(MathExpr::Identifier("γ".into())),
+            "delta" => Ok(MathExpr::Identifier("δ".into())),
+            "varepsilon" | "epsilon" => Ok(MathExpr::Identifier("ε".into())),
+            "zeta" => Ok(MathExpr::Identifier("ζ".into())),
+            "eta" => Ok(MathExpr::Identifier("η".into())),
+            "iota" => Ok(MathExpr::Identifier("ι".into())),
+            "kappa" => Ok(MathExpr::Identifier("κ".into())),
+            "nu" => Ok(MathExpr::Identifier("ν".into())),
+            "xi" => Ok(MathExpr::Identifier("ξ".into())),
+            "rho" => Ok(MathExpr::Identifier("ρ".into())),
+            "tau" => Ok(MathExpr::Identifier("τ".into())),
+            "upsilon" => Ok(MathExpr::Identifier("υ".into())),
+            "phi" | "varphi" => Ok(MathExpr::Identifier("φ".into())),
+            "chi" => Ok(MathExpr::Identifier("χ".into())),
+            "psi" => Ok(MathExpr::Identifier("ψ".into())),
+            "omega" => Ok(MathExpr::Identifier("ω".into())),
+            "Gamma" => Ok(MathExpr::Identifier("Γ".into())),
             "Delta" => Ok(MathExpr::Identifier("Δ".into())),
             "Omega" => Ok(MathExpr::Identifier("Ω".into())),
+            "hbar" => Ok(MathExpr::Identifier("ℏ".into())),
+            "dagger" => Ok(MathExpr::Operator("†".into())),
+            "Re" => Ok(MathExpr::Identifier("ℜ".into())),
+            "ldots" => Ok(MathExpr::Text("...".into())),
+            "cdots" => Ok(MathExpr::Operator("⋯".into())),
+            "langle" => Ok(MathExpr::Operator("⟨".into())),
+            "rangle" => Ok(MathExpr::Operator("⟩".into())),
             "emptyset" | "varnothing" => Ok(MathExpr::Identifier("∅".into())),
-            "sin" | "cos" | "tan" | "log" | "ln" | "lim" | "max" | "min" | "sup" | "inf" => {
-                Ok(MathExpr::Text(name))
-            }
+            "sin" | "cos" | "tan" | "log" | "ln" | "lim" | "max" | "min" | "sup" | "inf"
+            | "det" | "exp" => Ok(MathExpr::Text(name)),
+            "quad" => Ok(MathExpr::Space(1.0)),
+            "qquad" => Ok(MathExpr::Space(2.0)),
             _ => Ok(MathExpr::Identifier(format!("\\{name}"))),
         }
     }
@@ -3090,6 +3145,51 @@ fn delimiter_command(command: &str) -> Option<String> {
     Some(delimiter.to_string())
 }
 
+fn map_mathbb_expr(expr: MathExpr) -> MathExpr {
+    match expr {
+        MathExpr::Identifier(text) => MathExpr::Identifier(map_mathbb_text(&text)),
+        MathExpr::Text(text) => MathExpr::Text(map_mathbb_text(&text)),
+        MathExpr::Row(children) => MathExpr::row(children.into_iter().map(map_mathbb_expr)),
+        other => other,
+    }
+}
+
+fn map_mathbb_text(text: &str) -> String {
+    text.chars().map(map_mathbb_char).collect()
+}
+
+fn map_mathbb_char(ch: char) -> char {
+    match ch {
+        'A' => '𝔸',
+        'B' => '𝔹',
+        'C' => 'ℂ',
+        'D' => '𝔻',
+        'E' => '𝔼',
+        'F' => '𝔽',
+        'G' => '𝔾',
+        'H' => 'ℍ',
+        'I' => '𝕀',
+        'J' => '𝕁',
+        'K' => '𝕂',
+        'L' => '𝕃',
+        'M' => '𝕄',
+        'N' => 'ℕ',
+        'O' => '𝕆',
+        'P' => 'ℙ',
+        'Q' => 'ℚ',
+        'R' => 'ℝ',
+        'S' => '𝕊',
+        'T' => '𝕋',
+        'U' => '𝕌',
+        'V' => '𝕍',
+        'W' => '𝕎',
+        'X' => '𝕏',
+        'Y' => '𝕐',
+        'Z' => 'ℤ',
+        _ => ch,
+    }
+}
+
 struct TexTableOptions {
     column_alignments: Vec<MathColumnAlignment>,
     column_gap: Option<f32>,
@@ -3101,6 +3201,11 @@ fn default_tex_table_options(env: &str) -> TexTableOptions {
         "cases" => TexTableOptions {
             column_alignments: vec![MathColumnAlignment::Left, MathColumnAlignment::Left],
             column_gap: Some(CASES_COL_GAP_EM),
+            row_gap: None,
+        },
+        "aligned" | "align" => TexTableOptions {
+            column_alignments: vec![MathColumnAlignment::Right, MathColumnAlignment::Left],
+            column_gap: Some(MEDIUM_MATH_SPACE_EM),
             row_gap: None,
         },
         _ => TexTableOptions {
@@ -3149,6 +3254,71 @@ mod tests {
         };
         assert_eq!(*source, expected);
         body
+    }
+
+    fn assert_no_unknown_tex_commands(expr: &MathExpr) {
+        match expr {
+            MathExpr::Identifier(text) => {
+                assert!(
+                    !text.starts_with('\\'),
+                    "unexpected raw TeX command identifier {text:?} in {expr:?}"
+                );
+            }
+            MathExpr::Row(children) => {
+                for child in children {
+                    assert_no_unknown_tex_commands(child);
+                }
+            }
+            MathExpr::Fraction {
+                numerator,
+                denominator,
+            } => {
+                assert_no_unknown_tex_commands(numerator);
+                assert_no_unknown_tex_commands(denominator);
+            }
+            MathExpr::Sqrt(child) => assert_no_unknown_tex_commands(child),
+            MathExpr::Root { base, index } => {
+                assert_no_unknown_tex_commands(base);
+                assert_no_unknown_tex_commands(index);
+            }
+            MathExpr::Scripts { base, sub, sup } => {
+                assert_no_unknown_tex_commands(base);
+                if let Some(sub) = sub {
+                    assert_no_unknown_tex_commands(sub);
+                }
+                if let Some(sup) = sup {
+                    assert_no_unknown_tex_commands(sup);
+                }
+            }
+            MathExpr::UnderOver { base, under, over } => {
+                assert_no_unknown_tex_commands(base);
+                if let Some(under) = under {
+                    assert_no_unknown_tex_commands(under);
+                }
+                if let Some(over) = over {
+                    assert_no_unknown_tex_commands(over);
+                }
+            }
+            MathExpr::Accent { base, accent, .. } => {
+                assert_no_unknown_tex_commands(base);
+                assert_no_unknown_tex_commands(accent);
+            }
+            MathExpr::Fenced { body, .. } => assert_no_unknown_tex_commands(body),
+            MathExpr::Table { rows, .. } => {
+                for row in rows {
+                    for cell in row {
+                        assert_no_unknown_tex_commands(cell);
+                    }
+                }
+            }
+            MathExpr::Source { body, .. } => assert_no_unknown_tex_commands(body),
+            MathExpr::Operator(_)
+            | MathExpr::OperatorWithMetadata { .. }
+            | MathExpr::Text(_)
+            | MathExpr::Number(_)
+            | MathExpr::Space(_)
+            | MathExpr::Error(_) => {}
+        }
     }
 
     #[test]
@@ -3628,6 +3798,75 @@ mod tests {
             ),
             "expected supported symbol commands in {children:?}"
         );
+    }
+
+    #[test]
+    fn parses_aligned_tex_environment() {
+        let expr = parse_tex(
+            r"\begin{aligned}
+(a + b)^2 &= a^2 + 2ab + b^2 \\
+(a - b)^2 &= a^2 - 2ab + b^2 \\
+(a+b)(a-b) &= a^2 - b^2
+\end{aligned}",
+        )
+        .expect("valid aligned environment");
+
+        let MathExpr::Table {
+            rows,
+            column_alignments,
+            ..
+        } = expr
+        else {
+            panic!("expected aligned environment to parse as table");
+        };
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|row| row.len() == 2), "rows = {rows:?}");
+        assert_eq!(
+            column_alignments,
+            vec![MathColumnAlignment::Right, MathColumnAlignment::Left]
+        );
+    }
+
+    #[test]
+    fn parses_markdown_math_stress_tex_commands() {
+        let formulas = [
+            r"x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}",
+            r"\int_{-\infty}^{\infty} e^{-x^2}\, dx = \sqrt{\pi}",
+            r"\hat{f}(\xi) = \int_{-\infty}^{\infty} f(x)\, e^{-2\pi i x \xi}\, dx",
+            r"\nabla \cdot \mathbf{E} = \frac{\rho}{\varepsilon_0}",
+            r"\nabla \times \mathbf{B} = \mu_0 \mathbf{J} + \mu_0 \varepsilon_0 \frac{\partial \mathbf{E}}{\partial t}",
+            r"\begin{aligned}
+S &= \sum_{k=0}^{n} r^k = 1 + r + r^2 + \cdots + r^n \\
+rS &= r + r^2 + \cdots + r^{n+1} \\
+S - rS &= 1 - r^{n+1} \\
+S &= \frac{1 - r^{n+1}}{1 - r}, \quad r \neq 1
+\end{aligned}",
+            r"R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}",
+            r"\det(A) = \begin{vmatrix} a & b & c \\ d & e & f \\ g & h & i \end{vmatrix}",
+            r"f'(x) = \lim_{h \to 0} \frac{f(x+h) - f(x)}{h}",
+            r"P(A \mid B) = \frac{P(B \mid A)\, P(A)}{P(B)}",
+            r"f(x \mid \mu, \sigma^2) = \frac{1}{\sqrt{2\pi\sigma^2}}",
+            r"\mathbb{E}[X] = \int_{-\infty}^{\infty} x\, f(x)\, dx, \qquad \operatorname{Var}(X) = \mathbb{E}[X^2] - (\mathbb{E}[X])^2",
+            r"( x + y )^n = \sum_{k=0}^{n} \binom{n}{k} x^{n-k} y^k",
+            r"\varphi(n) = n \prod_{p \mid n} \left(1 - \frac{1}{p}\right)",
+            r"A = A^\dagger",
+            r"E_n = \frac{n^2 \pi^2 \hbar^2}{2mL^2}",
+            r"|\langle \mathbf{u}, \mathbf{v} \rangle|^2 \leq \langle \mathbf{u}, \mathbf{u} \rangle \cdot \langle \mathbf{v}, \mathbf{v} \rangle",
+            r"\alpha,\ \beta,\ \gamma,\ \delta,\ \varepsilon,\ \zeta,\ \eta,\ \theta,\ \iota,\ \kappa,\ \lambda,\ \mu,\ \nu,\ \xi,\ \pi,\ \rho,\ \sigma,\ \tau,\ \upsilon,\ \phi,\ \chi,\ \psi,\ \omega",
+            r"\Gamma(n) = (n-1)! \qquad \Gamma\!\left(\tfrac{1}{2}\right) = \sqrt{\pi}",
+            r"\zeta(s) = \sum_{n=1}^{\infty} \frac{1}{n^s}, \quad \Re(s) > 1",
+        ];
+
+        for formula in formulas {
+            let expr = parse_tex(formula)
+                .unwrap_or_else(|err| panic!("failed to parse {formula:?}: {}", err.message));
+            assert_no_unknown_tex_commands(&expr);
+            let layout = layout_math(&expr, 16.0, MathDisplay::Block);
+            assert!(
+                layout.width.is_finite() && layout.height().is_finite(),
+                "layout should be finite for {formula:?}: {layout:?}"
+            );
+        }
     }
 
     #[test]
