@@ -110,6 +110,7 @@ where
         .style_profile(StyleProfile::Solid)
         .metrics_role(MetricsRole::MenuItem)
         .focusable()
+        .focus_ring_inside()
         .cursor(Cursor::Pointer)
         .children(children)
         .fill(tokens::POPOVER)
@@ -207,6 +208,10 @@ mod tests {
 
         assert_eq!(item.kind, Kind::Custom("dropdown_menu_item"));
         assert_eq!(item.metrics_role, Some(MetricsRole::MenuItem));
+        assert_eq!(
+            item.focus_ring_placement,
+            crate::tree::FocusRingPlacement::Inside
+        );
         assert_eq!(item.axis, Axis::Row);
         assert_eq!(item.align, Align::Center);
         assert_eq!(item.children.len(), 3);

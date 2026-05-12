@@ -4,9 +4,9 @@
 // shadow, focus ring. The quad is sized to `rect` (the painted rect,
 // possibly outset for `paint_overflow`); SDF + outline use `inner_rect`
 // so the rect stays anchored to the layout bounds even when the
-// painted area extends outward. Drop shadow + focus ring both render
-// in the band between inner_rect and rect when their respective
-// uniforms are non-zero — `draw_ops` widens the painted rect for both.
+// painted area extends outward. Drop shadow and outside focus rings render
+// in the band between inner_rect and rect when their respective uniforms are
+// non-zero; negative focus_width draws the focus ring inside inner_rect.
 //
 // Coordinate system: vertex positions arrive as a unit quad with uv 0..1.
 // Per-instance `rect` (xy, wh) places it in pixel space; the vertex
@@ -164,13 +164,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         );
     }
 
-    // Focus ring: a band of width `focus_width` centered just outside
-    // the layout rect's boundary, so it lives in the paint_overflow
-    // halo. Alpha is the eased per-frame focus envelope (already
-    // baked into focus_color.a by draw_ops).
-    if (focus_width > 0.0 && in.focus_color.a > 0.0) {
-        let ring_center = focus_width * 0.5;
-        let ring_d = abs(d - ring_center) - focus_width * 0.5;
+    // Focus ring: positive `focus_width` draws just outside the layout
+    // rect's boundary, in the paint_overflow halo. Negative `focus_width`
+    // draws the same-width band just inside the boundary for dense flush
+    // rows. Alpha is the eased per-frame focus envelope (already baked into
+    // focus_color.a by draw_ops).
+    if (focus_width != 0.0 && in.focus_color.a > 0.0) {
+        let ring_width = abs(focus_width);
+        let ring_center = select(-ring_width * 0.5, ring_width * 0.5, focus_width > 0.0);
+        let ring_d = abs(d - ring_center) - ring_width * 0.5;
         let ring_alpha = (1.0 - smoothstep(-aa, aa, ring_d)) * in.focus_color.a;
         color = vec4<f32>(
             mix(color.rgb, in.focus_color.rgb, ring_alpha),

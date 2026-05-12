@@ -267,6 +267,24 @@ impl Showcase {
         }
     }
 
+    /// Construct the Overlays page with the stock dropdown menu open.
+    /// Used by generated fixture bundles so stock floating menus are
+    /// covered by local lint artifacts.
+    pub fn with_overlay_dropdown_open() -> Self {
+        let mut app = Self::with_section(Section::Overlays);
+        app.overlays.dropdown_open = true;
+        app
+    }
+
+    /// Construct the Overlays page with the stock context menu open at
+    /// a viewport point. Used by generated fixture bundles so dense
+    /// menu rows exercise focus-ring clipping/obscuring lint locally.
+    pub fn with_overlay_context_menu_at(x: f32, y: f32) -> Self {
+        let mut app = Self::with_section(Section::Overlays);
+        app.overlays.context_menu_at = Some((x, y));
+        app
+    }
+
     /// Hand the showcase an app-owned GPU texture for the Media page's
     /// `surface()` demo. Pass `None` to clear it (the page falls back
     /// to a placeholder explaining the demo needs a wgpu host).

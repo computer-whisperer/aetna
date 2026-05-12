@@ -356,6 +356,7 @@ pub fn menu_item(label: impl Into<String>) -> El {
         .style_profile(StyleProfile::Solid)
         .metrics_role(MetricsRole::MenuItem)
         .focusable()
+        .focus_ring_inside()
         .child(label)
         .fill(tokens::POPOVER)
         .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
@@ -684,6 +685,10 @@ mod tests {
         let panel = &layer.children[0];
         assert_eq!(panel.kind, Kind::Custom("popover_panel"));
         assert_eq!(panel.children.len(), 2);
+        assert_eq!(
+            panel.children[0].focus_ring_placement,
+            crate::tree::FocusRingPlacement::Inside
+        );
     }
 
     #[test]

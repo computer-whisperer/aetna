@@ -315,26 +315,26 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
                     filter
                 );
             }
-            // Focus ring rides on the same quad: emit a stroke-only
-            // overlay just outside the inner border when the focus
-            // uniforms are set. Per-corner ring corners track the
-            // corresponding inner radii (offset outward by half the
-            // ring width).
-            if focus_width > 0.0
+            // Focus ring rides on the same quad: positive focus_width emits
+            // a stroke-only overlay outside the inner border; negative emits
+            // it inside the border for dense flush rows.
+            if focus_width != 0.0
                 && let Some(fc) = focus_color
                 && fc.a > 0
             {
+                let ring_width = focus_width.abs();
+                let ring_offset = focus_width.signum() * ring_width * 0.5;
                 let ring_inner = Rect::new(
-                    inner.x - focus_width * 0.5,
-                    inner.y - focus_width * 0.5,
-                    inner.w + focus_width,
-                    inner.h + focus_width,
+                    inner.x - ring_offset,
+                    inner.y - ring_offset,
+                    inner.w + ring_offset * 2.0,
+                    inner.h + ring_offset * 2.0,
                 );
                 let ring_radii = [
-                    (radii[0] + focus_width * 0.5).max(0.0),
-                    (radii[1] + focus_width * 0.5).max(0.0),
-                    (radii[2] + focus_width * 0.5).max(0.0),
-                    (radii[3] + focus_width * 0.5).max(0.0),
+                    (radii[0] + ring_offset).max(0.0),
+                    (radii[1] + ring_offset).max(0.0),
+                    (radii[2] + ring_offset).max(0.0),
+                    (radii[3] + ring_offset).max(0.0),
                 ];
                 let ring_uniform = ring_radii[0] == ring_radii[1]
                     && ring_radii[1] == ring_radii[2]
@@ -350,7 +350,7 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
                         ring_inner.h,
                         ring_radii[0],
                         color_svg(fc),
-                        focus_width
+                        ring_width
                     );
                 } else {
                     let _ = writeln!(
@@ -359,7 +359,7 @@ fn emit_quad(s: &mut String, id: &str, rect: Rect, shader: &ShaderHandle, unifor
                         esc(id),
                         rounded_rect_path(ring_inner, ring_radii),
                         color_svg(fc),
-                        focus_width
+                        ring_width
                     );
                 }
             }

@@ -361,8 +361,8 @@ fn push_node(
         uniforms.insert("inner_rect", inner_rect_uniform(inner_painted_rect));
         // Focus ring rides on the node's own quad: the library injects a
         // `focus_color` (with the eased focus alpha already multiplied
-        // into its rgba) plus `focus_width`, and `stock::rounded_rect`
-        // draws the ring in the `paint_overflow` band when alpha > 0.
+        // into its rgba) plus `focus_width`. Positive width means outside
+        // the layout rect; negative means an inside ring for dense flush rows.
         // Custom shaders read the same uniforms and decide for
         // themselves what to paint — the symmetry rule.
         if n.focusable && focus_ring_alpha > 0.0 {
@@ -374,7 +374,11 @@ fn push_node(
                 "focus_color",
                 UniformValue::Color(base.with_alpha(eased_alpha)),
             );
-            uniforms.insert("focus_width", UniformValue::F32(tokens::RING_WIDTH));
+            let focus_width = match n.focus_ring_placement {
+                FocusRingPlacement::Outside => tokens::RING_WIDTH,
+                FocusRingPlacement::Inside => -tokens::RING_WIDTH,
+            };
+            uniforms.insert("focus_width", UniformValue::F32(focus_width));
         }
         theme.apply_surface_uniforms(n.surface_role, &mut uniforms);
         // Read shadow + stroke *after* theme has had its say — surface
@@ -392,7 +396,10 @@ fn push_node(
         } else {
             0.0
         };
-        let focus_width = if n.focusable && focus_ring_alpha > 0.0 {
+        let focus_width = if n.focusable
+            && focus_ring_alpha > 0.0
+            && matches!(n.focus_ring_placement, FocusRingPlacement::Outside)
+        {
             tokens::RING_WIDTH
         } else {
             0.0
@@ -4002,6 +4009,37 @@ mod tests {
         let combined =
             super::combined_overflow(crate::tree::Sides::zero(), 0.0, 0.0, tokens::RING_WIDTH);
         assert_eq!(combined, crate::tree::Sides::all(tokens::RING_WIDTH));
+    }
+
+    #[test]
+    fn inside_focus_ring_does_not_outset_painted_rect() {
+        use crate::layout::layout;
+
+        let mut tree = column([crate::menu_item("Open")
+            .key("item")
+            .width(Size::Fixed(100.0))])
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let target = state.target_of_key(&tree, "item").expect("item target");
+        state.focused = Some(target);
+        state.focus_visible = true;
+        state.apply_to_state();
+        state.set_animation_mode(crate::state::AnimationMode::Settled);
+        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+
+        let item_rect = state.rect_of_key(&tree, "item").expect("item rect");
+        let ops = draw_ops(&tree, &state);
+        let DrawOp::Quad { rect, uniforms, .. } =
+            find_quad(&ops, "menu_item[item]").expect("menu item quad")
+        else {
+            panic!("expected menu item quad");
+        };
+        assert_eq!(*rect, item_rect);
+        assert_eq!(
+            uniforms.get("focus_width"),
+            Some(&UniformValue::F32(-tokens::RING_WIDTH))
+        );
     }
 
     #[test]

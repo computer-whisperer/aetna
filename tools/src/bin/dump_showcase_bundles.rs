@@ -5,7 +5,8 @@
 //!
 //! Usage: `cargo run -p aetna-tools --bin dump_showcase_bundles`
 //!
-//! Output: `crates/aetna-fixtures/out/showcase_<section>.*`.
+//! Output: `crates/aetna-fixtures/out/showcase_<section>.*` plus
+//! named stateful scenes such as open overlay menus.
 
 use std::path::PathBuf;
 
@@ -19,8 +20,8 @@ fn main() -> std::io::Result<()> {
     let viewport = Rect::new(0.0, 0.0, 900.0, 640.0);
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../crates/aetna-fixtures/out");
 
-    for section in Section::ALL {
-        let mut app = Showcase::with_section(section);
+    for scene in showcase_bundle_scenes() {
+        let mut app = scene.app;
         app.before_build();
         let theme = app.theme();
         let cx = BuildCx::new(&theme);
@@ -28,7 +29,7 @@ fn main() -> std::io::Result<()> {
 
         let bundle = render_bundle(&mut tree, viewport);
 
-        let name = format!("showcase_{}", section.slug());
+        let name = scene.name;
         let written = write_bundle(&bundle, &out_dir, &name)?;
         for p in &written {
             println!("wrote {}", p.display());
@@ -39,4 +40,55 @@ fn main() -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+struct ShowcaseBundleScene {
+    name: String,
+    app: Showcase,
+}
+
+fn showcase_bundle_scenes() -> Vec<ShowcaseBundleScene> {
+    let mut scenes = Section::ALL
+        .into_iter()
+        .map(|section| ShowcaseBundleScene {
+            name: format!("showcase_{}", section.slug()),
+            app: Showcase::with_section(section),
+        })
+        .collect::<Vec<_>>();
+
+    scenes.push(ShowcaseBundleScene {
+        name: "showcase_overlays_dropdown".into(),
+        app: Showcase::with_overlay_dropdown_open(),
+    });
+
+    scenes.push(ShowcaseBundleScene {
+        name: "showcase_overlays_context_menu".into(),
+        app: Showcase::with_overlay_context_menu_at(560.0, 450.0),
+    });
+
+    scenes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn showcase_bundle_scenes_include_open_overlay_menus() {
+        let names = showcase_bundle_scenes()
+            .into_iter()
+            .map(|scene| scene.name)
+            .collect::<Vec<_>>();
+
+        assert!(
+            names
+                .iter()
+                .any(|name| name == "showcase_overlays_dropdown")
+        );
+        assert!(
+            names
+                .iter()
+                .any(|name| name == "showcase_overlays_context_menu")
+        );
+    }
 }

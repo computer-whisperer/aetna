@@ -153,9 +153,13 @@ pub fn dropdown_layer(app: &Showcase) -> Option<El> {
                 dropdown_menu_label("Workspace"),
                 dropdown_menu_item_with_icon_and_shortcut(IconName::Plus, "New project", "⌘N")
                     .key("ov-dropdown-action:new"),
+                dropdown_menu_item_with_icon_and_shortcut(IconName::FileText, "Duplicate", "⌘D")
+                    .key("ov-dropdown-action:duplicate"),
                 dropdown_menu_item_with_icon_and_shortcut(IconName::Settings, "Settings", "⌘,")
                     .key("ov-dropdown-action:settings"),
                 dropdown_menu_separator(),
+                dropdown_menu_item_with_icon_and_shortcut(IconName::Search, "Find", "⌘F")
+                    .key("ov-dropdown-action:find"),
                 dropdown_menu_item_with_icon(IconName::X, "Sign out")
                     .key("ov-dropdown-action:signout"),
             ],
@@ -175,6 +179,8 @@ pub fn context_menu_layer(app: &Showcase) -> Option<El> {
                 menu_item("Copy").key("ov-context-action:copy"),
                 menu_item("Cut").key("ov-context-action:cut"),
                 menu_item("Paste").key("ov-context-action:paste"),
+                menu_item("Duplicate").key("ov-context-action:duplicate"),
+                menu_item("Delete").key("ov-context-action:delete"),
             ],
         )
     })

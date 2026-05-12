@@ -15,6 +15,17 @@ use super::layout_types::{Align, Axis, Justify, Size};
 use super::semantics::{Kind, Source, SurfaceRole};
 use super::text_types::{FontFamily, FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
 
+/// Where the stock focus ring is drawn relative to the focusable node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FocusRingPlacement {
+    /// Draw the ring outside the layout rect, using the paint-overflow band.
+    #[default]
+    Outside,
+    /// Draw the ring just inside the layout rect. Use for tightly-stacked
+    /// focusable rows where adjacent siblings intentionally share edges.
+    Inside,
+}
+
 /// The core tree node.
 ///
 /// Construct via the component builders (`text`, `button`, `card`,
@@ -44,6 +55,7 @@ pub struct El {
     /// the visible control. Ancestor clips still bound hit-testing.
     pub hit_overflow: Sides,
     pub focusable: bool,
+    pub focus_ring_placement: FocusRingPlacement,
     /// Show the focus ring on this node even when focus arrived via
     /// pointer (i.e. the runtime's `focus_visible` is `false`). Default
     /// behavior matches the web platform's `:focus-visible` heuristic

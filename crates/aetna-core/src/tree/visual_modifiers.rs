@@ -6,7 +6,7 @@ use crate::style::StyleProfile;
 
 use super::color::Color;
 use super::geometry::{Corners, Sides};
-use super::node::El;
+use super::node::{El, FocusRingPlacement};
 use super::semantics::SurfaceRole;
 
 impl El {
@@ -78,6 +78,22 @@ impl El {
     /// hit-testing still uses the layout rect.
     pub fn paint_overflow(mut self, outset: impl Into<Sides>) -> Self {
         self.paint_overflow = outset.into();
+        self
+    }
+
+    /// Draw the stock focus ring just inside this node's layout rect.
+    ///
+    /// The default focus ring is outside the rect so it does not reduce
+    /// usable control area. Inside rings are for dense, flush stacks such as
+    /// menu rows, where adding gaps would change the intended visual recipe.
+    pub fn focus_ring_inside(mut self) -> Self {
+        self.focus_ring_placement = FocusRingPlacement::Inside;
+        self
+    }
+
+    /// Draw the stock focus ring outside this node's layout rect.
+    pub fn focus_ring_outside(mut self) -> Self {
+        self.focus_ring_placement = FocusRingPlacement::Outside;
         self
     }
 

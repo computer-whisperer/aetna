@@ -49,7 +49,9 @@ pub struct QuadInstance {
     /// Vertex shader reads at `@location(3)`.
     pub slot_b: [f32; 4],
     /// `vec_c` slot — for stock::rounded_rect, this is
-    /// `(stroke_width, max_radius, shadow, focus_width)`. `max_radius`
+    /// `(stroke_width, max_radius, shadow, focus_width)`. Positive
+    /// `focus_width` draws outside the layout rect; negative draws inside.
+    /// `max_radius`
     /// is the largest of the four per-corner radii (in `slot_e`); it
     /// stays here so custom shaders that read scalar `slot_c.y` as
     /// the radius keep working when corners are uniform. Vertex

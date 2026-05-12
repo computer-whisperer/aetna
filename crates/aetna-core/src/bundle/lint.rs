@@ -716,8 +716,11 @@ fn walk(
     }
 }
 
-fn focus_ring_overflow() -> Sides {
-    Sides::all(crate::tokens::RING_WIDTH)
+fn focus_ring_overflow(n: &El) -> Sides {
+    match n.focus_ring_placement {
+        crate::tree::FocusRingPlacement::Outside => Sides::all(crate::tokens::RING_WIDTH),
+        crate::tree::FocusRingPlacement::Inside => Sides::zero(),
+    }
 }
 
 fn has_hit_overflow(sides: Sides) -> bool {
@@ -1005,7 +1008,14 @@ fn check_focus_ring_obscured(
     r: &mut LintReport,
     blame: Source,
 ) {
-    let ring_overflow = focus_ring_overflow();
+    let ring_overflow = focus_ring_overflow(n);
+    if ring_overflow.left <= 0.5
+        && ring_overflow.right <= 0.5
+        && ring_overflow.top <= 0.5
+        && ring_overflow.bottom <= 0.5
+    {
+        return;
+    }
     let band = n_rect.outset(ring_overflow);
 
     // 1. Clipped by ancestor scissor. For scrollable clips, only the
@@ -2363,6 +2373,29 @@ mod tests {
                     && f.message.contains("right")
             }),
             "expected an occlusion finding on the right edge\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn focus_ring_lint_allows_flush_inside_ring_menu_items() {
+        let mut root = crate::tree::column([
+            crate::menu_item("Checkout").key("checkout"),
+            crate::menu_item("Merge").key("merge"),
+            crate::menu_item("Delete").key("delete"),
+        ])
+        .gap(0.0)
+        .width(Size::Fixed(180.0));
+        let mut state = UiState::new();
+        layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 220.0, 140.0));
+        let report = lint(&root, &state);
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::FocusRingObscured),
+            "{}",
             report.text()
         );
     }
