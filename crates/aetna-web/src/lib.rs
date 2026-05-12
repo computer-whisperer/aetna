@@ -48,12 +48,14 @@ pub const VIEWPORT: Rect = Rect {
 #[cfg(target_arch = "wasm32")]
 mod web_entry {
     use std::cell::RefCell;
+    use std::collections::VecDeque;
     use std::rc::Rc;
     use std::sync::Arc;
 
     use aetna_core::{
         App, BuildCx, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, Palette, PointerButton,
-        Rect, UiKey,
+        Rect, UiEvent, UiEventKind, UiKey, clipboard,
+        widgets::text_input::{self, ClipboardKind},
     };
     use aetna_wgpu::{PrepareTimings, Runner};
 
@@ -344,6 +346,17 @@ mod web_entry {
         /// task that finishes after `Host::new`; the cell is read
         /// each frame in the RedrawRequested arm.
         backend: Rc<RefCell<&'static str>>,
+        /// Browser `paste` events carry trusted clipboard text without
+        /// the Firefox permission menu used by `navigator.clipboard.readText`.
+        /// The callback enqueues text here, then requests a redraw; the
+        /// RedrawRequested arm converts it into a focused Aetna `TextInput`.
+        pending_clipboard_text: Rc<RefCell<VecDeque<String>>>,
+        /// Web browsers do not expose the X11/Wayland primary-selection
+        /// clipboard. Keep an app-local approximation so Aetna selection
+        /// highlight can still feed middle-click paste inside the canvas.
+        primary_selection: String,
+        /// Held for its drop side-effects: the JS paste callback object.
+        _paste_closure: Option<Closure<dyn FnMut(web_sys::ClipboardEvent)>>,
         /// Held for its drop side-effects: the JS callback object
         /// that ResizeObserver fires. Dropping this disconnects the
         /// observer.
@@ -397,6 +410,9 @@ mod web_entry {
                 frame_index: 0,
                 last_prepared_size: None,
                 backend: Rc::new(RefCell::new("?")),
+                pending_clipboard_text: Rc::new(RefCell::new(VecDeque::new())),
+                primary_selection: String::new(),
+                _paste_closure: None,
                 _resize_closure: None,
                 _resize_observer: None,
             }
@@ -449,7 +465,14 @@ mod web_entry {
             // canvas backing buffer in lockstep. The ResizeObserver
             // installed below carries the canvas through later layout
             // changes; we don't depend on winit dispatching `Resized`.
-            let attrs = Window::default_attributes().with_canvas(Some(canvas.clone()));
+            let attrs = Window::default_attributes()
+                .with_canvas(Some(canvas.clone()))
+                // Browser paste, including Linux middle-click primary
+                // paste, is delivered as a DOM ClipboardEvent. winit's
+                // default web preventDefault path suppresses those
+                // browser-side events, so Aetna handles clipboard
+                // suppression at the document paste listener instead.
+                .with_prevent_default(false);
             let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
             // Force the canvas backing buffer to match the canvas's
@@ -497,6 +520,33 @@ mod web_entry {
             observer.observe(&canvas);
             self._resize_closure = Some(resize_closure);
             self._resize_observer = Some(observer);
+
+            let pending_clipboard_text = self.pending_clipboard_text.clone();
+            let window_for_paste = window.clone();
+            let paste_closure: Closure<dyn FnMut(web_sys::ClipboardEvent)> =
+                Closure::new(move |event: web_sys::ClipboardEvent| {
+                    let Some(data) = event.clipboard_data() else {
+                        log::warn!("aetna-web: paste event had no clipboardData");
+                        return;
+                    };
+                    let Ok(text) = data.get_data("text/plain") else {
+                        log::warn!("aetna-web: paste event could not read text/plain");
+                        return;
+                    };
+                    if text.is_empty() {
+                        return;
+                    }
+                    event.prevent_default();
+                    event.stop_propagation();
+                    pending_clipboard_text.borrow_mut().push_back(text);
+                    window_for_paste.request_redraw();
+                });
+            canvas
+                .owner_document()
+                .expect("canvas has no owner document")
+                .add_event_listener_with_callback("paste", paste_closure.as_ref().unchecked_ref())
+                .expect("add paste listener");
+            self._paste_closure = Some(paste_closure);
 
             // Allow both browser backends. wgpu's synchronous
             // Instance::new() can't safely decide this: if
@@ -795,7 +845,12 @@ mod web_entry {
                     self.last_pointer = Some((lx, ly));
                     let moved = gfx.renderer.pointer_moved(lx, ly);
                     for event in moved.events {
-                        self.app.on_event(event);
+                        dispatch_app_event(
+                            &mut self.app,
+                            event,
+                            gfx.renderer.ui_state(),
+                            &mut self.primary_selection,
+                        );
                     }
                     if moved.needs_redraw {
                         self.next_trigger = FrameTrigger::Pointer;
@@ -806,7 +861,12 @@ mod web_entry {
                 WindowEvent::CursorLeft { .. } => {
                     self.last_pointer = None;
                     for event in gfx.renderer.pointer_left() {
-                        self.app.on_event(event);
+                        dispatch_app_event(
+                            &mut self.app,
+                            event,
+                            gfx.renderer.ui_state(),
+                            &mut self.primary_selection,
+                        );
                     }
                     self.next_trigger = FrameTrigger::Pointer;
                     gfx.window.request_redraw();
@@ -823,7 +883,12 @@ mod web_entry {
                 WindowEvent::HoveredFile(path) => {
                     let (lx, ly) = self.last_pointer.unwrap_or((0.0, 0.0));
                     for event in gfx.renderer.file_hovered(path, lx, ly) {
-                        self.app.on_event(event);
+                        dispatch_app_event(
+                            &mut self.app,
+                            event,
+                            gfx.renderer.ui_state(),
+                            &mut self.primary_selection,
+                        );
                     }
                     self.next_trigger = FrameTrigger::Pointer;
                     gfx.window.request_redraw();
@@ -831,7 +896,12 @@ mod web_entry {
 
                 WindowEvent::HoveredFileCancelled => {
                     for event in gfx.renderer.file_hover_cancelled() {
-                        self.app.on_event(event);
+                        dispatch_app_event(
+                            &mut self.app,
+                            event,
+                            gfx.renderer.ui_state(),
+                            &mut self.primary_selection,
+                        );
                     }
                     self.next_trigger = FrameTrigger::Pointer;
                     gfx.window.request_redraw();
@@ -840,7 +910,12 @@ mod web_entry {
                 WindowEvent::DroppedFile(path) => {
                     let (lx, ly) = self.last_pointer.unwrap_or((0.0, 0.0));
                     for event in gfx.renderer.file_dropped(path, lx, ly) {
-                        self.app.on_event(event);
+                        dispatch_app_event(
+                            &mut self.app,
+                            event,
+                            gfx.renderer.ui_state(),
+                            &mut self.primary_selection,
+                        );
                     }
                     self.next_trigger = FrameTrigger::Pointer;
                     gfx.window.request_redraw();
@@ -856,14 +931,26 @@ mod web_entry {
                     match state {
                         ElementState::Pressed => {
                             for event in gfx.renderer.pointer_down(lx, ly, button) {
-                                self.app.on_event(event);
+                                dispatch_app_event(
+                                    &mut self.app,
+                                    event,
+                                    gfx.renderer.ui_state(),
+                                    &mut self.primary_selection,
+                                );
                             }
                             self.next_trigger = FrameTrigger::Pointer;
                             gfx.window.request_redraw();
                         }
                         ElementState::Released => {
                             for event in gfx.renderer.pointer_up(lx, ly, button) {
-                                self.app.on_event(event);
+                                let event =
+                                    attach_primary_selection_text(event, &self.primary_selection);
+                                dispatch_app_event(
+                                    &mut self.app,
+                                    event,
+                                    gfx.renderer.ui_state(),
+                                    &mut self.primary_selection,
+                                );
                             }
                             self.next_trigger = FrameTrigger::Pointer;
                             gfx.window.request_redraw();
@@ -901,20 +988,64 @@ mod web_entry {
                 } => {
                     if let Some(key) = map_key(&key_event.logical_key) {
                         for event in gfx.renderer.key_down(key, self.modifiers, key_event.repeat) {
-                            self.app.on_event(event);
+                            match text_input::clipboard_request(&event) {
+                                Some(ClipboardKind::Copy) => {
+                                    copy_current_selection(
+                                        &self.app,
+                                        gfx.renderer.ui_state(),
+                                        write_clipboard_text,
+                                    );
+                                    dispatch_app_event(
+                                        &mut self.app,
+                                        event,
+                                        gfx.renderer.ui_state(),
+                                        &mut self.primary_selection,
+                                    );
+                                }
+                                Some(ClipboardKind::Cut) => {
+                                    copy_current_selection(
+                                        &self.app,
+                                        gfx.renderer.ui_state(),
+                                        write_clipboard_text,
+                                    );
+                                    dispatch_app_event(
+                                        &mut self.app,
+                                        clipboard::delete_selection_event(event),
+                                        gfx.renderer.ui_state(),
+                                        &mut self.primary_selection,
+                                    );
+                                }
+                                Some(ClipboardKind::Paste) => {}
+                                None => dispatch_app_event(
+                                    &mut self.app,
+                                    event,
+                                    gfx.renderer.ui_state(),
+                                    &mut self.primary_selection,
+                                ),
+                            }
                         }
                     }
                     if let Some(text) = &key_event.text
                         && let Some(event) = gfx.renderer.text_input(text.to_string())
                     {
-                        self.app.on_event(event);
+                        dispatch_app_event(
+                            &mut self.app,
+                            event,
+                            gfx.renderer.ui_state(),
+                            &mut self.primary_selection,
+                        );
                     }
                     self.next_trigger = FrameTrigger::Keyboard;
                     gfx.window.request_redraw();
                 }
                 WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
                     if let Some(event) = gfx.renderer.text_input(text) {
-                        self.app.on_event(event);
+                        dispatch_app_event(
+                            &mut self.app,
+                            event,
+                            gfx.renderer.ui_state(),
+                            &mut self.primary_selection,
+                        );
                     }
                     self.next_trigger = FrameTrigger::Keyboard;
                     gfx.window.request_redraw();
@@ -922,6 +1053,15 @@ mod web_entry {
 
                 WindowEvent::RedrawRequested => {
                     let frame_start = Instant::now();
+                    let clipboard_drained = drain_pending_clipboard_text(
+                        &mut self.app,
+                        &mut gfx.renderer,
+                        &self.pending_clipboard_text,
+                        &mut self.primary_selection,
+                    );
+                    if clipboard_drained {
+                        self.next_trigger = FrameTrigger::Keyboard;
+                    }
                     let frame = match gfx.surface.get_current_texture() {
                         wgpu::CurrentSurfaceTexture::Success(frame)
                         | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -1175,5 +1315,69 @@ mod web_entry {
         } else {
             ((c + 0.055) / 1.055).powf(2.4)
         }
+    }
+
+    fn copy_current_selection<A: App>(
+        app: &A,
+        ui_state: &aetna_core::state::UiState,
+        write_text: impl FnOnce(String),
+    ) {
+        let Some(text) = clipboard::selected_text_for_app(app, ui_state) else {
+            return;
+        };
+        write_text(text);
+    }
+
+    fn write_clipboard_text(text: String) {
+        let Some(window) = web_sys::window() else {
+            log::warn!("aetna-web: no window; clipboard write dropped");
+            return;
+        };
+        let promise = window.navigator().clipboard().write_text(&text);
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(err) = wasm_bindgen_futures::JsFuture::from(promise).await {
+                log::warn!("aetna-web: clipboard writeText failed: {err:?}");
+            }
+        });
+    }
+
+    fn attach_primary_selection_text(mut event: UiEvent, primary_selection: &str) -> UiEvent {
+        if event.kind == UiEventKind::MiddleClick && !primary_selection.is_empty() {
+            event.text = Some(primary_selection.to_string());
+        }
+        event
+    }
+
+    fn dispatch_app_event<A: App>(
+        app: &mut A,
+        event: UiEvent,
+        ui_state: &aetna_core::state::UiState,
+        primary_selection: &mut String,
+    ) {
+        let before = app.selection();
+        app.on_event(event);
+        if app.selection() != before {
+            *primary_selection = clipboard::selected_text_for_app(app, ui_state)
+                .filter(|text| !text.is_empty())
+                .unwrap_or_default();
+        }
+    }
+
+    fn drain_pending_clipboard_text<A: App>(
+        app: &mut A,
+        renderer: &mut Runner,
+        pending_text: &Rc<RefCell<VecDeque<String>>>,
+        primary_selection: &mut String,
+    ) -> bool {
+        let mut drained = false;
+        while let Some(text) = pending_text.borrow_mut().pop_front() {
+            let Some(event) = renderer.text_input(text.clone()) else {
+                continue;
+            };
+            drained = true;
+            let event = clipboard::paste_text_event(event, text);
+            dispatch_app_event(app, event, renderer.ui_state(), primary_selection);
+        }
+        drained
     }
 }

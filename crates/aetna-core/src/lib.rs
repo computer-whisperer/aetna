@@ -40,6 +40,7 @@
 pub mod affine;
 pub mod anim;
 pub mod bundle;
+pub mod clipboard;
 pub mod cursor;
 pub mod draw_ops;
 pub mod event;
@@ -87,6 +88,7 @@ pub use bundle::inspect::dump_tree;
 pub use bundle::lint::{Finding, FindingKind, LintReport, lint};
 pub use bundle::manifest::{draw_ops_text, shader_manifest};
 pub use bundle::svg::svg_from_ops;
+pub use clipboard::{delete_selection_event, paste_text_event, selected_text_for_app};
 pub use cursor::Cursor;
 pub use draw_ops::{draw_ops, draw_ops_with_theme};
 pub use event::{

@@ -49,9 +49,15 @@ js-sys = "0.3"
 # timing breakdown.
 web-time = "1"
 web-sys = { version = "0.3", features = [
+    "Clipboard",
+    "ClipboardEvent",
+    "DataTransfer",
     "Document",
     "Element",
+    "Event",
+    "EventTarget",
     "HtmlCanvasElement",
+    "Navigator",
     # ResizeObserver re-syncs the canvas backing buffer to its CSS
     # box size whenever the layout changes (window resize, devtools
     # toggle, css media-query crossing, etc). Without this the

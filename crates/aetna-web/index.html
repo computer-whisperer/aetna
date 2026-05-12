@@ -26,7 +26,7 @@
          the canvas here keeps the host page minimal — pages that embed
          the wasm bundle elsewhere just need to include a canvas with the
          same id. -->
-    <canvas id="aetna_canvas"></canvas>
+    <canvas id="aetna_canvas" tabindex="0"></canvas>
     <script type="module">
         import init from './pkg/aetna_web.js';
         init().catch(err => {

@@ -46,7 +46,7 @@ use std::{
 use aetna_core::widgets::text_input::{self, ClipboardKind};
 use aetna_core::{
     App, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, PointerButton, Rect, UiEvent,
-    UiEventKind, UiKey,
+    UiEventKind, UiKey, clipboard,
 };
 use aetna_wgpu::{MsaaTarget, Runner};
 
@@ -737,7 +737,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                             gfx.renderer.ui_state(),
                                             self.clipboard.as_mut(),
                                         );
-                                        let delete = delete_selection_event(event);
+                                        let delete = clipboard::delete_selection_event(event);
                                         dispatch_app_event(
                                             &mut self.app,
                                             delete,
@@ -747,9 +747,10 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                         );
                                     }
                                     Some(ClipboardKind::Paste) => {
-                                        if let Some(paste) =
-                                            paste_text_event(event.clone(), self.clipboard.as_mut())
-                                        {
+                                        if let Some(paste) = paste_text_from_clipboard(
+                                            event.clone(),
+                                            self.clipboard.as_mut(),
+                                        ) {
                                             dispatch_app_event(
                                                 &mut self.app,
                                                 paste,
@@ -1187,7 +1188,7 @@ fn copy_current_selection<A: App>(
     ui_state: &aetna_core::state::UiState,
     clipboard: Option<&mut arboard::Clipboard>,
 ) {
-    let Some(text) = selected_text_for_app(app, ui_state) else {
+    let Some(text) = clipboard::selected_text_for_app(app, ui_state) else {
         return;
     };
     let Some(clipboard) = clipboard else {
@@ -1216,7 +1217,7 @@ fn sync_primary_selection<A: App>(
     clipboard: Option<&mut arboard::Clipboard>,
     last_primary: &mut String,
 ) {
-    let text = selected_text_for_app(app, ui_state)
+    let text = clipboard::selected_text_for_app(app, ui_state)
         .filter(|s| !s.is_empty())
         .unwrap_or_default();
     if text == *last_primary {
@@ -1228,27 +1229,12 @@ fn sync_primary_selection<A: App>(
     *last_primary = text;
 }
 
-fn paste_text_event(
-    mut event: UiEvent,
+fn paste_text_from_clipboard(
+    event: UiEvent,
     clipboard: Option<&mut arboard::Clipboard>,
 ) -> Option<UiEvent> {
     let text = clipboard?.get_text().ok()?;
-    event.kind = UiEventKind::TextInput;
-    event.key_press = None;
-    event.text = Some(text);
-    event.modifiers = KeyModifiers::default();
-    event.click_count = 0;
-    Some(event)
-}
-
-fn delete_selection_event(mut event: UiEvent) -> UiEvent {
-    event.modifiers = KeyModifiers::default();
-    if let Some(key_press) = event.key_press.as_mut() {
-        key_press.key = UiKey::Delete;
-        key_press.modifiers = KeyModifiers::default();
-        key_press.repeat = false;
-    }
-    event
+    Some(clipboard::paste_text_event(event, text))
 }
 
 fn attach_primary_selection_text(
@@ -1259,13 +1245,6 @@ fn attach_primary_selection_text(
         event.text = primary::get(clipboard);
     }
     event
-}
-
-fn selected_text_for_app<A: App>(app: &A, ui_state: &aetna_core::state::UiState) -> Option<String> {
-    let theme = app.theme();
-    let cx = aetna_core::BuildCx::new(&theme).with_ui_state(ui_state);
-    let tree = app.build(&cx);
-    aetna_core::selection::selected_text(&tree, &app.selection())
 }
 
 mod primary {
@@ -1353,34 +1332,5 @@ mod tests {
         let r = sel.range.as_ref().expect("range forwarded through wrapper");
         assert_eq!(r.anchor.key, "p");
         assert_eq!(r.head.byte, 5);
-    }
-
-    #[test]
-    fn host_copy_helper_extracts_selected_text_from_app_tree() {
-        struct AppWithSelectableText;
-        impl App for AppWithSelectableText {
-            fn build(&self, _cx: &aetna_core::BuildCx) -> aetna_core::El {
-                aetna_core::widgets::text_input::text_input(
-                    "hello clipboard",
-                    &self.selection(),
-                    "copy-source",
-                )
-            }
-
-            fn selection(&self) -> Selection {
-                Selection {
-                    range: Some(SelectionRange {
-                        anchor: SelectionPoint::new("copy-source", 6),
-                        head: SelectionPoint::new("copy-source", 15),
-                    }),
-                }
-            }
-        }
-
-        let ui_state = aetna_core::state::UiState::new();
-        assert_eq!(
-            selected_text_for_app(&AppWithSelectableText, &ui_state).as_deref(),
-            Some("clipboard")
-        );
     }
 }
