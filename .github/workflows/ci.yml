@@ -58,6 +58,9 @@ jobs:
       - name: Run library tests
         run: cargo test --workspace --lib --locked
 
+      - name: Build showcase bundles and lint
+        run: cargo run -p aetna-tools --bin dump_showcase_bundles --locked
+
   wasm32:
     name: Wasm32 (aetna-web)
     runs-on: ubuntu-latest

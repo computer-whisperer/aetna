@@ -19,6 +19,7 @@ fn main() -> std::io::Result<()> {
     // runs (the bug, if any, won't depend on the viewport size).
     let viewport = Rect::new(0.0, 0.0, 900.0, 640.0);
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../crates/aetna-fixtures/out");
+    let mut finding_count = 0;
 
     for scene in showcase_bundle_scenes() {
         let mut app = scene.app;
@@ -37,8 +38,16 @@ fn main() -> std::io::Result<()> {
         if !bundle.lint.findings.is_empty() {
             eprintln!("\n[{name}] lint findings ({}):", bundle.lint.findings.len());
             eprint!("{}", bundle.lint.text());
+            finding_count += bundle.lint.findings.len();
         }
     }
+
+    if finding_count > 0 {
+        return Err(std::io::Error::other(format!(
+            "showcase bundle lint found {finding_count} finding(s)"
+        )));
+    }
+
     Ok(())
 }
 
