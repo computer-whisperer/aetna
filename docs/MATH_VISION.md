@@ -137,6 +137,9 @@ The supported TeX subset is deliberately small:
 - matrix-like environments lowered to the shared table IR: `matrix`,
   `pmatrix`, `bmatrix`, `Bmatrix`, `vmatrix`, `Vmatrix`, and `cases`
 - `array` environments with simple `l`, `c`, and `r` column alignment specs
+- opt-in TeX source-range wrappers through `parse_tex_with_source_ranges`,
+  currently used as preparatory metadata for future sub-expression selection
+  while leaving `parse_tex` value-stable
 
 The supported MathML subset mirrors that same IR:
 

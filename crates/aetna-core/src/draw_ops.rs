@@ -618,19 +618,33 @@ fn push_node(
             return;
         }
         if let Some(source) = &n.selection_source {
-            push_selection_bands_for_text(
-                n,
-                ui_state,
-                out,
-                glyph_rect,
-                own_scissor,
-                opacity,
-                &source.visible,
-                inline_size,
-                effective_text_family(n),
-                FontWeight::Regular,
-                n.text_wrap,
-            );
+            if matches!(n.text_wrap, TextWrap::NoWrap) {
+                push_selection_bands_for_inlines(
+                    n,
+                    ui_state,
+                    out,
+                    glyph_rect,
+                    own_scissor,
+                    opacity,
+                    &source.visible,
+                    inline_size,
+                    inline_line_height,
+                );
+            } else {
+                push_selection_bands_for_text(
+                    n,
+                    ui_state,
+                    out,
+                    glyph_rect,
+                    own_scissor,
+                    opacity,
+                    &source.visible,
+                    inline_size,
+                    effective_text_family(n),
+                    FontWeight::Regular,
+                    n.text_wrap,
+                );
+            }
         }
         let runs = collect_inline_runs(n, opacity);
         let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
@@ -1630,6 +1644,120 @@ fn inline_paragraph_line_height(node: &El) -> f32 {
         }
     }
     line_height
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_selection_bands_for_inlines(
+    n: &El,
+    ui_state: &UiState,
+    out: &mut Vec<DrawOp>,
+    glyph_rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+    visible: &str,
+    font_size: f32,
+    line_height: f32,
+) {
+    let Some((lo, hi)) = selection_range_for_node(n, ui_state, visible.len()) else {
+        return;
+    };
+
+    let mut lines = vec![InlineSelectionLine::default()];
+    let mut visible_cursor = 0usize;
+    for child in &n.children {
+        match child.kind {
+            Kind::Text => {
+                let Some(text) = child.text.as_deref() else {
+                    continue;
+                };
+                for segment in text.split_inclusive('\n') {
+                    let (segment, hard_break) = segment
+                        .strip_suffix('\n')
+                        .map(|line| (line, true))
+                        .unwrap_or((segment, false));
+                    if !segment.is_empty() {
+                        let line_index = lines.len() - 1;
+                        let x = lines[line_index].width;
+                        let width = inline_selection_run_width(child, segment, font_size);
+                        let end = visible_cursor + segment.len();
+                        lines[line_index].runs.push(InlineSelectionRun {
+                            child: child.clone(),
+                            text: segment.to_string(),
+                            visible: visible_cursor..end,
+                            x,
+                        });
+                        lines[line_index].width += width;
+                        visible_cursor = end;
+                    }
+                    if hard_break {
+                        visible_cursor += "\n".len();
+                        lines.push(InlineSelectionLine::default());
+                    }
+                }
+            }
+            Kind::HardBreak => {
+                visible_cursor += "\n".len();
+                lines.push(InlineSelectionLine::default());
+            }
+            _ => {}
+        }
+    }
+
+    for (line_index, line) in lines.into_iter().enumerate() {
+        let line_x = match n.text_align {
+            TextAlign::Start => 0.0,
+            TextAlign::Center => (glyph_rect.w - line.width).max(0.0) * 0.5,
+            TextAlign::End => (glyph_rect.w - line.width).max(0.0),
+        };
+        let line_y = line_index as f32 * line_height;
+        for run in line.runs {
+            let Some(selected) = selection_overlap(Some(&(lo..hi)), &run.visible) else {
+                continue;
+            };
+            let lo = clamp_to_char_boundary(&run.text, selected.start.min(run.text.len()));
+            let hi = clamp_to_char_boundary(&run.text, selected.end.min(run.text.len()));
+            if lo >= hi {
+                continue;
+            }
+            let prefix = &run.text[..lo];
+            let slice = &run.text[lo..hi];
+            let band_x = glyph_rect.x
+                + line_x
+                + run.x
+                + inline_selection_run_width(&run.child, prefix, font_size);
+            let band_w = inline_selection_run_width(&run.child, slice, font_size);
+            push_selection_band_rect(
+                n,
+                out,
+                Rect::new(band_x, glyph_rect.y + line_y, band_w, line_height),
+                scissor,
+                opacity,
+            );
+        }
+    }
+}
+
+#[derive(Default)]
+struct InlineSelectionLine {
+    width: f32,
+    runs: Vec<InlineSelectionRun>,
+}
+
+struct InlineSelectionRun {
+    child: El,
+    text: String,
+    visible: std::ops::Range<usize>,
+    x: f32,
+}
+
+fn inline_selection_run_width(child: &El, text: &str, font_size: f32) -> f32 {
+    text_metrics::line_width_with_family(
+        text,
+        font_size,
+        child.font_family,
+        child.font_weight,
+        child.font_mono,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2666,6 +2794,74 @@ mod tests {
         assert!(
             (i_width - w_width).abs() <= 0.5,
             "mono code selection should measure equal-length lines equally; got iiii={i_width}, wwww={w_width}",
+        );
+    }
+
+    #[test]
+    fn source_backed_attributed_inlines_measure_selection_per_run_style() {
+        use crate::selection::{Selection, SelectionPoint, SelectionRange, SelectionSource};
+
+        let visible = "prefix iiii suffix";
+        let code_start = "prefix ".len();
+        let code_end = code_start + "iiii".len();
+        let mut tree = crate::text_runs([
+            crate::text("prefix "),
+            crate::text("iiii").code(),
+            crate::text(" suffix"),
+        ])
+        .font_size(16.0)
+        .nowrap_text()
+        .key("rich")
+        .selectable()
+        .selection_source(SelectionSource::identity(visible))
+        .padding(20.0);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 500.0, 200.0));
+        state.sync_selection_order(&tree);
+        state.current_selection = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("rich", code_start),
+                head: SelectionPoint::new("rich", code_end),
+            }),
+        };
+
+        let ops = draw_ops(&tree, &state);
+        let bands: Vec<Rect> = ops
+            .iter()
+            .filter_map(|op| {
+                if let DrawOp::Quad { id, rect, .. } = op
+                    && id.contains("selection-band")
+                {
+                    Some(*rect)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(bands.len(), 1, "expected one inline-code selection band");
+
+        let regular_width = crate::text::metrics::line_width_with_family(
+            "iiii",
+            16.0,
+            FontFamily::Inter,
+            FontWeight::Regular,
+            false,
+        );
+        let mono_width = crate::text::metrics::line_width_with_family(
+            "iiii",
+            16.0,
+            FontFamily::Inter,
+            FontWeight::Regular,
+            true,
+        );
+        assert!(
+            (bands[0].w - mono_width).abs() <= 0.75,
+            "inline-code selection should use mono run width; band={:?}, mono={mono_width}, regular={regular_width}",
+            bands[0],
+        );
+        assert!(
+            bands[0].w > regular_width * 1.5,
+            "regression guard: measuring the code run as regular text would be visibly too short"
         );
     }
 

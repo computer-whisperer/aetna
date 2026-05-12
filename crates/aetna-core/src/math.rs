@@ -5,6 +5,7 @@
 //! but layout lowers into TeX-style boxes: width, ascent, descent, and a flat
 //! list of positioned glyph/rule atoms.
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use crate::text::metrics as text_metrics;
@@ -109,6 +110,10 @@ pub enum MathExpr {
         column_gap: Option<f32>,
         row_gap: Option<f32>,
     },
+    Source {
+        source: Range<usize>,
+        body: Arc<MathExpr>,
+    },
     Error(String),
 }
 
@@ -119,6 +124,20 @@ impl MathExpr {
             0 => MathExpr::Row(Vec::new()),
             1 => children.pop().unwrap(),
             _ => MathExpr::Row(children),
+        }
+    }
+
+    pub fn source_range(&self) -> Option<&Range<usize>> {
+        match self {
+            MathExpr::Source { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+
+    pub fn without_source(&self) -> &MathExpr {
+        match self {
+            MathExpr::Source { body, .. } => body.without_source(),
+            _ => self,
         }
     }
 }
@@ -1034,6 +1053,7 @@ pub fn layout_math(expr: &MathExpr, size: f32, display: MathDisplay) -> MathLayo
 fn layout_expr(expr: &MathExpr, ctx: LayoutCtx) -> MathLayout {
     let metrics = ctx.metrics();
     match expr {
+        MathExpr::Source { body, .. } => layout_expr(body, ctx),
         MathExpr::Row(children) => layout_row(children, ctx),
         MathExpr::Identifier(s) => layout_glyph(s, ctx, FontWeight::Regular, true),
         MathExpr::Number(s) => layout_glyph(s, ctx, FontWeight::Regular, false),
@@ -1180,7 +1200,7 @@ fn layout_operator_glyph_with_spacing(
 }
 
 fn layout_operator_expr_glyph_fallback(expr: &MathExpr, ctx: LayoutCtx) -> Option<MathLayout> {
-    match expr {
+    match expr.without_source() {
         MathExpr::Operator(s) => Some(layout_operator_glyph_with_spacing(s, None, None, ctx)),
         MathExpr::OperatorWithMetadata {
             text,
@@ -1511,11 +1531,15 @@ fn layout_overline(base_layout: MathLayout, ctx: LayoutCtx) -> MathLayout {
 }
 
 fn is_overline_accent(expr: &MathExpr) -> bool {
-    matches!(expr, MathExpr::Operator(s) | MathExpr::Text(s) | MathExpr::Identifier(s) if matches!(s.as_str(), "¯" | "‾"))
+    matches!(
+        expr.without_source(),
+        MathExpr::Operator(s) | MathExpr::Text(s) | MathExpr::Identifier(s)
+            if matches!(s.as_str(), "¯" | "‾")
+    )
 }
 
 fn layout_accent_mark(accent: &MathExpr, ctx: LayoutCtx) -> MathLayout {
-    match accent {
+    match accent.without_source() {
         MathExpr::Operator(s) if s == "^" => layout_operator("ˆ", ctx),
         MathExpr::Operator(s) if s == "~" => layout_operator("˜", ctx),
         _ => layout_expr(accent, ctx),
@@ -1523,7 +1547,7 @@ fn layout_accent_mark(accent: &MathExpr, ctx: LayoutCtx) -> MathLayout {
 }
 
 fn is_display_limits_base(expr: &MathExpr) -> bool {
-    match expr {
+    match expr.without_source() {
         MathExpr::Operator(_) | MathExpr::OperatorWithMetadata { .. } => has_movable_limits(expr),
         MathExpr::Text(s) => matches!(s.as_str(), "lim" | "max" | "min" | "sup" | "inf"),
         _ => false,
@@ -1531,7 +1555,7 @@ fn is_display_limits_base(expr: &MathExpr) -> bool {
 }
 
 fn has_movable_limits(expr: &MathExpr) -> bool {
-    match expr {
+    match expr.without_source() {
         MathExpr::Operator(s) => operator_info(s).movable_limits,
         MathExpr::OperatorWithMetadata {
             text,
@@ -1543,7 +1567,7 @@ fn has_movable_limits(expr: &MathExpr) -> bool {
 }
 
 fn is_large_operator_base(expr: &MathExpr) -> bool {
-    match expr {
+    match expr.without_source() {
         MathExpr::Operator(s) => is_large_operator_symbol_str(s),
         MathExpr::OperatorWithMetadata {
             text,
@@ -1563,7 +1587,7 @@ fn is_large_operator_symbol(ch: char) -> bool {
 }
 
 fn layout_large_operator_variant(expr: &MathExpr, ctx: LayoutCtx) -> Option<MathLayout> {
-    let (operator, lspace_override, rspace_override) = match expr {
+    let (operator, lspace_override, rspace_override) = match expr.without_source() {
         MathExpr::Operator(operator) => (operator.as_str(), None, None),
         MathExpr::OperatorWithMetadata {
             text,
@@ -2067,6 +2091,16 @@ pub fn parse_tex(input: &str) -> Result<MathExpr, MathParseError> {
     Ok(expr)
 }
 
+pub fn parse_tex_with_source_ranges(input: &str) -> Result<MathExpr, MathParseError> {
+    let mut parser = TexParser::with_source_ranges(input);
+    let expr = parser.parse_row(None)?;
+    parser.skip_ws();
+    if parser.peek().is_some() {
+        return Err(parser.error("unexpected trailing input"));
+    }
+    Ok(expr)
+}
+
 pub fn parse_mathml(input: &str) -> Result<MathExpr, MathParseError> {
     Ok(parse_mathml_with_display(input)?.0)
 }
@@ -2461,14 +2495,39 @@ fn text_pos_to_byte(input: &str, row: u32, col: u32) -> usize {
 struct TexParser<'a> {
     input: &'a str,
     pos: usize,
+    source_ranges: bool,
 }
 
 impl<'a> TexParser<'a> {
     fn new(input: &'a str) -> Self {
-        Self { input, pos: 0 }
+        Self {
+            input,
+            pos: 0,
+            source_ranges: false,
+        }
+    }
+
+    fn with_source_ranges(input: &'a str) -> Self {
+        Self {
+            input,
+            pos: 0,
+            source_ranges: true,
+        }
+    }
+
+    fn source_wrap(&self, start: usize, expr: MathExpr) -> MathExpr {
+        if self.source_ranges {
+            MathExpr::Source {
+                source: start..self.pos,
+                body: Arc::new(expr),
+            }
+        } else {
+            expr
+        }
     }
 
     fn parse_row(&mut self, until: Option<char>) -> Result<MathExpr, MathParseError> {
+        let start = self.pos;
         let mut items = Vec::new();
         loop {
             self.skip_ws();
@@ -2493,10 +2552,12 @@ impl<'a> TexParser<'a> {
                 }
             }
         }
-        Ok(MathExpr::row(items))
+        let expr = MathExpr::row(items);
+        Ok(self.source_wrap(start, expr))
     }
 
     fn parse_row_until_right(&mut self) -> Result<MathExpr, MathParseError> {
+        let start = self.pos;
         let mut items = Vec::new();
         loop {
             self.skip_ws();
@@ -2512,7 +2573,8 @@ impl<'a> TexParser<'a> {
             let atom = self.parse_atom_with_scripts()?;
             items.push(atom);
         }
-        Ok(MathExpr::row(items))
+        let expr = MathExpr::row(items);
+        Ok(self.source_wrap(start, expr))
     }
 
     fn parse_table_environment(
@@ -2627,6 +2689,7 @@ impl<'a> TexParser<'a> {
     }
 
     fn parse_atom_with_scripts(&mut self) -> Result<MathExpr, MathParseError> {
+        let start = self.pos;
         let mut base = self.parse_atom()?;
         let mut sub = None;
         let mut sup = None;
@@ -2650,6 +2713,7 @@ impl<'a> TexParser<'a> {
                 sub,
                 sup,
             };
+            base = self.source_wrap(start, base);
         }
         Ok(base)
     }
@@ -2666,31 +2730,42 @@ impl<'a> TexParser<'a> {
 
     fn parse_atom(&mut self) -> Result<MathExpr, MathParseError> {
         self.skip_ws();
+        let start = self.pos;
         match self.peek() {
             Some('{') => {
                 self.bump();
-                self.parse_row(Some('}'))
+                let expr = self.parse_row(Some('}'))?;
+                Ok(self.source_wrap(start, expr))
             }
             Some('\\') => self.parse_command(),
-            Some(ch) if ch.is_ascii_digit() => Ok(MathExpr::Number(
-                self.take_while(|c| c.is_ascii_digit() || c == '.'),
-            )),
-            Some(ch) if ch.is_alphabetic() => Ok(MathExpr::Identifier(ch.to_string()).tap(|_| {
+            Some(ch) if ch.is_ascii_digit() => {
+                let text = self.take_while(|c| c.is_ascii_digit() || c == '.');
+                Ok(self.source_wrap(start, MathExpr::Number(text)))
+            }
+            Some(ch) if ch.is_alphabetic() => {
                 self.bump();
-            })),
+                Ok(self.source_wrap(start, MathExpr::Identifier(ch.to_string())))
+            }
             Some(ch) => {
                 self.bump();
-                Ok(if ch.is_whitespace() {
+                let expr = if ch.is_whitespace() {
                     MathExpr::Space(0.3)
                 } else {
                     MathExpr::Operator(ch.to_string())
-                })
+                };
+                Ok(self.source_wrap(start, expr))
             }
             None => Err(self.error("expected math atom")),
         }
     }
 
     fn parse_command(&mut self) -> Result<MathExpr, MathParseError> {
+        let start = self.pos;
+        let expr = self.parse_command_unwrapped()?;
+        Ok(self.source_wrap(start, expr))
+    }
+
+    fn parse_command_unwrapped(&mut self) -> Result<MathExpr, MathParseError> {
         self.expect('\\')?;
         let name = self.take_while(|c| c.is_ascii_alphabetic());
         if name.is_empty() {
@@ -3036,15 +3111,6 @@ fn default_tex_table_options(env: &str) -> TexTableOptions {
     }
 }
 
-trait Tap: Sized {
-    fn tap(self, f: impl FnOnce(&Self)) -> Self {
-        f(&self);
-        self
-    }
-}
-
-impl<T> Tap for T {}
-
 pub(crate) fn math_glyph_layout(
     text: &str,
     size: f32,
@@ -3075,6 +3141,54 @@ mod tests {
             .atoms
             .iter()
             .any(|atom| matches!(atom, MathAtom::Radical { .. } | MathAtom::GlyphId { .. }))
+    }
+
+    fn expect_source(expr: &MathExpr, expected: Range<usize>) -> &MathExpr {
+        let MathExpr::Source { source, body } = expr else {
+            panic!("expected source wrapper, got {expr:?}");
+        };
+        assert_eq!(*source, expected);
+        body
+    }
+
+    #[test]
+    fn tex_source_ranges_are_opt_in_and_do_not_change_layout() {
+        let input = r"\frac{x_1}{2}";
+        let plain = parse_tex(input).expect("plain tex");
+        let sourced = parse_tex_with_source_ranges(input).expect("source-backed tex");
+
+        assert!(!matches!(plain, MathExpr::Source { .. }));
+        assert_eq!(
+            layout_math(&plain, 16.0, MathDisplay::Block),
+            layout_math(&sourced, 16.0, MathDisplay::Block)
+        );
+        assert!(matches!(
+            expect_source(&sourced, 0..input.len()).without_source(),
+            MathExpr::Fraction { .. }
+        ));
+    }
+
+    #[test]
+    fn tex_source_ranges_track_script_components() {
+        let expr = parse_tex_with_source_ranges("x_1^2").expect("source-backed tex");
+        let root = expect_source(&expr, 0..5);
+        let body = expect_source(root, 0..5);
+        let MathExpr::Scripts { base, sub, sup } = body else {
+            panic!("expected scripts, got {body:?}");
+        };
+
+        assert_eq!(
+            expect_source(base, 0..1).without_source(),
+            &MathExpr::Identifier("x".into())
+        );
+        assert_eq!(
+            expect_source(sub.as_deref().expect("subscript"), 2..3).without_source(),
+            &MathExpr::Number("1".into())
+        );
+        assert_eq!(
+            expect_source(sup.as_deref().expect("superscript"), 4..5).without_source(),
+            &MathExpr::Number("2".into())
+        );
     }
 
     #[cfg(feature = "symbols")]
