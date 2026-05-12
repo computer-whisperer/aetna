@@ -917,9 +917,7 @@ fn math_glyph_vector_asset(glyph_id: u16, view_box: Rect) -> Option<crate::vecto
     let mut outline = Outline {
         segments: Vec::new(),
     };
-    let Some(_) = face.outline_glyph(ttf_parser::GlyphId(glyph_id), &mut outline) else {
-        return None;
-    };
+    let _ = face.outline_glyph(ttf_parser::GlyphId(glyph_id), &mut outline)?;
     if outline.segments.is_empty() {
         return None;
     }
@@ -1181,6 +1179,13 @@ fn push_inline_mixed_ops(
     let selected = n.selection_source.as_ref().and_then(|source| {
         selection_range_for_node(n, ui_state, source.visible_len()).map(|(lo, hi)| lo..hi)
     });
+    let paint = InlineMixedLinePaint {
+        parent: n,
+        rect,
+        scissor,
+        opacity,
+        selected: selected.as_ref(),
+    };
     let mut visible_cursor = 0usize;
 
     let finish_line =
@@ -1188,17 +1193,7 @@ fn push_inline_mixed_ops(
          out: &mut Vec<DrawOp>,
          breaker: &mut crate::inline_mixed::MixedInlineBreaker| {
             let line = breaker.finish_line();
-            flush_inline_mixed_line(
-                n,
-                rect,
-                scissor,
-                opacity,
-                line.top,
-                line.ascent,
-                line_items,
-                selected.as_ref(),
-                out,
-            );
+            flush_inline_mixed_line(&paint, line.top, line.ascent, line_items, out);
         };
 
     for (i, child) in n.children.iter().enumerate() {
@@ -1276,17 +1271,7 @@ fn push_inline_mixed_ops(
         }
     }
     let line = breaker.finish_line();
-    flush_inline_mixed_line(
-        n,
-        rect,
-        scissor,
-        opacity,
-        line.top,
-        line.ascent,
-        &mut line_items,
-        selected.as_ref(),
-        out,
-    );
+    flush_inline_mixed_line(&paint, line.top, line.ascent, &mut line_items, out);
 }
 
 enum InlineMixedItem {
@@ -1307,6 +1292,14 @@ struct InlineTextItem {
     child_index: usize,
     chunk_index: usize,
     visible: std::ops::Range<usize>,
+}
+
+struct InlineMixedLinePaint<'a> {
+    parent: &'a El,
+    rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+    selected: Option<&'a std::ops::Range<usize>>,
 }
 
 fn push_inline_text_item(
@@ -1339,30 +1332,26 @@ fn push_inline_text_item(
 }
 
 fn flush_inline_mixed_line(
-    parent: &El,
-    rect: Rect,
-    scissor: Option<Rect>,
-    opacity: f32,
+    paint: &InlineMixedLinePaint<'_>,
     line_top: f32,
     line_ascent: f32,
     items: &mut Vec<InlineMixedItem>,
-    selected: Option<&std::ops::Range<usize>>,
     out: &mut Vec<DrawOp>,
 ) {
-    let baseline_y = rect.y + line_top + line_ascent;
+    let baseline_y = paint.rect.y + line_top + line_ascent;
     for item in items.drain(..) {
         match item {
             InlineMixedItem::Text(item) => {
                 push_inline_text_chunk(
-                    parent,
+                    paint.parent,
                     &item.child,
                     &item.text,
                     item.child_index,
                     item.chunk_index,
-                    selection_overlap(selected, &item.visible),
-                    rect,
-                    scissor,
-                    opacity,
+                    selection_overlap(paint.selected, &item.visible),
+                    paint.rect,
+                    paint.scissor,
+                    paint.opacity,
                     item.x,
                     baseline_y,
                     out,
@@ -1376,15 +1365,21 @@ fn flush_inline_mixed_line(
                 visible,
             } => {
                 let math_rect = Rect::new(
-                    rect.x + x,
+                    paint.rect.x + x,
                     baseline_y - layout.ascent,
                     layout.width,
                     layout.height(),
                 );
-                if selection_overlap(selected, &visible).is_some() {
-                    push_selection_band_rect(parent, out, math_rect, scissor, opacity);
+                if selection_overlap(paint.selected, &visible).is_some() {
+                    push_selection_band_rect(
+                        paint.parent,
+                        out,
+                        math_rect,
+                        paint.scissor,
+                        paint.opacity,
+                    );
                 }
-                push_math_ops(&child, &expr, math_rect, scissor, opacity, out);
+                push_math_ops(&child, &expr, math_rect, paint.scissor, paint.opacity, out);
             }
         }
     }

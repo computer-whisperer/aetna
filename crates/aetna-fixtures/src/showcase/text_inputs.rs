@@ -253,10 +253,10 @@ pub fn on_event(state: &mut State, e: UiEvent) {
         Some("ti-email") => {
             text_input::apply_event(&mut state.email, &mut state.selection, "ti-email", &e);
         }
-        Some("ti-bio") => {
-            if text_area::apply_event(&mut state.bio, &mut state.selection, "ti-bio", &e) {
-                state.scroll_bio_caret_into_view = true;
-            }
+        Some("ti-bio")
+            if text_area::apply_event(&mut state.bio, &mut state.selection, "ti-bio", &e) =>
+        {
+            state.scroll_bio_caret_into_view = true;
         }
         _ => {}
     }

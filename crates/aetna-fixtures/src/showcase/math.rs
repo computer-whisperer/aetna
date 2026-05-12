@@ -194,10 +194,10 @@ pub fn on_event(state: &mut State, e: UiEvent) {
         return;
     }
 
-    if e.target_key() == Some(SOURCE_KEY) {
-        if text_area::apply_event(&mut state.source, &mut state.selection, SOURCE_KEY, &e) {
-            state.scroll_caret_into_view = true;
-        }
+    if e.target_key() == Some(SOURCE_KEY)
+        && text_area::apply_event(&mut state.source, &mut state.selection, SOURCE_KEY, &e)
+    {
+        state.scroll_caret_into_view = true;
     }
 }
 

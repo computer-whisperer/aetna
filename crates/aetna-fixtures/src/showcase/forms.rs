@@ -113,10 +113,10 @@ pub fn on_event(state: &mut State, e: UiEvent) {
         Some("forms-email") => {
             text_input::apply_event(&mut state.email, &mut state.selection, "forms-email", &e);
         }
-        Some("forms-bio") => {
-            if text_area::apply_event(&mut state.bio, &mut state.selection, "forms-bio", &e) {
-                state.scroll_bio_caret_into_view = true;
-            }
+        Some("forms-bio")
+            if text_area::apply_event(&mut state.bio, &mut state.selection, "forms-bio", &e) =>
+        {
+            state.scroll_bio_caret_into_view = true;
         }
         _ => {}
     }

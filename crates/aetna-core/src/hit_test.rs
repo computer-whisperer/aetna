@@ -206,7 +206,7 @@ fn mixed_inline_hit_byte(node: &El, painted_rect: Rect, point: (f32, f32)) -> Op
                     let local_y = (point.1 - item.rect.y).clamp(0.0, item.rect.h.max(1.0) - 1.0);
                     let byte = geometry
                         .hit_byte(local_x, local_y)
-                        .unwrap_or_else(|| if local_x <= 0.0 { 0 } else { text.len() });
+                        .unwrap_or(if local_x <= 0.0 { 0 } else { text.len() });
                     item.visible.start + byte.min(text.len())
                 }
                 MixedHitKind::Atomic => {
@@ -231,7 +231,7 @@ struct PendingMixedHitItem {
 
 #[derive(Clone)]
 enum PendingMixedHitKind {
-    Text { child: El, text: String },
+    Text { child: Box<El>, text: String },
     Math { layout: crate::math::MathLayout },
 }
 
@@ -313,7 +313,7 @@ fn mixed_inline_hit_items(node: &El, rect: Rect) -> Vec<MixedHitItem> {
                         }
                         pending.push(PendingMixedHitItem {
                             kind: PendingMixedHitKind::Text {
-                                child: child.clone(),
+                                child: Box::new(child.clone()),
                                 text: chunk.to_string(),
                             },
                             x: breaker.x(),

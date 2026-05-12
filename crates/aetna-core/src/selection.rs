@@ -211,7 +211,7 @@ impl SelectionSource {
 
     fn full_group_for_visible(&self, start: usize, end: usize) -> Option<&str> {
         (start == 0 && end >= self.visible.len())
-            .then(|| self.full_selection_group.as_deref())
+            .then_some(self.full_selection_group.as_deref())
             .flatten()
     }
 
