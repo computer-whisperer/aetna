@@ -5,6 +5,7 @@
 //! through the same native math path on the right.
 
 use aetna_core::prelude::*;
+use aetna_core::selection::SelectionSource;
 use aetna_markdown::{MarkdownOptions, md_with_options};
 
 const SOURCE_KEY: &str = "math-source";
@@ -177,6 +178,13 @@ pub fn view(state: &State) -> El {
 }
 
 pub fn on_event(state: &mut State, e: UiEvent) {
+    if e.kind == UiEventKind::SelectionChanged
+        && let Some(sel) = e.selection.as_ref()
+    {
+        state.selection = sel.clone();
+        return;
+    }
+
     if matches!(e.kind, UiEventKind::Click | UiEventKind::Activate)
         && let Some(route) = e.route()
         && let Some(preset) = PRESETS.iter().find(|preset| preset.key == route)
@@ -273,25 +281,32 @@ fn nested_roots_card() -> El {
         "Nested roots",
         "Radical variants, root indices, and overbars through nested TeX roots.",
         [
-            math_block(tex_or_error(r"\sqrt{1+\sqrt{x+\sqrt[3]{y+1}}}")),
-            math_block(tex_or_error(
+            selectable_tex_block("math-nested-root-a", r"\sqrt{1+\sqrt{x+\sqrt[3]{y+1}}}"),
+            selectable_tex_block(
+                "math-nested-root-b",
                 r"\sqrt[12]{\frac{1+\sqrt{x}}{1+\sqrt[3]{y+\sqrt{z}}}}",
-            ))
+            )
             .font_size(18.0),
         ],
     )
 }
 
 fn large_operator_card() -> El {
-    let expr = tex_or_error(r"\sum_{i=1}^{n}x_i+\prod_{k=1}^{m}(1+x_k)");
-    let integral = tex_or_error(r"\int_0^1 f(x)dx");
     demo_card(
         "Limit sizing",
         "Display operators use font variants; integrals keep side scripts.",
         [
-            math_block(expr.clone()).font_size(18.0),
-            math_block(expr).font_size(26.0),
-            math_block(integral).font_size(26.0),
+            selectable_tex_block(
+                "math-large-operator-small",
+                r"\sum_{i=1}^{n}x_i+\prod_{k=1}^{m}(1+x_k)",
+            )
+            .font_size(18.0),
+            selectable_tex_block(
+                "math-large-operator-large",
+                r"\sum_{i=1}^{n}x_i+\prod_{k=1}^{m}(1+x_k)",
+            )
+            .font_size(26.0),
+            selectable_tex_block("math-integral", r"\int_0^1 f(x)dx").font_size(26.0),
         ],
     )
 }
@@ -310,7 +325,11 @@ fn mathml_import_card() -> El {
     demo_card(
         "MathML import",
         "Presentation MathML table, spacing, alignment, and fence.",
-        [math_block(mathml_or_error(source))],
+        [selectable_math_block(
+            "math-mathml-import",
+            source.trim(),
+            mathml_or_error(source),
+        )],
     )
 }
 
@@ -318,7 +337,10 @@ fn malformed_source_card() -> El {
     demo_card(
         "Malformed source",
         "Parser failures render as math error expressions.",
-        [math_block(tex_or_error(r"\sqrt{1+\frac{x}{"))],
+        [selectable_tex_block(
+            "math-malformed-source",
+            r"\sqrt{1+\frac{x}{",
+        )],
     )
 }
 
@@ -336,6 +358,20 @@ fn demo_card<const N: usize>(title: &'static str, description: &'static str, bod
 fn tex_or_error(source: &str) -> MathExpr {
     parse_tex(source)
         .unwrap_or_else(|err| MathExpr::Error(format!("math parse error: {}", err.message)))
+}
+
+fn selectable_tex_block(key: &'static str, source: &'static str) -> El {
+    selectable_math_block(key, source, tex_or_error(source))
+}
+
+fn selectable_math_block(key: &'static str, source: &str, expr: MathExpr) -> El {
+    let visible = "\u{fffc}";
+    let mut selection_source = SelectionSource::new(source.to_string(), visible);
+    selection_source.push_span(0..visible.len(), 0..source.len(), true);
+    math_block(expr)
+        .key(key)
+        .selectable()
+        .selection_source(selection_source)
 }
 
 fn mathml_or_error(source: &str) -> MathExpr {

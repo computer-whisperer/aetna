@@ -222,6 +222,7 @@ pub struct Showcase {
     pub(crate) diagnostics_visible: bool,
 
     pub(crate) about: about::State,
+    pub(crate) typography: typography::State,
     /// URLs accumulated from `UiEventKind::LinkActivated` events.
     /// Drained by the host once per frame via [`App::drain_link_opens`]
     /// — the host owns the platform-appropriate open call. Showcase
@@ -285,7 +286,7 @@ impl App for Showcase {
         let body = match self.section {
             Section::About => about::view(&self.about),
             Section::Palette => palette::view(theme.palette()),
-            Section::Typography => typography::view(),
+            Section::Typography => typography::view(&self.typography),
             Section::Math => math::view(&self.math),
             Section::Surfaces => surfaces::view(&self.surfaces),
             Section::Layout => layout::view(&self.layout),
@@ -375,8 +376,8 @@ impl App for Showcase {
 
         match self.section {
             Section::About => about::on_event(&mut self.about, event),
-            Section::Palette => {}    // static — no events
-            Section::Typography => {} // static
+            Section::Palette => {} // static — no events
+            Section::Typography => typography::on_event(&mut self.typography, event),
             Section::Math => math::on_event(&mut self.math, event),
             Section::Surfaces => surfaces::on_event(&mut self.surfaces, event),
             Section::Layout => layout::on_event(&mut self.layout, event),
@@ -417,6 +418,7 @@ impl App for Showcase {
         // sections that host inputs return their own selection here.
         match self.section {
             Section::About => self.about.message_selection.clone(),
+            Section::Typography => self.typography.selection.clone(),
             Section::TextInputs => self.text_inputs.selection.clone(),
             Section::Forms => self.forms.selection.clone(),
             Section::Math => self.math.selection.clone(),

@@ -1,6 +1,9 @@
 //! Walk pulldown-cmark events into an Aetna `El` tree.
 
+use std::ops::Range;
+
 use aetna_core::prelude::*;
+use aetna_core::selection::SelectionSource;
 use pulldown_cmark::{
     Alignment, BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options as CmarkOptions, Parser,
     Tag, TagEnd,
@@ -69,9 +72,9 @@ pub fn md_with_options(input: &str, options: MarkdownOptions) -> El {
     }
 
     let parser = Parser::new_ext(input, parser_options);
-    let mut walker = Walker::new(options);
-    for event in parser {
-        walker.handle(event);
+    let mut walker = Walker::new(input, options);
+    for (event, range) in parser.into_offset_iter() {
+        walker.handle(event, range);
     }
     walker.finish()
 }
@@ -81,9 +84,9 @@ pub fn md_with_options(input: &str, options: MarkdownOptions) -> El {
 /// child content into a single Aetna widget.
 enum Frame {
     /// Open `<p>` — accumulates inline runs.
-    Paragraph(Vec<El>),
+    Paragraph(InlineBuffer),
     /// Open `<h1..h6>` — accumulates inline runs.
-    Heading(HeadingLevel, Vec<El>),
+    Heading(HeadingLevel, InlineBuffer),
     /// Open `<blockquote>` — accumulates block children.
     BlockQuote {
         kind: Option<BlockQuoteKind>,
@@ -108,12 +111,17 @@ enum Frame {
     /// highlighting is enabled and the lang resolves to a known syntax,
     /// the close handler tokenises the body, otherwise it emits the
     /// existing plain-mono `code_block(...)`.
-    CodeBlock { lang: Option<String>, text: String },
+    CodeBlock {
+        lang: Option<String>,
+        text: String,
+        text_source: Option<Range<usize>>,
+        indented: bool,
+    },
     /// Open `<a>` — accumulates inline children that share its URL.
     /// The URL is applied to each text run on close (not via inline
     /// style flags) so a link spanning multiple text events groups
     /// correctly under one href in the painter.
-    Link(String, Vec<El>),
+    Link(String, InlineBuffer),
     /// Open `<img>` — accumulates alt text and keeps the destination
     /// for placeholder rendering. Image content loading is deferred
     /// (see crate docs).
@@ -135,18 +143,118 @@ enum Frame {
         /// Body rows, accumulated on each `TagEnd::TableRow`.
         body: Vec<Vec<El>>,
     },
-    /// Open `<thead>` — accumulates the header cells.
+    /// Open `<thead>` — accumulates the header rows.
     TableHead(Vec<El>),
-    /// Open `<tr>` (body row) — accumulates the row's cells.
+    /// Open `<tr>` — accumulates the row's cells.
     TableRow(Vec<El>),
     /// Open `<th>` / `<td>`. `in_header` toggles the header-styled
     /// `table_head(...)` builder on close vs. the body-styled
     /// `table_cell(...)`.
     TableCell {
-        runs: Vec<El>,
+        runs: InlineBuffer,
         in_header: bool,
         alignment: Alignment,
     },
+}
+
+#[derive(Clone, Debug, Default)]
+struct InlineBuffer {
+    runs: Vec<El>,
+    visible: String,
+    spans: Vec<InlineSourceSpan>,
+}
+
+#[derive(Clone, Debug)]
+struct InlineSourceSpan {
+    visible: Range<usize>,
+    source: Range<usize>,
+    source_full: Range<usize>,
+    atomic: bool,
+}
+
+impl InlineBuffer {
+    fn is_empty(&self) -> bool {
+        self.runs.is_empty()
+    }
+
+    fn visible_len(&self) -> usize {
+        self.visible.len()
+    }
+
+    fn push(
+        &mut self,
+        el: El,
+        visible: &str,
+        source: Range<usize>,
+        source_full: Range<usize>,
+        atomic: bool,
+    ) {
+        let start = self.visible.len();
+        self.visible.push_str(visible);
+        let end = self.visible.len();
+        if start < end {
+            self.spans.push(InlineSourceSpan {
+                visible: start..end,
+                source,
+                source_full,
+                atomic,
+            });
+        }
+        self.runs.push(el);
+    }
+
+    fn append(&mut self, mut other: InlineBuffer) {
+        let offset = self.visible.len();
+        self.visible.push_str(&other.visible);
+        for span in other.spans.drain(..) {
+            self.spans.push(InlineSourceSpan {
+                visible: (span.visible.start + offset)..(span.visible.end + offset),
+                source: span.source,
+                source_full: span.source_full,
+                atomic: span.atomic,
+            });
+        }
+        self.runs.append(&mut other.runs);
+    }
+
+    fn mark_full_source(&mut self, visible: Range<usize>, source_full: Range<usize>) {
+        for span in &mut self.spans {
+            if span.visible.start >= visible.start && span.visible.end <= visible.end {
+                span.source_full = source_full.clone();
+            }
+        }
+    }
+
+    fn mark_all_full_source(&mut self, source_full: Range<usize>) {
+        self.mark_full_source(0..self.visible_len(), source_full);
+    }
+
+    fn into_runs(self) -> Vec<El> {
+        self.runs
+    }
+
+    fn selection_source(
+        &self,
+        input: &str,
+        source_range: Option<Range<usize>>,
+    ) -> Option<SelectionSource> {
+        let source_range = source_range?;
+        let source_text = input.get(source_range.clone())?.to_string();
+        let mut source = SelectionSource::new(source_text, self.visible.clone());
+        for span in &self.spans {
+            let start = span.source.start.saturating_sub(source_range.start);
+            let end = span.source.end.saturating_sub(source_range.start);
+            let full_start = span.source_full.start.saturating_sub(source_range.start);
+            let full_end = span.source_full.end.saturating_sub(source_range.start);
+            source.push_span_with_full_source(
+                span.visible.clone(),
+                start..end,
+                full_start..full_end,
+                span.atomic,
+            );
+        }
+        Some(source)
+    }
 }
 
 struct ListItem {
@@ -183,7 +291,13 @@ impl InlineState {
     }
 }
 
+struct InlineSourceMarker {
+    visible_start: usize,
+    source_start: usize,
+}
+
 struct Walker {
+    input: String,
     options: MarkdownOptions,
     /// Open block-level frames + open `<a>` / `<img>` containers,
     /// innermost last. `<a>` and `<img>` are stack-tracked rather than
@@ -191,116 +305,242 @@ struct Walker {
     /// between Start/End and need to fold them into their own El on
     /// close.
     stack: Vec<Frame>,
+    source_stack: Vec<Option<Range<usize>>>,
     /// Inline-style flags for upcoming text events.
     inline: InlineState,
+    inline_source_stack: Vec<InlineSourceMarker>,
     /// Top-level blocks collected outside any open frame.
     root: Vec<El>,
 }
 
 impl Walker {
-    fn new(options: MarkdownOptions) -> Self {
+    fn new(input: &str, options: MarkdownOptions) -> Self {
         Self {
+            input: input.to_string(),
             options,
             stack: Vec::new(),
+            source_stack: Vec::new(),
             inline: InlineState::default(),
+            inline_source_stack: Vec::new(),
             root: Vec::new(),
         }
     }
 
-    fn handle(&mut self, event: Event<'_>) {
+    fn handle(&mut self, event: Event<'_>, range: Range<usize>) {
         match event {
-            Event::Start(tag) => self.start(tag),
-            Event::End(end) => self.end(end),
-            Event::Text(text) => self.text(text.into_string()),
-            Event::Code(text) => self.code_span(text.into_string()),
-            Event::SoftBreak => self.text(" ".to_string()),
-            Event::HardBreak => {
-                self.ensure_inline_frame();
-                self.push_inline(hard_break());
+            Event::Start(tag) => {
+                self.extend_top_source(range.clone());
+                self.start(tag, range);
             }
-            Event::Rule => self.push_block(divider()),
-            Event::InlineMath(text) => self.inline_math(text.into_string()),
-            Event::DisplayMath(text) => self.display_math(text.into_string()),
+            Event::End(end) => self.end(end, range),
+            Event::Text(text) => self.text(text.into_string(), range),
+            Event::Code(text) => self.code_span(text.into_string(), range),
+            Event::SoftBreak => self.text(" ".to_string(), range),
+            Event::HardBreak => {
+                self.ensure_inline_frame(range.clone());
+                self.extend_top_source(range.clone());
+                self.push_inline_mapped(hard_break(), "\n", range.clone(), range, false);
+            }
+            Event::Rule => {
+                self.extend_top_source(range);
+                self.push_block(divider());
+            }
+            Event::InlineMath(text) => self.inline_math(text.into_string(), range),
+            Event::DisplayMath(text) => self.display_math(text.into_string(), range),
             Event::Html(_) | Event::InlineHtml(_) => {}
             Event::FootnoteReference(_) => {}
-            Event::TaskListMarker(checked) => self.task_list_marker(checked),
+            Event::TaskListMarker(checked) => {
+                self.extend_top_source(range);
+                self.task_list_marker(checked);
+            }
         }
     }
 
-    fn start(&mut self, tag: Tag<'_>) {
+    fn push_frame(&mut self, frame: Frame, range: Range<usize>) {
+        self.stack.push(frame);
+        self.source_stack.push(Some(range));
+    }
+
+    fn pop_frame(&mut self) -> Option<(Frame, Option<Range<usize>>)> {
+        let frame = self.stack.pop()?;
+        let range = self.source_stack.pop().flatten();
+        Some((frame, range))
+    }
+
+    fn parent_item_source_range(&self) -> Option<Range<usize>> {
+        let frame_index = self
+            .stack
+            .iter()
+            .rposition(|frame| matches!(frame, Frame::Item { .. }))?;
+        self.source_stack.get(frame_index).cloned().flatten()
+    }
+
+    fn parent_table_line_source_range(&self) -> Option<Range<usize>> {
+        let frame_index = self
+            .stack
+            .iter()
+            .rposition(|frame| matches!(frame, Frame::TableHead(_) | Frame::TableRow(_)))?;
+        self.source_stack.get(frame_index).cloned().flatten()
+    }
+
+    fn extend_top_source(&mut self, range: Range<usize>) {
+        if range.start >= range.end {
+            return;
+        }
+        if let Some(slot) = self.source_stack.last_mut() {
+            match slot {
+                Some(existing) => {
+                    existing.start = existing.start.min(range.start);
+                    existing.end = existing.end.max(range.end);
+                }
+                None => *slot = Some(range),
+            }
+        }
+    }
+
+    fn open_inline_source(&mut self, range: Range<usize>) {
+        self.ensure_inline_frame(range.clone());
+        self.extend_top_source(range.clone());
+        let visible_start = self.current_inline_visible_len().unwrap_or(0);
+        self.inline_source_stack.push(InlineSourceMarker {
+            visible_start,
+            source_start: range.start,
+        });
+    }
+
+    fn close_inline_source(&mut self, range: Range<usize>) {
+        let Some(marker) = self.inline_source_stack.pop() else {
+            return;
+        };
+        let Some(visible_end) = self.current_inline_visible_len() else {
+            return;
+        };
+        if visible_end <= marker.visible_start {
+            return;
+        }
+        if let Some(buffer) = self.current_inline_buffer_mut() {
+            buffer.mark_full_source(
+                marker.visible_start..visible_end,
+                marker.source_start..range.end,
+            );
+        }
+    }
+
+    fn start(&mut self, tag: Tag<'_>, range: Range<usize>) {
         match tag {
-            Tag::Paragraph => self.stack.push(Frame::Paragraph(Vec::new())),
-            Tag::Heading { level, .. } => self.stack.push(Frame::Heading(level, Vec::new())),
-            Tag::BlockQuote(kind) => self.stack.push(Frame::BlockQuote {
-                kind: kind.filter(|_| self.options.gfm_alerts),
-                blocks: Vec::new(),
-            }),
-            Tag::List(start) => self.stack.push(Frame::List {
-                start,
-                items: Vec::new(),
-            }),
-            Tag::Item => self.stack.push(Frame::Item {
-                blocks: Vec::new(),
-                task_checked: None,
-            }),
+            Tag::Paragraph => self.push_frame(Frame::Paragraph(InlineBuffer::default()), range),
+            Tag::Heading { level, .. } => {
+                self.push_frame(Frame::Heading(level, InlineBuffer::default()), range)
+            }
+            Tag::BlockQuote(kind) => self.push_frame(
+                Frame::BlockQuote {
+                    kind: kind.filter(|_| self.options.gfm_alerts),
+                    blocks: Vec::new(),
+                },
+                range,
+            ),
+            Tag::List(start) => self.push_frame(
+                Frame::List {
+                    start,
+                    items: Vec::new(),
+                },
+                range,
+            ),
+            Tag::Item => self.push_frame(
+                Frame::Item {
+                    blocks: Vec::new(),
+                    task_checked: None,
+                },
+                range,
+            ),
             Tag::CodeBlock(kind) => {
-                let lang = match kind {
+                let (lang, indented) = match kind {
                     CodeBlockKind::Fenced(info) => {
                         // The info string can carry attributes after a
                         // space (`rust ignore`); first token is the
                         // language tag, anything else we don't speak.
                         let token = info.split_whitespace().next().unwrap_or("");
                         if token.is_empty() {
-                            None
+                            (None, false)
                         } else {
-                            Some(token.to_string())
+                            (Some(token.to_string()), false)
                         }
                     }
-                    CodeBlockKind::Indented => None,
+                    CodeBlockKind::Indented => (None, true),
                 };
-                self.stack.push(Frame::CodeBlock {
-                    lang,
-                    text: String::new(),
-                });
+                self.push_frame(
+                    Frame::CodeBlock {
+                        lang,
+                        text: String::new(),
+                        text_source: None,
+                        indented,
+                    },
+                    range,
+                );
             }
-            Tag::Emphasis => self.inline.italic_depth += 1,
-            Tag::Strong => self.inline.bold_depth += 1,
-            Tag::Strikethrough => self.inline.strike_depth += 1,
+            Tag::Emphasis => {
+                self.inline.italic_depth += 1;
+                self.open_inline_source(range);
+            }
+            Tag::Strong => {
+                self.inline.bold_depth += 1;
+                self.open_inline_source(range);
+            }
+            Tag::Strikethrough => {
+                self.inline.strike_depth += 1;
+                self.open_inline_source(range);
+            }
             Tag::Link { dest_url, .. } => {
-                self.stack
-                    .push(Frame::Link(dest_url.into_string(), Vec::new()));
+                self.push_frame(
+                    Frame::Link(dest_url.into_string(), InlineBuffer::default()),
+                    range,
+                );
             }
             Tag::Image {
                 dest_url, title, ..
             } => {
                 // Alt text accumulates through inline events while the
                 // image frame is open; on End we fold into a placeholder.
-                self.stack.push(Frame::Image {
-                    alt: String::new(),
-                    dest_url: dest_url.into_string(),
-                    title: title.into_string(),
-                });
+                self.push_frame(
+                    Frame::Image {
+                        alt: String::new(),
+                        dest_url: dest_url.into_string(),
+                        title: title.into_string(),
+                    },
+                    range,
+                );
             }
             Tag::Table(alignments) => {
-                self.stack.push(Frame::Table {
-                    alignments,
-                    head: None,
-                    body: Vec::new(),
-                });
+                self.push_frame(
+                    Frame::Table {
+                        alignments,
+                        head: None,
+                        body: Vec::new(),
+                    },
+                    range,
+                );
             }
-            Tag::TableHead => self.stack.push(Frame::TableHead(Vec::new())),
-            Tag::TableRow => self.stack.push(Frame::TableRow(Vec::new())),
+            Tag::TableHead => self.push_frame(Frame::TableHead(Vec::new()), range),
+            Tag::TableRow => self.push_frame(Frame::TableRow(Vec::new()), range),
             Tag::TableCell => {
-                // Header vs body is decided by what the topmost open
-                // frame is at cell-start time: a `TableHead` parent
-                // means this cell renders with the header recipe.
-                let in_header = matches!(self.stack.last(), Some(Frame::TableHead(_)));
+                // Header vs body is decided by what the current table
+                // section is at cell-start time. pulldown-cmark emits
+                // header cells directly under `TableHead` today, but
+                // this also handles a nested `TableRow` shape.
+                let in_header = self
+                    .stack
+                    .iter()
+                    .rev()
+                    .any(|frame| matches!(frame, Frame::TableHead(_)));
                 let alignment = self.next_table_cell_alignment();
-                self.stack.push(Frame::TableCell {
-                    runs: Vec::new(),
-                    in_header,
-                    alignment,
-                });
+                self.push_frame(
+                    Frame::TableCell {
+                        runs: InlineBuffer::default(),
+                        in_header,
+                        alignment,
+                    },
+                    range,
+                );
             }
             // Footnote definitions, definition lists, and subscript /
             // superscript are deferred — open a paragraph frame so any
@@ -314,15 +554,16 @@ impl Walker {
             | Tag::MetadataBlock(_)
             | Tag::Subscript
             | Tag::Superscript => {
-                self.stack.push(Frame::Paragraph(Vec::new()));
+                self.push_frame(Frame::Paragraph(InlineBuffer::default()), range);
             }
         }
     }
 
-    fn end(&mut self, end: TagEnd) {
+    fn end(&mut self, end: TagEnd, range: Range<usize>) {
         match end {
             TagEnd::Paragraph => {
-                if let Some(Frame::Paragraph(inlines)) = self.stack.pop() {
+                let inside_blockquote = self.inside_blockquote();
+                if let Some((Frame::Paragraph(inlines), source_range)) = self.pop_frame() {
                     // Empty paragraph: pulldown-cmark wraps inline
                     // images in their own paragraph, so once the image
                     // pops out as a block the wrapping paragraph is
@@ -332,23 +573,36 @@ impl Walker {
                     if inlines.is_empty() {
                         return;
                     }
-                    let block = build_paragraph(inlines);
+                    let source_range = if inside_blockquote {
+                        expand_source_range_start_to_line_start(&self.input, source_range)
+                            .map(|range| trim_source_range_end(&self.input, range))
+                    } else {
+                        source_range
+                    };
+                    let block = build_paragraph(inlines, &self.input, source_range);
                     self.push_block(block);
                 }
             }
             TagEnd::Heading(_) => {
-                if let Some(Frame::Heading(level, inlines)) = self.stack.pop() {
-                    let block = build_heading(level, inlines);
+                let inside_blockquote = self.inside_blockquote();
+                if let Some((Frame::Heading(level, inlines), source_range)) = self.pop_frame() {
+                    let source_range = if inside_blockquote {
+                        expand_source_range_start_to_line_start(&self.input, source_range)
+                            .map(|range| trim_source_range_end(&self.input, range))
+                    } else {
+                        source_range
+                    };
+                    let block = build_heading(level, inlines, &self.input, source_range);
                     self.push_block(block);
                 }
             }
             TagEnd::BlockQuote(_) => {
-                if let Some(Frame::BlockQuote { kind, blocks }) = self.stack.pop() {
+                if let Some((Frame::BlockQuote { kind, blocks }, _)) = self.pop_frame() {
                     self.push_block(build_blockquote(kind, blocks));
                 }
             }
             TagEnd::List(_) => {
-                if let Some(Frame::List { start, items }) = self.stack.pop() {
+                if let Some((Frame::List { start, items }, _)) = self.pop_frame() {
                     let block = build_list(start, items);
                     self.push_block(block);
                 }
@@ -361,17 +615,40 @@ impl Walker {
                 // `ensure_inline_frame`). Drain any such open
                 // paragraphs into the item's blocks before closing.
                 while matches!(self.stack.last(), Some(Frame::Paragraph(_))) {
-                    if let Some(Frame::Paragraph(inlines)) = self.stack.pop()
+                    let item_source_range = self.parent_item_source_range();
+                    if let Some((Frame::Paragraph(mut inlines), source_range)) = self.pop_frame()
                         && !inlines.is_empty()
                     {
-                        let block = build_paragraph(inlines);
+                        if let Some(item_source_range) = item_source_range {
+                            let item_source_range =
+                                trim_source_range_end(&self.input, item_source_range);
+                            let item_source_range = if self.inside_blockquote() {
+                                expand_source_range_start_to_line_start(
+                                    &self.input,
+                                    Some(item_source_range.clone()),
+                                )
+                                .unwrap_or(item_source_range)
+                            } else {
+                                item_source_range
+                            };
+                            let source_range =
+                                union_source_ranges(source_range, Some(item_source_range.clone()));
+                            inlines.mark_all_full_source(item_source_range);
+                            let block = build_paragraph(inlines, &self.input, source_range);
+                            self.push_block(block);
+                            continue;
+                        }
+                        let block = build_paragraph(inlines, &self.input, source_range);
                         self.push_block(block);
                     }
                 }
-                if let Some(Frame::Item {
-                    blocks,
-                    task_checked,
-                }) = self.stack.pop()
+                if let Some((
+                    Frame::Item {
+                        blocks,
+                        task_checked,
+                    },
+                    _,
+                )) = self.pop_frame()
                 {
                     let item_el = build_list_item(blocks);
                     if let Some(Frame::List { items, .. }) = self.stack.last_mut() {
@@ -383,72 +660,144 @@ impl Walker {
                 }
             }
             TagEnd::CodeBlock => {
-                if let Some(Frame::CodeBlock { lang, text }) = self.stack.pop() {
-                    self.push_block(build_code_block(lang.as_deref(), text));
+                let inside_blockquote = self.inside_blockquote();
+                if let Some((
+                    Frame::CodeBlock {
+                        lang,
+                        text,
+                        text_source,
+                        indented,
+                    },
+                    source_range,
+                )) = self.pop_frame()
+                {
+                    let source_range = if indented || inside_blockquote {
+                        expand_source_range_start_to_line_start(&self.input, source_range)
+                    } else {
+                        source_range
+                    };
+                    self.push_block(build_code_block(
+                        lang.as_deref(),
+                        text,
+                        &self.input,
+                        source_range,
+                        text_source,
+                    ));
                 }
             }
             TagEnd::Emphasis => {
+                self.close_inline_source(range);
                 self.inline.italic_depth = self.inline.italic_depth.saturating_sub(1)
             }
-            TagEnd::Strong => self.inline.bold_depth = self.inline.bold_depth.saturating_sub(1),
+            TagEnd::Strong => {
+                self.close_inline_source(range);
+                self.inline.bold_depth = self.inline.bold_depth.saturating_sub(1);
+            }
             TagEnd::Strikethrough => {
+                self.close_inline_source(range);
                 self.inline.strike_depth = self.inline.strike_depth.saturating_sub(1);
             }
             TagEnd::Link => {
-                if let Some(Frame::Link(url, inlines)) = self.stack.pop() {
-                    for run in inlines {
+                if let Some((Frame::Link(url, mut inlines), source_range)) = self.pop_frame() {
+                    if let Some(source_range) = source_range {
+                        inlines.mark_full_source(0..inlines.visible_len(), source_range);
+                    }
+                    for run in &mut inlines.runs {
                         // Each text leaf inside the `<a>` adopts the
                         // same href so the renderer groups them into
                         // one link for hit-testing.
-                        let linked = run.link(url.clone());
-                        self.push_inline(linked);
+                        *run = std::mem::take(run).link(url.clone());
                     }
+                    self.push_inline_buffer(inlines);
                 }
             }
             TagEnd::Image => {
-                if let Some(Frame::Image {
-                    alt,
-                    dest_url,
-                    title,
-                }) = self.stack.pop()
+                if let Some((
+                    Frame::Image {
+                        alt,
+                        dest_url,
+                        title,
+                    },
+                    source_range,
+                )) = self.pop_frame()
                 {
                     let placeholder = build_image_placeholder(&alt, &dest_url, &title);
+                    let visible = image_placeholder_label(&alt, &dest_url, &title);
                     if self.in_inline_container() {
-                        self.push_inline(placeholder);
+                        if let Some(source_range) = source_range {
+                            self.push_inline_mapped(
+                                placeholder,
+                                &visible,
+                                source_range.clone(),
+                                source_range,
+                                true,
+                            );
+                        } else {
+                            self.push_inline_mapped(placeholder, &visible, 0..0, 0..0, false);
+                        }
                     } else {
-                        self.push_block(placeholder);
+                        let block = with_atomic_source_selection(
+                            placeholder,
+                            "img",
+                            &self.input,
+                            source_range,
+                            visible,
+                        );
+                        self.push_block(block);
                     }
                 }
             }
             TagEnd::Table => {
-                if let Some(Frame::Table { head, body, .. }) = self.stack.pop() {
+                if let Some((Frame::Table { head, body, .. }, _)) = self.pop_frame() {
                     self.push_block(build_table(head, body));
                 }
             }
             TagEnd::TableHead => {
-                if let Some(Frame::TableHead(cells)) = self.stack.pop() {
-                    let header_row = table_row(cells);
+                if let Some((Frame::TableHead(items), _)) = self.pop_frame() {
+                    let rows = normalize_table_head_rows(items);
                     if let Some(Frame::Table { head, .. }) = self.stack.last_mut() {
-                        *head = Some(vec![header_row]);
+                        *head = Some(rows);
                     }
                 }
             }
             TagEnd::TableRow => {
-                if let Some(Frame::TableRow(cells)) = self.stack.pop() {
-                    let body_row = table_row(cells);
-                    if let Some(Frame::Table { body, .. }) = self.stack.last_mut() {
-                        body.push(vec![body_row]);
+                if let Some((Frame::TableRow(cells), _)) = self.pop_frame() {
+                    let row = table_row(cells);
+                    match self.stack.last_mut() {
+                        Some(Frame::TableHead(rows)) => rows.push(row),
+                        Some(Frame::Table { body, .. }) => body.push(vec![row]),
+                        _ => {}
                     }
                 }
             }
             TagEnd::TableCell => {
-                if let Some(Frame::TableCell {
-                    runs,
-                    in_header,
-                    alignment,
-                }) = self.stack.pop()
+                let raw_row_source_range = self
+                    .parent_table_line_source_range()
+                    .map(|range| trim_source_range_end(&self.input, range));
+                if let Some((
+                    Frame::TableCell {
+                        runs,
+                        in_header,
+                        alignment,
+                    },
+                    source_range,
+                )) = self.pop_frame()
                 {
-                    let cell = build_table_cell(runs, in_header, alignment);
+                    let row_source_range = raw_row_source_range.map(|range| {
+                        if in_header {
+                            expand_table_header_source_to_delimiter(&self.input, range)
+                        } else {
+                            range
+                        }
+                    });
+                    let cell = build_table_cell(
+                        runs,
+                        in_header,
+                        alignment,
+                        &self.input,
+                        source_range,
+                        row_source_range,
+                    );
                     match self.stack.last_mut() {
                         Some(Frame::TableHead(cells)) | Some(Frame::TableRow(cells)) => {
                             cells.push(cell);
@@ -466,28 +815,36 @@ impl Walker {
             | TagEnd::Subscript
             | TagEnd::Superscript => {
                 // Drain the matching ignored frame from `start`.
-                self.stack.pop();
+                self.pop_frame();
             }
         }
     }
 
-    fn text(&mut self, s: String) {
+    fn text(&mut self, s: String, range: Range<usize>) {
         // CodeBlock receives raw text; everything else flows through
         // an inline buffer with the active style applied.
-        if let Some(Frame::CodeBlock { text: buf, .. }) = self.stack.last_mut() {
+        if let Some(Frame::CodeBlock {
+            text: buf,
+            text_source,
+            ..
+        }) = self.stack.last_mut()
+        {
             buf.push_str(&s);
+            *text_source = union_source_ranges(text_source.take(), Some(range));
             return;
         }
         if let Some(Frame::Image { alt, .. }) = self.stack.last_mut() {
             alt.push_str(&s);
             return;
         }
-        self.ensure_inline_frame();
-        let run = self.inline.apply(text(s));
-        self.push_inline(run);
+        self.ensure_inline_frame(range.clone());
+        self.extend_top_source(range.clone());
+        let run = self.inline.apply(text(s.clone()));
+        let source = self.source_range_for_visible(range.clone(), &s);
+        self.push_inline_mapped(run, &s, source, range, false);
     }
 
-    fn code_span(&mut self, s: String) {
+    fn code_span(&mut self, s: String, range: Range<usize>) {
         // Inline code: `text(...).code()` carries the code role, which
         // theme application maps to mono + foreground. Strikethrough
         // / italic / bold can wrap a code span in CommonMark, so the
@@ -495,8 +852,14 @@ impl Walker {
         if matches!(self.stack.last(), Some(Frame::CodeBlock { .. })) {
             // Inside a fenced code block, `Event::Code` shouldn't
             // arrive — but if it does, treat as raw text.
-            if let Some(Frame::CodeBlock { text: buf, .. }) = self.stack.last_mut() {
+            if let Some(Frame::CodeBlock {
+                text: buf,
+                text_source,
+                ..
+            }) = self.stack.last_mut()
+            {
                 buf.push_str(&s);
+                *text_source = union_source_ranges(text_source.take(), Some(range));
             }
             return;
         }
@@ -504,20 +867,32 @@ impl Walker {
             alt.push_str(&s);
             return;
         }
-        self.ensure_inline_frame();
-        let run = self.inline.apply(text(s).code());
-        self.push_inline(run);
+        self.ensure_inline_frame(range.clone());
+        self.extend_top_source(range.clone());
+        let run = self.inline.apply(text(s.clone()).code());
+        let source = self.source_range_for_visible(range.clone(), &s);
+        self.push_inline_mapped(run, &s, source, range, false);
     }
 
-    fn inline_math(&mut self, source: String) {
+    fn inline_math(&mut self, source: String, range: Range<usize>) {
         let expr = parse_tex_or_error(&source);
-        self.ensure_inline_frame();
-        self.push_inline(math_inline(expr));
+        self.ensure_inline_frame(range.clone());
+        self.extend_top_source(range.clone());
+        self.push_inline_mapped(math_inline(expr), "\u{fffc}", range.clone(), range, true);
     }
 
-    fn display_math(&mut self, source: String) {
+    fn display_math(&mut self, source: String, range: Range<usize>) {
         let expr = parse_tex_or_error(&source);
-        self.push_block(math_block(expr));
+        let source_text = self.input.get(range.clone()).unwrap_or(&source).to_string();
+        let visible = "\u{fffc}".to_string();
+        let mut selection_source = SelectionSource::new(source_text.clone(), visible);
+        selection_source.push_span(0.."\u{fffc}".len(), 0..source_text.len(), true);
+        self.push_block(
+            math_block(expr)
+                .key(markdown_key("math", &range))
+                .selectable()
+                .selection_source(selection_source),
+        );
     }
 
     /// Lazily open a `Paragraph` frame so an inline event arriving
@@ -526,7 +901,7 @@ impl Walker {
     /// `TagEnd::Item` drains any such open paragraph back into the
     /// item before closing it. Table cells already accept inlines
     /// directly so they don't need the lazy paragraph.
-    fn ensure_inline_frame(&mut self) {
+    fn ensure_inline_frame(&mut self, source_range: Range<usize>) {
         match self.stack.last() {
             Some(
                 Frame::Paragraph(_)
@@ -534,7 +909,9 @@ impl Walker {
                 | Frame::Link(_, _)
                 | Frame::TableCell { .. },
             ) => {}
-            Some(Frame::Item { .. }) => self.stack.push(Frame::Paragraph(Vec::new())),
+            Some(Frame::Item { .. }) => {
+                self.push_frame(Frame::Paragraph(InlineBuffer::default()), source_range)
+            }
             _ => {}
         }
     }
@@ -558,14 +935,41 @@ impl Walker {
     /// container (paragraph, heading, link, table cell). Drops if
     /// none is open — stray text outside a paragraph should not be
     /// reachable from a well-formed pulldown-cmark stream.
-    fn push_inline(&mut self, el: El) {
+    fn current_inline_visible_len(&self) -> Option<usize> {
+        self.stack.iter().rev().find_map(|frame| match frame {
+            Frame::Paragraph(runs)
+            | Frame::Heading(_, runs)
+            | Frame::Link(_, runs)
+            | Frame::TableCell { runs, .. } => Some(runs.visible_len()),
+            _ => None,
+        })
+    }
+
+    fn current_inline_buffer_mut(&mut self) -> Option<&mut InlineBuffer> {
+        self.stack.iter_mut().rev().find_map(|frame| match frame {
+            Frame::Paragraph(runs)
+            | Frame::Heading(_, runs)
+            | Frame::Link(_, runs)
+            | Frame::TableCell { runs, .. } => Some(runs),
+            _ => None,
+        })
+    }
+
+    fn push_inline_mapped(
+        &mut self,
+        el: El,
+        visible: &str,
+        source: Range<usize>,
+        source_full: Range<usize>,
+        atomic: bool,
+    ) {
         for frame in self.stack.iter_mut().rev() {
             match frame {
                 Frame::Paragraph(runs)
                 | Frame::Heading(_, runs)
                 | Frame::Link(_, runs)
                 | Frame::TableCell { runs, .. } => {
-                    runs.push(el);
+                    runs.push(el, visible, source, source_full, atomic);
                     return;
                 }
                 _ => {}
@@ -573,24 +977,71 @@ impl Walker {
         }
     }
 
+    fn push_inline_buffer(&mut self, buffer: InlineBuffer) {
+        for frame in self.stack.iter_mut().rev() {
+            match frame {
+                Frame::Paragraph(runs)
+                | Frame::Heading(_, runs)
+                | Frame::Link(_, runs)
+                | Frame::TableCell { runs, .. } => {
+                    runs.append(buffer);
+                    return;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn source_range_for_visible(&self, range: Range<usize>, visible: &str) -> Range<usize> {
+        let Some(fragment) = self.input.get(range.clone()) else {
+            return range;
+        };
+        let Some(start) = fragment.find(visible) else {
+            return range;
+        };
+        (range.start + start)..(range.start + start + visible.len())
+    }
+
     fn finish(mut self) -> El {
         // Defensive: a malformed input could leave open frames. Drain
         // anything still on the stack into root order so we still
         // produce a valid El rather than panicking.
-        while let Some(frame) = self.stack.pop() {
+        while let Some((frame, source_range)) = self.pop_frame() {
             match frame {
-                Frame::Paragraph(runs) => self.root.push(build_paragraph(runs)),
-                Frame::Heading(level, runs) => self.root.push(build_heading(level, runs)),
+                Frame::Paragraph(runs) => {
+                    self.root
+                        .push(build_paragraph(runs, &self.input, source_range))
+                }
+                Frame::Heading(level, runs) => {
+                    self.root
+                        .push(build_heading(level, runs, &self.input, source_range))
+                }
                 Frame::BlockQuote { kind, blocks } => {
                     self.root.push(build_blockquote(kind, blocks))
                 }
                 Frame::List { start, items } => self.root.push(build_list(start, items)),
                 Frame::Item { blocks, .. } => self.root.push(build_list_item(blocks)),
-                Frame::CodeBlock { lang, text } => {
-                    self.root.push(build_code_block(lang.as_deref(), text))
+                Frame::CodeBlock {
+                    lang,
+                    text,
+                    text_source,
+                    indented,
+                } => {
+                    let source_range = if indented {
+                        expand_source_range_start_to_line_start(&self.input, source_range)
+                    } else {
+                        source_range
+                    };
+                    self.root.push(build_code_block(
+                        lang.as_deref(),
+                        text,
+                        &self.input,
+                        source_range,
+                        text_source,
+                    ))
                 }
                 Frame::Link(_, runs) => {
-                    for run in runs {
+                    for run in runs.into_runs() {
                         self.root.push(run);
                     }
                 }
@@ -635,6 +1086,14 @@ impl Walker {
         )
     }
 
+    fn inside_blockquote(&self) -> bool {
+        self.stack
+            .iter()
+            .rev()
+            .skip(1)
+            .any(|frame| matches!(frame, Frame::BlockQuote { .. }))
+    }
+
     fn next_table_cell_alignment(&self) -> Alignment {
         let index = match self.stack.last() {
             Some(Frame::TableHead(cells)) | Some(Frame::TableRow(cells)) => cells.len(),
@@ -661,26 +1120,168 @@ impl Walker {
 /// paint, so `Theme::aetna_light()` recolours the result without
 /// re-rendering the markdown. Otherwise (feature off, no lang,
 /// unknown lang) fall through to the plain-mono [`code_block`] path.
-fn build_code_block(lang: Option<&str>, text: String) -> El {
-    let body = strip_trailing_newline(text);
+fn build_code_block(
+    lang: Option<&str>,
+    raw_text: String,
+    input: &str,
+    source_range: Option<Range<usize>>,
+    text_source: Option<Range<usize>>,
+) -> El {
+    let body = strip_trailing_newline(raw_text);
+    let body_selection =
+        code_block_selection_source(input, source_range.clone(), text_source, &body);
+    let body_key_range = source_range.clone();
     #[cfg(feature = "highlighting")]
     if let Some(lang) = lang
         && let Some(syntax) = crate::highlight::find_syntax(lang)
     {
         let runs = crate::highlight::highlight_to_runs(&body, syntax);
         if !runs.is_empty() {
-            return code_block_chrome(
-                text_runs(runs)
-                    .nowrap_text()
-                    .font_size(tokens::TEXT_SM.size)
-                    .width(Size::Hug)
-                    .height(Size::Hug),
-            );
+            let mut body = text_runs(runs)
+                .mono()
+                .nowrap_text()
+                .font_size(tokens::TEXT_SM.size)
+                .width(Size::Hug)
+                .height(Size::Hug);
+            if let Some(source) = body_selection.clone() {
+                body = body
+                    .key(markdown_key(
+                        "code",
+                        &body_key_range.clone().unwrap_or(0..source.source.len()),
+                    ))
+                    .selectable()
+                    .selection_source(source);
+            }
+            return code_block_chrome(body);
         }
     }
     #[cfg(not(feature = "highlighting"))]
     let _ = lang;
-    code_block(body)
+    let mut body_el = text(body.clone())
+        .mono()
+        .font_size(tokens::TEXT_SM.size)
+        .nowrap_text()
+        .width(Size::Hug)
+        .height(Size::Hug);
+    if let Some(source) = body_selection {
+        body_el = body_el
+            .key(markdown_key(
+                "code",
+                &body_key_range.unwrap_or(0..source.source.len()),
+            ))
+            .selectable()
+            .selection_source(source);
+    }
+    code_block_chrome(body_el)
+}
+
+fn code_block_selection_source(
+    input: &str,
+    source_range: Option<Range<usize>>,
+    text_source: Option<Range<usize>>,
+    visible: &str,
+) -> Option<SelectionSource> {
+    let source_range = source_range?;
+    let source_text = input.get(source_range.clone())?.to_string();
+    let mut source = SelectionSource::new(source_text.clone(), visible.to_string());
+    if visible.is_empty() {
+        return Some(source);
+    }
+
+    let search_range = text_source
+        .map(|range| trim_source_range_end(input, range))
+        .and_then(|range| {
+            (range.start >= source_range.start && range.end <= source_range.end)
+                .then_some((range.start - source_range.start)..(range.end - source_range.start))
+        })
+        .unwrap_or(0..source_text.len());
+
+    let mut visible_start = 0;
+    let mut source_cursor = search_range.start;
+    for segment in visible.split_inclusive('\n') {
+        if segment.is_empty() {
+            continue;
+        }
+        let search = &source.source[source_cursor..search_range.end];
+        let found = search.find(segment)?;
+        let source_start = source_cursor + found;
+        let source_end = source_start + segment.len();
+        let visible_end = visible_start + segment.len();
+        source.push_span_with_full_source(
+            visible_start..visible_end,
+            source_start..source_end,
+            source_start..source_end,
+            false,
+        );
+        visible_start = visible_end;
+        source_cursor = source_end;
+    }
+    Some(source)
+}
+
+fn union_source_ranges(a: Option<Range<usize>>, b: Option<Range<usize>>) -> Option<Range<usize>> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.start.min(b.start)..a.end.max(b.end)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}
+
+fn trim_source_range_end(input: &str, mut range: Range<usize>) -> Range<usize> {
+    while range.end > range.start {
+        let Some((idx, ch)) = input[..range.end].char_indices().next_back() else {
+            break;
+        };
+        if matches!(ch, '\n' | '\r') {
+            range.end = idx;
+        } else {
+            break;
+        }
+    }
+    range
+}
+
+fn expand_table_header_source_to_delimiter(input: &str, mut range: Range<usize>) -> Range<usize> {
+    let mut cursor = range.end;
+    if input.as_bytes().get(cursor) == Some(&b'\n') {
+        cursor += 1;
+    }
+
+    let delimiter_start = cursor;
+    let delimiter_end = input[delimiter_start..]
+        .find('\n')
+        .map(|end| delimiter_start + end)
+        .unwrap_or(input.len());
+    let delimiter = input[delimiter_start..delimiter_end].trim();
+    if is_table_delimiter_row(delimiter) {
+        range.end = delimiter_end;
+    }
+    range
+}
+
+fn is_table_delimiter_row(line: &str) -> bool {
+    let mut saw_dash = false;
+    for ch in line.chars() {
+        match ch {
+            '|' | ':' | '-' | ' ' | '\t' => {
+                saw_dash |= ch == '-';
+            }
+            _ => return false,
+        }
+    }
+    saw_dash
+}
+
+fn expand_source_range_start_to_line_start(
+    input: &str,
+    range: Option<Range<usize>>,
+) -> Option<Range<usize>> {
+    let mut range = range?;
+    while range.start > 0 && input.as_bytes().get(range.start - 1) != Some(&b'\n') {
+        range.start -= 1;
+    }
+    Some(range)
 }
 
 fn parse_tex_or_error(source: &str) -> MathExpr {
@@ -693,40 +1294,108 @@ fn parse_tex_or_error(source: &str) -> MathExpr {
 /// Build a paragraph block. A single plain `text(...)` run can become
 /// a `paragraph(...)` (one wrapped string); anything richer collapses
 /// to `text_runs([...])`.
-fn build_paragraph(runs: Vec<El>) -> El {
-    if let Some(plain) = single_plain_text(&runs) {
-        return paragraph(plain);
+fn build_paragraph(inlines: InlineBuffer, input: &str, source_range: Option<Range<usize>>) -> El {
+    let key_range = source_range.clone();
+    let selection_source = inlines.selection_source(input, source_range);
+    let runs = inlines.into_runs();
+    let mut el = if let Some(plain) = single_plain_text(&runs) {
+        paragraph(plain)
+    } else {
+        text_runs(runs)
+            .wrap_text()
+            .width(Size::Fill(1.0))
+            .height(Size::Hug)
+    };
+    if let Some(source) = selection_source {
+        el = el
+            .key(markdown_key(
+                "p",
+                &key_range.unwrap_or(0..source.source.len()),
+            ))
+            .selectable()
+            .selection_source(source);
     }
-    text_runs(runs)
-        .wrap_text()
-        .width(Size::Fill(1.0))
-        .height(Size::Hug)
+    el
+}
+
+fn with_source_selection(
+    mut el: El,
+    kind: &str,
+    source: Option<SelectionSource>,
+    key_range: Option<Range<usize>>,
+) -> El {
+    if let Some(source) = source {
+        el = el
+            .key(markdown_key(
+                kind,
+                &key_range.unwrap_or(0..source.source.len()),
+            ))
+            .selectable()
+            .selection_source(source);
+    }
+    el
+}
+
+fn with_atomic_source_selection(
+    mut el: El,
+    kind: &str,
+    input: &str,
+    source_range: Option<Range<usize>>,
+    visible: String,
+) -> El {
+    let Some(source_range) = source_range else {
+        return el;
+    };
+    let Some(source_text) = input.get(source_range.clone()) else {
+        return el;
+    };
+    let mut source = SelectionSource::new(source_text.to_string(), visible.clone());
+    source.push_span(0..visible.len(), 0..source_text.len(), true);
+    el = el
+        .key(markdown_key(kind, &source_range))
+        .selectable()
+        .selection_source(source);
+    el
+}
+
+fn markdown_key(kind: &str, range: &Range<usize>) -> String {
+    format!("md:{kind}:{}..{}", range.start, range.end)
 }
 
 /// Build a heading block. For headings whose only content is plain
 /// text, use `h1` / `h2` / `h3` so the result carries the semantic
 /// `Kind::Heading` (visible in tree dumps and inspect output). For
 /// styled headings we fall back to a heading-roled `text_runs`.
-fn build_heading(level: HeadingLevel, runs: Vec<El>) -> El {
+fn build_heading(
+    level: HeadingLevel,
+    inlines: InlineBuffer,
+    input: &str,
+    source_range: Option<Range<usize>>,
+) -> El {
+    let key_range = source_range.clone();
+    let selection_source = inlines.selection_source(input, source_range);
+    let runs = inlines.into_runs();
     if let Some(plain) = single_plain_text(&runs) {
-        return match level {
+        let el = match level {
             HeadingLevel::H1 => h1(plain),
             HeadingLevel::H2 => h2(plain),
             // h4–h6 are rare and Aetna's heading vocabulary stops at
             // h3 — clamp the rest so deep nesting still renders.
             _ => h3(plain),
         };
+        return with_source_selection(el, "h", selection_source, key_range);
     }
     let role = match level {
         HeadingLevel::H1 => TextRole::Display,
         HeadingLevel::H2 => TextRole::Heading,
         _ => TextRole::Title,
     };
-    text_runs(runs)
+    let el = text_runs(runs)
         .text_role(role)
         .wrap_text()
         .width(Size::Fill(1.0))
-        .height(Size::Hug)
+        .height(Size::Hug);
+    with_source_selection(el, "h", selection_source, key_range)
 }
 
 fn build_blockquote(kind: Option<BlockQuoteKind>, blocks: Vec<El>) -> El {
@@ -798,11 +1467,45 @@ fn build_table(head: Option<Vec<El>>, body: Vec<Vec<El>>) -> El {
     }
 }
 
+fn normalize_table_head_rows(items: Vec<El>) -> Vec<El> {
+    if items.is_empty()
+        || items
+            .iter()
+            .all(|item| item.metrics_role == Some(MetricsRole::TableRow))
+    {
+        items
+    } else {
+        vec![table_row(items)]
+    }
+}
+
 /// Wrap accumulated inline runs into a header-styled or body-styled
 /// table cell. Plain-text-only cells flow through `table_head` /
 /// `text(...)` so the cell carries the right typography defaults; mixed
 /// inline content uses `text_runs([...])` and keeps per-run styling.
-fn build_table_cell(runs: Vec<El>, in_header: bool, alignment: Alignment) -> El {
+fn build_table_cell(
+    inlines: InlineBuffer,
+    in_header: bool,
+    alignment: Alignment,
+    input: &str,
+    source_range: Option<Range<usize>>,
+    row_source_range: Option<Range<usize>>,
+) -> El {
+    let key_range = source_range.clone().or_else(|| row_source_range.clone());
+    let row_group = row_source_range
+        .as_ref()
+        .map(|range| format!("md:table-row:{}..{}", range.start, range.end));
+    let selection_source_range = row_source_range.or(source_range);
+    let selection_source = inlines
+        .selection_source(input, selection_source_range)
+        .map(|source| {
+            if let Some(group) = row_group {
+                source.full_selection_group(group)
+            } else {
+                source
+            }
+        });
+    let runs = inlines.into_runs();
     if in_header {
         let cell = if let Some(plain) = single_plain_text(&runs) {
             table_head(plain)
@@ -811,18 +1514,18 @@ fn build_table_cell(runs: Vec<El>, in_header: bool, alignment: Alignment) -> El 
         } else {
             table_head_el(text_runs(runs).width(Size::Fill(1.0)))
         };
+        let cell = with_source_selection(cell, "th", selection_source, key_range);
         return apply_table_alignment(cell, alignment);
     }
-    if let Some(plain) = single_plain_text(&runs) {
-        return apply_table_alignment(table_cell(text(plain)), alignment);
-    }
-    if runs.is_empty() {
-        return apply_table_alignment(table_cell(text("")), alignment);
-    }
-    apply_table_alignment(
-        table_cell(text_runs(runs).width(Size::Fill(1.0))),
-        alignment,
-    )
+    let cell = if let Some(plain) = single_plain_text(&runs) {
+        table_cell(text(plain))
+    } else if runs.is_empty() {
+        table_cell(text(""))
+    } else {
+        table_cell(text_runs(runs).width(Size::Fill(1.0)))
+    };
+    let cell = with_source_selection(cell, "td", selection_source, key_range);
+    apply_table_alignment(cell, alignment)
 }
 
 fn apply_table_alignment(mut el: El, alignment: Alignment) -> El {
@@ -846,6 +1549,15 @@ fn build_image_placeholder(alt: &str, dest_url: &str, title: &str) -> El {
     // Phase 2 doesn't wire image loading. Surface the alt text plus
     // source metadata so the page reads sensibly until image resolution
     // lands; muted + italic so it doesn't look like first-class content.
+    let label = image_placeholder_label(alt, dest_url, title);
+    let mut el = text(label).muted().italic();
+    if !dest_url.is_empty() {
+        el = el.link(dest_url.to_string());
+    }
+    el
+}
+
+fn image_placeholder_label(alt: &str, dest_url: &str, title: &str) -> String {
     let mut label = match (alt.is_empty(), dest_url.is_empty()) {
         (true, true) => "[image]".to_string(),
         (false, true) => format!("[image: {alt}]"),
@@ -857,11 +1569,7 @@ fn build_image_placeholder(alt: &str, dest_url: &str, title: &str) -> El {
         label.push_str(title);
         label.push('"');
     }
-    let mut el = text(label).muted().italic();
-    if !dest_url.is_empty() {
-        el = el.link(dest_url.to_string());
-    }
-    el
+    label
 }
 
 /// Inspect a run vector and return a single plain string if every run
@@ -911,6 +1619,11 @@ fn strip_trailing_newline(mut s: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aetna_core::draw_ops::draw_ops;
+    use aetna_core::ir::DrawOp;
+    use aetna_core::layout::layout;
+    use aetna_core::selection::{Selection, SelectionPoint, SelectionRange, selected_text};
+    use aetna_core::state::UiState;
 
     /// The transformer always wraps blocks in a `column`. Reach into
     /// it for the test assertions.
@@ -925,6 +1638,31 @@ mod tests {
         match md_with_options(input, options) {
             el if matches!(el.kind, Kind::Group) && el.axis == Axis::Column => el.children,
             other => panic!("expected outer column, got {:?}", other.kind),
+        }
+    }
+
+    fn first_source_backed(el: &El) -> Option<&El> {
+        if el.selection_source.is_some() {
+            return Some(el);
+        }
+        el.children.iter().find_map(first_source_backed)
+    }
+
+    fn collect_source_backed<'a>(el: &'a El, out: &mut Vec<&'a El>) {
+        if el.selection_source.is_some() {
+            out.push(el);
+        }
+        for child in &el.children {
+            collect_source_backed(child, out);
+        }
+    }
+
+    fn selection(key: &str, start: usize, end: usize) -> Selection {
+        Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new(key, start),
+                head: SelectionPoint::new(key, end),
+            }),
         }
     }
 
@@ -952,6 +1690,73 @@ mod tests {
             assert_eq!(b.kind, Kind::Heading);
             assert_eq!(b.text_role, TextRole::Title);
         }
+    }
+
+    #[test]
+    fn markdown_heading_selection_copies_heading_marker_when_whole_heading_selected() {
+        let input = "## Subtitle";
+        let doc = md(input);
+        let node = first_source_backed(&doc).expect("source-backed heading");
+        let source = node.selection_source.as_ref().unwrap();
+        let key = node.key.as_deref().unwrap();
+
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some(input)
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, 1, source.visible_len() - 1)).as_deref(),
+            Some("ubtitl")
+        );
+    }
+
+    #[test]
+    fn markdown_blockquote_selection_copies_quote_marker_when_whole_line_selected() {
+        let input = "> Quoted text";
+        let doc = md(input);
+        let node = first_source_backed(&doc).expect("source-backed quote paragraph");
+        let source = node.selection_source.as_ref().unwrap();
+        let key = node.key.as_deref().unwrap();
+
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some(input)
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, 1, source.visible_len() - 1)).as_deref(),
+            Some("uoted tex")
+        );
+    }
+
+    #[test]
+    fn markdown_blockquote_selection_preserves_markers_for_heading_and_list_items() {
+        let input = "> ## Quoted heading\n>\n> - quoted item";
+        let doc = md(input);
+        let mut nodes = Vec::new();
+        collect_source_backed(&doc, &mut nodes);
+
+        let selected_whole = |visible: &str| {
+            let node = nodes
+                .iter()
+                .find(|node| {
+                    node.selection_source
+                        .as_ref()
+                        .is_some_and(|source| source.visible == visible)
+                })
+                .expect("source-backed quoted node");
+            let source = node.selection_source.as_ref().unwrap();
+            let key = node.key.as_deref().unwrap();
+            selected_text(&doc, &selection(key, 0, source.visible_len()))
+        };
+
+        assert_eq!(
+            selected_whole("Quoted heading").as_deref(),
+            Some("> ## Quoted heading")
+        );
+        assert_eq!(
+            selected_whole("quoted item").as_deref(),
+            Some("> - quoted item")
+        );
     }
 
     #[test]
@@ -986,6 +1791,187 @@ mod tests {
     }
 
     #[test]
+    fn markdown_selection_copies_paragraph_source() {
+        let input = "This is **bold**.";
+        let doc = md(input);
+        let node = first_source_backed(&doc).expect("source-backed paragraph");
+        let source = node.selection_source.as_ref().unwrap();
+        let key = node.key.as_deref().unwrap();
+
+        let bold_start = source.visible.find("bold").unwrap();
+        let bold_end = bold_start + "bold".len();
+        assert_eq!(
+            selected_text(&doc, &selection(key, bold_start, bold_end)).as_deref(),
+            Some("**bold**")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, bold_start + 1, bold_end - 1)).as_deref(),
+            Some("ol")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, bold_end)).as_deref(),
+            Some("This is **bold**")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, bold_start, source.visible_len())).as_deref(),
+            Some("**bold**.")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, bold_start + 1, source.visible_len())).as_deref(),
+            Some("old.")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some(input)
+        );
+    }
+
+    #[test]
+    fn markdown_selection_copies_all_delimiters_when_styled_text_fills_paragraph() {
+        let input = "**bold**";
+        let doc = md(input);
+        let node = first_source_backed(&doc).expect("source-backed paragraph");
+        let source = node.selection_source.as_ref().unwrap();
+        let key = node.key.as_deref().unwrap();
+
+        assert_eq!(source.visible, "bold");
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some(input)
+        );
+    }
+
+    #[test]
+    fn markdown_selection_copies_full_inline_construct_source() {
+        let input = "Use `code` and [site](https://aetna.dev).";
+        let doc = md(input);
+        let node = first_source_backed(&doc).expect("source-backed paragraph");
+        let source = node.selection_source.as_ref().unwrap();
+        let key = node.key.as_deref().unwrap();
+
+        let code_start = source.visible.find("code").unwrap();
+        let code_end = code_start + "code".len();
+        assert_eq!(
+            selected_text(&doc, &selection(key, code_start, code_end)).as_deref(),
+            Some("`code`")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, code_start + 1, code_end - 1)).as_deref(),
+            Some("od")
+        );
+
+        let site_start = source.visible.find("site").unwrap();
+        let site_end = site_start + "site".len();
+        assert_eq!(
+            selected_text(&doc, &selection(key, site_start, site_end)).as_deref(),
+            Some("[site](https://aetna.dev)")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, site_start + 1, site_end - 1)).as_deref(),
+            Some("it")
+        );
+    }
+
+    #[test]
+    fn markdown_list_selection_does_not_pull_in_previous_document_source() {
+        let input = "Intro paragraph.\n\n- first item\n- second item\n- third item";
+        let doc = md(input);
+        let mut nodes = Vec::new();
+        collect_source_backed(&doc, &mut nodes);
+        let list_nodes: Vec<&El> = nodes
+            .into_iter()
+            .filter(|node| {
+                node.selection_source
+                    .as_ref()
+                    .is_some_and(|source| source.visible.contains("item"))
+            })
+            .collect();
+        assert_eq!(list_nodes.len(), 3);
+
+        let first = list_nodes[0];
+        let third = list_nodes[2];
+        let first_key = first.key.as_deref().unwrap();
+        let third_key = third.key.as_deref().unwrap();
+        let third_len = third.selection_source.as_ref().unwrap().visible_len();
+
+        let selected = selected_text(
+            &doc,
+            &Selection {
+                range: Some(SelectionRange {
+                    anchor: SelectionPoint::new(first_key, 0),
+                    head: SelectionPoint::new(third_key, third_len),
+                }),
+            },
+        );
+        assert_eq!(
+            selected.as_deref(),
+            Some("- first item\n- second item\n- third item")
+        );
+    }
+
+    #[test]
+    fn markdown_list_whole_item_selection_copies_marker_source() {
+        let input = "Intro paragraph.\n\n- first item\n- second item";
+        let doc = md(input);
+        let mut nodes = Vec::new();
+        collect_source_backed(&doc, &mut nodes);
+        let first_item = nodes
+            .into_iter()
+            .find(|node| {
+                node.selection_source
+                    .as_ref()
+                    .is_some_and(|source| source.visible == "first item")
+            })
+            .expect("first list item");
+        let source = first_item.selection_source.as_ref().unwrap();
+        let key = first_item.key.as_deref().unwrap();
+
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some("- first item")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, 1, source.visible_len() - 1)).as_deref(),
+            Some("irst ite")
+        );
+    }
+
+    #[test]
+    fn markdown_list_selection_preserves_ordered_and_task_markers() {
+        let input = "3. third item\n4. fourth item\n\n- [x] done item\n- [ ] todo item";
+        let doc = md(input);
+        let mut nodes = Vec::new();
+        collect_source_backed(&doc, &mut nodes);
+
+        let selected_whole_item = |visible: &str| {
+            let item = nodes
+                .iter()
+                .find(|node| {
+                    node.selection_source
+                        .as_ref()
+                        .is_some_and(|source| source.visible == visible)
+                })
+                .expect("list item");
+            let source = item.selection_source.as_ref().unwrap();
+            let key = item.key.as_deref().unwrap();
+            selected_text(&doc, &selection(key, 0, source.visible_len()))
+        };
+
+        assert_eq!(
+            selected_whole_item("third item").as_deref(),
+            Some("3. third item")
+        );
+        assert_eq!(
+            selected_whole_item("done item").as_deref(),
+            Some("- [x] done item")
+        );
+        assert_eq!(
+            selected_whole_item("todo item").as_deref(),
+            Some("- [ ] todo item")
+        );
+    }
+
+    #[test]
     fn math_option_routes_inline_and_display_math_to_math_nodes() {
         let bs = blocks_with_options(
             "Euler $e^{i\\pi}+1=0$\n\n$$\\frac{a}{b}$$",
@@ -1001,6 +1987,40 @@ mod tests {
         );
         assert_eq!(bs[1].kind, Kind::Math);
         assert_eq!(bs[1].math_display, MathDisplay::Block);
+    }
+
+    #[test]
+    fn inline_math_selection_copies_original_tex_source_atomically() {
+        let input = "Inline $x_1^2$ math.";
+        let doc = md_with_options(input, MarkdownOptions::default().math(true));
+        let node = first_source_backed(&doc).expect("source-backed paragraph");
+        let source = node.selection_source.as_ref().unwrap();
+        let key = node.key.as_deref().unwrap();
+        let math_start = source.visible.find('\u{fffc}').unwrap();
+        let math_end = math_start + "\u{fffc}".len();
+
+        assert_eq!(
+            selected_text(&doc, &selection(key, math_start, math_end)).as_deref(),
+            Some("$x_1^2$")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some(input)
+        );
+    }
+
+    #[test]
+    fn display_math_selection_copies_original_tex_source_atomically() {
+        let input = "$$\\frac{a}{b}$$";
+        let doc = md_with_options(input, MarkdownOptions::default().math(true));
+        let node = first_source_backed(&doc).expect("source-backed display math");
+        let source = node.selection_source.as_ref().unwrap();
+        let key = node.key.as_deref().unwrap();
+
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some(input)
+        );
     }
 
     #[test]
@@ -1125,6 +2145,53 @@ mod tests {
         assert_eq!(body.text.as_deref(), Some("let x = 1;\nlet y = 2;"));
     }
 
+    #[test]
+    fn markdown_code_block_selection_copies_fence_when_whole_body_selected() {
+        let input = "```rust\nfn main() {}\nlet x = 1;\n```";
+        let doc = md(input);
+        let mut nodes = Vec::new();
+        collect_source_backed(&doc, &mut nodes);
+        let body = nodes
+            .into_iter()
+            .find(|node| {
+                node.selection_source
+                    .as_ref()
+                    .is_some_and(|source| source.visible == "fn main() {}\nlet x = 1;")
+            })
+            .expect("source-backed code body");
+        let source = body.selection_source.as_ref().unwrap();
+        let key = body.key.as_deref().unwrap();
+        let main_start = source.visible.find("main").unwrap();
+
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some(input)
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, main_start, main_start + "main".len())).as_deref(),
+            Some("main")
+        );
+    }
+
+    #[test]
+    fn markdown_indented_code_partial_selection_copies_visible_code() {
+        let input = "    let x = 1;\n    let y = 2;";
+        let doc = md(input);
+        let node = first_source_backed(&doc).expect("source-backed code body");
+        let source = node.selection_source.as_ref().unwrap();
+        let key = node.key.as_deref().unwrap();
+        let y_start = source.visible.find("let y").unwrap();
+
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some(input)
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, y_start, source.visible_len())).as_deref(),
+            Some("let y = 2;")
+        );
+    }
+
     /// Fenced block with an unrecognised language falls back to the
     /// plain-mono `code_block(...)` path (single text leaf, no inline
     /// runs) — same behaviour as a fence with no info string.
@@ -1153,6 +2220,7 @@ mod tests {
         assert_eq!(surface.surface_role, SurfaceRole::Sunken);
         let body = &surface.children[0];
         assert_eq!(body.kind, Kind::Inlines);
+        assert!(body.font_mono);
         let text_runs: Vec<&El> = body
             .children
             .iter()
@@ -1231,6 +2299,27 @@ mod tests {
     }
 
     #[test]
+    fn markdown_image_selection_copies_image_source_atomically() {
+        let input = "Before ![alt text](img.png \"Title\") after";
+        let doc = md(input);
+        let node = first_source_backed(&doc).expect("source-backed paragraph");
+        let source = node.selection_source.as_ref().unwrap();
+        let key = node.key.as_deref().unwrap();
+        let label = "[image: alt text] img.png \"Title\"";
+        let image_start = source.visible.find(label).unwrap();
+        let image_end = image_start + label.len();
+
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some(input)
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, image_start, image_end)).as_deref(),
+            Some("![alt text](img.png \"Title\")")
+        );
+    }
+
+    #[test]
     fn document_outer_column_carries_block_gap() {
         let el = md("# A\n\nb");
         assert_eq!(el.kind, Kind::Group);
@@ -1259,9 +2348,13 @@ mod tests {
         // Header has one row of two cells.
         assert_eq!(header.children.len(), 1);
         assert_eq!(header.children[0].children.len(), 2);
+        assert_eq!(header.children[0].children[0].text.as_deref(), Some("Name"));
+        assert_eq!(header.children[0].children[1].text.as_deref(), Some("Role"));
         // Body has two rows, each with two cells.
         assert_eq!(body.children.len(), 2);
         assert_eq!(body.children[0].children.len(), 2);
+        assert_eq!(body.children[0].children[0].text.as_deref(), Some("Ada"));
+        assert_eq!(body.children[0].children[1].text.as_deref(), Some("dev"));
     }
 
     #[test]
@@ -1336,6 +2429,151 @@ mod tests {
                 .any(|r| r.font_weight == FontWeight::Bold
                     && r.text_role == TextRole::Caption
                     && r.text.as_deref() == Some("Header"))
+        );
+    }
+
+    #[test]
+    fn markdown_table_cell_selection_copies_row_source_when_whole_cell_selected() {
+        let input = "\
+| Name | Role |\n\
+|------|------|\n\
+| **Ada** | dev |\n";
+        let doc = md(input);
+        let mut nodes = Vec::new();
+        collect_source_backed(&doc, &mut nodes);
+        let ada_cell = nodes
+            .into_iter()
+            .find(|node| {
+                node.selection_source
+                    .as_ref()
+                    .is_some_and(|source| source.visible == "Ada")
+            })
+            .expect("source-backed Ada table cell");
+        let source = ada_cell.selection_source.as_ref().unwrap();
+        let key = ada_cell.key.as_deref().unwrap();
+
+        assert_eq!(
+            selected_text(&doc, &selection(key, 0, source.visible_len())).as_deref(),
+            Some("| **Ada** | dev |")
+        );
+        assert_eq!(
+            selected_text(&doc, &selection(key, 1, source.visible_len() - 1)).as_deref(),
+            Some("d")
+        );
+    }
+
+    #[test]
+    fn markdown_table_row_selection_copies_pipe_row_source_once() {
+        let input = "\
+| Name | Role |\n\
+|------|------|\n\
+| **Ada** | dev |\n";
+        let doc = md(input);
+        let mut nodes = Vec::new();
+        collect_source_backed(&doc, &mut nodes);
+        let ada_cell = nodes
+            .iter()
+            .find(|node| {
+                node.selection_source
+                    .as_ref()
+                    .is_some_and(|source| source.visible == "Ada")
+            })
+            .expect("source-backed Ada table cell");
+        let role_cell = nodes
+            .iter()
+            .find(|node| {
+                node.selection_source
+                    .as_ref()
+                    .is_some_and(|source| source.visible == "dev")
+            })
+            .expect("source-backed role table cell");
+        let ada_key = ada_cell.key.as_deref().unwrap();
+        let role_key = role_cell.key.as_deref().unwrap();
+        let role_len = role_cell.selection_source.as_ref().unwrap().visible_len();
+
+        let selected = selected_text(
+            &doc,
+            &Selection {
+                range: Some(SelectionRange {
+                    anchor: SelectionPoint::new(ada_key, 0),
+                    head: SelectionPoint::new(role_key, role_len),
+                }),
+            },
+        );
+        assert_eq!(selected.as_deref(), Some("| **Ada** | dev |"));
+    }
+
+    #[test]
+    fn markdown_table_header_draws_and_copy_preserves_separator() {
+        let input = "\
+| Construct  | Maps to            |\n\
+|------------|--------------------|\n\
+| Heading    | `h1` / `h2` / `h3` |\n\
+| List       | `bullet_list` / `numbered_list` |\n\
+| Blockquote | `blockquote`       |\n\
+| Code block | `code_block`       |\n\
+| Table      | `table`            |\n";
+        let mut doc = scroll([column([md(input)])
+            .gap(tokens::SPACE_4)
+            .align(Align::Start)
+            .width(Size::Fill(1.0))])
+        .height(Size::Fill(1.0));
+        let mut state = UiState::new();
+        layout(&mut doc, &mut state, Rect::new(0.0, 0.0, 640.0, 240.0));
+        let ops = draw_ops(&doc, &state);
+
+        let text_y = |needle: &str| {
+            ops.iter().find_map(|op| match op {
+                DrawOp::GlyphRun { text, rect, .. } if text == needle => Some(rect.y),
+                _ => None,
+            })
+        };
+        let construct_y = text_y("Construct").expect("Construct header should draw");
+        let heading_y = text_y("Heading").expect("Heading body cell should draw");
+        assert!(
+            construct_y < heading_y,
+            "expected header above body, got Construct y={construct_y}, Heading y={heading_y}"
+        );
+
+        let mut nodes = Vec::new();
+        collect_source_backed(&doc, &mut nodes);
+        let construct_cell = nodes
+            .iter()
+            .find(|node| {
+                node.selection_source
+                    .as_ref()
+                    .is_some_and(|source| source.visible == "Construct")
+            })
+            .expect("source-backed Construct table cell");
+        let heading_cell = nodes
+            .iter()
+            .find(|node| {
+                node.selection_source
+                    .as_ref()
+                    .is_some_and(|source| source.visible == "Heading")
+            })
+            .expect("source-backed Heading table cell");
+        let construct_key = construct_cell.key.as_deref().unwrap();
+        let heading_key = heading_cell.key.as_deref().unwrap();
+        let heading_len = heading_cell
+            .selection_source
+            .as_ref()
+            .unwrap()
+            .visible_len();
+        let selected = selected_text(
+            &doc,
+            &Selection {
+                range: Some(SelectionRange {
+                    anchor: SelectionPoint::new(construct_key, 0),
+                    head: SelectionPoint::new(heading_key, heading_len),
+                }),
+            },
+        );
+        assert_eq!(
+            selected.as_deref(),
+            Some(
+                "| Construct  | Maps to            |\n|------------|--------------------|\n| Heading    | `h1` / `h2` / `h3` |"
+            )
         );
     }
 

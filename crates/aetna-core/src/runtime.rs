@@ -1891,6 +1891,9 @@ fn y_distance(rect: Rect, y: f32) -> f32 {
 
 fn find_text_len(node: &El, id: &str) -> Option<usize> {
     if node.computed_id == id {
+        if let Some(source) = &node.selection_source {
+            return Some(source.visible_len());
+        }
         return node.text.as_ref().map(|t| t.len());
     }
     node.children.iter().find_map(|c| find_text_len(c, id))

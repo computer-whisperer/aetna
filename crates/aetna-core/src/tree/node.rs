@@ -53,6 +53,12 @@ pub struct El {
     /// transfers focus and clears selection; pointer-down on a
     /// selectable-only leaf moves selection without disturbing focus.
     pub selectable: bool,
+    /// Optional source-backed selection payload. Plain text leaves
+    /// select/copy their rendered [`Self::text`]. Rich text systems can
+    /// attach a [`crate::selection::SelectionSource`] so pointer
+    /// positions resolve through rendered text but copy returns the
+    /// original driving syntax (for example Markdown or TeX).
+    pub selection_source: Option<crate::selection::SelectionSource>,
     /// When true, all key events (other than registered hotkeys) route
     /// to this node as raw `KeyDown` instead of being interpreted by
     /// the library's defaults (Tab traversal, Enter/Space activation,

@@ -28,6 +28,8 @@
 //! excluded from `selection_order` because nothing could survive a
 //! tree rebuild as a stable identity. See [`crate::tree::El::selectable`].
 
+use std::ops::Range;
+
 use crate::tree::{El, Kind};
 use crate::widgets::text_input::TextSelection;
 
@@ -66,6 +68,234 @@ impl SelectionPoint {
             byte,
         }
     }
+}
+
+/// Source-backed copy/hit-test payload for a selectable rich-text
+/// node.
+///
+/// `visible` is the logical text users point at while selecting;
+/// `source` is what copy should return. `spans` maps byte ranges in
+/// `visible` to byte ranges in `source`. A plain text leaf has one
+/// identity span. Markdown can instead map rendered words to their
+/// original markdown source, and atomic embeds such as math can map a
+/// one-byte object slot to the full `$...$` / `$$...$$` source.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SelectionSource {
+    pub source: String,
+    pub visible: String,
+    pub spans: Vec<SelectionSourceSpan>,
+    pub full_selection_group: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SelectionSourceSpan {
+    pub visible: Range<usize>,
+    pub source: Range<usize>,
+    pub source_full: Range<usize>,
+    pub atomic: bool,
+}
+
+impl SelectionSource {
+    pub fn new(source: impl Into<String>, visible: impl Into<String>) -> Self {
+        Self {
+            source: source.into(),
+            visible: visible.into(),
+            spans: Vec::new(),
+            full_selection_group: None,
+        }
+    }
+
+    pub fn identity(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let len = text.len();
+        Self {
+            source: text.clone(),
+            visible: text,
+            spans: vec![SelectionSourceSpan {
+                visible: 0..len,
+                source: 0..len,
+                source_full: 0..len,
+                atomic: false,
+            }],
+            full_selection_group: None,
+        }
+    }
+
+    pub fn full_selection_group(mut self, group: impl Into<String>) -> Self {
+        self.full_selection_group = Some(group.into());
+        self
+    }
+
+    pub fn push_span(&mut self, visible: Range<usize>, source: Range<usize>, atomic: bool) {
+        self.push_span_with_full_source(visible, source.clone(), source, atomic);
+    }
+
+    pub fn push_span_with_full_source(
+        &mut self,
+        visible: Range<usize>,
+        source: Range<usize>,
+        source_full: Range<usize>,
+        atomic: bool,
+    ) {
+        if visible.start <= visible.end
+            && visible.end <= self.visible.len()
+            && source.start <= source.end
+            && source.end <= self.source.len()
+            && source_full.start <= source_full.end
+            && source_full.end <= self.source.len()
+        {
+            self.spans.push(SelectionSourceSpan {
+                visible,
+                source,
+                source_full,
+                atomic,
+            });
+        }
+    }
+
+    pub fn visible_len(&self) -> usize {
+        self.visible.len()
+    }
+
+    pub fn source_slice_for_visible(&self, a: usize, b: usize) -> Option<&str> {
+        let (a, b) = (a.min(b), a.max(b));
+        if a == 0 && b >= self.visible.len() && !self.source.is_empty() {
+            return Some(&self.source);
+        }
+        let a = clamp_to_char_boundary(&self.visible, a.min(self.visible.len()));
+        let b = clamp_to_char_boundary(&self.visible, b.min(self.visible.len()));
+        let lo = self.source_offset_for_visible(a, Bias::Start)?;
+        let hi = self.source_offset_for_visible(b, Bias::End)?;
+        let (lo, hi) = (lo.min(hi), lo.max(hi));
+        let lo = clamp_to_char_boundary(&self.source, lo.min(self.source.len()));
+        let hi = clamp_to_char_boundary(&self.source, hi.min(self.source.len()));
+        (lo < hi).then(|| &self.source[lo..hi])
+    }
+
+    pub fn source_text_for_visible(&self, a: usize, b: usize) -> Option<String> {
+        let (a, b) = (a.min(b), a.max(b));
+        if a == 0 && b >= self.visible.len() && !self.source.is_empty() {
+            return Some(self.source.clone());
+        }
+        let a = clamp_to_char_boundary(&self.visible, a.min(self.visible.len()));
+        let b = clamp_to_char_boundary(&self.visible, b.min(self.visible.len()));
+        if a >= b {
+            return None;
+        }
+        if self.spans.is_empty() {
+            return self.source_slice_for_visible(a, b).map(str::to_string);
+        }
+
+        let mut out = String::new();
+        for span in &self.spans {
+            let start = a.max(span.visible.start);
+            let end = b.min(span.visible.end);
+            if start >= end {
+                continue;
+            }
+            if span.atomic || (start == span.visible.start && end == span.visible.end) {
+                out.push_str(&self.source[span.source_full.clone()]);
+                continue;
+            }
+            let lo = source_offset_in_span(span, start, Bias::Start)?;
+            let hi = source_offset_in_span(span, end, Bias::End)?;
+            let (lo, hi) = (lo.min(hi), lo.max(hi));
+            let lo = clamp_to_char_boundary(&self.source, lo.min(self.source.len()));
+            let hi = clamp_to_char_boundary(&self.source, hi.min(self.source.len()));
+            if lo < hi {
+                out.push_str(&self.source[lo..hi]);
+            }
+        }
+        if out.is_empty() { None } else { Some(out) }
+    }
+
+    fn full_group_for_visible(&self, start: usize, end: usize) -> Option<&str> {
+        (start == 0 && end >= self.visible.len())
+            .then(|| self.full_selection_group.as_deref())
+            .flatten()
+    }
+
+    fn source_offset_for_visible(&self, byte: usize, bias: Bias) -> Option<usize> {
+        if self.spans.is_empty() {
+            return Some(byte.min(self.source.len()));
+        }
+        for span in &self.spans {
+            if byte < span.visible.start || byte > span.visible.end {
+                continue;
+            }
+            if byte == span.visible.end && byte != span.visible.start && matches!(bias, Bias::Start)
+            {
+                continue;
+            }
+            if span.atomic {
+                return Some(match bias {
+                    Bias::Start => span.source.start,
+                    Bias::End => span.source.end,
+                });
+            }
+            let visible_len = span.visible.end.saturating_sub(span.visible.start);
+            let source_len = span.source.end.saturating_sub(span.source.start);
+            if visible_len == 0 {
+                return Some(match bias {
+                    Bias::Start => span.source.start,
+                    Bias::End => span.source.end,
+                });
+            }
+            let offset = byte.saturating_sub(span.visible.start).min(visible_len);
+            let mapped = if source_len == visible_len {
+                span.source.start + offset
+            } else {
+                span.source.start
+                    + ((offset as f32 / visible_len as f32) * source_len as f32) as usize
+            };
+            return Some(mapped.min(span.source.end));
+        }
+        let first = self.spans.first()?;
+        if byte <= first.visible.start {
+            return Some(first.source.start);
+        }
+        let last = self.spans.last()?;
+        if byte >= last.visible.end {
+            return Some(last.source.end);
+        }
+        self.spans
+            .windows(2)
+            .find(|pair| byte > pair[0].visible.end && byte < pair[1].visible.start)
+            .map(|pair| match bias {
+                Bias::Start => pair[0].source.end,
+                Bias::End => pair[1].source.start,
+            })
+    }
+}
+
+fn source_offset_in_span(span: &SelectionSourceSpan, byte: usize, bias: Bias) -> Option<usize> {
+    if span.atomic {
+        return Some(match bias {
+            Bias::Start => span.source_full.start,
+            Bias::End => span.source_full.end,
+        });
+    }
+    let visible_len = span.visible.end.saturating_sub(span.visible.start);
+    let source_len = span.source.end.saturating_sub(span.source.start);
+    if visible_len == 0 {
+        return Some(match bias {
+            Bias::Start => span.source.start,
+            Bias::End => span.source.end,
+        });
+    }
+    let offset = byte.saturating_sub(span.visible.start).min(visible_len);
+    let mapped = if source_len == visible_len {
+        span.source.start + offset
+    } else {
+        span.source.start + ((offset as f32 / visible_len as f32) * source_len as f32) as usize
+    };
+    Some(mapped.min(span.source.end))
+}
+
+#[derive(Clone, Copy)]
+enum Bias {
+    Start,
+    End,
 }
 
 impl Selection {
@@ -208,6 +438,11 @@ pub fn slice_for_leaf(
 pub fn selected_text(tree: &El, selection: &Selection) -> Option<String> {
     let r = selection.range.as_ref()?;
     if r.anchor.key == r.head.key {
+        if let Some(source) = find_keyed_selection_source(tree, &r.anchor.key) {
+            let lo = r.anchor.byte.min(r.head.byte);
+            let hi = r.anchor.byte.max(r.head.byte);
+            return source.source_text_for_visible(lo, hi);
+        }
         let value = find_keyed_text(tree, &r.anchor.key)?;
         let lo = r.anchor.byte.min(r.head.byte).min(value.len());
         let hi = r.anchor.byte.max(r.head.byte).min(value.len());
@@ -217,8 +452,8 @@ pub fn selected_text(tree: &El, selection: &Selection) -> Option<String> {
         return Some(value[lo..hi].to_string());
     }
     // Cross-leaf walk in tree order.
-    let mut leaves: Vec<(String, String)> = Vec::new();
-    collect_keyed_text_leaves(tree, &mut leaves);
+    let mut leaves: Vec<(String, LeafSelectionText)> = Vec::new();
+    collect_keyed_selection_leaves(tree, &mut leaves);
     let anchor_idx = leaves.iter().position(|(k, _)| *k == r.anchor.key)?;
     let head_idx = leaves.iter().position(|(k, _)| *k == r.head.key)?;
     let (lo_idx, lo_byte, hi_idx, hi_byte) = if anchor_idx <= head_idx {
@@ -227,6 +462,7 @@ pub fn selected_text(tree: &El, selection: &Selection) -> Option<String> {
         (head_idx, r.head.byte, anchor_idx, r.anchor.byte)
     };
     let mut out = String::new();
+    let mut last_group: Option<String> = None;
     for (i, (_, value)) in leaves
         .iter()
         .enumerate()
@@ -234,28 +470,39 @@ pub fn selected_text(tree: &El, selection: &Selection) -> Option<String> {
         .take(hi_idx - lo_idx + 1)
     {
         let start = if i == lo_idx {
-            lo_byte.min(value.len())
+            lo_byte.min(value.visible_len())
         } else {
             0
         };
         let end = if i == hi_idx {
-            hi_byte.min(value.len())
+            hi_byte.min(value.visible_len())
         } else {
-            value.len()
+            value.visible_len()
         };
         if start >= end {
+            continue;
+        }
+        let Some(slice) = value.source_text_for_visible(start, end) else {
+            continue;
+        };
+        let group = value.full_group_for_visible(start, end).map(str::to_string);
+        if group.is_some() && group == last_group {
             continue;
         }
         if !out.is_empty() {
             out.push('\n');
         }
-        out.push_str(&value[start..end]);
+        out.push_str(&slice);
+        last_group = group;
     }
     if out.is_empty() { None } else { Some(out) }
 }
 
 pub(crate) fn find_keyed_text(node: &El, key: &str) -> Option<String> {
     if node.key.as_deref() == Some(key) {
+        if let Some(source) = &node.selection_source {
+            return Some(source.visible.clone());
+        }
         if matches!(node.kind, Kind::Text | Kind::Heading)
             && let Some(t) = &node.text
         {
@@ -270,6 +517,17 @@ pub(crate) fn find_keyed_text(node: &El, key: &str) -> Option<String> {
     node.children.iter().find_map(|c| find_keyed_text(c, key))
 }
 
+pub(crate) fn find_keyed_selection_source(node: &El, key: &str) -> Option<SelectionSource> {
+    if node.key.as_deref() == Some(key)
+        && let Some(source) = &node.selection_source
+    {
+        return Some(source.clone());
+    }
+    node.children
+        .iter()
+        .find_map(|c| find_keyed_selection_source(c, key))
+}
+
 fn collect_text_content(node: &El, out: &mut String) {
     if matches!(node.kind, Kind::Text | Kind::Heading)
         && let Some(t) = &node.text
@@ -281,14 +539,50 @@ fn collect_text_content(node: &El, out: &mut String) {
     }
 }
 
-fn collect_keyed_text_leaves(node: &El, out: &mut Vec<(String, String)>) {
+enum LeafSelectionText {
+    Source(SelectionSource),
+    Text(String),
+}
+
+impl LeafSelectionText {
+    fn visible_len(&self) -> usize {
+        match self {
+            LeafSelectionText::Source(source) => source.visible_len(),
+            LeafSelectionText::Text(text) => text.len(),
+        }
+    }
+
+    fn source_text_for_visible(&self, start: usize, end: usize) -> Option<String> {
+        match self {
+            LeafSelectionText::Source(source) => source.source_text_for_visible(start, end),
+            LeafSelectionText::Text(text) => {
+                let start = start.min(text.len());
+                let end = end.min(text.len());
+                (start < end).then(|| text[start..end].to_string())
+            }
+        }
+    }
+
+    fn full_group_for_visible(&self, start: usize, end: usize) -> Option<&str> {
+        match self {
+            LeafSelectionText::Source(source) => source.full_group_for_visible(start, end),
+            LeafSelectionText::Text(_) => None,
+        }
+    }
+}
+
+fn collect_keyed_selection_leaves(node: &El, out: &mut Vec<(String, LeafSelectionText)>) {
+    if let (Some(k), Some(source)) = (&node.key, &node.selection_source) {
+        out.push((k.clone(), LeafSelectionText::Source(source.clone())));
+        return;
+    }
     if matches!(node.kind, Kind::Text | Kind::Heading)
         && let (Some(k), Some(t)) = (&node.key, &node.text)
     {
-        out.push((k.clone(), t.clone()));
+        out.push((k.clone(), LeafSelectionText::Text(t.clone())));
     }
     for c in &node.children {
-        collect_keyed_text_leaves(c, out);
+        collect_keyed_selection_leaves(c, out);
     }
 }
 
@@ -479,6 +773,92 @@ mod tests {
         assert_eq!(
             selected_text(&tree, &sel).as_deref(),
             Some("pha\nbravo\nchar")
+        );
+    }
+
+    #[test]
+    fn selected_text_uses_source_payload_for_single_leaf() {
+        let mut source = SelectionSource::new("This is **bold**.", "This is bold.");
+        source.push_span(0..8, 0..8, false);
+        source.push_span_with_full_source(8..12, 10..14, 8..16, false);
+        source.push_span(12..13, 16..17, false);
+        let tree = crate::text_runs([crate::text("This is "), crate::text("bold").bold()])
+            .key("md:p")
+            .selectable()
+            .selection_source(source);
+
+        let inner_only = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("md:p", 8),
+                head: SelectionPoint::new("md:p", 12),
+            }),
+        };
+        assert_eq!(
+            selected_text(&tree, &inner_only).as_deref(),
+            Some("**bold**")
+        );
+
+        let partial_inner = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("md:p", 9),
+                head: SelectionPoint::new("md:p", 11),
+            }),
+        };
+        assert_eq!(selected_text(&tree, &partial_inner).as_deref(), Some("ol"));
+
+        let through_styled_span = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("md:p", 0),
+                head: SelectionPoint::new("md:p", 12),
+            }),
+        };
+        assert_eq!(
+            selected_text(&tree, &through_styled_span).as_deref(),
+            Some("This is **bold**")
+        );
+
+        let whole = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("md:p", 0),
+                head: SelectionPoint::new("md:p", 13),
+            }),
+        };
+        assert_eq!(
+            selected_text(&tree, &whole).as_deref(),
+            Some("This is **bold**.")
+        );
+    }
+
+    #[test]
+    fn selected_text_dedupes_adjacent_full_source_group_leaves() {
+        let mut first = SelectionSource::new("| **Ada** | dev |", "Ada");
+        first.push_span_with_full_source(0..3, 4..7, 0..17, false);
+        let first = first.full_selection_group("row:0");
+
+        let mut second = SelectionSource::new("| **Ada** | dev |", "dev");
+        second.push_span_with_full_source(0..3, 12..15, 0..17, false);
+        let second = second.full_selection_group("row:0");
+
+        let tree = crate::row([
+            crate::text("Ada")
+                .key("a")
+                .selectable()
+                .selection_source(first),
+            crate::text("dev")
+                .key("b")
+                .selectable()
+                .selection_source(second),
+        ]);
+        let sel = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("a", 0),
+                head: SelectionPoint::new("b", 3),
+            }),
+        };
+
+        assert_eq!(
+            selected_text(&tree, &sel).as_deref(),
+            Some("| **Ada** | dev |")
         );
     }
 

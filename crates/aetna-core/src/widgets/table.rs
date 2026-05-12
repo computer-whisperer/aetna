@@ -25,6 +25,7 @@ where
         .width(Size::Fill(1.0))
         .height(Size::Hug)
         .align(Align::Stretch)
+        .clip()
 }
 
 #[track_caller]
@@ -42,15 +43,11 @@ where
         .align(Align::Stretch);
 
     // Promote `table_row(...)` children from body-row metrics to header
-    // metrics, and override the body-row default height + radius with
-    // the header's recipe (shorter, no rounded corners). Explicit
-    // overrides on the row itself still win.
+    // metrics. Table chrome lives on the cells, so rows stay hug-height
+    // and stretch their children vertically.
     for row in &mut header.children {
         if row.metrics_role == Some(MetricsRole::TableRow) {
             row.metrics_role = Some(MetricsRole::TableHeader);
-            if !row.explicit_height {
-                row.height = Size::Fixed(36.0);
-            }
             if !row.explicit_radius {
                 row.radius = crate::tree::Corners::ZERO;
             }
@@ -85,11 +82,10 @@ where
         .at_loc(Location::caller())
         .metrics_role(MetricsRole::TableRow)
         .width(Size::Fill(1.0))
-        .align(Align::Center)
-        .default_height(Size::Fixed(52.0))
-        .default_padding(Sides::xy(tokens::SPACE_3, 0.0))
-        .default_gap(tokens::SPACE_3)
-        .default_radius(tokens::RADIUS_MD)
+        .height(Size::Hug)
+        .align(Align::Stretch)
+        .default_gap(0.0)
+        .default_radius(0.0)
 }
 
 #[track_caller]
@@ -103,7 +99,12 @@ pub fn table_head_el(content: impl Into<El>) -> El {
         .into()
         .at_loc(Location::caller())
         .ellipsis()
-        .width(Size::Fill(1.0));
+        .width(Size::Fill(1.0))
+        .height(Size::Hug)
+        .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
+        .fill(tokens::MUTED)
+        .stroke(tokens::BORDER)
+        .radius(0.0);
     apply_head_style(&mut el);
     el
 }
@@ -115,6 +116,10 @@ pub fn table_cell(content: impl Into<El>) -> El {
         .at_loc(Location::caller())
         .ellipsis()
         .width(Size::Fill(1.0))
+        .height(Size::Hug)
+        .padding(Sides::xy(tokens::SPACE_3, tokens::SPACE_2))
+        .stroke(tokens::BORDER)
+        .radius(0.0)
 }
 
 fn apply_head_style(el: &mut El) {
@@ -143,7 +148,7 @@ mod tests {
             header.children[0].metrics_role,
             Some(MetricsRole::TableHeader)
         );
-        assert_eq!(header.children[0].align, Align::Center);
+        assert_eq!(header.children[0].align, Align::Stretch);
     }
 
     #[test]
@@ -156,5 +161,54 @@ mod tests {
         assert_eq!(head.children[1].text_role, TextRole::Caption);
         assert_eq!(head.children[1].font_weight, FontWeight::Bold);
         assert_eq!(head.children[1].text.as_deref(), Some("head"));
+    }
+
+    #[test]
+    fn table_cells_carry_grid_chrome() {
+        let body = table_cell(text("Ada"));
+        assert_eq!(body.padding, Sides::xy(tokens::SPACE_3, tokens::SPACE_2));
+        assert_eq!(body.stroke, Some(tokens::BORDER));
+        assert_eq!(body.stroke_width, 1.0);
+        assert_eq!(body.radius, Corners::ZERO);
+
+        let head = table_head("Name");
+        assert_eq!(head.fill, Some(tokens::MUTED));
+        assert_eq!(head.stroke, Some(tokens::BORDER));
+    }
+
+    #[test]
+    fn table_header_text_emits_glyph_run_after_layout() {
+        use crate::Rect;
+        use crate::draw_ops::draw_ops;
+        use crate::ir::DrawOp;
+        use crate::layout::layout;
+        use crate::state::UiState;
+
+        let mut tree = table([
+            table_header([table_row([table_head("Name"), table_head("Role")])]),
+            table_body([table_row([
+                table_cell(text("Ada")),
+                table_cell(text("dev")),
+            ])]),
+        ]);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 320.0, 200.0));
+
+        let ops = draw_ops(&tree, &state);
+        assert!(
+            ops.iter().any(|op| matches!(
+                op,
+                DrawOp::GlyphRun { text, .. } if text == "Name"
+            )),
+            "expected header text to be painted; ops were {ops:?}"
+        );
+        let border_quads = ops
+            .iter()
+            .filter(|op| matches!(op, DrawOp::Quad { id, .. } if id.contains("text")))
+            .count();
+        assert!(
+            border_quads >= 4,
+            "expected cell chrome quads for the table cells, got {border_quads}"
+        );
     }
 }

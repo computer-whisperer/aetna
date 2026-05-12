@@ -23,6 +23,7 @@ impl Default for El {
             focusable: false,
             always_show_focus_ring: false,
             selectable: false,
+            selection_source: None,
             capture_keys: false,
             alpha_follows_focused_ancestor: false,
             blink_when_focused: false,

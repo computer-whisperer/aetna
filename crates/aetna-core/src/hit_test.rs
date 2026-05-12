@@ -21,6 +21,8 @@
 //! `.scale(1.15)`) and still be hittable. Only `clip()` (an explicit
 //! author-declared boundary) gates descent into descendants.
 
+use std::ops::Range;
+
 use crate::event::UiTarget;
 use crate::selection::SelectionPoint;
 use crate::state::UiState;
@@ -133,13 +135,23 @@ pub fn selection_point_at(
     selectable_rec(root, ui_state, point, None, (0.0, 0.0), &mut hit);
     let SelectableHit { node, painted } = hit?;
     let key = node.key.clone()?;
-    let value = node.text.as_deref()?;
+    let value = node
+        .selection_source
+        .as_ref()
+        .map(|source| source.visible.as_str())
+        .or(node.text.as_deref())?;
+    if matches!(node.kind, Kind::Inlines)
+        && node.children.iter().any(|c| matches!(c.kind, Kind::Math))
+        && let Some(byte) = mixed_inline_hit_byte(node, painted, point)
+    {
+        return Some(SelectionPoint { key, byte });
+    }
     let local_x = (point.0 - painted.x).max(0.0);
     let local_y = (point.1 - painted.y).clamp(0.0, painted.h.max(1.0) - 1.0);
     let geometry = metrics::TextGeometry::new_with_family(
         value,
         node.font_size,
-        node.font_family,
+        effective_text_family(node),
         node.font_weight,
         node.font_mono,
         node.text_wrap,
@@ -156,6 +168,318 @@ pub fn selection_point_at(
         }
     };
     Some(SelectionPoint { key, byte })
+}
+
+fn mixed_inline_hit_byte(node: &El, painted_rect: Rect, point: (f32, f32)) -> Option<usize> {
+    let glyph_rect = painted_rect.inset(node.padding);
+    let items = mixed_inline_hit_items(node, glyph_rect);
+    if items.is_empty() {
+        return Some(0);
+    }
+    let line = mixed_hit_line(&items, point.1);
+    let line_items: Vec<&MixedHitItem> = items.iter().filter(|item| item.line == line).collect();
+    let first = line_items.first()?;
+    let last = line_items.last()?;
+    if point.0 <= first.rect.x {
+        return Some(first.visible.start);
+    }
+    for item in &line_items {
+        if point.0 <= item.rect.right() {
+            return Some(match &item.kind {
+                MixedHitKind::Text {
+                    text,
+                    font_size,
+                    font_family,
+                    font_weight,
+                    font_mono,
+                } => {
+                    let geometry = metrics::TextGeometry::new_with_family(
+                        text,
+                        *font_size,
+                        *font_family,
+                        *font_weight,
+                        *font_mono,
+                        TextWrap::NoWrap,
+                        None,
+                    );
+                    let local_x = (point.0 - item.rect.x).max(0.0);
+                    let local_y = (point.1 - item.rect.y).clamp(0.0, item.rect.h.max(1.0) - 1.0);
+                    let byte = geometry
+                        .hit_byte(local_x, local_y)
+                        .unwrap_or_else(|| if local_x <= 0.0 { 0 } else { text.len() });
+                    item.visible.start + byte.min(text.len())
+                }
+                MixedHitKind::Atomic => {
+                    if point.0 < item.rect.center_x() {
+                        item.visible.start
+                    } else {
+                        item.visible.end
+                    }
+                }
+            });
+        }
+    }
+    Some(last.visible.end)
+}
+
+#[derive(Clone)]
+struct PendingMixedHitItem {
+    kind: PendingMixedHitKind,
+    x: f32,
+    visible: Range<usize>,
+}
+
+#[derive(Clone)]
+enum PendingMixedHitKind {
+    Text { child: El, text: String },
+    Math { layout: crate::math::MathLayout },
+}
+
+struct MixedHitItem {
+    rect: Rect,
+    line_top: f32,
+    line_bottom: f32,
+    line: usize,
+    visible: Range<usize>,
+    kind: MixedHitKind,
+}
+
+enum MixedHitKind {
+    Text {
+        text: String,
+        font_size: f32,
+        font_family: crate::tree::FontFamily,
+        font_weight: FontWeight,
+        font_mono: bool,
+    },
+    Atomic,
+}
+
+fn mixed_inline_hit_items(node: &El, rect: Rect) -> Vec<MixedHitItem> {
+    let mut breaker = crate::inline_mixed::MixedInlineBreaker::new(
+        node.text_wrap,
+        Some(rect.w),
+        node.font_size * 0.82,
+        node.font_size * 0.22,
+        node.line_height,
+    );
+    let mut pending = Vec::new();
+    let mut out = Vec::new();
+    let mut visible_cursor = 0usize;
+    let mut line_index = 0usize;
+
+    for child in &node.children {
+        match child.kind {
+            Kind::HardBreak => {
+                flush_mixed_hit_line(node, rect, &mut breaker, &mut pending, &mut out, line_index);
+                line_index += 1;
+                visible_cursor += "\n".len();
+            }
+            Kind::Text => {
+                if let Some(text) = &child.text {
+                    for chunk in inline_text_chunks(text) {
+                        let visible = visible_cursor..(visible_cursor + chunk.len());
+                        visible_cursor += chunk.len();
+                        let is_space = chunk.chars().all(char::is_whitespace);
+                        if breaker.skips_leading_space(is_space) {
+                            continue;
+                        }
+                        let (w, ascent, descent) = inline_text_chunk_metrics(child, chunk);
+                        if breaker.wraps_before(is_space, w) {
+                            flush_mixed_hit_line(
+                                node,
+                                rect,
+                                &mut breaker,
+                                &mut pending,
+                                &mut out,
+                                line_index,
+                            );
+                            line_index += 1;
+                        }
+                        if breaker.skips_overflowing_space(is_space, w) {
+                            continue;
+                        }
+                        if is_space
+                            && !matches!(
+                                pending.last(),
+                                Some(PendingMixedHitItem {
+                                    kind: PendingMixedHitKind::Text { .. },
+                                    ..
+                                })
+                            )
+                        {
+                            breaker.push(w, ascent, descent);
+                            continue;
+                        }
+                        pending.push(PendingMixedHitItem {
+                            kind: PendingMixedHitKind::Text {
+                                child: child.clone(),
+                                text: chunk.to_string(),
+                            },
+                            x: breaker.x(),
+                            visible,
+                        });
+                        breaker.push(w, ascent, descent);
+                    }
+                }
+            }
+            Kind::Math => {
+                if let Some(expr) = &child.math {
+                    let layout =
+                        crate::math::layout_math(expr, child.font_size, child.math_display);
+                    if breaker.wraps_before(false, layout.width) {
+                        flush_mixed_hit_line(
+                            node,
+                            rect,
+                            &mut breaker,
+                            &mut pending,
+                            &mut out,
+                            line_index,
+                        );
+                        line_index += 1;
+                    }
+                    let visible_len = "\u{fffc}".len();
+                    let visible = visible_cursor..(visible_cursor + visible_len);
+                    visible_cursor += visible_len;
+                    let width = layout.width;
+                    let ascent = layout.ascent;
+                    let descent = layout.descent;
+                    pending.push(PendingMixedHitItem {
+                        kind: PendingMixedHitKind::Math { layout },
+                        x: breaker.x(),
+                        visible,
+                    });
+                    breaker.push(width, ascent, descent);
+                }
+            }
+            _ => {}
+        }
+    }
+    flush_mixed_hit_line(node, rect, &mut breaker, &mut pending, &mut out, line_index);
+    out
+}
+
+fn flush_mixed_hit_line(
+    parent: &El,
+    rect: Rect,
+    breaker: &mut crate::inline_mixed::MixedInlineBreaker,
+    pending: &mut Vec<PendingMixedHitItem>,
+    out: &mut Vec<MixedHitItem>,
+    line_index: usize,
+) {
+    let line = breaker.finish_line();
+    let line_top = rect.y + line.top;
+    let line_bottom = line_top + (line.ascent + line.descent).max(parent.line_height);
+    let baseline_y = rect.y + line.top + line.ascent;
+    for item in pending.drain(..) {
+        match item.kind {
+            PendingMixedHitKind::Text { child, text } => {
+                let size = child.font_size * parent.scale;
+                let glyph_layout = metrics::layout_text_with_line_height_and_family(
+                    &text,
+                    size,
+                    child.line_height * parent.scale,
+                    child.font_family,
+                    child.font_weight,
+                    child.font_mono,
+                    TextWrap::NoWrap,
+                    None,
+                );
+                let glyph_baseline = glyph_layout
+                    .lines
+                    .first()
+                    .map(|line| line.baseline)
+                    .unwrap_or_else(|| metrics::line_height(size) * 0.75);
+                out.push(MixedHitItem {
+                    rect: Rect::new(
+                        rect.x + item.x,
+                        baseline_y - glyph_baseline,
+                        glyph_layout.width,
+                        glyph_layout.height,
+                    ),
+                    line_top,
+                    line_bottom,
+                    line: line_index,
+                    visible: item.visible,
+                    kind: MixedHitKind::Text {
+                        text,
+                        font_size: size,
+                        font_family: child.font_family,
+                        font_weight: child.font_weight,
+                        font_mono: child.font_mono,
+                    },
+                });
+            }
+            PendingMixedHitKind::Math { layout } => {
+                out.push(MixedHitItem {
+                    rect: Rect::new(
+                        rect.x + item.x,
+                        baseline_y - layout.ascent,
+                        layout.width,
+                        layout.height(),
+                    ),
+                    line_top,
+                    line_bottom,
+                    line: line_index,
+                    visible: item.visible,
+                    kind: MixedHitKind::Atomic,
+                });
+            }
+        }
+    }
+}
+
+fn mixed_hit_line(items: &[MixedHitItem], y: f32) -> usize {
+    for item in items {
+        if y >= item.line_top && y <= item.line_bottom {
+            return item.line;
+        }
+    }
+    items
+        .iter()
+        .min_by(|a, b| {
+            let ac = (a.line_top + a.line_bottom) * 0.5;
+            let bc = (b.line_top + b.line_bottom) * 0.5;
+            (y - ac).abs().total_cmp(&(y - bc).abs())
+        })
+        .map(|item| item.line)
+        .unwrap_or(0)
+}
+
+fn inline_text_chunks(text: &str) -> Vec<&str> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut last_space = None;
+    for (i, ch) in text.char_indices() {
+        let is_space = ch.is_whitespace();
+        match last_space {
+            None => last_space = Some(is_space),
+            Some(prev) if prev != is_space => {
+                chunks.push(&text[start..i]);
+                start = i;
+                last_space = Some(is_space);
+            }
+            _ => {}
+        }
+    }
+    if start < text.len() {
+        chunks.push(&text[start..]);
+    }
+    chunks
+}
+
+fn inline_text_chunk_metrics(child: &El, text: &str) -> (f32, f32, f32) {
+    let layout = metrics::layout_text_with_line_height_and_family(
+        text,
+        child.font_size,
+        child.line_height,
+        child.font_family,
+        child.font_weight,
+        child.font_mono,
+        TextWrap::NoWrap,
+        None,
+    );
+    (layout.width, child.font_size * 0.82, child.font_size * 0.22)
 }
 
 /// Find the link URL of the topmost text-link run containing `point`.
@@ -310,6 +634,14 @@ struct SelectableHit<'a> {
     painted: Rect,
 }
 
+fn effective_text_family(node: &El) -> crate::tree::FontFamily {
+    if node.font_mono {
+        node.mono_font_family
+    } else {
+        node.font_family
+    }
+}
+
 fn selectable_rec<'a>(
     node: &'a El,
     ui_state: &UiState,
@@ -348,11 +680,11 @@ fn selectable_rec<'a>(
             return;
         }
     }
-    // Self counts only if it's a selectable + keyed text leaf and the
+    // Self counts only if it's a selectable + keyed text-bearing leaf and the
     // point lands inside its painted rect.
     if node.selectable
         && node.key.is_some()
-        && matches!(node.kind, Kind::Text | Kind::Heading)
+        && (matches!(node.kind, Kind::Text | Kind::Heading) || node.selection_source.is_some())
         && painted_rect.contains(point.0, point.1)
     {
         *out = Some(SelectableHit {
@@ -556,6 +888,62 @@ mod tests {
             link_at(&tree, &state, (linked_x, cy)).as_deref(),
             Some(URL),
             "clicking inside the linked run should surface its URL",
+        );
+    }
+
+    #[test]
+    fn selection_point_for_mixed_inline_respects_math_widths() {
+        use crate::selection::SelectionSource;
+
+        const TEXT_A: &str = "alpha ";
+        const TEXT_B: &str = " middle ";
+        let object = "\u{fffc}";
+        let visible = format!("{TEXT_A}{object}{TEXT_B}{object}");
+        let expr_a = crate::math::parse_tex(r"\frac{a+b}{c+d}").expect("fixture TeX parses");
+        let expr_b = crate::math::parse_tex(r"\sqrt{x_1+x_2}").expect("fixture TeX parses");
+        let mut tree = column([crate::text_runs([
+            crate::text(TEXT_A),
+            crate::math_inline(expr_a.clone()),
+            crate::text(TEXT_B),
+            crate::math_inline(expr_b.clone()),
+        ])
+        .key("mixed")
+        .selectable()
+        .selection_source(SelectionSource::identity(visible))])
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 700.0, 200.0));
+        let para = find_inlines_rect(&tree, &state).expect("inlines rect");
+
+        let text_a_w = metrics::line_width_with_family(
+            TEXT_A,
+            16.0,
+            FontFamily::default(),
+            FontWeight::Regular,
+            false,
+        );
+        let math_a_w =
+            crate::math::layout_math(&expr_a, 16.0, crate::math::MathDisplay::Inline).width;
+        let text_b_w = metrics::line_width_with_family(
+            TEXT_B,
+            16.0,
+            FontFamily::default(),
+            FontWeight::Regular,
+            false,
+        );
+        let probe_x = para.x + text_a_w + math_a_w + text_b_w * 0.5;
+        let probe_y = para.center_y();
+        let point = selection_point_at(&tree, &state, (probe_x, probe_y)).expect("selection point");
+
+        let text_b_start = TEXT_A.len() + object.len();
+        let math_b_start = text_b_start + TEXT_B.len();
+        assert_eq!(point.key, "mixed");
+        assert!(
+            point.byte >= text_b_start && point.byte < math_b_start,
+            "probe inside second text run must not jump to second math atom; got byte {}, expected {}..{}",
+            point.byte,
+            text_b_start,
+            math_b_start,
         );
     }
 

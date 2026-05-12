@@ -69,6 +69,14 @@ impl El {
         self
     }
 
+    /// Attach source-backed copy/hit-test text for this selectable
+    /// node. The node still needs `.selectable().key(...)`; this only
+    /// changes how selection offsets map to copied text.
+    pub fn selection_source(mut self, source: crate::selection::SelectionSource) -> Self {
+        self.selection_source = Some(source);
+        self
+    }
+
     /// Opt this node into raw key capture when focused. While this
     /// node is the focused target, the library's Tab/Enter/Escape
     /// defaults are bypassed and raw `KeyDown` events are delivered for

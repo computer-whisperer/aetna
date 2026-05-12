@@ -461,54 +461,19 @@ fn push_node(
             },
         );
 
-        // Selection band — emit behind the glyph run when this leaf is
-        // selectable, keyed, and (part of) its bytes fall inside the
-        // active selection range. Single-leaf and cross-leaf both go
-        // through `slice_for_leaf`, which consults the document-order
-        // selection list to compute the per-leaf byte range:
-        //   - selection lives in this leaf only → (lo, hi)
-        //   - this leaf is the anchor → (anchor.byte, text_len)
-        //   - this leaf is the head → (0, head.byte)
-        //   - this leaf is between anchor and head → (0, text_len)
-        if n.selectable
-            && let Some(key) = &n.key
-            && let Some((lo, hi)) = crate::selection::slice_for_leaf(
-                &ui_state.current_selection,
-                &ui_state.selection.order,
-                key,
-                display.len(),
-            )
-        {
-            let rects = text_metrics::selection_rects(
-                &display,
-                lo,
-                hi,
-                painted_font_size,
-                weight,
-                n.text_wrap,
-                match n.text_wrap {
-                    TextWrap::NoWrap => None,
-                    TextWrap::Wrap => Some(glyph_rect.w),
-                },
-            );
-            for (rx, ry, rw, rh) in rects {
-                let band = Rect::new(glyph_rect.x + rx, glyph_rect.y + ry, rw, rh);
-                let mut band_uniforms = UniformBlock::new();
-                band_uniforms.insert(
-                    "fill",
-                    UniformValue::Color(opaque(tokens::SELECTION_BG, opacity)),
-                );
-                band_uniforms.insert("radius", UniformValue::F32(2.0));
-                band_uniforms.insert("inner_rect", inner_rect_uniform(band));
-                out.push(DrawOp::Quad {
-                    id: format!("{}.selection-band", n.computed_id),
-                    rect: band,
-                    scissor: own_scissor,
-                    shader: ShaderHandle::Stock(StockShader::RoundedRect),
-                    uniforms: band_uniforms,
-                });
-            }
-        }
+        push_selection_bands_for_text(
+            n,
+            ui_state,
+            out,
+            glyph_rect,
+            own_scissor,
+            opacity,
+            &display,
+            painted_font_size,
+            effective_text_family(n),
+            weight,
+            n.text_wrap,
+        );
 
         out.push(DrawOp::GlyphRun {
             id: n.computed_id.clone(),
@@ -615,6 +580,17 @@ fn push_node(
     }
 
     if matches!(n.kind, Kind::Math) {
+        if let Some(source) = &n.selection_source {
+            push_atomic_selection_band(
+                n,
+                ui_state,
+                out,
+                inner_painted_rect.inset(n.padding),
+                own_scissor,
+                opacity,
+                source.visible_len(),
+            );
+        }
         if let Some(expr) = &n.math {
             push_math_ops(
                 n,
@@ -634,21 +610,30 @@ fn push_node(
     // into children — they're encoded in the runs and don't paint
     // independently.
     if matches!(n.kind, Kind::Inlines) {
-        if n.children.iter().any(|c| matches!(c.kind, Kind::Math)) {
-            push_inline_mixed_ops(
-                n,
-                inner_painted_rect.inset(n.padding),
-                own_scissor,
-                opacity,
-                out,
-            );
-            return;
-        }
         let glyph_rect = inner_painted_rect.inset(n.padding);
-        let runs = collect_inline_runs(n, opacity);
-        let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
         let inline_size = inline_paragraph_font_size(n) * n.scale;
         let inline_line_height = inline_paragraph_line_height(n) * n.scale;
+        if n.children.iter().any(|c| matches!(c.kind, Kind::Math)) {
+            push_inline_mixed_ops(n, ui_state, glyph_rect, own_scissor, opacity, out);
+            return;
+        }
+        if let Some(source) = &n.selection_source {
+            push_selection_bands_for_text(
+                n,
+                ui_state,
+                out,
+                glyph_rect,
+                own_scissor,
+                opacity,
+                &source.visible,
+                inline_size,
+                effective_text_family(n),
+                FontWeight::Regular,
+                n.text_wrap,
+            );
+        }
+        let runs = collect_inline_runs(n, opacity);
+        let concat: String = runs.iter().map(|(t, _)| t.as_str()).collect();
         let anchor = match n.text_align {
             TextAlign::Start => TextAnchor::Start,
             TextAlign::Center => TextAnchor::Middle,
@@ -1165,6 +1150,7 @@ fn push_math_delimiter_op(
 
 fn push_inline_mixed_ops(
     n: &El,
+    ui_state: &UiState,
     rect: Rect,
     scissor: Option<Rect>,
     opacity: f32,
@@ -1178,6 +1164,10 @@ fn push_inline_mixed_ops(
         n.line_height,
     );
     let mut line_items = Vec::new();
+    let selected = n.selection_source.as_ref().and_then(|source| {
+        selection_range_for_node(n, ui_state, source.visible_len()).map(|(lo, hi)| lo..hi)
+    });
+    let mut visible_cursor = 0usize;
 
     let finish_line =
         |line_items: &mut Vec<InlineMixedItem>,
@@ -1192,6 +1182,7 @@ fn push_inline_mixed_ops(
                 line.top,
                 line.ascent,
                 line_items,
+                selected.as_ref(),
                 out,
             );
         };
@@ -1200,11 +1191,14 @@ fn push_inline_mixed_ops(
         match child.kind {
             Kind::HardBreak => {
                 finish_line(&mut line_items, out, &mut breaker);
+                visible_cursor += "\n".len();
                 continue;
             }
             Kind::Text => {
                 if let Some(text) = &child.text {
                     for (chunk_i, chunk) in inline_text_chunks(text).into_iter().enumerate() {
+                        let chunk_visible = visible_cursor..(visible_cursor + chunk.len());
+                        visible_cursor += chunk.len();
                         let is_space = chunk.chars().all(char::is_whitespace);
                         if breaker.skips_leading_space(is_space) {
                             continue;
@@ -1227,6 +1221,7 @@ fn push_inline_mixed_ops(
                             i,
                             chunk_i,
                             chunk,
+                            chunk_visible,
                             breaker.x(),
                         );
                         breaker.push(w, ascent, descent);
@@ -1244,11 +1239,15 @@ fn push_inline_mixed_ops(
                     let width = layout.width;
                     let ascent = layout.ascent;
                     let descent = layout.descent;
+                    let visible_len = "\u{fffc}".len();
+                    let visible = visible_cursor..(visible_cursor + visible_len);
+                    visible_cursor += visible_len;
                     line_items.push(InlineMixedItem::Math {
                         child: child.clone(),
                         expr: expr.clone(),
                         x: breaker.x(),
                         layout,
+                        visible,
                     });
                     breaker.push(width, ascent, descent);
                 }
@@ -1271,6 +1270,7 @@ fn push_inline_mixed_ops(
         line.top,
         line.ascent,
         &mut line_items,
+        selected.as_ref(),
         out,
     );
 }
@@ -1282,6 +1282,7 @@ enum InlineMixedItem {
         expr: std::sync::Arc<crate::math::MathExpr>,
         x: f32,
         layout: crate::math::MathLayout,
+        visible: std::ops::Range<usize>,
     },
 }
 
@@ -1291,6 +1292,7 @@ struct InlineTextItem {
     x: f32,
     child_index: usize,
     chunk_index: usize,
+    visible: std::ops::Range<usize>,
 }
 
 fn push_inline_text_item(
@@ -1299,6 +1301,7 @@ fn push_inline_text_item(
     child_index: usize,
     chunk_index: usize,
     text: &str,
+    visible: std::ops::Range<usize>,
     x: f32,
 ) {
     if text.is_empty() {
@@ -1308,6 +1311,7 @@ fn push_inline_text_item(
         && same_inline_text_style(&prev.child, child)
     {
         prev.text.push_str(text);
+        prev.visible.end = visible.end;
         return;
     }
     items.push(InlineMixedItem::Text(InlineTextItem {
@@ -1316,6 +1320,7 @@ fn push_inline_text_item(
         x,
         child_index,
         chunk_index,
+        visible,
     }));
 }
 
@@ -1327,6 +1332,7 @@ fn flush_inline_mixed_line(
     line_top: f32,
     line_ascent: f32,
     items: &mut Vec<InlineMixedItem>,
+    selected: Option<&std::ops::Range<usize>>,
     out: &mut Vec<DrawOp>,
 ) {
     let baseline_y = rect.y + line_top + line_ascent;
@@ -1339,6 +1345,7 @@ fn flush_inline_mixed_line(
                     &item.text,
                     item.child_index,
                     item.chunk_index,
+                    selection_overlap(selected, &item.visible),
                     rect,
                     scissor,
                     opacity,
@@ -1352,6 +1359,7 @@ fn flush_inline_mixed_line(
                 expr,
                 x,
                 layout,
+                visible,
             } => {
                 let math_rect = Rect::new(
                     rect.x + x,
@@ -1359,6 +1367,9 @@ fn flush_inline_mixed_line(
                     layout.width,
                     layout.height(),
                 );
+                if selection_overlap(selected, &visible).is_some() {
+                    push_selection_band_rect(parent, out, math_rect, scissor, opacity);
+                }
                 push_math_ops(&child, &expr, math_rect, scissor, opacity, out);
             }
         }
@@ -1385,6 +1396,7 @@ fn push_inline_text_chunk(
     text: &str,
     child_index: usize,
     chunk_index: usize,
+    selected: Option<std::ops::Range<usize>>,
     rect: Rect,
     scissor: Option<Rect>,
     opacity: f32,
@@ -1408,18 +1420,49 @@ fn push_inline_text_chunk(
         .first()
         .map(|line| line.baseline)
         .unwrap_or_else(|| crate::text::metrics::line_height(size) * 0.75);
+    let glyph_rect = Rect::new(
+        rect.x + x,
+        baseline_y - glyph_baseline,
+        glyph_layout.width,
+        glyph_layout.height,
+    );
+    if let Some(selected) = selected {
+        let lo = clamp_to_char_boundary(text, selected.start.min(text.len()));
+        let hi = clamp_to_char_boundary(text, selected.end.min(text.len()));
+        if lo < hi {
+            let prefix = &text[..lo];
+            let slice = &text[lo..hi];
+            let band_x = glyph_rect.x
+                + crate::text::metrics::line_width_with_family(
+                    prefix,
+                    size,
+                    child.font_family,
+                    child.font_weight,
+                    child.font_mono,
+                );
+            let band_w = crate::text::metrics::line_width_with_family(
+                slice,
+                size,
+                child.font_family,
+                child.font_weight,
+                child.font_mono,
+            );
+            push_selection_band_rect(
+                parent,
+                out,
+                Rect::new(band_x, glyph_rect.y, band_w, glyph_rect.h),
+                scissor,
+                opacity,
+            );
+        }
+    }
     let color = opaque(child.text_color.unwrap_or(tokens::FOREGROUND), opacity);
     out.push(DrawOp::GlyphRun {
         id: format!(
             "{}.inline-text.{child_index}.{chunk_index}",
             parent.computed_id
         ),
-        rect: Rect::new(
-            rect.x + x,
-            baseline_y - glyph_baseline,
-            glyph_layout.width,
-            glyph_layout.height,
-        ),
+        rect: glyph_rect,
         scissor,
         shader: ShaderHandle::Stock(StockShader::Text),
         color,
@@ -1587,6 +1630,159 @@ fn inline_paragraph_line_height(node: &El) -> f32 {
         }
     }
     line_height
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_selection_bands_for_text(
+    n: &El,
+    ui_state: &UiState,
+    out: &mut Vec<DrawOp>,
+    glyph_rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+    display: &str,
+    font_size: f32,
+    family: FontFamily,
+    weight: FontWeight,
+    wrap: TextWrap,
+) {
+    // Selection band — emit behind the glyph run when this leaf is
+    // selectable, keyed, and (part of) its bytes fall inside the active
+    // selection range. Source-backed rich text passes its visible text
+    // here, while copy routes through the source mapping.
+    if n.selectable
+        && let Some(key) = &n.key
+        && let Some((lo, hi)) = crate::selection::slice_for_leaf(
+            &ui_state.current_selection,
+            &ui_state.selection.order,
+            key,
+            display.len(),
+        )
+    {
+        let rects = text_metrics::selection_rects_with_family(
+            display,
+            lo,
+            hi,
+            font_size,
+            family,
+            weight,
+            wrap,
+            match wrap {
+                TextWrap::NoWrap => None,
+                TextWrap::Wrap => Some(glyph_rect.w),
+            },
+        );
+        for (rx, ry, rw, rh) in rects {
+            let band = Rect::new(glyph_rect.x + rx, glyph_rect.y + ry, rw, rh);
+            let mut band_uniforms = UniformBlock::new();
+            band_uniforms.insert(
+                "fill",
+                UniformValue::Color(opaque(tokens::SELECTION_BG, opacity)),
+            );
+            band_uniforms.insert("radius", UniformValue::F32(2.0));
+            band_uniforms.insert("inner_rect", inner_rect_uniform(band));
+            out.push(DrawOp::Quad {
+                id: format!("{}.selection-band", n.computed_id),
+                rect: band,
+                scissor,
+                shader: ShaderHandle::Stock(StockShader::RoundedRect),
+                uniforms: band_uniforms,
+            });
+        }
+    }
+}
+
+fn effective_text_family(n: &El) -> FontFamily {
+    if n.font_mono {
+        n.mono_font_family
+    } else {
+        n.font_family
+    }
+}
+
+fn selection_range_for_node(
+    n: &El,
+    ui_state: &UiState,
+    visible_len: usize,
+) -> Option<(usize, usize)> {
+    let key = n.key.as_ref()?;
+    crate::selection::slice_for_leaf(
+        &ui_state.current_selection,
+        &ui_state.selection.order,
+        key,
+        visible_len,
+    )
+}
+
+fn selection_overlap(
+    selected: Option<&std::ops::Range<usize>>,
+    item: &std::ops::Range<usize>,
+) -> Option<std::ops::Range<usize>> {
+    let selected = selected?;
+    let start = selected.start.max(item.start);
+    let end = selected.end.min(item.end);
+    if start < end {
+        Some((start - item.start)..(end - item.start))
+    } else {
+        None
+    }
+}
+
+fn push_selection_band_rect(
+    n: &El,
+    out: &mut Vec<DrawOp>,
+    rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+) {
+    let mut band_uniforms = UniformBlock::new();
+    band_uniforms.insert(
+        "fill",
+        UniformValue::Color(opaque(tokens::SELECTION_BG, opacity)),
+    );
+    band_uniforms.insert("radius", UniformValue::F32(4.0));
+    band_uniforms.insert("inner_rect", inner_rect_uniform(rect));
+    out.push(DrawOp::Quad {
+        id: format!("{}.selection-band", n.computed_id),
+        rect,
+        scissor,
+        shader: ShaderHandle::Stock(StockShader::RoundedRect),
+        uniforms: band_uniforms,
+    });
+}
+
+fn push_atomic_selection_band(
+    n: &El,
+    ui_state: &UiState,
+    out: &mut Vec<DrawOp>,
+    rect: Rect,
+    scissor: Option<Rect>,
+    opacity: f32,
+    visible_len: usize,
+) {
+    if visible_len == 0 {
+        return;
+    }
+    if n.selectable
+        && let Some(key) = &n.key
+        && crate::selection::slice_for_leaf(
+            &ui_state.current_selection,
+            &ui_state.selection.order,
+            key,
+            visible_len,
+        )
+        .is_some()
+    {
+        push_selection_band_rect(n, out, rect, scissor, opacity);
+    }
+}
+
+fn clamp_to_char_boundary(text: &str, byte: usize) -> usize {
+    let mut byte = byte.min(text.len());
+    while byte > 0 && !text.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    byte
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2353,6 +2549,123 @@ mod tests {
             band_ids.len(),
             3,
             "cross-leaf selection should emit a band on each of {{a, b, c}}; got {band_ids:?}"
+        );
+    }
+
+    #[test]
+    fn mixed_inline_math_selection_band_uses_math_rect() {
+        use crate::selection::{Selection, SelectionPoint, SelectionRange, SelectionSource};
+
+        let object = "\u{fffc}";
+        let visible = format!("Inline {object} math");
+        let mut source = SelectionSource::new("Inline $\\frac{a+b}{c+d}$ math", visible.clone());
+        let math_start = "Inline ".len();
+        let math_end = math_start + object.len();
+        source.push_span(0..math_start, 0.."Inline ".len(), false);
+        source.push_span(
+            math_start..math_end,
+            "Inline $".len()..(source.source.len() - " math".len()),
+            true,
+        );
+        source.push_span(
+            math_end..visible.len(),
+            (source.source.len() - " math".len())..source.source.len(),
+            false,
+        );
+
+        let expr = crate::math::parse_tex(r"\frac{a+b}{c+d}").expect("fixture TeX parses");
+        let mut tree = crate::text_runs([
+            crate::text("Inline "),
+            crate::math_inline(expr),
+            crate::text(" math"),
+        ])
+        .key("p")
+        .selectable()
+        .selection_source(source)
+        .padding(20.0);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 500.0, 200.0));
+        state.sync_selection_order(&tree);
+        state.current_selection = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("p", math_start),
+                head: SelectionPoint::new("p", math_end),
+            }),
+        };
+
+        let ops = draw_ops(&tree, &state);
+        let bands: Vec<Rect> = ops
+            .iter()
+            .filter_map(|op| {
+                if let DrawOp::Quad { id, rect, .. } = op
+                    && id.contains("selection-band")
+                {
+                    Some(*rect)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(bands.len(), 1, "expected one atomic math band");
+        let placeholder_width =
+            crate::text::metrics::line_width(object, 16.0, FontWeight::Regular, false);
+        assert!(
+            bands[0].w > placeholder_width * 1.5,
+            "inline math selection band should cover the rendered fraction box instead of the placeholder glyph, got {:?}",
+            bands[0],
+        );
+    }
+
+    #[test]
+    fn source_backed_mono_inlines_measure_selection_with_mono_family() {
+        use crate::selection::{Selection, SelectionPoint, SelectionRange, SelectionSource};
+
+        let visible = "iiii\nwwww";
+        let mut tree = crate::text_runs([
+            crate::text("iiii").mono(),
+            crate::hard_break(),
+            crate::text("wwww").mono(),
+        ])
+        .mono()
+        .font_size(16.0)
+        .nowrap_text()
+        .key("code")
+        .selectable()
+        .selection_source(SelectionSource::identity(visible))
+        .padding(20.0);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 500.0, 200.0));
+        state.sync_selection_order(&tree);
+
+        let selected_band_width = |state: &mut UiState, start: usize, end: usize| {
+            state.current_selection = Selection {
+                range: Some(SelectionRange {
+                    anchor: SelectionPoint::new("code", start),
+                    head: SelectionPoint::new("code", end),
+                }),
+            };
+            let ops = draw_ops(&tree, state);
+            let bands: Vec<Rect> = ops
+                .iter()
+                .filter_map(|op| {
+                    if let DrawOp::Quad { id, rect, .. } = op
+                        && id.contains("selection-band")
+                    {
+                        Some(*rect)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert_eq!(bands.len(), 1, "expected one selected visual line");
+            bands[0].w
+        };
+
+        let i_width = selected_band_width(&mut state, 0, 4);
+        let w_width = selected_band_width(&mut state, 5, visible.len());
+        assert!(
+            (i_width - w_width).abs() <= 0.5,
+            "mono code selection should measure equal-length lines equally; got iiii={i_width}, wwww={w_width}",
         );
     }
 
