@@ -31,6 +31,9 @@ pub fn frame(app: &Showcase, body: El) -> (El, Vec<Option<El>>) {
         super::text_inputs::region_layer(app),
         super::text_inputs::command_layer(app),
         super::tabs_accordion::actions_layer(app),
+        (app.section == Section::PageChrome)
+            .then(|| super::page_chrome::layer(&app.page_chrome))
+            .flatten(),
     ];
     (main, layers)
 }

@@ -163,6 +163,7 @@ pub use widgets::breadcrumb::{
     breadcrumb_separator,
 };
 pub use widgets::button::{button, button_with_icon, icon_button};
+pub use widgets::calendar::{CalendarAction, CalendarDay, calendar_day_key, calendar_month};
 pub use widgets::card::{
     card, card_content, card_description, card_footer, card_header, card_title, titled_card,
 };
@@ -194,6 +195,12 @@ pub use widgets::item::{
     item_media, item_media_icon, item_separator, item_title,
 };
 pub use widgets::list::{bullet_list, numbered_list, numbered_list_from, task_list};
+pub use widgets::menubar::{
+    MenubarAction, menubar, menubar_content, menubar_group, menubar_icon, menubar_item,
+    menubar_item_label, menubar_item_with_icon, menubar_item_with_icon_and_shortcut,
+    menubar_item_with_shortcut, menubar_label, menubar_menu, menubar_separator, menubar_shortcut,
+    menubar_trigger, menubar_trigger_key,
+};
 pub use widgets::numeric_input::{NumericInputOpts, numeric_input};
 pub use widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use widgets::pagination::{

@@ -12,9 +12,45 @@ pub struct State {
     pub display_name: String,
     pub email: String,
     pub bio: String,
+    pub billing_date: Option<String>,
+    pub billing_month: YearMonth,
     pub selection: Selection,
     pub show_errors: bool,
     pub scroll_bio_caret_into_view: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct YearMonth {
+    year: i32,
+    month: u8,
+}
+
+impl YearMonth {
+    const fn new(year: i32, month: u8) -> Self {
+        Self { year, month }
+    }
+
+    fn previous(self) -> Self {
+        if self.month == 1 {
+            Self::new(self.year - 1, 12)
+        } else {
+            Self::new(self.year, self.month - 1)
+        }
+    }
+
+    fn next(self) -> Self {
+        if self.month == 12 {
+            Self::new(self.year + 1, 1)
+        } else {
+            Self::new(self.year, self.month + 1)
+        }
+    }
+}
+
+impl Default for YearMonth {
+    fn default() -> Self {
+        Self::new(2026, 5)
+    }
 }
 
 impl Default for State {
@@ -23,6 +59,8 @@ impl Default for State {
             display_name: "Christian".into(),
             email: "user@".into(),
             bio: "Building Aetna — a renderer-agnostic UI kit for Rust apps and AI agents.".into(),
+            billing_date: Some("2026-05-13".into()),
+            billing_month: YearMonth::default(),
             selection: Selection::default(),
             show_errors: true,
             scroll_bio_caret_into_view: false,
@@ -83,6 +121,22 @@ pub fn view(state: &State) -> El {
                 form_description("Markdown-style bold and italic render in your profile card."),
             ])]),
         ),
+        section_with_heading(
+            "Billing",
+            "Date picker anatomy",
+            form_section([form_item([
+                form_label("Renewal date"),
+                form_control(calendar_month(
+                    "forms-billing-date",
+                    month_label(state.billing_month),
+                    calendar_days(state.billing_month, state.billing_date.as_deref()),
+                )),
+                form_description(format!(
+                    "Selected date: {}",
+                    state.billing_date.as_deref().unwrap_or("none")
+                )),
+            ])]),
+        ),
         row([
             spacer(),
             button("Cancel").ghost().key("forms-cancel"),
@@ -101,6 +155,15 @@ pub fn view(state: &State) -> El {
 }
 
 pub fn on_event(state: &mut State, e: UiEvent) {
+    if let Some(action) = calendar::classify_event(&e, "forms-billing-date") {
+        match action {
+            CalendarAction::PreviousMonth => state.billing_month = state.billing_month.previous(),
+            CalendarAction::NextMonth => state.billing_month = state.billing_month.next(),
+            CalendarAction::Pick(value) => state.billing_date = Some(value.to_string()),
+            _ => {}
+        }
+        return;
+    }
     match e.target_key() {
         Some("forms-display-name") => {
             text_input::apply_event(
@@ -120,6 +183,93 @@ pub fn on_event(state: &mut State, e: UiEvent) {
         }
         _ => {}
     }
+}
+
+fn calendar_days(month: YearMonth, selected: Option<&str>) -> Vec<CalendarDay> {
+    let mut days = Vec::with_capacity(42);
+    let previous = month.previous();
+    let next = month.next();
+    let leading = first_weekday_sunday(month);
+    let current_days = days_in_month(month);
+    let previous_days = days_in_month(previous);
+
+    for i in 0..leading {
+        let day = previous_days - leading as u8 + i as u8 + 1;
+        days.push(outside_day(previous, day));
+    }
+
+    for day in 1..=current_days {
+        let value = date_value(month, day);
+        let mut cell = CalendarDay::new(value.clone(), day.to_string());
+        if selected == Some(value.as_str()) {
+            cell = cell.selected();
+        }
+        days.push(cell);
+    }
+
+    let mut day = 1;
+    while days.len() < 42 {
+        days.push(outside_day(next, day));
+        day += 1;
+    }
+    days
+}
+
+fn outside_day(month: YearMonth, day: u8) -> CalendarDay {
+    CalendarDay::new(date_value(month, day), day.to_string())
+        .outside()
+        .disabled()
+}
+
+fn date_value(month: YearMonth, day: u8) -> String {
+    format!("{}-{:02}-{day:02}", month.year, month.month)
+}
+
+fn month_label(month: YearMonth) -> String {
+    format!("{} {}", month_name(month.month), month.year)
+}
+
+fn month_name(month: u8) -> &'static str {
+    match month {
+        1 => "January",
+        2 => "February",
+        3 => "March",
+        4 => "April",
+        5 => "May",
+        6 => "June",
+        7 => "July",
+        8 => "August",
+        9 => "September",
+        10 => "October",
+        11 => "November",
+        12 => "December",
+        _ => "Unknown",
+    }
+}
+
+fn days_in_month(month: YearMonth) -> u8 {
+    match month.month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(month.year) => 29,
+        2 => 28,
+        _ => 30,
+    }
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn first_weekday_sunday(month: YearMonth) -> usize {
+    // Sakamoto's algorithm: 0 = Sunday, 1 = Monday, ...
+    const OFFSETS: [i32; 12] = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    let mut year = month.year;
+    if month.month < 3 {
+        year -= 1;
+    }
+    ((year + year / 4 - year / 100 + year / 400 + OFFSETS[month.month as usize - 1] + 1) % 7)
+        as usize
 }
 
 pub fn drain_scroll_requests(state: &mut State) -> Vec<aetna_core::scroll::ScrollRequest> {
@@ -173,5 +323,48 @@ mod tests {
         assert!(email_validation_message("").is_some());
         assert!(email_validation_message("hello@").is_some());
         assert!(email_validation_message("hello@nodot").is_some());
+    }
+
+    #[test]
+    fn calendar_pick_updates_billing_date() {
+        let mut state = State::default();
+        on_event(
+            &mut state,
+            UiEvent::synthetic_click("forms-billing-date:day:2026-05-21"),
+        );
+        assert_eq!(state.billing_date.as_deref(), Some("2026-05-21"));
+    }
+
+    #[test]
+    fn calendar_prev_next_change_visible_month() {
+        let mut state = State::default();
+        assert_eq!(state.billing_month, YearMonth::new(2026, 5));
+
+        on_event(
+            &mut state,
+            UiEvent::synthetic_click("forms-billing-date:next"),
+        );
+        assert_eq!(state.billing_month, YearMonth::new(2026, 6));
+
+        on_event(
+            &mut state,
+            UiEvent::synthetic_click("forms-billing-date:prev"),
+        );
+        on_event(
+            &mut state,
+            UiEvent::synthetic_click("forms-billing-date:prev"),
+        );
+        assert_eq!(state.billing_month, YearMonth::new(2026, 4));
+    }
+
+    #[test]
+    fn calendar_days_follow_visible_month() {
+        assert_eq!(month_label(YearMonth::new(2026, 6)), "June 2026");
+        let days = calendar_days(YearMonth::new(2026, 6), Some("2026-06-15"));
+        assert_eq!(days.len(), 42);
+        assert_eq!(days[0].value, "2026-05-31");
+        assert!(days[0].outside);
+        assert_eq!(days[1].value, "2026-06-01");
+        assert!(days.iter().any(|d| d.value == "2026-06-15" && d.selected));
     }
 }

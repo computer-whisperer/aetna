@@ -25,6 +25,7 @@ primitives. The list is short:
 | Flat sidebar / nav rail | `sidebar([sidebar_header(...), sidebar_group([...])])` plus `sidebar_menu_button_with_icon(...)` for leaf items | `column(...).fill(CARD).stroke(BORDER).width(SIDEBAR_WIDTH)` or `column(...).surface_role(SurfaceRole::Panel)` for the sidebar surface |
 | Sidebar tree / dense resource list | keep `sidebar([...])`, then make one local `tree_row(depth, leading, label, trailing, current)` helper from `row([...]).focusable().height(Size::Fixed(28.0..40.0)).current()` and indent via padding | forcing every branch/file/stash into flat `sidebar_menu_button(...)`, or using card/table rows inside the sidebar |
 | Toolbar / page header row | `toolbar([toolbar_title("Documents"), spacer(), toolbar_group([...])]).padding(Sides::xy(tokens::SPACE_4, tokens::SPACE_2))` as app chrome; use `card_header` only inside a card | wrapping the top toolbar in `card([card_content([toolbar(...)])])`, or ad hoc action rows with inconsistent vertical alignment |
+| Top-level app menus | `menubar([menubar_trigger("app-menu", "file", "File", open == Some("file"))])` plus root-layer `menubar_menu("app-menu", "file", [...])`, folded with `menubar::apply_event(&mut open, &event, "app-menu")` | a toolbar row of unrelated dropdown buttons, or a hand-rolled File/Edit/View strip |
 | Conversation / event-log row | a local `log_row(role_color, faint_fill, content)` helper built from `row([gutter, content])`; use `accordion_item` for collapsible reasoning/tool details | `card([card_header([badge(role)]), card_content([message])])` repeated for every chat message |
 | Tabs / segmented control | `tabs_list(key, &current, options)` + `tabs::apply_event`; for icon/badge/count tabs, use `tabs_list_from_triggers([tab_trigger_content(key, value, [...], selected)])` | manual `row([button, button]).fill(MUTED)` segment, or hand-rolled selected-tab state |
 | Object/action list row (recent repo, file, project, person) | `item([item_media_icon(...), item_content([item_title(...), item_description(...)]), item_actions(...)])` inside `item_group([...])` | `row([column([text, text]), button, button]).key(...)` — every clickable repo/file/project/person row is `item`, not a hand-rolled focusable row |
@@ -53,6 +54,7 @@ primitives. The list is short:
 | Toggle (preferences) | `switch(self.value).key(k)` + `switch::apply_event(...)` | a button with two text labels |
 | Labelled control row (settings, prefs) | `field_row("Label", control)` | hand-rolled `row([text("Label").label(), spacer(), control])` repeated everywhere |
 | Stacked long field (URL, path, token, search) | `form_item([form_label("Repository URL"), form_control(text_input(...).width(Size::Fill(1.0))), form_description(...)])` inside `form([...])` | using `field_row` for long strings, or repeating `column([text(label).label(), text_input(...)])` |
+| Date picker / month grid | `calendar_month("billing-date", "May 2026", days)` with `CalendarDay::new(value, label).selected() / .outside() / .disabled()` and `calendar::apply_event(&mut selected, &event, "billing-date")` | a hand-rolled grid of tiny buttons with ad hoc selected/outside-month styling |
 | Raster image (logo, screenshot, thumbnail) | `image(Image::from_rgba8(...)).image_fit(ImageFit::Contain)` | reaching for a custom shader |
 | Throwaway notification | accumulate `ToastSpec::success("Saved")` and return them from `App::drain_toasts` | spinning a manual modal with a timer |
 
@@ -67,10 +69,12 @@ right reach instead.
 - A keyed/focusable `row([column([t1,t2]), button, button])` used as a clickable file/repo/project/person/asset entry — use `item([item_media, item_content([item_title, item_description]), item_actions([...])])` so hover, press, focus, the rail, and the slots are named.
 - Per-row `[Edit][Delete]` button pairs in a narrow list — collapse to one `dropdown_menu` trigger or a single icon-button kebab; let selection drive editing in the right pane.
 - `card([card_content([toolbar(...)])])` for the top app header — a toolbar is chrome, not a boxed content object.
+- A File / Edit / View strip built from separate `button(...)` or `dropdown_menu(...)` calls — use `menubar`, `menubar_trigger`, and `menubar_menu` so the root, triggers, dismiss keys, and menu-row anatomy stay named.
 - `row([title, spacer(), action]).fill(MUTED).stroke(BORDER)` *header bar* sitting above a body inside a `card` — that's a hand-rolled `card_header`. Lift the row into `card_header([...]).fill(MUTED)`, or split the "header bar over body" block into its own `card([card_header(...), card_content(...)])`.
 - A sidebar full of unrelated `card()` sections — use `sidebar_group`, `accordion_item`, or a local dense `tree_row` helper inside `sidebar`.
 - A transcript rendered as one `card()` per message — use an event-log row with a narrow role gutter so long assistant output reads as a stream.
 - `field_row` squeezing a repository URL, filesystem path, token, or search query into the right edge of a dialog — use stacked `form_item`.
+- A date picker rendered as a manual 7-column row/column grid — use `calendar_month` so day sizing, outside-month dimming, selected state, and nav keys are canonical.
 - `.gap(0.0)` — already the default; delete it.
 - `.font_size(...).font_weight(...).text_color(...)` on the same node — use a role modifier (`.heading()` / `.label()` / `.caption()` / `.muted()`).
 - Wrapping a single child in `row([single])` to apply `.padding(...)` — every `El` has `.padding()` directly.

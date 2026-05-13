@@ -240,6 +240,7 @@ pub struct Showcase {
     pub(crate) lists_tables: lists_tables::State,
     pub(crate) tabs_accordion: tabs_accordion::State,
     pub(crate) overlays: overlays::State,
+    pub(crate) page_chrome: page_chrome::State,
     pub(crate) animation: animation::State,
     pub(crate) hotkeys: hotkeys::State,
 
@@ -317,7 +318,7 @@ impl App for Showcase {
             Section::ListsTables => lists_tables::view(&self.lists_tables),
             Section::TabsAccordion => tabs_accordion::view(&self.tabs_accordion),
             Section::Overlays => overlays::view(&self.overlays),
-            Section::PageChrome => page_chrome::view(),
+            Section::PageChrome => page_chrome::view(&self.page_chrome),
             Section::Animation => animation::view(&self.animation),
             Section::Hotkeys => hotkeys::view(&self.hotkeys),
         };
@@ -408,7 +409,7 @@ impl App for Showcase {
             Section::ListsTables => lists_tables::on_event(&mut self.lists_tables, event),
             Section::TabsAccordion => tabs_accordion::on_event(&mut self.tabs_accordion, event),
             Section::Overlays => overlays::on_event(&mut self.overlays, event),
-            Section::PageChrome => {} // static
+            Section::PageChrome => page_chrome::on_event(&mut self.page_chrome, event),
             Section::Animation => animation::on_event(&mut self.animation, event),
             Section::Hotkeys => hotkeys::on_event(&mut self.hotkeys, event),
         }

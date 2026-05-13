@@ -79,6 +79,9 @@ pub use crate::widgets::breadcrumb::{
     breadcrumb_separator,
 };
 pub use crate::widgets::button::{button, button_with_icon, icon_button};
+pub use crate::widgets::calendar::{
+    self, CalendarAction, CalendarDay, calendar_day_key, calendar_month,
+};
 pub use crate::widgets::card::{
     card, card_content, card_description, card_footer, card_header, card_title, titled_card,
 };
@@ -110,6 +113,12 @@ pub use crate::widgets::item::{
     item_media, item_media_icon, item_separator, item_title,
 };
 pub use crate::widgets::list::{bullet_list, numbered_list, numbered_list_from, task_list};
+pub use crate::widgets::menubar::{
+    self, MenubarAction, menubar, menubar_content, menubar_group, menubar_icon, menubar_item,
+    menubar_item_label, menubar_item_with_icon, menubar_item_with_icon_and_shortcut,
+    menubar_item_with_shortcut, menubar_label, menubar_menu, menubar_separator, menubar_shortcut,
+    menubar_trigger, menubar_trigger_key,
+};
 pub use crate::widgets::numeric_input::{self, NumericInputOpts, numeric_input};
 pub use crate::widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use crate::widgets::pagination::{

@@ -21,12 +21,14 @@
 //! **Navigation**
 //! - [`tabs`] — segmented control / tabs; `tabs_list(key, &current, options)` + `tabs::apply_event`; `tabs_list_from_triggers([...])` for icon/badge tabs
 //! - [`editor_tabs`] — closable, reorderable editor tabs (think VS Code)
+//! - [`menubar`] — top-level app menus; `menubar([menubar_trigger(...)])` + `menubar_menu(...)` + `menubar::apply_event`
 //! - [`breadcrumb`] — `breadcrumb_list([breadcrumb_link(...), breadcrumb_separator(), breadcrumb_page(...)])`
 //! - [`pagination`] — `pagination_content([pagination_previous(), pagination_link(...), pagination_next()])`
 //! - [`dropdown_menu`] — `dropdown_menu(key, trigger, [dropdown_menu_item_with_shortcut(...)])`; collapses per-row `[Edit][Delete]` button pairs
 //! - [`command`] — palette / menu rows with icon + label + shortcut; `command_row(...)` / `command_item(...)`
 //!
 //! **Inputs & forms**
+//! - [`calendar`] — controlled date grid; `calendar_month(key, "May 2026", days)` + `calendar::apply_event`
 //! - [`text_input`] / [`text_area`] — controlled text editing; app owns `(value, Selection)` and calls `apply_event`; fixed-height text areas also drain caret scroll requests after accepted events
 //! - [`numeric_input`] — number entry with stepper / formatting
 //! - [`input_otp`] — segmented one-time-password input
@@ -72,6 +74,7 @@ pub mod badge;
 pub mod blockquote;
 pub mod breadcrumb;
 pub mod button;
+pub mod calendar;
 pub mod card;
 pub mod checkbox;
 pub mod code_block;
@@ -83,6 +86,7 @@ pub mod form;
 pub mod input_otp;
 pub mod item;
 pub mod list;
+pub mod menubar;
 pub mod numeric_input;
 pub mod overlay;
 pub mod pagination;
