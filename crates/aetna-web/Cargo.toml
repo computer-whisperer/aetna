@@ -57,6 +57,7 @@ web-sys = { version = "0.3", features = [
     "Event",
     "EventTarget",
     "HtmlCanvasElement",
+    "KeyboardEvent",
     "Navigator",
     # ResizeObserver re-syncs the canvas backing buffer to its CSS
     # box size whenever the layout changes (window resize, devtools

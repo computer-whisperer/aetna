@@ -357,6 +357,8 @@ mod web_entry {
         primary_selection: String,
         /// Held for its drop side-effects: the JS paste callback object.
         _paste_closure: Option<Closure<dyn FnMut(web_sys::ClipboardEvent)>>,
+        /// Held for its drop side-effects: the JS keydown callback object.
+        _keydown_closure: Option<Closure<dyn FnMut(web_sys::KeyboardEvent)>>,
         /// Held for its drop side-effects: the JS callback object
         /// that ResizeObserver fires. Dropping this disconnects the
         /// observer.
@@ -413,6 +415,7 @@ mod web_entry {
                 pending_clipboard_text: Rc::new(RefCell::new(VecDeque::new())),
                 primary_selection: String::new(),
                 _paste_closure: None,
+                _keydown_closure: None,
                 _resize_closure: None,
                 _resize_observer: None,
             }
@@ -547,6 +550,20 @@ mod web_entry {
                 .add_event_listener_with_callback("paste", paste_closure.as_ref().unchecked_ref())
                 .expect("add paste listener");
             self._paste_closure = Some(paste_closure);
+
+            let keydown_closure: Closure<dyn FnMut(web_sys::KeyboardEvent)> =
+                Closure::new(move |event: web_sys::KeyboardEvent| {
+                    if should_prevent_browser_key_default(&event) {
+                        event.prevent_default();
+                    }
+                });
+            canvas
+                .add_event_listener_with_callback(
+                    "keydown",
+                    keydown_closure.as_ref().unchecked_ref(),
+                )
+                .expect("add keydown listener");
+            self._keydown_closure = Some(keydown_closure);
 
             // Allow both browser backends. wgpu's synchronous
             // Instance::new() can't safely decide this: if
@@ -1270,6 +1287,37 @@ mod web_entry {
             alt: mods.alt_key(),
             logo: mods.super_key(),
         }
+    }
+
+    fn should_prevent_browser_key_default(event: &web_sys::KeyboardEvent) -> bool {
+        // Keep browser/system shortcuts alive, especially Ctrl/Cmd+V:
+        // preventing that keydown suppresses the trusted DOM `paste`
+        // event that carries clipboard text in Firefox.
+        if event.ctrl_key() || event.meta_key() || event.alt_key() {
+            return false;
+        }
+
+        let key = event.key();
+        if key.chars().count() == 1 {
+            return true;
+        }
+
+        matches!(
+            key.as_str(),
+            "ArrowUp"
+                | "ArrowDown"
+                | "ArrowLeft"
+                | "ArrowRight"
+                | "Backspace"
+                | "Delete"
+                | "Home"
+                | "End"
+                | "PageUp"
+                | "PageDown"
+                | "Tab"
+                | "Enter"
+                | "Escape"
+        )
     }
 
     /// Translate an Aetna [`Cursor`] to winit's [`CursorIcon`]. winit's
