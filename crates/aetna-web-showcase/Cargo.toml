@@ -1,6 +1,6 @@
 [package]
 name = "aetna-web-showcase"
-version = "0.3.3"
+version = "0.3.4"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -15,8 +15,8 @@ readme = "README.md"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-aetna-fixtures = { version = "0.3.3", path = "../aetna-fixtures" }
-aetna-web = { version = "0.3.3", path = "../aetna-web" }
+aetna-fixtures = { version = "0.3.4", path = "../aetna-fixtures" }
+aetna-web = { version = "0.3.4", path = "../aetna-web" }
 
 [features]
 profiling = ["aetna-web/profiling"]

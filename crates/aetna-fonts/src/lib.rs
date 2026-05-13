@@ -33,7 +33,7 @@
 //! typeface):
 //!
 //! ```toml
-//! aetna-fonts = { version = "0.2", default-features = false }
+//! aetna-fonts = { version = "0.3", default-features = false }
 //! ```
 //!
 //! CJK was previously available as an opt-in `cjk` feature shipping

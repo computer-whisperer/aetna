@@ -1,6 +1,6 @@
 [package]
 name = "aetna-winit-wgpu"
-version = "0.3.3"
+version = "0.3.4"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -17,8 +17,8 @@ categories = ["gui"]
 path = "src/lib.rs"
 
 [dependencies]
-aetna-core = { version = "0.3.3", path = "../aetna-core" }
-aetna-wgpu = { version = "0.3.3", path = "../aetna-wgpu" }
+aetna-core = { version = "0.3.4", path = "../aetna-core" }
+aetna-wgpu = { version = "0.3.4", path = "../aetna-wgpu" }
 # `arboard` backs the native clipboard bridge. The core crate stays
 # backend-neutral; this host handles platform clipboard IO for common
 # selection copy shortcuts.
