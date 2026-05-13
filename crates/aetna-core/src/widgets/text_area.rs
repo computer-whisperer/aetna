@@ -642,11 +642,49 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
             let local_x = px - target.rect.x - tokens::SPACE_3;
             // See PointerDown above for the scroll_offset_y rationale.
             let local_y = py - target.rect.y - tokens::SPACE_2 + target.scroll_offset_y;
-            selection.head = caret_from_xy(value, local_x, local_y, wrap_width);
+            let pos = caret_from_xy(value, local_x, local_y, wrap_width);
+            if !event.modifiers.shift {
+                match event.click_count {
+                    2 => {
+                        extend_word_selection(value, selection, pos);
+                        return true;
+                    }
+                    n if n >= 3 => {
+                        extend_line_selection(value, selection, pos);
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+            selection.head = pos;
             true
         }
         UiEventKind::Click => false,
         _ => false,
+    }
+}
+
+fn extend_word_selection(value: &str, selection: &mut TextSelection, pos: usize) {
+    let (selected_lo, selected_hi) = selection.ordered();
+    let (word_lo, word_hi) = crate::selection::word_range_at(value, pos);
+    if pos < selected_lo {
+        selection.anchor = selected_hi;
+        selection.head = word_lo;
+    } else {
+        selection.anchor = selected_lo;
+        selection.head = word_hi;
+    }
+}
+
+fn extend_line_selection(value: &str, selection: &mut TextSelection, pos: usize) {
+    let (selected_lo, selected_hi) = selection.ordered();
+    let (line_lo, line_hi) = crate::selection::line_range_at(value, pos);
+    if pos < selected_lo {
+        selection.anchor = selected_hi;
+        selection.head = line_lo;
+    } else {
+        selection.anchor = selected_lo;
+        selection.head = line_hi;
     }
 }
 
@@ -906,6 +944,26 @@ mod tests {
         }
     }
 
+    fn ev_drag_with_count(local: (f32, f32), click_count: u8) -> UiEvent {
+        let target = ta_target();
+        let pointer = (
+            target.rect.x + tokens::SPACE_3 + local.0,
+            target.rect.y + tokens::SPACE_2 + local.1,
+        );
+        UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: Some(pointer),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count,
+            kind: UiEventKind::Drag,
+        }
+    }
+
     fn ev_middle_click(local: (f32, f32), text: Option<&str>) -> UiEvent {
         let target = ta_target();
         let pointer = (
@@ -1095,6 +1153,19 @@ mod tests {
         assert!(apply_event(&mut value, &mut sel, &down));
         assert_eq!(sel.anchor, 0);
         assert_eq!(sel.head, 5);
+    }
+
+    #[test]
+    fn double_click_hold_drag_inside_word_keeps_word_selected() {
+        let mut value = String::from("first second\nthird");
+        let mut sel = TextSelection::caret(0);
+        let down = ev_pointer_down_with_count((1.0, 1.0), KeyModifiers::default(), 2);
+        assert!(apply_event(&mut value, &mut sel, &down));
+        assert_eq!(sel, TextSelection::range(0, 5));
+
+        let drag = ev_drag_with_count((2.0, 1.0), 2);
+        assert!(apply_event(&mut value, &mut sel, &drag));
+        assert_eq!(sel, TextSelection::range(0, 5));
     }
 
     #[test]

@@ -47,6 +47,7 @@
 //! or if the GPU-upload sequences diverge enough to make a typed-state
 //! interface earn its keep.
 
+use std::cmp::Ordering;
 use std::ops::Range;
 use std::time::Duration;
 
@@ -63,7 +64,7 @@ use crate::paint::{
     physical_scissor,
 };
 use crate::shader::ShaderHandle;
-use crate::state::{AnimationMode, UiState};
+use crate::state::{AnimationMode, SelectionDragGranularity, UiState};
 use crate::text::atlas::RunStyle;
 use crate::text::metrics::TextLayoutCacheStats;
 use crate::theme::Theme;
@@ -379,13 +380,11 @@ impl RunnerCore {
         if let Some(drag) = self.ui_state.selection.drag.clone()
             && let Some(tree) = self.last_tree.as_ref()
         {
-            let head_point =
+            let raw_head =
                 head_for_drag(tree, &self.ui_state, (x, y)).unwrap_or_else(|| drag.anchor.clone());
+            let (anchor, head) = selection_range_for_drag(tree, &self.ui_state, &drag, raw_head);
             let new_sel = crate::selection::Selection {
-                range: Some(crate::selection::SelectionRange {
-                    anchor: drag.anchor.clone(),
-                    head: head_point,
-                }),
+                range: Some(crate::selection::SelectionRange { anchor, head }),
             };
             if new_sel != self.ui_state.current_selection {
                 self.ui_state.current_selection = new_sel.clone();
@@ -413,7 +412,7 @@ impl RunnerCore {
                 text: None,
                 selection: None,
                 modifiers,
-                click_count: 0,
+                click_count: self.ui_state.current_click_count(),
                 path: None,
                 kind: UiEventKind::Drag,
             });
@@ -766,19 +765,25 @@ impl RunnerCore {
             n if n >= 3 => (0, leaf_text.len()),
             _ => (point.byte, point.byte),
         };
+        let granularity = match click_count {
+            2 => SelectionDragGranularity::Word,
+            n if n >= 3 => SelectionDragGranularity::Leaf,
+            _ => SelectionDragGranularity::Character,
+        };
         let anchor = crate::selection::SelectionPoint::new(point.key.clone(), anchor_byte);
         let head = crate::selection::SelectionPoint::new(point.key.clone(), head_byte);
         let new_sel = crate::selection::Selection {
             range: Some(crate::selection::SelectionRange {
                 anchor: anchor.clone(),
-                head,
+                head: head.clone(),
             }),
         };
         self.ui_state.current_selection = new_sel.clone();
-        // The drag anchors at the multi-click range's start so a
-        // subsequent drag extends from there rather than from the
-        // initial click position.
-        self.ui_state.selection.drag = Some(crate::state::SelectionDrag { anchor });
+        self.ui_state.selection.drag = Some(crate::state::SelectionDrag {
+            anchor,
+            head,
+            granularity,
+        });
         out.push(selection_event(new_sel, modifiers, Some(pointer)));
     }
 
@@ -1961,6 +1966,69 @@ fn head_for_drag(
     })
 }
 
+fn selection_range_for_drag(
+    root: &El,
+    ui_state: &UiState,
+    drag: &crate::state::SelectionDrag,
+    raw_head: crate::selection::SelectionPoint,
+) -> (
+    crate::selection::SelectionPoint,
+    crate::selection::SelectionPoint,
+) {
+    match drag.granularity {
+        SelectionDragGranularity::Character => (drag.anchor.clone(), raw_head),
+        SelectionDragGranularity::Word => {
+            let text = crate::selection::find_keyed_text(root, &raw_head.key).unwrap_or_default();
+            let (lo, hi) = crate::selection::word_range_at(&text, raw_head.byte);
+            if point_cmp(ui_state, &raw_head, &drag.anchor) == Ordering::Less {
+                (
+                    drag.head.clone(),
+                    crate::selection::SelectionPoint::new(raw_head.key, lo),
+                )
+            } else {
+                (
+                    drag.anchor.clone(),
+                    crate::selection::SelectionPoint::new(raw_head.key, hi),
+                )
+            }
+        }
+        SelectionDragGranularity::Leaf => {
+            let len = crate::selection::find_keyed_text(root, &raw_head.key)
+                .map(|text| text.len())
+                .unwrap_or(raw_head.byte);
+            if point_cmp(ui_state, &raw_head, &drag.anchor) == Ordering::Less {
+                (
+                    drag.head.clone(),
+                    crate::selection::SelectionPoint::new(raw_head.key, 0),
+                )
+            } else {
+                (
+                    drag.anchor.clone(),
+                    crate::selection::SelectionPoint::new(raw_head.key, len),
+                )
+            }
+        }
+    }
+}
+
+fn point_cmp(
+    ui_state: &UiState,
+    a: &crate::selection::SelectionPoint,
+    b: &crate::selection::SelectionPoint,
+) -> Ordering {
+    let order_index = |key: &str| {
+        ui_state
+            .selection
+            .order
+            .iter()
+            .position(|target| target.key == key)
+            .unwrap_or(usize::MAX)
+    };
+    order_index(&a.key)
+        .cmp(&order_index(&b.key))
+        .then_with(|| a.byte.cmp(&b.byte))
+}
+
 fn y_distance(rect: Rect, y: f32) -> f32 {
     if y < rect.y {
         rect.y - y
@@ -3048,6 +3116,42 @@ mod tests {
             range.anchor.byte,
             range.head.byte
         );
+    }
+
+    #[test]
+    fn double_click_hold_drag_inside_selectable_word_keeps_word_selected() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let cx = p1.x + 4.0;
+        let cy = p1.y + p1.h * 0.5;
+
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_up(cx, cy, PointerButton::Primary);
+        let down = core.pointer_down(cx, cy, PointerButton::Primary);
+        let sel = down
+            .iter()
+            .find(|e| e.kind == UiEventKind::SelectionChanged)
+            .and_then(|e| e.selection.as_ref())
+            .and_then(|s| s.range.as_ref())
+            .expect("double-click selects word");
+        assert_eq!(sel.anchor.byte, 0);
+        assert_eq!(sel.head.byte, 5);
+
+        let events = core.pointer_moved(cx + 1.0, cy).events;
+        assert!(
+            !events
+                .iter()
+                .any(|e| e.kind == UiEventKind::SelectionChanged),
+            "drag jitter within the double-clicked word should not collapse the selection"
+        );
+        let range = core
+            .ui_state
+            .current_selection
+            .range
+            .as_ref()
+            .expect("selection persists");
+        assert_eq!(range.anchor.byte, 0);
+        assert_eq!(range.head.byte, 5);
     }
 
     #[test]

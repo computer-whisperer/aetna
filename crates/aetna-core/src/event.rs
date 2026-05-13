@@ -277,10 +277,11 @@ pub struct UiEvent {
     /// Click number within a multi-click sequence. Set to 1 for single
     /// click, 2 for double-click, 3 for triple-click, etc. The runtime
     /// increments this when consecutive `PointerDown`s land on the same
-    /// target within ~500ms and ~4px of the previous click. `0` means
-    /// "not applicable" — set on every event other than `PointerDown` /
-    /// `PointerUp` / `Click` (and their secondary / middle siblings,
-    /// which always carry 1).
+    /// target within ~500ms and ~4px of the previous click. `Drag`
+    /// events emitted while the final click is held keep the active
+    /// sequence count so text widgets can preserve word / line
+    /// granularity. `0` means "not applicable" — set on events outside
+    /// pointer click / drag routing.
     ///
     /// `text_input` / `text_area` and the static-text selection
     /// manager read this to map double-click → select word, triple-

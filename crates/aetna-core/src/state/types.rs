@@ -219,12 +219,25 @@ pub struct ScrollMetrics {
     pub max_offset: f32,
 }
 
+/// Granularity for an active text-selection drag. Single-click drags
+/// extend by caret position; multi-click drags keep selecting whole
+/// units as the pointer moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SelectionDragGranularity {
+    Character,
+    Word,
+    Leaf,
+}
+
 /// Active text-selection drag, captured at `pointer_down` on a
-/// selectable leaf. The anchor stays fixed; `pointer_moved` extends
-/// the head and emits `SelectionChanged`.
+/// selectable leaf. For multi-click drags the initial range is kept so
+/// crossing back over the selected word / leaf can flip the fixed edge
+/// without collapsing to a raw caret position.
 #[derive(Clone, Debug)]
 pub(crate) struct SelectionDrag {
     pub anchor: crate::selection::SelectionPoint,
+    pub head: crate::selection::SelectionPoint,
+    pub granularity: SelectionDragGranularity,
 }
 
 /// Internal selection-manager state derived from the laid-out tree and
@@ -239,9 +252,7 @@ pub(crate) struct SelectionState {
     /// selections.
     pub(crate) order: Vec<UiTarget>,
     /// Active drag, set by `pointer_down` when the press lands on a
-    /// selectable leaf and primary button. The anchor stays fixed for
-    /// the duration of the drag; head moves as the pointer moves.
-    /// Cleared by `pointer_up`.
+    /// selectable leaf and primary button. Cleared by `pointer_up`.
     pub(crate) drag: Option<SelectionDrag>,
 }
 

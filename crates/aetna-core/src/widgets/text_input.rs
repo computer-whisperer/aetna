@@ -674,11 +674,38 @@ fn fold_event_local(
             let viewport_w = (target.rect.w - 2.0 * tokens::SPACE_3).max(0.0);
             let x_offset = current_x_offset(value, selection.head, viewport_w, opts.mask);
             let local_x = px - target.rect.x - tokens::SPACE_3 + x_offset;
-            selection.head = caret_from_x(value, local_x, opts.mask);
+            let pos = caret_from_x(value, local_x, opts.mask);
+            if !event.modifiers.shift {
+                match event.click_count {
+                    2 => {
+                        extend_word_selection(value, selection, pos);
+                        return true;
+                    }
+                    n if n >= 3 => {
+                        selection.anchor = 0;
+                        selection.head = value.len();
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+            selection.head = pos;
             true
         }
         UiEventKind::Click => false,
         _ => false,
+    }
+}
+
+fn extend_word_selection(value: &str, selection: &mut TextSelection, pos: usize) {
+    let (selected_lo, selected_hi) = selection.ordered();
+    let (word_lo, word_hi) = crate::selection::word_range_at(value, pos);
+    if pos < selected_lo {
+        selection.anchor = selected_hi;
+        selection.head = word_lo;
+    } else {
+        selection.anchor = selected_lo;
+        selection.head = word_hi;
     }
 }
 
@@ -1110,6 +1137,10 @@ mod tests {
     }
 
     fn ev_drag(target: UiTarget, pointer: (f32, f32)) -> UiEvent {
+        ev_drag_with_count(target, pointer, 0)
+    }
+
+    fn ev_drag_with_count(target: UiTarget, pointer: (f32, f32), click_count: u8) -> UiEvent {
         UiEvent {
             path: None,
             key: Some(target.key.clone()),
@@ -1119,7 +1150,7 @@ mod tests {
             text: None,
             selection: None,
             modifiers: KeyModifiers::default(),
-            click_count: 0,
+            click_count,
             kind: UiEventKind::Drag,
         }
     }
@@ -1812,6 +1843,33 @@ mod tests {
         assert!(apply_event(&mut value, &mut sel, &drag));
         assert_eq!(sel.anchor, 0);
         assert_eq!(sel.head, value.len());
+    }
+
+    #[test]
+    fn double_click_hold_drag_inside_word_keeps_word_selected() {
+        let mut value = String::from("hello world");
+        let mut sel = TextSelection::caret(0);
+        let target = ti_target();
+        let click_x = target.rect.x
+            + tokens::SPACE_3
+            + crate::text::metrics::line_width(
+                "hello w",
+                tokens::TEXT_SM.size,
+                FontWeight::Regular,
+                false,
+            );
+        let down = ev_pointer_down_with_count(
+            target.clone(),
+            (click_x, target.rect.y + 18.0),
+            KeyModifiers::default(),
+            2,
+        );
+        assert!(apply_event(&mut value, &mut sel, &down));
+        assert_eq!(sel, TextSelection::range(6, 11));
+
+        let drag = ev_drag_with_count(target.clone(), (click_x + 1.0, target.rect.y + 18.0), 2);
+        assert!(apply_event(&mut value, &mut sel, &drag));
+        assert_eq!(sel, TextSelection::range(6, 11));
     }
 
     #[test]
