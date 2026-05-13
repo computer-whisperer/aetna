@@ -36,10 +36,10 @@ Aetna lives under `crates/`, with runnable cross-crate examples in the workspace
 | `aetna-fonts` + font asset crates | Published bundled font layer. `aetna-fonts` exposes feature flags for Inter, JetBrains Mono, emoji, symbols/math fallback, and Roboto; sibling crates hold the actual font bytes so each uploaded crate stays under crates.io's package-size cap. |
 | `aetna-markdown` | Published markdown-to-`El` transformer over `pulldown-cmark`, with optional pure-Rust syntax highlighting. The `Showcase` imports it through `aetna-fixtures`, but downstream apps can use it directly. |
 | `aetna-wgpu` | wgpu pipelines + per-page atlas textures + `Runner` shell. Wraps a shared `RunnerCore` from `aetna-core` for interaction state, paint-stream scratch, and the `pointer_*`/`key_down`/`set_hotkeys` surface; only GPU resources and the wgpu-flavoured `prepare()` GPU upload + `draw()` are backend-specific. |
-| `aetna-fixtures` | Workspace-private backend-neutral showcase apps and render fixtures (`HeroDemo`, `Showcase`, icon gallery, text-quality matrix, liquid-glass lab). No windowing or GPU setup; examples, web, tools, and backend parity crates import the same fixtures for parity. Not a public dependency target. |
+| `aetna-fixtures` | Workspace-private backend-neutral showcase apps and render fixtures (`HeroDemo`, `Showcase`, icon gallery, text-quality matrix, liquid-glass lab). No windowing or GPU setup; examples, the web showcase, tools, and backend parity crates import the same fixtures for parity. Not a public dependency target. |
 | `aetna-winit-wgpu` | Optional batteries-included native desktop host for simple winit + wgpu apps. Owns window/surface setup, MSAA target management, input mapping, IME forwarding, redraw-on-animation, plus opt-in host cadence / `before_build` hooks for live external state. Custom hosts can bypass it and call `aetna-wgpu::Runner` directly. |
 | `aetna-examples` | Workspace examples package (`examples/`). User-facing interactive examples that intentionally pull multiple crates: `aetna-core` + `aetna-winit-wgpu`, plus `aetna-fixtures` or native helpers where needed. |
-| `aetna-web` | Workspace-private wasm browser entry point. `crate-type = ["cdylib", "rlib"]`; re-exports `aetna_fixtures::Showcase` and ships a `#[wasm_bindgen(start)] start_web()` that opens a wgpu surface against an `<canvas id="aetna_canvas">` and drives the same backend-neutral App impl that native demos use. |
+| `aetna-web` | Reusable wasm browser host. Downstream wasm crates call `start_with` / `start_with_config` from their own `#[wasm_bindgen(start)]` entry point to drive any `aetna_core::App` against a browser canvas, with `WebHandle::request_redraw` for external JS callbacks. |
 | `aetna-vulkano` | Vulkan backend, peer to `aetna-wgpu`. WGSL → SPIR-V via `naga`; `Runner` mirrors `aetna_wgpu::Runner`'s public surface with `Arc<Device>`/`Queue`/`Format` constructor args. The interaction half + paint-stream loop route through the shared `RunnerCore` so behaviour cannot drift between backends. |
 | `aetna-vulkano-demo` | winit + vulkano harness sibling of the wgpu demo path. Ships `bin/counter` (the boundary A/B fixture), `bin/custom` (the gradient WGSL fixture), and `bin/showcase` (driving the same `aetna-fixtures::Showcase` app through `aetna-vulkano`). |
 
@@ -153,7 +153,8 @@ crates/
   aetna-fixtures/                workspace-private Showcase + render fixtures
   aetna-winit-wgpu/              optional native winit + wgpu app host
   aetna-vulkano-demo/            vulkano demo harness + backend parity bins
-  aetna-web/                     workspace-private wasm browser entry point
+  aetna-web/                     reusable wasm browser host
+  aetna-web-showcase/            unpublished browser showcase bundle
   aetna-fonts/                   bundled Inter + JetBrains Mono + emoji/symbol faces (Roboto opt-in)
   aetna-fonts-*/                 split published font asset crates
   aetna-markdown/                markdown to El transformer

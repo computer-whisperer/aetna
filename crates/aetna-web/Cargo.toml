@@ -1,25 +1,21 @@
 [package]
 name = "aetna-web"
 version = "0.3.3"
-edition = "2024"
-description = "Aetna — wasm browser entry point for the shared Showcase app"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Aetna browser host for wasm apps"
 license = "MIT OR Apache-2.0"
-publish = false
 readme = "README.md"
-
-[lib]
-# `cdylib` is what `wasm-pack build --target web` ships to the browser;
-# `rlib` keeps the shared web entry importable by docs/tests. Native
-# parity now runs through `aetna-examples` and `aetna-vulkano-demo`.
-crate-type = ["cdylib", "rlib"]
+documentation = "https://docs.rs/aetna-web"
+keywords = ["ui", "gui", "wasm", "web", "wgpu"]
+categories = ["gui", "rendering", "wasm", "web-programming"]
 
 [dependencies]
 aetna-core = { version = "0.3.3", path = "../aetna-core" }
 aetna-wgpu = { version = "0.3.3", path = "../aetna-wgpu" }
-# `aetna-fixtures` is the home of the shared `Showcase` App impl;
-# depending on it from native, vulkano, and wasm gives every target one
-# backend-neutral fixture without pulling in a native demo harness.
-aetna-fixtures = { version = "0.3.3", path = "../aetna-fixtures" }
 wgpu = "29"
 winit = "0.30"
 
@@ -29,7 +25,7 @@ winit = "0.30"
 # (`tracing-wasm`, declared in the wasm32 target table below) emits
 # each span to the browser's User Timing API, where they show up as
 # named measures in DevTools → Performance. Build with
-# `wasm-pack build --target web crates/aetna-web --features profiling`.
+# `wasm-pack build --target web crates/aetna-web-showcase --features profiling`.
 profiling = [
     "dep:tracing-wasm",
     "aetna-core/profiling",

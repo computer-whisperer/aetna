@@ -1,32 +1,20 @@
-//! Browser wasm entry point for the shared [`Showcase`] app.
+//! Browser host for Aetna wasm apps.
 //!
-//! This crate is a host/demo package, not the general app-author API.
-//! Write normal UI code against `aetna_core::prelude::*` and use
-//! `aetna-winit-wgpu` for a native desktop window. Use this crate when
-//! you want the browser path for the backend-neutral [`Showcase`]
-//! fixture from `aetna-fixtures`.
+//! Write normal UI code against `aetna_core::prelude::*`, then call
+//! [`start_with`] from your wasm crate's `#[wasm_bindgen(start)]`
+//! entry point. The host opens a wgpu surface against a canvas in the
+//! page and drives the app through winit's browser event loop.
 //!
-//! - **Wasm:** `wasm-pack build --target web` ships this crate as a
-//!   `cdylib`. The `#[wasm_bindgen(start)]` entry below opens a wgpu
-//!   surface against a `<canvas id="aetna_canvas">` in the host page
-//!   and drives [`Showcase`] through a winit event loop tailored for
-//!   the browser (`spawn_app` rather than `run_app`, async adapter
-//!   request).
-//! - **Native parity:** run the same app via `cargo run -p aetna-examples --bin
-//!   showcase`. There's no separate native bin in this crate — the
-//!   reusable native host lives in `aetna-winit-wgpu`, with
-//!   `aetna-examples` providing the demo binary.
+//! The default configuration expects a `<canvas id="aetna_canvas">`.
+//! Use [`start_with_config`] when embedding into a page with a different
+//! canvas id.
 //!
-//! The package includes `index.html` as a minimal browser harness for
-//! the generated wasm bundle (sibling to the wasm-pack `pkg/` output).
-//!
-//! Runtime parity check: both targets render the same fixture, accept
-//! click + hover + scroll + keyboard input, and exercise the live
-//! `aetna-wgpu` paint path. Animation is the same code; only the time
-//! source differs (browser raf vs. winit redraw).
+//! `aetna-winit-wgpu` is the equivalent reusable native host.
 
 use aetna_core::Rect;
-pub use aetna_fixtures::Showcase;
+
+/// Default canvas element id used by [`WebHostConfig::default`].
+pub const DEFAULT_CANVAS_ID: &str = "aetna_canvas";
 
 /// Default logical viewport. Sized to feel reasonable both as a winit
 /// window and as a browser canvas. Browsers can override this by
@@ -38,16 +26,80 @@ pub const VIEWPORT: Rect = Rect {
     h: 640.0,
 };
 
-// ---- Wasm entry ----
+/// Browser host configuration.
+#[derive(Clone, Debug)]
+pub struct WebHostConfig {
+    /// Fallback logical viewport used when the canvas has no CSS size
+    /// yet. Once the page lays the canvas out, the host tracks its CSS
+    /// box through `ResizeObserver`.
+    pub viewport: Rect,
+    /// Id of the canvas element the host should attach to.
+    pub canvas_id: String,
+}
+
+impl WebHostConfig {
+    pub fn new(viewport: Rect) -> Self {
+        Self {
+            viewport,
+            canvas_id: DEFAULT_CANVAS_ID.to_string(),
+        }
+    }
+
+    pub fn with_canvas_id(mut self, canvas_id: impl Into<String>) -> Self {
+        self.canvas_id = canvas_id.into();
+        self
+    }
+}
+
+impl Default for WebHostConfig {
+    fn default() -> Self {
+        Self::new(VIEWPORT)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub use web_entry::{WebHandle, start_with, start_with_config};
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use native_stub::{WebHandle, start_with, start_with_config};
+
+#[cfg(not(target_arch = "wasm32"))]
+mod native_stub {
+    use aetna_core::{App, Rect};
+
+    use super::WebHostConfig;
+
+    /// Browser redraw handle.
+    ///
+    /// On non-wasm targets this is a no-op placeholder so host crates
+    /// can type-check shared code. It is only functional on
+    /// `wasm32-unknown-unknown`.
+    #[derive(Clone, Debug, Default)]
+    pub struct WebHandle {
+        _private: (),
+    }
+
+    impl WebHandle {
+        pub fn request_redraw(&self) {}
+    }
+
+    pub fn start_with<A: App + 'static>(_viewport: Rect, _app: A) -> WebHandle {
+        panic!("aetna-web can only start apps on wasm32-unknown-unknown")
+    }
+
+    pub fn start_with_config<A: App + 'static>(_config: WebHostConfig, _app: A) -> WebHandle {
+        panic!("aetna-web can only start apps on wasm32-unknown-unknown")
+    }
+}
+
+// ---- Wasm host ----
 //
 // Lives in its own module so it can pull in wasm-only deps without
-// polluting the rlib's `pub` surface on native builds. The
-// `#[wasm_bindgen(start)]` attribute makes wasm-pack emit a JS shim
-// that runs `start_web` automatically when the bundle loads.
+// polluting native builds.
 
 #[cfg(target_arch = "wasm32")]
 mod web_entry {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::collections::VecDeque;
     use std::rc::Rc;
     use std::sync::Arc;
@@ -71,7 +123,7 @@ mod web_entry {
     // resolve issue is understood (or once WebGPU is the only target).
     const SAMPLE_COUNT: u32 = 1;
     use wasm_bindgen::JsCast;
-    use wasm_bindgen::prelude::*;
+    use wasm_bindgen::prelude::Closure;
     use web_time::Instant;
     use winit::application::ApplicationHandler;
     use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -80,7 +132,7 @@ mod web_entry {
     use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
     use winit::window::{CursorIcon, Window, WindowId};
 
-    use super::{Showcase, VIEWPORT};
+    use super::WebHostConfig;
 
     /// Number of redraws to accumulate before logging an averaged
     /// frame-timing line. 60 → roughly once per second at 60fps when
@@ -185,8 +237,6 @@ mod web_entry {
         }
     }
 
-    const CANVAS_ID: &str = "aetna_canvas";
-
     /// Wire the global `tracing` subscriber to `tracing-wasm`, which
     /// emits `performance.mark` / `performance.measure` calls for every
     /// span. Open DevTools → Performance, hit Record, exercise the UI;
@@ -200,8 +250,69 @@ mod web_entry {
         tracing_wasm::set_as_global_default();
     }
 
-    #[wasm_bindgen(start)]
-    pub fn start_web() {
+    /// Handle returned by [`start_with`] so embedding code can wake the
+    /// host after external browser events enqueue app work.
+    #[derive(Clone)]
+    pub struct WebHandle {
+        inner: Rc<WebHandleInner>,
+    }
+
+    struct WebHandleInner {
+        window: RefCell<Option<Arc<Window>>>,
+        ready: Cell<bool>,
+        pending_redraw: Cell<bool>,
+    }
+
+    impl WebHandle {
+        fn new() -> Self {
+            Self {
+                inner: Rc::new(WebHandleInner {
+                    window: RefCell::new(None),
+                    ready: Cell::new(false),
+                    pending_redraw: Cell::new(false),
+                }),
+            }
+        }
+
+        /// Request a redraw from external browser integration code.
+        ///
+        /// If the browser window or GPU setup is not ready yet, the
+        /// request is remembered and flushed once setup completes.
+        pub fn request_redraw(&self) {
+            if self.inner.ready.get()
+                && let Some(window) = self.inner.window.borrow().as_ref()
+            {
+                window.request_redraw();
+                return;
+            }
+            self.inner.pending_redraw.set(true);
+        }
+
+        fn set_window(&self, window: Arc<Window>) {
+            *self.inner.window.borrow_mut() = Some(window);
+        }
+
+        fn mark_ready(&self) -> bool {
+            self.inner.ready.set(true);
+            self.inner.pending_redraw.replace(false)
+        }
+    }
+
+    /// Start an Aetna app in the browser using the default canvas id.
+    ///
+    /// Call this from the downstream crate's own
+    /// `#[wasm_bindgen(start)]` function.
+    pub fn start_with<A: App + 'static>(viewport: Rect, app: A) -> WebHandle {
+        start_with_config(WebHostConfig::new(viewport), app)
+    }
+
+    /// Start an Aetna app in the browser with explicit host config.
+    ///
+    /// The function spawns winit's web event loop and returns
+    /// immediately. Keep the returned [`WebHandle`] anywhere external
+    /// JS callbacks need to wake Aetna after pushing work into
+    /// app-owned shared state.
+    pub fn start_with_config<A: App + 'static>(config: WebHostConfig, app: A) -> WebHandle {
         // Surface panics in the browser console with a stack trace —
         // without this hook a wasm panic dies silently as `unreachable`.
         console_error_panic_hook::set_once();
@@ -214,11 +325,13 @@ mod web_entry {
         install_profiling_subscriber();
 
         let event_loop = EventLoop::new().expect("EventLoop::new");
-        let host = Host::<Showcase>::new(VIEWPORT, Showcase::new());
+        let handle = WebHandle::new();
+        let host = Host::new(config, app, handle.clone());
         // spawn_app hands control to the browser. Native uses
         // run_app(...) which blocks; on wasm32 the event loop is
         // driven by the browser's animation-frame callbacks.
         event_loop.spawn_app(host);
+        handle
     }
 
     /// Open a URL surfaced by `App::drain_link_opens` in a new tab.
@@ -238,30 +351,36 @@ mod web_entry {
         }
     }
 
-    /// Locate the `<canvas id="aetna_canvas">` element in the host
-    /// page. The HTML harness in `index.html` embeds one; other host
-    /// pages can mount their own as long as the id matches.
-    fn locate_canvas() -> web_sys::HtmlCanvasElement {
+    /// Locate the configured canvas element in the host page.
+    fn locate_canvas(canvas_id: &str) -> web_sys::HtmlCanvasElement {
         let window = web_sys::window().expect("no window");
         let document = window.document().expect("no document");
         document
-            .get_element_by_id(CANVAS_ID)
-            .unwrap_or_else(|| panic!("missing #{CANVAS_ID} canvas element"))
+            .get_element_by_id(canvas_id)
+            .unwrap_or_else(|| panic!("missing #{canvas_id} canvas element"))
             .dyn_into::<web_sys::HtmlCanvasElement>()
-            .expect("#aetna_canvas is not a canvas")
+            .unwrap_or_else(|_| panic!("#{canvas_id} is not a canvas"))
     }
 
     /// Read the canvas's CSS-laid-out box at the device pixel ratio.
     /// Returned size is what the swapchain backing buffer should match;
     /// callers pass it to `apply_canvas_size` to actually reconfigure
     /// the surface.
-    fn measure_canvas(canvas: &web_sys::HtmlCanvasElement) -> (u32, u32) {
+    fn measure_canvas(canvas: &web_sys::HtmlCanvasElement, fallback: Rect) -> (u32, u32) {
         let dpr = web_sys::window()
             .map(|w| w.device_pixel_ratio())
             .unwrap_or(1.0)
             .max(1.0);
-        let css_w = canvas.client_width().max(1) as f64;
-        let css_h = canvas.client_height().max(1) as f64;
+        let css_w = if canvas.client_width() > 0 {
+            canvas.client_width() as f64
+        } else {
+            fallback.w.max(1.0) as f64
+        };
+        let css_h = if canvas.client_height() > 0 {
+            canvas.client_height() as f64
+        } else {
+            fallback.h.max(1.0) as f64
+        };
         let phys_w = (css_w * dpr).round() as u32;
         let phys_h = (css_h * dpr).round() as u32;
         (phys_w, phys_h)
@@ -310,8 +429,9 @@ mod web_entry {
     /// pollster). Kept inline here so `aetna-winit-wgpu` stays free of
     /// wasm-only deps.
     struct Host<A: App> {
-        viewport: Rect,
+        config: WebHostConfig,
         app: A,
+        handle: WebHandle,
         gfx: Rc<RefCell<Option<Gfx>>>,
         last_pointer: Option<(f32, f32)>,
         modifiers: KeyModifiers,
@@ -398,10 +518,11 @@ mod web_entry {
     }
 
     impl<A: App> Host<A> {
-        fn new(viewport: Rect, app: A) -> Self {
+        fn new(config: WebHostConfig, app: A, handle: WebHandle) -> Self {
             Self {
-                viewport,
+                config,
                 app,
+                handle,
                 gfx: Rc::new(RefCell::new(None)),
                 last_pointer: None,
                 modifiers: KeyModifiers::default(),
@@ -456,7 +577,7 @@ mod web_entry {
             if self.gfx.borrow().is_some() {
                 return;
             }
-            let canvas = locate_canvas();
+            let canvas = locate_canvas(&self.config.canvas_id);
 
             // Build the window bound to the existing canvas. We do
             // *not* call `with_inner_size` — on the web backend that
@@ -477,6 +598,7 @@ mod web_entry {
                 // suppression at the document paste listener instead.
                 .with_prevent_default(false);
             let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+            self.handle.set_window(window.clone());
 
             // Force the canvas backing buffer to match the canvas's
             // CSS-laid-out size at the device pixel ratio. Without
@@ -488,7 +610,8 @@ mod web_entry {
             // reads canvas.width/canvas.height on the web backend, so
             // setting them here is what the async surface setup picks
             // up for the initial swap-chain dimensions.
-            let (initial_w, initial_h) = measure_canvas(&canvas);
+            let viewport = self.config.viewport;
+            let (initial_w, initial_h) = measure_canvas(&canvas, viewport);
             canvas.set_width(initial_w);
             canvas.set_height(initial_h);
 
@@ -507,7 +630,7 @@ mod web_entry {
             let window_for_observer = window.clone();
             let gfx_for_observer = self.gfx.clone();
             let resize_closure: Closure<dyn FnMut()> = Closure::new(move || {
-                let (phys_w, phys_h) = measure_canvas(&canvas_for_observer);
+                let (phys_w, phys_h) = measure_canvas(&canvas_for_observer, viewport);
                 let mut gfx_borrow = gfx_for_observer.borrow_mut();
                 if let Some(gfx) = gfx_borrow.as_mut() {
                     apply_canvas_size(&canvas_for_observer, gfx, phys_w, phys_h);
@@ -600,12 +723,12 @@ mod web_entry {
             // ones like `liquid_glass`. Without this the showcase's
             // glass card draws are silently dropped because the
             // pipeline doesn't exist.
-            let viewport = self.viewport;
             let shaders = self.app.shaders();
             let theme = self.app.theme();
             let gfx_slot = self.gfx.clone();
             let backend_slot = self.backend.clone();
             let window_for_async = window.clone();
+            let handle_for_async = self.handle.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
                 instance_desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
@@ -812,7 +935,9 @@ mod web_entry {
                     msaa,
                     render_format,
                 });
-                let _ = viewport;
+                if handle_for_async.mark_ready() {
+                    log::debug!("aetna-web: flushing pending external redraw request");
+                }
                 window_for_async.request_redraw();
             });
         }
@@ -1242,7 +1367,7 @@ mod web_entry {
                         self.next_trigger = FrameTrigger::ShaderPaint;
                         gfx.window.request_redraw();
                     }
-                    let _ = self.viewport;
+                    let _ = self.config.viewport;
                 }
                 _ => {}
             }

@@ -62,7 +62,7 @@ jobs:
         run: cargo run -p aetna-tools --bin dump_showcase_bundles --locked
 
   wasm32:
-    name: Wasm32 (aetna-web)
+    name: Wasm32 (web host)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -75,3 +75,4 @@ jobs:
       # so it does not get exercised by the native build/clippy jobs above.
       # Catch wgpu / winit / wasm-bindgen API drift here before it lands.
       - run: cargo clippy -p aetna-web --target wasm32-unknown-unknown --locked -- -D warnings
+      - run: cargo clippy -p aetna-web-showcase --target wasm32-unknown-unknown --locked -- -D warnings

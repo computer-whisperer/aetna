@@ -158,7 +158,6 @@ name = "aetna-web"
 version = "0.3.3"
 dependencies = [
  "aetna-core",
- "aetna-fixtures",
  "aetna-wgpu",
  "console_error_panic_hook",
  "console_log",
@@ -171,6 +170,15 @@ dependencies = [
  "web-time",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "aetna-web-showcase"
+version = "0.3.3"
+dependencies = [
+ "aetna-fixtures",
+ "aetna-web",
+ "wasm-bindgen",
 ]
 
 [[package]]

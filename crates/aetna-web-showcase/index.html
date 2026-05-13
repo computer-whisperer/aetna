@@ -22,17 +22,13 @@
     </style>
 </head>
 <body>
-    <!-- aetna-web's wasm entry looks for #aetna_canvas at startup. Mounting
-         the canvas here keeps the host page minimal — pages that embed
-         the wasm bundle elsewhere just need to include a canvas with the
-         same id. -->
     <canvas id="aetna_canvas" tabindex="0"></canvas>
     <script type="module">
-        import init from './pkg/aetna_web.js';
+        import init from './pkg/aetna_web_showcase.js';
         init().catch(err => {
-            console.error('failed to start aetna-web:', err);
+            console.error('failed to start aetna-web-showcase:', err);
             document.body.innerHTML =
-                '<pre style="color:#fff;padding:1em;">aetna-web failed to start. ' +
+                '<pre style="color:#fff;padding:1em;">aetna-web-showcase failed to start. ' +
                 'Did you run `tools/build_web.sh`?\n\n' + String(err) + '</pre>';
         });
     </script>

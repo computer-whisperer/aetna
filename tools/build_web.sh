@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# Build the aetna-web wasm bundle and (optionally) serve it locally.
+# Build the aetna-web showcase wasm bundle and (optionally) serve it locally.
 #
-# Output lands in crates/aetna-web/pkg/ — sibling to crates/aetna-web/index.html,
-# which imports `./pkg/aetna_web.js` (relative, so the same file works whether
+# Output lands in crates/aetna-web-showcase/pkg/ — sibling to
+# crates/aetna-web-showcase/index.html, which imports
+# `./pkg/aetna_web_showcase.js` (relative, so the same file works whether
 # served from the crate root locally or under a GitHub Pages subpath).
 #
 # Usage:
@@ -40,18 +41,18 @@ else
     PROFILE_FLAG="--dev"
 fi
 
-echo "==> building aetna-web (wasm, $PROFILE)"
+echo "==> building aetna-web-showcase (wasm, $PROFILE)"
 cd "$REPO_ROOT"
-# `--target web` makes pkg/aetna_web.js expose `default` (init), which
+# `--target web` makes pkg/aetna_web_showcase.js expose `default` (init), which
 # returns a Promise. The index.html harness imports and calls it.
-wasm-pack build crates/aetna-web --target web "$PROFILE_FLAG"
+wasm-pack build crates/aetna-web-showcase --target web "$PROFILE_FLAG"
 
 echo
-echo "==> wasm bundle written to crates/aetna-web/pkg/"
+echo "==> wasm bundle written to crates/aetna-web-showcase/pkg/"
 
 if [[ "$SERVE" -eq 1 ]]; then
-    echo "==> serving crates/aetna-web/ on http://127.0.0.1:8083/"
+    echo "==> serving crates/aetna-web-showcase/ on http://127.0.0.1:8083/"
     echo "    open http://127.0.0.1:8083/index.html"
-    cd "$REPO_ROOT/crates/aetna-web"
+    cd "$REPO_ROOT/crates/aetna-web-showcase"
     exec python3 -m http.server 8083
 fi
