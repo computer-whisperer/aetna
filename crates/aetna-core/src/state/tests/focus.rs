@@ -31,6 +31,18 @@ fn stale_focus_clears_on_rebuild() {
 }
 
 #[test]
+fn set_focus_none_clears_existing_focus() {
+    let (tree, mut state) = lay_out_counter();
+    state.sync_focus_order(&tree);
+    state.focus_next();
+    assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("dec"));
+
+    state.set_focus(None);
+
+    assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), None);
+}
+
+#[test]
 fn push_focus_requests_resolves_known_key() {
     let (tree, mut state) = lay_out_counter();
     state.sync_focus_order(&tree);

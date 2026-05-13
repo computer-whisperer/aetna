@@ -911,10 +911,12 @@ impl RunnerCore {
 
     pub fn key_down(&mut self, key: UiKey, modifiers: KeyModifiers, repeat: bool) -> Vec<UiEvent> {
         // Capture path: when the focused node opted into raw key
-        // capture, the library's Tab/Enter/Escape interpretation is
-        // bypassed and the event is delivered as a raw `KeyDown` to
-        // the focused target. Hotkeys still match first — an app's
+        // capture, editing keys are delivered as raw `KeyDown` events
+        // to the focused target. Hotkeys still match first — an app's
         // global Ctrl+S beats a text input's local consumption of S.
+        // Escape is both an editing key and the generic "exit editing"
+        // command: route it to the widget first so it can collapse a
+        // selection, then clear focus.
         if self.focused_captures_keys() {
             if let Some(event) = self.ui_state.try_hotkey(&key, modifiers, repeat) {
                 return vec![event];
@@ -927,11 +929,17 @@ impl RunnerCore {
             // produces no visible blink reset.
             self.ui_state.bump_caret_activity(Instant::now());
             self.ui_state.set_focus_visible(true);
-            return self
+            let blur_after = matches!(key, UiKey::Escape);
+            let out = self
                 .ui_state
                 .key_down_raw(key, modifiers, repeat)
                 .into_iter()
                 .collect();
+            if blur_after {
+                self.ui_state.set_focus(None);
+                self.ui_state.set_focus_visible(false);
+            }
+            return out;
         }
 
         // Arrow-nav: if the focused node sits inside an arrow-navigable
@@ -3196,6 +3204,24 @@ mod tests {
     }
 
     #[test]
+    fn pointer_down_in_dead_space_clears_focus() {
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("btn")
+        );
+
+        core.pointer_down(2.0, 2.0, PointerButton::Primary);
+
+        assert_eq!(core.ui_state.focused.as_ref().map(|t| t.key.as_str()), None);
+    }
+
+    #[test]
     fn key_down_bumps_caret_activity_when_focused_widget_captures_keys() {
         // Showcase-style scenario: the app doesn't propagate its
         // Selection back via App::selection(), so set_selection always
@@ -3828,6 +3854,32 @@ mod tests {
             Some("ti"),
             "Tab inside capture_keys must NOT move focus"
         );
+    }
+
+    #[test]
+    fn escape_blurs_capture_keys_after_delivering_raw_keydown() {
+        let mut core = lay_out_input_tree(true);
+        let ti_rect = core.rect_of_key("ti").expect("ti rect");
+        let tx = ti_rect.x + ti_rect.w * 0.5;
+        let ty = ti_rect.y + ti_rect.h * 0.5;
+        core.pointer_down(tx, ty, PointerButton::Primary);
+        let _ = core.pointer_up(tx, ty, PointerButton::Primary);
+        assert_eq!(
+            core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("ti")
+        );
+
+        let events = core.key_down(UiKey::Escape, KeyModifiers::default(), false);
+
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.kind, UiEventKind::KeyDown);
+        assert_eq!(event.target.as_ref().map(|t| t.key.as_str()), Some("ti"));
+        assert!(matches!(
+            event.key_press.as_ref().map(|p| &p.key),
+            Some(UiKey::Escape)
+        ));
+        assert_eq!(core.ui_state.focused.as_ref().map(|t| t.key.as_str()), None);
     }
 
     #[test]

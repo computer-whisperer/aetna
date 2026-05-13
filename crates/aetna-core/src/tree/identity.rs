@@ -92,9 +92,11 @@ impl El {
     }
 
     /// Opt this node into raw key capture when focused. While this
-    /// node is the focused target, the library's Tab/Enter/Escape
+    /// node is the focused target, the library's traversal/activation
     /// defaults are bypassed and raw `KeyDown` events are delivered for
-    /// the widget to interpret. Implies `focusable`.
+    /// the widget to interpret. Escape is still treated as "exit
+    /// editing": the raw `KeyDown` is delivered first, then focus is
+    /// cleared. Implies `focusable`.
     pub fn capture_keys(mut self) -> Self {
         self.capture_keys = true;
         self.focusable = true;

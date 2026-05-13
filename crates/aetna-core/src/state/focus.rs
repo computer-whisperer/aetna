@@ -27,9 +27,11 @@ impl UiState {
     }
 
     pub fn set_focus(&mut self, target: Option<UiTarget>) {
-        if let Some(target) =
-            target.filter(|t| self.focus.order.iter().any(|f| f.node_id == t.node_id))
-        {
+        let Some(target) = target else {
+            self.focused = None;
+            return;
+        };
+        if self.focus.order.iter().any(|f| f.node_id == target.node_id) {
             let changed = self.focused.as_ref().map(|f| &f.node_id) != Some(&target.node_id);
             self.focused = Some(target);
             if changed {
