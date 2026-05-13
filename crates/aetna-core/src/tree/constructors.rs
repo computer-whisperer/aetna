@@ -223,9 +223,10 @@ pub fn math_block(expr: impl Into<Arc<MathExpr>>) -> El {
 /// Virtualized vertical list of `count` rows of fixed height
 /// `row_height`. The library calls `build_row(i)` only for indices
 /// whose rect intersects the visible viewport, then lays them out at
-/// the scroll-shifted Y. Authors typically key rows with a stable
-/// identifier (`button("foo").key("msg-abc")`) so hover/press/focus
-/// state survives scrolling.
+/// the scroll-shifted Y. `.gap(...)` contributes spacing between rows,
+/// matching column-style layout. Authors typically key rows with a
+/// stable identifier (`button("foo").key("msg-abc")`) so hover/press/
+/// focus state survives scrolling.
 ///
 /// The returned El defaults to `Size::Fill(1.0)` on both axes (it's a
 /// viewport — its size is decided by the parent). `Size::Hug` would
@@ -254,7 +255,8 @@ where
 /// library positions the visible window and computes the scrollbar
 /// thumb. The first time a row enters the viewport its actual intrinsic
 /// height is measured at the viewport width and cached on `UiState`,
-/// so scroll math converges as the user scrolls.
+/// so scroll math converges as the user scrolls. `.gap(...)` contributes
+/// spacing between rows, matching column-style layout.
 ///
 /// Use this when row heights are content-driven (diff hunks, expanded
 /// rows, comment threads) and a single `row_height` would either waste

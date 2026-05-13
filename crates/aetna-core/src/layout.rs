@@ -634,12 +634,14 @@ fn layout_virtual_fixed(
     build_row: Arc<dyn Fn(usize) -> El + Send + Sync>,
     ui_state: &mut UiState,
 ) {
-    let total_h = count as f32 * row_height;
+    let gap = node.gap.max(0.0);
+    let pitch = row_height + gap;
+    let total_h = virtual_total_height(count, count as f32 * row_height, gap);
     resolve_scroll_requests(
         node,
         inner,
         count,
-        |i| (i as f32 * row_height, row_height),
+        |i| (i as f32 * pitch, row_height),
         ui_state,
     );
     let offset = write_virtual_scroll_state(node, inner, total_h, ui_state);
@@ -650,21 +652,28 @@ fn layout_virtual_fixed(
     }
 
     // Visible index range — `start` floors, `end` ceils, both clamped.
-    let start = (offset / row_height).floor() as usize;
-    let end = (((offset + inner.h) / row_height).ceil() as usize).min(count);
+    // Include one extra candidate because a large gap can make the
+    // pitch-based ceil land on the gap before the next visible row.
+    let start = (offset / pitch).floor() as usize;
+    let end = ((((offset + inner.h) / pitch).ceil() as usize) + 1).min(count);
 
-    let mut realized: Vec<El> = (start..end).map(|i| (build_row)(i)).collect();
-    for (vis_i, child) in realized.iter_mut().enumerate() {
-        let global_i = start + vis_i;
-        assign_virtual_row_id(child, &node.computed_id, global_i);
+    let mut realized: Vec<El> = Vec::new();
+    for global_i in start..end {
+        let row_top = global_i as f32 * pitch;
+        if row_top >= offset + inner.h || row_top + row_height <= offset {
+            continue;
+        }
+        let mut child = (build_row)(global_i);
+        assign_virtual_row_id(&mut child, &node.computed_id, global_i);
 
-        let row_y = inner.y + global_i as f32 * row_height - offset;
+        let row_y = inner.y + row_top - offset;
         let c_rect = Rect::new(inner.x, row_y, inner.w, row_height);
         ui_state
             .layout
             .computed_rects
             .insert(child.computed_id.clone(), c_rect);
-        layout_children(child, c_rect, ui_state);
+        layout_children(&mut child, c_rect, ui_state);
+        realized.push(child);
     }
     node.children = realized;
 }
@@ -689,6 +698,7 @@ fn layout_virtual_dynamic(
     build_row: Arc<dyn Fn(usize) -> El + Send + Sync>,
     ui_state: &mut UiState,
 ) {
+    let gap = node.gap.max(0.0);
     // Drop measurements past the new end if the data shrunk.
     if let Some(map) = ui_state
         .scroll
@@ -711,7 +721,11 @@ fn layout_virtual_dynamic(
         .map(|m| (m.values().sum::<f32>(), m.len()))
         .unwrap_or((0.0, 0));
     let unmeasured = count.saturating_sub(measured_count);
-    let total_h = measured_sum + (unmeasured as f32) * estimated_row_height;
+    let total_h = virtual_total_height(
+        count,
+        measured_sum + (unmeasured as f32) * estimated_row_height,
+        gap,
+    );
 
     // Skip the cache snapshot entirely when nothing in the queue
     // targets this list — a hot path on dynamic lists with warm
@@ -745,7 +759,7 @@ fn layout_virtual_dynamic(
                 };
                 let mut top = 0.0_f32;
                 for i in 0..target {
-                    top += row_h(i);
+                    top += row_h(i) + gap;
                 }
                 (top, row_h(target))
             },
@@ -777,7 +791,7 @@ fn layout_virtual_dynamic(
             if y + h > offset {
                 break;
             }
-            y += h;
+            y += h + gap;
             start += 1;
         }
         (start, y)
@@ -814,7 +828,7 @@ fn layout_virtual_dynamic(
         layout_children(&mut child, c_rect, ui_state);
 
         realized.push(child);
-        cursor_y += actual_h;
+        cursor_y += actual_h + gap;
         idx += 1;
     }
 
@@ -830,6 +844,14 @@ fn layout_virtual_dynamic(
     }
 
     node.children = realized;
+}
+
+fn virtual_total_height(count: usize, row_sum: f32, gap: f32) -> f32 {
+    if count == 0 {
+        0.0
+    } else {
+        row_sum + gap * count.saturating_sub(1) as f32
+    }
 }
 
 /// Scrollable post-pass: measure content height from the laid-out
@@ -2545,6 +2567,41 @@ mod tests {
     }
 
     #[test]
+    fn virtual_list_gap_contributes_to_row_positions_and_content_height() {
+        let mut root = crate::tree::virtual_list(10, 40.0, |i| {
+            crate::widgets::text::text(format!("row {i}")).key(format!("row-{i}"))
+        })
+        .gap(10.0);
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 120.0));
+
+        assert_eq!(
+            root.children.len(),
+            3,
+            "rows 0, 1, and 2 should intersect a 120px viewport with 40px rows and 10px gaps"
+        );
+        let row_1 = root
+            .children
+            .iter()
+            .find(|c| c.key.as_deref() == Some("row-1"))
+            .expect("row 1 should be realized");
+        assert!(
+            (state.rect(&row_1.computed_id).y - 50.0).abs() < 0.5,
+            "gap should place row 1 at y=50"
+        );
+        let metrics = state
+            .scroll
+            .metrics
+            .get(&root.computed_id)
+            .expect("virtual list writes scroll metrics");
+        assert!(
+            (metrics.content_h - 490.0).abs() < 0.5,
+            "10 rows x 40 plus 9 gaps x 10 should be 490, got {}",
+            metrics.content_h
+        );
+    }
+
+    #[test]
     fn virtual_list_keyed_rows_have_stable_computed_id_across_scroll() {
         let make_root = || {
             crate::tree::virtual_list(50, 50.0, |i| {
@@ -2688,6 +2745,43 @@ mod tests {
             (ys[3] - 160.0).abs() < 0.5,
             "row 3 expected y≈160, got {}",
             ys[3]
+        );
+    }
+
+    #[test]
+    fn virtual_list_dyn_gap_contributes_to_row_positions_and_content_height() {
+        let mut root = crate::tree::virtual_list_dyn(10, 40.0, |i| {
+            crate::tree::column([crate::widgets::text::text(format!("row {i}"))])
+                .key(format!("row-{i}"))
+                .height(Size::Fixed(40.0))
+        })
+        .gap(10.0);
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 120.0));
+
+        assert_eq!(
+            root.children.len(),
+            3,
+            "rows 0, 1, and 2 should intersect a 120px viewport with 40px rows and 10px gaps"
+        );
+        let row_1 = root
+            .children
+            .iter()
+            .find(|c| c.key.as_deref() == Some("row-1"))
+            .expect("row 1 should be realized");
+        assert!(
+            (state.rect(&row_1.computed_id).y - 50.0).abs() < 0.5,
+            "gap should place row 1 at y=50"
+        );
+        let metrics = state
+            .scroll
+            .metrics
+            .get(&root.computed_id)
+            .expect("virtual list writes scroll metrics");
+        assert!(
+            (metrics.content_h - 490.0).abs() < 0.5,
+            "10 rows x 40 plus 9 gaps x 10 should be 490, got {}",
+            metrics.content_h
         );
     }
 

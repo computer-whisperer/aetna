@@ -68,10 +68,26 @@ impl BodyMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ListMode {
+    Scroll,
+    Virtual,
+}
+
+impl ListMode {
+    fn label(self) -> &'static str {
+        match self {
+            ListMode::Scroll => "scroll",
+            ListMode::Virtual => "virtual",
+        }
+    }
+}
+
 struct ConversationStress {
     turns: usize,
     body_size: BodySize,
     body_mode: BodyMode,
+    list_mode: ListMode,
 }
 
 impl Default for ConversationStress {
@@ -80,6 +96,7 @@ impl Default for ConversationStress {
             turns: DEFAULT_TURNS,
             body_size: BodySize::Medium,
             body_mode: BodyMode::Markdown,
+            list_mode: ListMode::Scroll,
         }
     }
 }
@@ -93,15 +110,16 @@ impl App for ConversationStress {
         let approx_words = self.turns * self.body_size.approx_words_per_turn();
         let approx_text_nodes = self.turns * text_nodes_per_turn;
 
-        let turns: Vec<El> = (0..self.turns).map(|i| self.turn(i)).collect();
+        let conversation = self.conversation();
 
         column([
             toolbar([
                 toolbar_group([
                     toolbar_title("Conversation stress"),
                     toolbar_description(format!(
-                        "{} mode, {approx_text_nodes} estimated text leaves, ~{approx_words} generated words",
-                        self.body_mode.label()
+                        "{} text, {} list, {approx_text_nodes} estimated text leaves, ~{approx_words} generated words",
+                        self.body_mode.label(),
+                        self.list_mode.label()
                     )),
                 ]),
                 spacer(),
@@ -127,6 +145,13 @@ impl App for ConversationStress {
                     self.body_mode == BodyMode::Markdown,
                     "mode:markdown",
                 ),
+                spacer(),
+                mode_button("Scroll", self.list_mode == ListMode::Scroll, "list:scroll"),
+                mode_button(
+                    "Virtual",
+                    self.list_mode == ListMode::Virtual,
+                    "list:virtual",
+                ),
             ])
             .gap(tokens::SPACE_2)
             .align(Align::Center),
@@ -135,12 +160,10 @@ impl App for ConversationStress {
                 self.turns,
                 self.body_size,
                 self.body_mode,
+                self.list_mode,
                 approx_text_nodes,
             ),
-            scroll(turns)
-                .key("conversation")
-                .height(Size::Fill(1.0))
-                .padding(tokens::SPACE_3),
+            conversation,
         ])
         .gap(tokens::SPACE_3)
         .padding(tokens::SPACE_5)
@@ -168,6 +191,8 @@ impl App for ConversationStress {
             "size:long" => self.body_size = BodySize::Long,
             "mode:plain" => self.body_mode = BodyMode::Plain,
             "mode:markdown" => self.body_mode = BodyMode::Markdown,
+            "list:scroll" => self.list_mode = ListMode::Scroll,
+            "list:virtual" => self.list_mode = ListMode::Virtual,
             _ => {}
         }
     }
@@ -181,77 +206,111 @@ impl ConversationStress {
             .clamp(MIN_TURNS, MAX_TURNS);
     }
 
-    fn turn(&self, i: usize) -> El {
-        let collapsed = i % 7 == 3;
-        let paragraphs = if collapsed {
-            1
-        } else {
-            self.body_size.paragraphs_per_turn()
-        };
-
-        let mut body: Vec<El> = Vec::with_capacity(paragraphs + 5);
-        body.push(
-            row([
-                badge(format!("#{i:04}")).secondary(),
-                text(if i.is_multiple_of(2) {
-                    "user"
-                } else {
-                    "assistant"
-                })
-                .label()
-                .bold(),
-                text(format!("model=gpt-5.5 size={}", self.body_size.label()))
-                    .caption()
-                    .muted(),
-                spacer(),
-                text(if collapsed {
-                    "collapsed"
-                } else {
-                    "full context"
-                })
-                .caption()
-                .muted(),
-            ])
-            .gap(tokens::SPACE_2)
-            .align(Align::Center),
-        );
-
-        body.push(message_body(prompt_text(i), self.body_mode));
-
-        if collapsed {
-            body.push(
-                message_body(collapsed_summary(i), self.body_mode)
-                    .muted()
-                    .fill(tokens::MUTED)
+    fn conversation(&self) -> El {
+        match self.list_mode {
+            ListMode::Scroll => {
+                let turns: Vec<El> = (0..self.turns)
+                    .map(|i| turn(i, self.body_size, self.body_mode))
+                    .collect();
+                scroll(turns)
+                    .key("conversation")
+                    .gap(tokens::SPACE_2)
+                    .height(Size::Fill(1.0))
                     .padding(tokens::SPACE_3)
-                    .radius(tokens::RADIUS_SM),
-            );
-        } else {
-            for p in 0..paragraphs {
-                body.push(message_body(response_paragraph(i, p), self.body_mode));
+            }
+            ListMode::Virtual => {
+                let body_size = self.body_size;
+                let body_mode = self.body_mode;
+                virtual_list_dyn(self.turns, estimated_turn_height(body_size), move |i| {
+                    turn(i, body_size, body_mode)
+                })
+                .key("conversation")
+                .gap(tokens::SPACE_2)
+                .height(Size::Fill(1.0))
+                .padding(tokens::SPACE_3)
             }
         }
-
-        body.push(
-            row([
-                text(format!("turn_id=conv-{i:04}")).caption().muted(),
-                text(format!("body_words~{}", paragraphs * 54))
-                    .caption()
-                    .muted(),
-                spacer(),
-                text("wrapped paragraphs").caption().muted(),
-            ])
-            .gap(tokens::SPACE_2),
-        );
-
-        column(body)
-            .gap(tokens::SPACE_2)
-            .padding(tokens::SPACE_4)
-            .fill(tokens::CARD)
-            .stroke(tokens::BORDER)
-            .radius(tokens::RADIUS_SM)
-            .width(Size::Fill(1.0))
     }
+}
+
+fn estimated_turn_height(body_size: BodySize) -> f32 {
+    match body_size {
+        BodySize::Short => 190.0,
+        BodySize::Medium => 420.0,
+        BodySize::Long => 900.0,
+    }
+}
+
+fn turn(i: usize, body_size: BodySize, body_mode: BodyMode) -> El {
+    let collapsed = i % 7 == 3;
+    let paragraphs = if collapsed {
+        1
+    } else {
+        body_size.paragraphs_per_turn()
+    };
+
+    let mut body: Vec<El> = Vec::with_capacity(paragraphs + 5);
+    body.push(
+        row([
+            badge(format!("#{i:04}")).secondary(),
+            text(if i.is_multiple_of(2) {
+                "user"
+            } else {
+                "assistant"
+            })
+            .label()
+            .bold(),
+            text(format!("model=gpt-5.5 size={}", body_size.label()))
+                .caption()
+                .muted(),
+            spacer(),
+            text(if collapsed {
+                "collapsed"
+            } else {
+                "full context"
+            })
+            .caption()
+            .muted(),
+        ])
+        .gap(tokens::SPACE_2)
+        .align(Align::Center),
+    );
+
+    body.push(message_body(prompt_text(i), body_mode));
+
+    if collapsed {
+        body.push(
+            message_body(collapsed_summary(i), body_mode)
+                .muted()
+                .fill(tokens::MUTED)
+                .padding(tokens::SPACE_3)
+                .radius(tokens::RADIUS_SM),
+        );
+    } else {
+        for p in 0..paragraphs {
+            body.push(message_body(response_paragraph(i, p), body_mode));
+        }
+    }
+
+    body.push(
+        row([
+            text(format!("turn_id=conv-{i:04}")).caption().muted(),
+            text(format!("body_words~{}", paragraphs * 54))
+                .caption()
+                .muted(),
+            spacer(),
+            text("wrapped paragraphs").caption().muted(),
+        ])
+        .gap(tokens::SPACE_2),
+    );
+
+    column(body)
+        .gap(tokens::SPACE_2)
+        .padding(tokens::SPACE_4)
+        .fill(tokens::CARD)
+        .stroke(tokens::BORDER)
+        .radius(tokens::RADIUS_SM)
+        .width(Size::Fill(1.0))
 }
 
 fn control_button(label: &str, key: &str) -> El {
@@ -306,12 +365,20 @@ fn diagnostics_panel(
     turns: usize,
     body_size: BodySize,
     body_mode: BodyMode,
+    list_mode: ListMode,
     estimated_text_nodes: usize,
 ) -> El {
     let Some(diag) = diag else {
         return text("Host diagnostics unavailable").caption().muted();
     };
-    log_diagnostics(diag, turns, body_size, body_mode, estimated_text_nodes);
+    log_diagnostics(
+        diag,
+        turns,
+        body_size,
+        body_mode,
+        list_mode,
+        estimated_text_nodes,
+    );
     let cpu_total = diag.last_build + diag.last_prepare + diag.last_submit;
     let cache_pressure = if estimated_text_nodes > 1_024 {
         "over 1024 layout-cache entries"
@@ -379,6 +446,7 @@ fn log_diagnostics(
     turns: usize,
     body_size: BodySize,
     body_mode: BodyMode,
+    list_mode: ListMode,
     estimated_text_nodes: usize,
 ) {
     if diag.frame_index == 0 {
@@ -389,12 +457,13 @@ fn log_diagnostics(
     }
     let cpu_total = diag.last_build + diag.last_prepare + diag.last_submit;
     println!(
-        "conversation_stress frame={} trigger={} turns={} body={} mode={} est_text_nodes={} dt={} cpu={} build={} prepare={} layout={} intrinsic_hits={} intrinsic_misses={} layout_pruned={} layout_zeroed={} draw_ops={} draw_culled_text={} paint={} paint_culled={} gpu={} snapshot={} submit={} cache_hits={} cache_misses={} cache_evictions={} shaped_bytes={}",
+        "conversation_stress frame={} trigger={} turns={} body={} mode={} list={} est_text_nodes={} dt={} cpu={} build={} prepare={} layout={} intrinsic_hits={} intrinsic_misses={} layout_pruned={} layout_zeroed={} draw_ops={} draw_culled_text={} paint={} paint_culled={} gpu={} snapshot={} submit={} cache_hits={} cache_misses={} cache_evictions={} shaped_bytes={}",
         diag.frame_index,
         diag.trigger.label(),
         turns,
         body_size.label(),
         body_mode.label(),
+        list_mode.label(),
         estimated_text_nodes,
         format_dt(diag.last_frame_dt),
         format_duration(cpu_total),
