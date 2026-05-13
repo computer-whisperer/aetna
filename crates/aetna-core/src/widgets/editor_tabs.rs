@@ -51,9 +51,9 @@
 //!
 //! # Routed keys
 //!
-//! - `{key}:tab:{value}` — `Click` on a tab body; the app sets the
-//!   active tab. The token format matches [`crate::widgets::tabs`]
-//!   so the same per-app conventions apply.
+//! - `{key}:tab:{value}` — `Click` on a tab body activates it;
+//!   `MiddleClick` closes it. The token format matches
+//!   [`crate::widgets::tabs`] so the same per-app conventions apply.
 //! - `{key}:close:{value}` — `Click` on a tab's `×`; the app removes
 //!   that document and (if it was active) picks a neighbour.
 //! - `{key}:add` — `Click` on the trailing `+`; the app appends a
@@ -156,8 +156,9 @@ pub struct EditorTabsConfig {
 pub enum EditorTabsAction<'a> {
     /// A tab body was clicked. Activate this tab.
     Select(&'a str),
-    /// A tab's `×` was clicked. Remove this tab from the list and,
-    /// if it was active, pick a neighbour.
+    /// A tab's `×` was clicked, or a tab body was middle-clicked.
+    /// Remove this tab from the list and, if it was active, pick a
+    /// neighbour.
     Close(&'a str),
     /// The trailing `+` button was clicked. Append a new tab and
     /// activate it.
@@ -185,17 +186,31 @@ pub fn editor_tab_add_key(key: &str) -> String {
 /// Classify a routed [`UiEvent`] against an editor-tabs strip keyed
 /// `key`. Returns `None` for events that aren't for this strip.
 ///
-/// Only `Click` / `Activate` event kinds qualify. The borrowed string
-/// in [`EditorTabsAction::Select`] / [`EditorTabsAction::Close`]
-/// points into the event's routed key, so apps that want to keep the
-/// value beyond the match arm should `.to_string()` or `.parse()` it
-/// inline.
+/// `Click` / `Activate` qualify for normal tab-strip actions.
+/// `MiddleClick` qualifies only on tab and close routes, mapping to
+/// [`EditorTabsAction::Close`] so editor tabs follow the common
+/// browser / editor convention. The borrowed string in
+/// [`EditorTabsAction::Select`] / [`EditorTabsAction::Close`] points
+/// into the event's routed key, so apps that want to keep the value
+/// beyond the match arm should `.to_string()` or `.parse()` it inline.
 pub fn classify_event<'a>(event: &'a UiEvent, key: &str) -> Option<EditorTabsAction<'a>> {
-    if !matches!(event.kind, UiEventKind::Click | UiEventKind::Activate) {
+    if !matches!(
+        event.kind,
+        UiEventKind::Click | UiEventKind::Activate | UiEventKind::MiddleClick
+    ) {
         return None;
     }
     let routed = event.route()?;
     let rest = routed.strip_prefix(key)?.strip_prefix(':')?;
+    if event.kind == UiEventKind::MiddleClick {
+        if let Some(value) = rest
+            .strip_prefix("tab:")
+            .or_else(|| rest.strip_prefix("close:"))
+        {
+            return Some(EditorTabsAction::Close(value));
+        }
+        return None;
+    }
     if let Some(value) = rest.strip_prefix("tab:") {
         return Some(EditorTabsAction::Select(value));
     }
@@ -477,6 +492,12 @@ mod tests {
         }
     }
 
+    fn middle_click(key: &str) -> UiEvent {
+        let mut event = click(key);
+        event.kind = UiEventKind::MiddleClick;
+        event
+    }
+
     #[test]
     fn key_helpers_match_widget_format() {
         assert_eq!(editor_tab_select_key("docs", &"readme"), "docs:tab:readme");
@@ -501,6 +522,23 @@ mod tests {
         // Non-matching keys fall through.
         assert_eq!(classify_event(&click("other:tab:x"), "docs"), None);
         assert_eq!(classify_event(&click("docs"), "docs"), None);
+    }
+
+    #[test]
+    fn classify_event_middle_click_on_tab_closes_it() {
+        assert_eq!(
+            classify_event(&middle_click("docs:tab:readme"), "docs"),
+            Some(EditorTabsAction::Close("readme")),
+        );
+        assert_eq!(
+            classify_event(&middle_click("docs:close:readme"), "docs"),
+            Some(EditorTabsAction::Close("readme")),
+        );
+        assert_eq!(
+            classify_event(&middle_click("docs:add"), "docs"),
+            None,
+            "middle-clicking the add button should not create a tab",
+        );
     }
 
     #[test]
@@ -772,6 +810,23 @@ mod tests {
             next_id,
         ));
         assert_eq!(tabs, vec!["a", "b"]);
+        assert_eq!(active, "a");
+    }
+
+    #[test]
+    fn apply_event_middle_click_on_tab_closes_it() {
+        let mut tabs = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut active = "a".to_string();
+        let next_id = || "fresh".to_string();
+        assert!(apply_event(
+            &mut tabs,
+            &mut active,
+            &middle_click("docs:tab:b"),
+            "docs",
+            |s| Some(s.to_string()),
+            next_id,
+        ));
+        assert_eq!(tabs, vec!["a", "c"]);
         assert_eq!(active, "a");
     }
 
