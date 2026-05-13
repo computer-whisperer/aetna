@@ -63,9 +63,14 @@ impl App for VariableVirtualListApp {
         column([
             h1("Variable-height virtual list"),
             text(header).muted(),
-            virtual_list_dyn(ROW_COUNT, ESTIMATED_ROW_HEIGHT, build_row)
-                .key("entries")
-                .height(Size::Fill(1.0)),
+            virtual_list_dyn(
+                ROW_COUNT,
+                ESTIMATED_ROW_HEIGHT,
+                |i| format!("row-{i}"),
+                build_row,
+            )
+            .key("entries")
+            .height(Size::Fill(1.0)),
         ])
         .gap(tokens::SPACE_4)
         .padding(tokens::SPACE_7)

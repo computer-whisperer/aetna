@@ -249,14 +249,15 @@ where
     el
 }
 
-/// Variable-height variant of [`virtual_list`]. Each row sizes itself
-/// from its own content (`Size::Hug` or `Size::Fixed` on the main
-/// axis); `estimated_row_height` is used for unmeasured rows when the
-/// library positions the visible window and computes the scrollbar
-/// thumb. The first time a row enters the viewport its actual intrinsic
-/// height is measured at the viewport width and cached on `UiState`,
-/// so scroll math converges as the user scrolls. `.gap(...)` contributes
-/// spacing between rows, matching column-style layout.
+/// Variable-height variant of [`virtual_list`]. `row_key(i)` must
+/// return a stable identity for the logical row at `i`; the dynamic
+/// list uses those identities to preserve an in-viewport anchor while
+/// rows are inserted, removed, measured, or remeasured at a new width.
+/// Each row sizes itself from its own content (`Size::Hug` or
+/// `Size::Fixed` on the main axis); `estimated_row_height` is used for
+/// unmeasured rows when the library positions the visible window and
+/// computes the scrollbar thumb. `.gap(...)` contributes spacing
+/// between rows, matching column-style layout.
 ///
 /// Use this when row heights are content-driven (diff hunks, expanded
 /// rows, comment threads) and a single `row_height` would either waste
@@ -264,8 +265,14 @@ where
 /// [`virtual_list`] — its O(1) range math is cheaper and free of any
 /// estimate/measure jitter.
 #[track_caller]
-pub fn virtual_list_dyn<F>(count: usize, estimated_row_height: f32, build_row: F) -> El
+pub fn virtual_list_dyn<K, F>(
+    count: usize,
+    estimated_row_height: f32,
+    row_key: K,
+    build_row: F,
+) -> El
 where
+    K: Fn(usize) -> String + Send + Sync + 'static,
     F: Fn(usize) -> El + Send + Sync + 'static,
 {
     let mut el = El::new(Kind::VirtualList)
@@ -280,6 +287,7 @@ where
     el.virtual_items = Some(VirtualItems::new_dyn(
         count,
         estimated_row_height,
+        row_key,
         build_row,
     ));
     el

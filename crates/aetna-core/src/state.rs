@@ -33,7 +33,7 @@ use std::fmt::Debug;
 use crate::event::{KeyModifiers, PointerButton, UiTarget};
 
 pub use types::{AnimationMode, EnvelopeKind, ScrollMetrics, ThumbDrag, WidgetState};
-pub(crate) use types::{SelectionDrag, caret_blink_alpha_for};
+pub(crate) use types::{SelectionDrag, VirtualAnchor, caret_blink_alpha_for};
 
 use types::{
     AnimationState, CaretState, ClickState, FocusState, HotkeyState, LayoutState,

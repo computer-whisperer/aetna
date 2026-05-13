@@ -340,6 +340,15 @@ pub struct ThumbDrag {
     pub max_offset: f32,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct VirtualAnchor {
+    pub row_key: String,
+    pub row_index: usize,
+    pub row_fraction: f32,
+    pub viewport_y: f32,
+    pub resolved_offset: f32,
+}
+
 /// Runtime state for scrollable nodes. Kept as one subsystem inside
 /// [`UiState`](super::UiState) so layout, paint, and input code do not
 /// each grow their own loose side maps.
@@ -374,12 +383,16 @@ pub(crate) struct ScrollState {
     /// app-level pointer events.
     pub(crate) thumb_drag: Option<ThumbDrag>,
     /// Per-virtual-list row-height measurement cache, keyed by the
-    /// virtual list node's `computed_id` and then by row index. Filled
-    /// by the layout pass for `VirtualMode::Dynamic` lists as rows
-    /// enter the viewport and are measured. Subsequent frames read this
-    /// instead of falling back to the estimated row height, so scroll
-    /// math stabilizes once the visible regions have been seen.
-    pub(crate) measured_row_heights: FxHashMap<String, FxHashMap<usize, f32>>,
+    /// virtual list node's `computed_id`, stable row identity, and
+    /// layout-width bucket. Filled by `VirtualMode::Dynamic` as rows
+    /// enter the viewport and are measured. Width is part of the key
+    /// because wrapped text can change height during horizontal
+    /// resizes.
+    pub(crate) measured_row_heights: FxHashMap<String, FxHashMap<String, FxHashMap<u32, f32>>>,
+    /// Dynamic virtual-list anchor per list. The previous frame's
+    /// anchor resolves the current frame; layout then rebases this to
+    /// a row point that is visible in the current viewport.
+    pub(crate) virtual_anchors: FxHashMap<String, VirtualAnchor>,
     /// Programmatic scroll requests buffered between frames. Hosts
     /// call [`UiState::push_scroll_requests`] once per build with the
     /// requests produced by [`crate::event::App::drain_scroll_requests`];

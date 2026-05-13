@@ -308,12 +308,17 @@ mod tests {
 
         fn build_tree() -> El {
             overlays(
-                virtual_list_dyn(5, 30.0, |i| {
-                    text(format!("row {i}"))
-                        .key(format!("row:{i}"))
-                        .tooltip(format!("tip {i}"))
-                        .height(crate::tree::Size::Fixed(30.0))
-                }),
+                virtual_list_dyn(
+                    5,
+                    30.0,
+                    |i| format!("row:{i}"),
+                    |i| {
+                        text(format!("row {i}"))
+                            .key(format!("row:{i}"))
+                            .tooltip(format!("tip {i}"))
+                            .height(crate::tree::Size::Fixed(30.0))
+                    },
+                ),
                 std::iter::empty::<Option<El>>(),
             )
         }

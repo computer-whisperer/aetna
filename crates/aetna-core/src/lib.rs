@@ -99,7 +99,7 @@ pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
 pub use icons::{IconStroke, all_icon_names, icon, icon_path, icon_strokes, icon_vector_asset};
 pub use ir::{DrawOp, TextAnchor};
-pub use layout::{LayoutCtx, LayoutFn, VirtualItems, VirtualMode, layout};
+pub use layout::{LayoutCtx, LayoutFn, VirtualAnchorPolicy, VirtualItems, VirtualMode, layout};
 pub use math::{
     MathAtom, MathDisplay, MathExpr, MathLayout, MathParseError, layout_math, parse_mathml,
     parse_mathml_with_display, parse_tex,

@@ -1,6 +1,6 @@
 //! Layout and child-list modifiers for [`El`].
 
-use crate::layout::{LayoutCtx, LayoutFn};
+use crate::layout::{LayoutCtx, LayoutFn, VirtualAnchorPolicy};
 use crate::metrics::{ComponentSize, MetricsRole};
 
 use super::geometry::{Rect, Sides};
@@ -172,6 +172,15 @@ impl El {
     /// "jump-to-message N" action behaves as the user expects.
     pub fn pin_end(mut self) -> Self {
         self.pin_end = true;
+        self
+    }
+
+    /// Override how a dynamic virtual list chooses the in-viewport row
+    /// point that anchors the next frame.
+    pub fn virtual_anchor_policy(mut self, policy: VirtualAnchorPolicy) -> Self {
+        if let Some(items) = self.virtual_items.take() {
+            self.virtual_items = Some(items.anchor_policy(policy));
+        }
         self
     }
 

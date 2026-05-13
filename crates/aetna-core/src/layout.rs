@@ -34,10 +34,10 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::scroll::{ScrollAlignment, ScrollRequest};
-use crate::state::UiState;
+use crate::state::{UiState, VirtualAnchor};
 use crate::text::metrics as text_metrics;
 use crate::tree::*;
 
@@ -168,11 +168,9 @@ pub fn take_prune_stats() -> LayoutPruneStats {
 /// - [`VirtualMode::Fixed`] — every row is the same logical-pixel
 ///   height. Scroll → visible-range is O(1).
 /// - [`VirtualMode::Dynamic`] — rows vary in height. The library uses
-///   `estimated_row_height` as a placeholder for unmeasured rows and
-///   measures (via the intrinsic pass) each row that becomes visible,
-///   caching the result on `UiState`. After enough scrolling the cache
-///   is fully warm; before then, the scroll position may shift slightly
-///   as estimates resolve to actual heights.
+///   `estimated_row_height` as a placeholder for unmeasured rows,
+///   measures visible rows at the current layout width, and preserves a
+///   row anchor on screen while estimates become measurements.
 ///
 /// ## Other current scope
 ///
@@ -191,11 +189,35 @@ pub enum VirtualMode {
     Dynamic { estimated_row_height: f32 },
 }
 
+/// Policy used to pick the next dynamic virtual-list anchor after each
+/// layout pass. The previous anchor solves the current frame; this
+/// policy rebases the next frame onto a coherent in-viewport row point.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum VirtualAnchorPolicy {
+    /// Pick the row point nearest `y_fraction` through the viewport.
+    /// `0.0` is the top, `1.0` is the bottom. Good default for feeds.
+    ViewportFraction { y_fraction: f32 },
+    /// Prefer the first fully visible row; fall back to the first
+    /// partially visible row.
+    FirstVisible,
+    /// Prefer the last fully visible row; fall back to the last
+    /// partially visible row.
+    LastVisible,
+}
+
+impl Default for VirtualAnchorPolicy {
+    fn default() -> Self {
+        Self::ViewportFraction { y_fraction: 0.25 }
+    }
+}
+
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct VirtualItems {
     pub count: usize,
     pub mode: VirtualMode,
+    pub anchor_policy: VirtualAnchorPolicy,
+    pub row_key: Arc<dyn Fn(usize) -> String + Send + Sync>,
     pub build_row: Arc<dyn Fn(usize) -> El + Send + Sync>,
 }
 
@@ -211,12 +233,15 @@ impl VirtualItems {
         VirtualItems {
             count,
             mode: VirtualMode::Fixed { row_height },
+            anchor_policy: VirtualAnchorPolicy::default(),
+            row_key: Arc::new(|i| i.to_string()),
             build_row: Arc::new(build_row),
         }
     }
 
-    pub fn new_dyn<F>(count: usize, estimated_row_height: f32, build_row: F) -> Self
+    pub fn new_dyn<K, F>(count: usize, estimated_row_height: f32, row_key: K, build_row: F) -> Self
     where
+        K: Fn(usize) -> String + Send + Sync + 'static,
         F: Fn(usize) -> El + Send + Sync + 'static,
     {
         assert!(
@@ -228,8 +253,15 @@ impl VirtualItems {
             mode: VirtualMode::Dynamic {
                 estimated_row_height,
             },
+            anchor_policy: VirtualAnchorPolicy::default(),
+            row_key: Arc::new(row_key),
             build_row: Arc::new(build_row),
         }
+    }
+
+    pub fn anchor_policy(mut self, policy: VirtualAnchorPolicy) -> Self {
+        self.anchor_policy = policy;
+        self
     }
 }
 
@@ -238,6 +270,8 @@ impl std::fmt::Debug for VirtualItems {
         f.debug_struct("VirtualItems")
             .field("count", &self.count)
             .field("mode", &self.mode)
+            .field("anchor_policy", &self.anchor_policy)
+            .field("row_key", &"<fn>")
             .field("build_row", &"<fn>")
             .finish()
     }
@@ -509,7 +543,11 @@ fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state:
             inner,
             items.count,
             estimated_row_height,
-            items.build_row,
+            DynamicVirtualFns {
+                anchor_policy: items.anchor_policy,
+                row_key: items.row_key,
+                build_row: items.build_row,
+            },
             ui_state,
         ),
     }
@@ -530,14 +568,15 @@ fn resolve_scroll_requests<F>(
     count: usize,
     row_extent: F,
     ui_state: &mut UiState,
-) where
+) -> bool
+where
     F: Fn(usize) -> (f32, f32),
 {
     if ui_state.scroll.pending_requests.is_empty() {
-        return;
+        return false;
     }
     let Some(key) = node.key.as_deref() else {
-        return;
+        return false;
     };
     let pending = std::mem::take(&mut ui_state.scroll.pending_requests);
     let (matched, remaining): (Vec<ScrollRequest>, Vec<ScrollRequest>) =
@@ -549,6 +588,7 @@ fn resolve_scroll_requests<F>(
         });
     ui_state.scroll.pending_requests = remaining;
 
+    let mut wrote = false;
     for req in matched {
         let ScrollRequest::ToRow { row, align, .. } = req else {
             continue;
@@ -583,7 +623,9 @@ fn resolve_scroll_requests<F>(
             .scroll
             .offsets
             .insert(node.computed_id.clone(), new_offset);
+        wrote = true;
     }
+    wrote
 }
 
 /// Clamp the stored scroll offset, write the metrics + thumb rect, and
@@ -602,6 +644,18 @@ fn write_virtual_scroll_state(node: &El, inner: Rect, total_h: f32, ui_state: &m
         .scroll
         .offsets
         .insert(node.computed_id.clone(), offset);
+    write_virtual_scroll_metrics(node, inner, total_h, max_offset, offset, ui_state);
+    offset
+}
+
+fn write_virtual_scroll_metrics(
+    node: &El,
+    inner: Rect,
+    total_h: f32,
+    max_offset: f32,
+    offset: f32,
+    ui_state: &mut UiState,
+) {
     ui_state.scroll.metrics.insert(
         node.computed_id.clone(),
         crate::state::ScrollMetrics {
@@ -611,7 +665,6 @@ fn write_virtual_scroll_state(node: &El, inner: Rect, total_h: f32, ui_state: &m
         },
     );
     write_thumb_rect(node, inner, total_h, max_offset, offset, ui_state);
-    offset
 }
 
 /// Assign the realized row a path-style `computed_id` matching the
@@ -678,53 +731,33 @@ fn layout_virtual_fixed(
     node.children = realized;
 }
 
-/// Variable-height virtualization. Each row's height comes from the
-/// `UiState` measurement cache if the row has been seen before, else
-/// from `estimated_row_height`. Visible rows are measured via
-/// [`intrinsic_constrained`] at the viewport width; the measured value
-/// is what positions sibling rows on this frame *and* gets written to
-/// the cache for the next.
-///
-/// Trade-off: when a row is first seen, the estimate it replaced may
-/// have been wrong by ~tens of pixels. The cumulative offset of the
-/// rows above it is then slightly off, so the scroll position appears
-/// to jump as the user scrolls into never-seen regions. Once the cache
-/// is warm for a region, scrolling is stable.
 fn layout_virtual_dynamic(
     node: &mut El,
     inner: Rect,
     count: usize,
     estimated_row_height: f32,
-    build_row: Arc<dyn Fn(usize) -> El + Send + Sync>,
+    fns: DynamicVirtualFns,
     ui_state: &mut UiState,
 ) {
     let gap = node.gap.max(0.0);
-    // Drop measurements past the new end if the data shrunk.
-    if let Some(map) = ui_state
-        .scroll
-        .measured_row_heights
-        .get_mut(&node.computed_id)
-    {
-        map.retain(|i, _| *i < count);
-        if map.is_empty() {
-            ui_state
-                .scroll
-                .measured_row_heights
-                .remove(&node.computed_id);
-        }
+    let width_bucket = virtual_width_bucket(inner.w);
+    let row_keys = (0..count).map(|i| (fns.row_key)(i)).collect::<Vec<_>>();
+    prune_dynamic_measurements(node, &row_keys, ui_state);
+
+    if count == 0 {
+        ui_state.scroll.virtual_anchors.remove(&node.computed_id);
+        let offset = write_virtual_scroll_state(node, inner, 0.0, ui_state);
+        debug_assert_eq!(offset, 0.0);
+        node.children.clear();
+        return;
     }
 
-    let (measured_sum, measured_count) = ui_state
-        .scroll
-        .measured_row_heights
-        .get(&node.computed_id)
-        .map(|m| (m.values().sum::<f32>(), m.len()))
-        .unwrap_or((0.0, 0));
-    let unmeasured = count.saturating_sub(measured_count);
-    let total_h = virtual_total_height(
-        count,
-        measured_sum + (unmeasured as f32) * estimated_row_height,
-        gap,
+    let mut row_heights = dynamic_row_heights(
+        node,
+        &row_keys,
+        width_bucket,
+        estimated_row_height,
+        ui_state,
     );
 
     // Skip the cache snapshot entirely when nothing in the queue
@@ -738,112 +771,457 @@ fn layout_virtual_dynamic(
             ScrollRequest::EnsureVisible { .. } => false,
         })
     });
+    let mut request_wrote = false;
     if has_request {
-        // Snapshot the cache so the closure can read it while
-        // `ui_state` stays mutably borrowed for the offsets write.
-        let measured = ui_state
-            .scroll
-            .measured_row_heights
-            .get(&node.computed_id)
-            .cloned();
-        resolve_scroll_requests(
+        request_wrote = resolve_scroll_requests(
             node,
             inner,
             count,
             |target| {
-                let row_h = |i: usize| -> f32 {
-                    measured
-                        .as_ref()
-                        .and_then(|m| m.get(&i).copied())
-                        .unwrap_or(estimated_row_height)
-                };
-                let mut top = 0.0_f32;
-                for i in 0..target {
-                    top += row_h(i) + gap;
-                }
-                (top, row_h(target))
+                (
+                    dynamic_row_top(&row_heights, gap, target),
+                    row_heights[target],
+                )
             },
             ui_state,
         );
     }
 
-    let offset = write_virtual_scroll_state(node, inner, total_h, ui_state);
+    let total_h = virtual_total_height(count, row_heights.iter().sum(), gap);
+    let max_offset = (total_h - inner.h).max(0.0);
+    let stored = ui_state
+        .scroll
+        .offsets
+        .get(&node.computed_id)
+        .copied()
+        .unwrap_or(0.0);
+    let pin_active = pin_end_would_be_active(node, stored, max_offset, ui_state).unwrap_or(false);
+    let provisional_offset = if pin_active {
+        max_offset
+    } else if request_wrote {
+        stored
+    } else {
+        dynamic_anchor_offset(node, &row_keys, &row_heights, gap, stored, ui_state)
+            .unwrap_or(stored)
+    }
+    .clamp(0.0, max_offset);
 
-    if count == 0 {
-        node.children.clear();
+    let (measure_start, _, measure_end) =
+        dynamic_visible_range(&row_heights, gap, provisional_offset, inner.h);
+    measure_dynamic_range(
+        node,
+        DynamicRangeCtx {
+            inner,
+            row_keys: &row_keys,
+            width_bucket,
+            build_row: &fns.build_row,
+        },
+        measure_start,
+        measure_end,
+        ui_state,
+    );
+
+    row_heights = dynamic_row_heights(
+        node,
+        &row_keys,
+        width_bucket,
+        estimated_row_height,
+        ui_state,
+    );
+    let total_h = virtual_total_height(count, row_heights.iter().sum(), gap);
+    let max_offset = (total_h - inner.h).max(0.0);
+    let stored = ui_state
+        .scroll
+        .offsets
+        .get(&node.computed_id)
+        .copied()
+        .unwrap_or(0.0);
+    let pin_resolved = resolve_pin_end(node, stored, max_offset, ui_state);
+    let pin_active = node.pin_end
+        && ui_state
+            .scroll
+            .pin_active
+            .get(&node.computed_id)
+            .copied()
+            .unwrap_or(false);
+    let mut offset = if pin_active {
+        pin_resolved
+    } else if request_wrote {
+        stored
+    } else {
+        dynamic_anchor_offset(node, &row_keys, &row_heights, gap, stored, ui_state)
+            .unwrap_or(stored)
+    }
+    .clamp(0.0, max_offset);
+
+    ui_state
+        .scroll
+        .offsets
+        .insert(node.computed_id.clone(), offset);
+
+    let (start, start_y, end) = dynamic_visible_range(&row_heights, gap, offset, inner.h);
+    let mut realized_rows = layout_dynamic_range(
+        node,
+        DynamicRangeCtx {
+            inner,
+            row_keys: &row_keys,
+            width_bucket,
+            build_row: &fns.build_row,
+        },
+        offset,
+        start,
+        start_y,
+        end,
+        ui_state,
+    );
+
+    row_heights = dynamic_row_heights(
+        node,
+        &row_keys,
+        width_bucket,
+        estimated_row_height,
+        ui_state,
+    );
+    let total_h = virtual_total_height(count, row_heights.iter().sum(), gap);
+    let max_offset = (total_h - inner.h).max(0.0);
+    let corrected_offset = if pin_active {
+        max_offset
+    } else if request_wrote {
+        offset
+    } else {
+        dynamic_anchor_offset(node, &row_keys, &row_heights, gap, stored, ui_state)
+            .unwrap_or(offset)
+    }
+    .clamp(0.0, max_offset);
+    if (corrected_offset - offset).abs() > 0.01 {
+        let dy = offset - corrected_offset;
+        for child in &node.children {
+            shift_subtree_y(child, dy, ui_state);
+        }
+        for row in &mut realized_rows {
+            row.rect.y += dy;
+        }
+        offset = corrected_offset;
+        ui_state
+            .scroll
+            .offsets
+            .insert(node.computed_id.clone(), offset);
+    }
+    if node.pin_end {
+        ui_state
+            .scroll
+            .pin_prev_max
+            .insert(node.computed_id.clone(), max_offset);
+    }
+    write_virtual_scroll_metrics(node, inner, total_h, max_offset, offset, ui_state);
+
+    if let Some(anchor) = choose_dynamic_anchor(fns.anchor_policy, inner, offset, &realized_rows) {
+        ui_state
+            .scroll
+            .virtual_anchors
+            .insert(node.computed_id.clone(), anchor);
+    } else {
+        ui_state.scroll.virtual_anchors.remove(&node.computed_id);
+    }
+}
+
+struct DynamicVirtualFns {
+    anchor_policy: VirtualAnchorPolicy,
+    row_key: Arc<dyn Fn(usize) -> String + Send + Sync>,
+    build_row: Arc<dyn Fn(usize) -> El + Send + Sync>,
+}
+
+#[derive(Clone, Copy)]
+struct DynamicRangeCtx<'a> {
+    inner: Rect,
+    row_keys: &'a [String],
+    width_bucket: u32,
+    build_row: &'a Arc<dyn Fn(usize) -> El + Send + Sync>,
+}
+
+fn virtual_width_bucket(width: f32) -> u32 {
+    width.max(0.0).round().min(u32::MAX as f32) as u32
+}
+
+fn prune_dynamic_measurements(node: &El, row_keys: &[String], ui_state: &mut UiState) {
+    let Some(measurements) = ui_state
+        .scroll
+        .measured_row_heights
+        .get_mut(&node.computed_id)
+    else {
         return;
+    };
+    let live_keys = row_keys
+        .iter()
+        .map(String::as_str)
+        .collect::<FxHashSet<_>>();
+    measurements.retain(|key, widths| {
+        let live = live_keys.contains(key.as_str());
+        if live {
+            widths.retain(|_, h| h.is_finite() && *h >= 0.0);
+        }
+        live && !widths.is_empty()
+    });
+    if measurements.is_empty() {
+        ui_state
+            .scroll
+            .measured_row_heights
+            .remove(&node.computed_id);
+    }
+}
+
+fn dynamic_row_heights(
+    node: &El,
+    row_keys: &[String],
+    width_bucket: u32,
+    estimated_row_height: f32,
+    ui_state: &UiState,
+) -> Vec<f32> {
+    let measurements = ui_state.scroll.measured_row_heights.get(&node.computed_id);
+    row_keys
+        .iter()
+        .map(|key| {
+            measurements
+                .and_then(|m| m.get(key))
+                .and_then(|by_width| by_width.get(&width_bucket))
+                .copied()
+                .unwrap_or(estimated_row_height)
+        })
+        .collect()
+}
+
+fn dynamic_row_top(row_heights: &[f32], gap: f32, target: usize) -> f32 {
+    row_heights
+        .iter()
+        .take(target)
+        .fold(0.0, |y, h| y + *h + gap)
+}
+
+fn dynamic_visible_range(
+    row_heights: &[f32],
+    gap: f32,
+    offset: f32,
+    viewport_h: f32,
+) -> (usize, f32, usize) {
+    let count = row_heights.len();
+    let mut start = 0;
+    let mut y = 0.0_f32;
+    while start < count {
+        let h = row_heights[start];
+        if y + h > offset {
+            break;
+        }
+        y += h + gap;
+        start += 1;
     }
 
-    // Find the first row whose bottom edge is past `offset` using a
-    // scoped immutable borrow; releasing it before the render loop
-    // keeps `ui_state` mutably available below.
-    let (start, start_y) = {
-        let measured = ui_state.scroll.measured_row_heights.get(&node.computed_id);
-        let row_h = |i: usize| -> f32 {
-            measured
-                .and_then(|m| m.get(&i).copied())
-                .unwrap_or(estimated_row_height)
-        };
-        let mut y = 0.0_f32;
-        let mut start = 0;
-        while start < count {
-            let h = row_h(start);
-            if y + h > offset {
-                break;
-            }
-            y += h + gap;
-            start += 1;
-        }
-        (start, y)
+    let mut end = start;
+    let mut cursor = y;
+    let viewport_bottom = offset + viewport_h;
+    while end < count && cursor < viewport_bottom {
+        let h = row_heights[end];
+        end += 1;
+        cursor += h + gap;
+    }
+    (start, y, end)
+}
+
+fn dynamic_anchor_offset(
+    node: &El,
+    row_keys: &[String],
+    row_heights: &[f32],
+    gap: f32,
+    stored: f32,
+    ui_state: &UiState,
+) -> Option<f32> {
+    let anchor = ui_state.scroll.virtual_anchors.get(&node.computed_id)?;
+    let idx = if anchor.row_index < row_keys.len() && row_keys[anchor.row_index] == anchor.row_key {
+        anchor.row_index
+    } else {
+        row_keys.iter().position(|key| key == &anchor.row_key)?
     };
+    let row_h = row_heights.get(idx).copied().unwrap_or(0.0).max(0.0);
+    let row_point = row_h * anchor.row_fraction.clamp(0.0, 1.0);
+    let scroll_delta = stored - anchor.resolved_offset;
+    let viewport_y = anchor.viewport_y - scroll_delta;
+    Some(dynamic_row_top(row_heights, gap, idx) + row_point - viewport_y)
+}
+
+fn measure_dynamic_range(
+    node: &El,
+    ctx: DynamicRangeCtx<'_>,
+    start: usize,
+    end: usize,
+    ui_state: &mut UiState,
+) {
+    if start >= end {
+        return;
+    }
+    let mut new_measurements = Vec::new();
+    for (idx, key) in ctx.row_keys.iter().enumerate().take(end).skip(start) {
+        let child = (ctx.build_row)(idx);
+        let actual_h = measure_dynamic_row(node, idx, ctx.inner.w, &child);
+        new_measurements.push((key.clone(), actual_h));
+    }
+    store_dynamic_measurements(node, ctx.width_bucket, new_measurements, ui_state);
+}
+
+fn measure_dynamic_row(node: &El, idx: usize, width: f32, child: &El) -> f32 {
+    match child.height {
+        Size::Fixed(v) => v.max(0.0),
+        Size::Hug => intrinsic_constrained(child, Some(width)).1.max(0.0),
+        Size::Fill(_) => panic!(
+            "virtual_list_dyn row {idx} on {:?} must size with Size::Fixed or Size::Hug; \
+             Size::Fill would absorb the viewport's height and break virtualization",
+            node.computed_id,
+        ),
+    }
+}
+
+fn store_dynamic_measurements(
+    node: &El,
+    width_bucket: u32,
+    measurements: Vec<(String, f32)>,
+    ui_state: &mut UiState,
+) {
+    if measurements.is_empty() {
+        return;
+    }
+    let entry = ui_state
+        .scroll
+        .measured_row_heights
+        .entry(node.computed_id.clone())
+        .or_default();
+    for (row_key, h) in measurements {
+        entry.entry(row_key).or_default().insert(width_bucket, h);
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DynamicRealizedRow {
+    index: usize,
+    key: String,
+    rect: Rect,
+}
+
+fn layout_dynamic_range(
+    node: &mut El,
+    ctx: DynamicRangeCtx<'_>,
+    offset: f32,
+    start: usize,
+    start_y: f32,
+    end: usize,
+    ui_state: &mut UiState,
+) -> Vec<DynamicRealizedRow> {
+    let gap = node.gap.max(0.0);
     let mut cursor_y = start_y;
-    let mut idx = start;
+    let mut realized = Vec::new();
+    let mut realized_rows = Vec::new();
+    let mut new_measurements = Vec::new();
 
-    let mut realized: Vec<El> = Vec::new();
-    let mut new_measurements: Vec<(usize, f32)> = Vec::new();
-
-    while idx < count && cursor_y < offset + inner.h {
-        let mut child = (build_row)(idx);
+    for (idx, key) in ctx.row_keys.iter().enumerate().take(end).skip(start) {
+        let mut child = (ctx.build_row)(idx);
         assign_virtual_row_id(&mut child, &node.computed_id, idx);
+        let actual_h = measure_dynamic_row(node, idx, ctx.inner.w, &child);
+        new_measurements.push((key.clone(), actual_h));
 
-        // Mirror the column-child sizing rules from `layout_axis`:
-        // Fixed → literal, Hug → intrinsic, Fill → invalid here.
-        let actual_h = match child.height {
-            Size::Fixed(v) => v.max(0.0),
-            Size::Hug => intrinsic_constrained(&child, Some(inner.w)).1.max(0.0),
-            Size::Fill(_) => panic!(
-                "virtual_list_dyn row {idx} on {:?} must size with Size::Fixed or Size::Hug; \
-                 Size::Fill would absorb the viewport's height and break virtualization",
-                node.computed_id,
-            ),
-        };
-        new_measurements.push((idx, actual_h));
-
-        let row_y = inner.y + cursor_y - offset;
-        let c_rect = Rect::new(inner.x, row_y, inner.w, actual_h);
+        let row_y = ctx.inner.y + cursor_y - offset;
+        let c_rect = Rect::new(ctx.inner.x, row_y, ctx.inner.w, actual_h);
         ui_state
             .layout
             .computed_rects
             .insert(child.computed_id.clone(), c_rect);
         layout_children(&mut child, c_rect, ui_state);
 
+        realized_rows.push(DynamicRealizedRow {
+            index: idx,
+            key: key.clone(),
+            rect: c_rect,
+        });
         realized.push(child);
         cursor_y += actual_h + gap;
-        idx += 1;
     }
 
-    if !new_measurements.is_empty() {
-        let entry = ui_state
-            .scroll
-            .measured_row_heights
-            .entry(node.computed_id.clone())
-            .or_default();
-        for (i, h) in new_measurements {
-            entry.insert(i, h);
-        }
-    }
-
+    store_dynamic_measurements(node, ctx.width_bucket, new_measurements, ui_state);
     node.children = realized;
+    realized_rows
+}
+
+fn choose_dynamic_anchor(
+    policy: VirtualAnchorPolicy,
+    inner: Rect,
+    offset: f32,
+    rows: &[DynamicRealizedRow],
+) -> Option<VirtualAnchor> {
+    let visible = rows
+        .iter()
+        .filter(|row| row.rect.bottom() > inner.y && row.rect.y < inner.bottom())
+        .collect::<Vec<_>>();
+    if visible.is_empty() {
+        return None;
+    }
+
+    let chosen = match policy {
+        VirtualAnchorPolicy::ViewportFraction { y_fraction } => {
+            let target_y = inner.y + inner.h * y_fraction.clamp(0.0, 1.0);
+            visible
+                .iter()
+                .min_by(|a, b| {
+                    let ad = distance_to_interval(target_y, a.rect.y, a.rect.bottom());
+                    let bd = distance_to_interval(target_y, b.rect.y, b.rect.bottom());
+                    ad.total_cmp(&bd)
+                })
+                .copied()
+                .map(|row| {
+                    let anchor_y = target_y.clamp(row.rect.y, row.rect.bottom());
+                    (row.clone(), anchor_y)
+                })
+        }
+        VirtualAnchorPolicy::FirstVisible => {
+            let row = visible
+                .iter()
+                .find(|row| row.rect.y >= inner.y && row.rect.bottom() <= inner.bottom())
+                .or_else(|| visible.first())
+                .copied()?;
+            let anchor_y = row.rect.y.max(inner.y);
+            Some((row.clone(), anchor_y))
+        }
+        VirtualAnchorPolicy::LastVisible => {
+            let row = visible
+                .iter()
+                .rev()
+                .find(|row| row.rect.y >= inner.y && row.rect.bottom() <= inner.bottom())
+                .or_else(|| visible.last())
+                .copied()?;
+            let anchor_y = row.rect.bottom().min(inner.bottom());
+            Some((row.clone(), anchor_y))
+        }
+    }?;
+
+    let (row, anchor_y) = chosen;
+    let row_h = row.rect.h.max(0.0);
+    let row_fraction = if row_h > 0.0 {
+        ((anchor_y - row.rect.y) / row_h).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    Some(VirtualAnchor {
+        row_key: row.key.clone(),
+        row_index: row.index,
+        row_fraction,
+        viewport_y: anchor_y - inner.y,
+        resolved_offset: offset,
+    })
+}
+
+fn distance_to_interval(y: f32, top: f32, bottom: f32) -> f32 {
+    if y < top {
+        top - y
+    } else if y > bottom {
+        y - bottom
+    } else {
+        0.0
+    }
 }
 
 fn virtual_total_height(count: usize, row_sum: f32, gap: f32) -> f32 {
@@ -930,6 +1308,32 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
 /// any deliberate user scroll.
 const PIN_END_EPSILON: f32 = 0.5;
 
+fn pin_end_would_be_active(
+    node: &El,
+    stored: f32,
+    _max_offset: f32,
+    ui_state: &UiState,
+) -> Option<bool> {
+    if !node.pin_end {
+        return None;
+    }
+    let prev_max = ui_state.scroll.pin_prev_max.get(&node.computed_id).copied();
+    let prev_active = ui_state.scroll.pin_active.get(&node.computed_id).copied();
+    Some(match prev_active {
+        None => true,
+        Some(prev) => {
+            let prev_max = prev_max.unwrap_or(0.0);
+            if prev && stored < prev_max - PIN_END_EPSILON {
+                false
+            } else if !prev && prev_max > 0.0 && stored >= prev_max - PIN_END_EPSILON {
+                true
+            } else {
+                prev
+            }
+        }
+    })
+}
+
 /// Apply [`El::pin_end`] semantics to `stored`. Reads the previous
 /// frame's `max_offset` from `scroll.metrics` to decide whether the
 /// stored offset has moved off the tail since last frame (user wheel /
@@ -946,29 +1350,7 @@ fn resolve_pin_end(node: &El, stored: f32, max_offset: f32, ui_state: &mut UiSta
         ui_state.scroll.pin_prev_max.remove(&node.computed_id);
         return stored;
     }
-    let prev_max = ui_state.scroll.pin_prev_max.get(&node.computed_id).copied();
-    let prev_active = ui_state.scroll.pin_active.get(&node.computed_id).copied();
-    let active = match prev_active {
-        None => true,
-        Some(prev) => {
-            let prev_max = prev_max.unwrap_or(0.0);
-            if prev && stored < prev_max - PIN_END_EPSILON {
-                // Wheel / drag / EnsureVisible moved the offset off
-                // the tail since last frame.
-                false
-            } else if !prev && prev_max > 0.0 && stored >= prev_max - PIN_END_EPSILON {
-                // Returned to (or past) the previous tail (wheel-back,
-                // jump-to-latest EnsureVisible, programmatic
-                // set_scroll_offset). Compared against `prev_max`
-                // rather than the current `max_offset` so a wheel-back
-                // to the bottom re-engages even when content grew
-                // between frames.
-                true
-            } else {
-                prev
-            }
-        }
-    };
+    let active = pin_end_would_be_active(node, stored, max_offset, ui_state).unwrap_or(false);
     ui_state
         .scroll
         .pin_active
@@ -2705,12 +3087,17 @@ mod tests {
         // Alternating 40px / 80px rows. With a 200px viewport and offset 0,
         // accumulated y goes 0, 40, 120, 160, 240 — the fifth row starts
         // past the viewport, so four rows are realized.
-        let mut root = crate::tree::virtual_list_dyn(20, 50.0, |i| {
-            let h = if i % 2 == 0 { 40.0 } else { 80.0 };
-            crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
-                .key(format!("row-{i}"))
-                .height(Size::Fixed(h))
-        });
+        let mut root = crate::tree::virtual_list_dyn(
+            20,
+            50.0,
+            |i| format!("row-{i}"),
+            |i| {
+                let h = if i % 2 == 0 { 40.0 } else { 80.0 };
+                crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
+                    .key(format!("row-{i}"))
+                    .height(Size::Fixed(h))
+            },
+        );
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
 
@@ -2750,11 +3137,16 @@ mod tests {
 
     #[test]
     fn virtual_list_dyn_gap_contributes_to_row_positions_and_content_height() {
-        let mut root = crate::tree::virtual_list_dyn(10, 40.0, |i| {
-            crate::tree::column([crate::widgets::text::text(format!("row {i}"))])
-                .key(format!("row-{i}"))
-                .height(Size::Fixed(40.0))
-        })
+        let mut root = crate::tree::virtual_list_dyn(
+            10,
+            40.0,
+            |i| format!("row-{i}"),
+            |i| {
+                crate::tree::column([crate::widgets::text::text(format!("row {i}"))])
+                    .key(format!("row-{i}"))
+                    .height(Size::Fixed(40.0))
+            },
+        )
         .gap(10.0);
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 120.0));
@@ -2790,11 +3182,16 @@ mod tests {
         // Build a list where the first frame realizes rows 0..k, measuring
         // each. After layout the cache should hold those measurements and
         // the next frame should read them.
-        let mut root = crate::tree::virtual_list_dyn(50, 50.0, |i| {
-            crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
-                .key(format!("row-{i}"))
-                .height(Size::Fixed(30.0))
-        });
+        let mut root = crate::tree::virtual_list_dyn(
+            50,
+            50.0,
+            |i| format!("row-{i}"),
+            |i| {
+                crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
+                    .key(format!("row-{i}"))
+                    .height(Size::Fixed(30.0))
+            },
+        );
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
 
@@ -2803,13 +3200,19 @@ mod tests {
             .measured_row_heights
             .get(&root.computed_id)
             .expect("dynamic virtual list should populate the height cache");
-        // At least the realized rows (≈ ceil(200/30) = 7) should be cached.
+        // The first pass measures the estimate-derived window, then
+        // the anchored final pass can extend it with newly revealed
+        // rows. At least six rows are visible/cached here.
         assert!(
-            measured.len() >= 7,
-            "expected ≥ 7 cached row heights, got {}",
+            measured.len() >= 6,
+            "expected ≥ 6 cached row heights, got {}",
             measured.len()
         );
-        for (_, h) in measured.iter() {
+        for by_width in measured.values() {
+            let h = by_width
+                .get(&300)
+                .copied()
+                .expect("measurement should be keyed at the 300px width bucket");
             assert!(
                 (h - 30.0).abs() < 0.5,
                 "expected cached height ≈ 30, got {h}"
@@ -2818,30 +3221,118 @@ mod tests {
     }
 
     #[test]
-    fn virtual_list_dyn_total_height_uses_measured_plus_estimate() {
-        // 20 rows of fixed 30px in a 200px viewport. First frame realizes
-        // 7 rows (200/30 = 6.66, ceil = 7). Cache holds 7 × 30 = 210;
-        // remaining 13 × estimate 50 = 650; content_h = 860; max_offset =
-        // 660. A second frame with offset 9999 must clamp to that 660.
+    fn virtual_list_dyn_preserves_visible_anchor_when_above_measurement_changes() {
         let make_root = || {
-            crate::tree::virtual_list_dyn(20, 50.0, |i| {
+            crate::tree::virtual_list_dyn(
+                100,
+                40.0,
+                |i| format!("row-{i}"),
+                |i| {
+                    crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
+                        .key(format!("row-{i}"))
+                        .height(Size::Fixed(40.0))
+                },
+            )
+        };
+        let mut root = make_root();
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        state.scroll.offsets.insert(root.computed_id.clone(), 400.0);
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        let anchor = state
+            .scroll
+            .virtual_anchors
+            .get(&root.computed_id)
+            .cloned()
+            .expect("dynamic list should store a visible anchor");
+        let before_y = root
+            .children
+            .iter()
+            .find(|child| child.key.as_deref() == Some(anchor.row_key.as_str()))
+            .map(|child| state.rect(&child.computed_id).y)
+            .expect("anchor row should be realized");
+        let before_offset = state.scroll_offset(&root.computed_id);
+
+        state
+            .scroll
+            .measured_row_heights
+            .entry(root.computed_id.clone())
+            .or_default()
+            .entry("row-0".to_string())
+            .or_default()
+            .insert(300, 120.0);
+
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        let after_y = root
+            .children
+            .iter()
+            .find(|child| child.key.as_deref() == Some(anchor.row_key.as_str()))
+            .map(|child| state.rect(&child.computed_id).y)
+            .expect("anchor row should remain realized");
+        let after_offset = state.scroll_offset(&root.computed_id);
+
+        assert!(
+            (after_y - before_y).abs() < 0.5,
+            "anchor row should stay at y={before_y}, got {after_y}"
+        );
+        assert!(
+            (after_offset - (before_offset + 80.0)).abs() < 0.5,
+            "offset should absorb the 80px measurement delta above anchor"
+        );
+    }
+
+    #[test]
+    fn virtual_list_dyn_height_cache_is_width_bucketed() {
+        let mut root = crate::tree::virtual_list_dyn(
+            20,
+            50.0,
+            |i| format!("row-{i}"),
+            |i| {
                 crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
                     .key(format!("row-{i}"))
                     .height(Size::Fixed(30.0))
-            })
+            },
+        );
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 240.0, 200.0));
+
+        let row_0 = state
+            .scroll
+            .measured_row_heights
+            .get(&root.computed_id)
+            .and_then(|m| m.get("row-0"))
+            .expect("row 0 should be measured");
+        assert!(
+            row_0.contains_key(&300) && row_0.contains_key(&240),
+            "expected width buckets 300 and 240, got {:?}",
+            row_0.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn virtual_list_dyn_total_height_uses_measured_plus_estimate() {
+        // Measured rows use their cached fixed 30px height; rows that
+        // have not been seen at this width still use the 50px estimate.
+        // An overshoot offset must clamp to the mixed measured/estimated
+        // content height after the final visible measurements land.
+        let make_root = || {
+            crate::tree::virtual_list_dyn(
+                20,
+                50.0,
+                |i| format!("row-{i}"),
+                |i| {
+                    crate::tree::column([crate::widgets::text::text(format!("r{i}"))])
+                        .key(format!("row-{i}"))
+                        .height(Size::Fixed(30.0))
+                },
+            )
         };
         let mut state = UiState::new();
         let mut root = make_root();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
-
-        let measured_count = state
-            .scroll
-            .measured_row_heights
-            .get(&root.computed_id)
-            .map(|m| m.len())
-            .unwrap_or(0);
-        let expected_total = measured_count as f32 * 30.0 + (20 - measured_count) as f32 * 50.0;
-        let expected_max_offset = expected_total - 200.0;
 
         state
             .scroll
@@ -2849,6 +3340,23 @@ mod tests {
             .insert(root.computed_id.clone(), 9999.0);
         let mut root2 = make_root();
         layout(&mut root2, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        let measured = state
+            .scroll
+            .measured_row_heights
+            .get(&root2.computed_id)
+            .expect("dynamic virtual list should populate the height cache");
+        let measured_sum = measured
+            .values()
+            .filter_map(|by_width| by_width.get(&300))
+            .sum::<f32>();
+        let measured_count = measured
+            .values()
+            .filter(|by_width| by_width.contains_key(&300))
+            .count();
+        let expected_total = measured_sum + (20 - measured_count) as f32 * 50.0;
+        let expected_max_offset = expected_total - 200.0;
+
         let stored = state
             .scroll
             .offsets
@@ -2863,8 +3371,12 @@ mod tests {
 
     #[test]
     fn virtual_list_dyn_empty_count_realizes_no_children() {
-        let mut root =
-            crate::tree::virtual_list_dyn(0, 50.0, |i| crate::widgets::text::text(format!("r{i}")));
+        let mut root = crate::tree::virtual_list_dyn(
+            0,
+            50.0,
+            |i| format!("row-{i}"),
+            |i| crate::widgets::text::text(format!("r{i}")),
+        );
         let mut state = UiState::new();
         layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
         assert_eq!(root.children.len(), 0);
@@ -2873,8 +3385,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "estimated_row_height > 0.0")]
     fn virtual_list_dyn_zero_estimate_panics() {
-        let _ =
-            crate::tree::virtual_list_dyn(10, 0.0, |i| crate::widgets::text::text(format!("r{i}")));
+        let _ = crate::tree::virtual_list_dyn(
+            10,
+            0.0,
+            |i| format!("row-{i}"),
+            |i| crate::widgets::text::text(format!("r{i}")),
+        );
     }
 
     #[test]

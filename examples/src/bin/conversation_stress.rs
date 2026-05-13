@@ -221,9 +221,12 @@ impl ConversationStress {
             ListMode::Virtual => {
                 let body_size = self.body_size;
                 let body_mode = self.body_mode;
-                virtual_list_dyn(self.turns, estimated_turn_height(body_size), move |i| {
-                    turn(i, body_size, body_mode)
-                })
+                virtual_list_dyn(
+                    self.turns,
+                    estimated_turn_height(body_size),
+                    |i| format!("turn-{i}"),
+                    move |i| turn(i, body_size, body_mode),
+                )
                 .key("conversation")
                 .gap(tokens::SPACE_2)
                 .height(Size::Fill(1.0))

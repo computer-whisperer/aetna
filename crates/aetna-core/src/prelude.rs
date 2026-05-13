@@ -29,7 +29,7 @@ pub use crate::event::{
 pub use crate::icons::{all_icon_names, icon};
 pub use crate::image::{Image, ImageFit};
 pub use crate::ir::{DrawOp, TextAnchor};
-pub use crate::layout::{LayoutCtx, LayoutFn, VirtualItems, VirtualMode};
+pub use crate::layout::{LayoutCtx, LayoutFn, VirtualAnchorPolicy, VirtualItems, VirtualMode};
 pub use crate::math::{
     MathAtom, MathDisplay, MathExpr, MathLayout, MathParseError, layout_math, parse_mathml,
     parse_mathml_with_display, parse_tex,

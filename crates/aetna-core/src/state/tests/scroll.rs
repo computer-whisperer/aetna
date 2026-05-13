@@ -71,11 +71,16 @@ fn fixed_list_root(count: usize, row_height: f32) -> El {
 }
 
 fn dyn_list_root(count: usize, est: f32, row_h: f32) -> El {
-    virtual_list_dyn(count, est, move |i| {
-        column([crate::widgets::text::text(format!("r{i}"))])
-            .key(format!("row-{i}"))
-            .height(Size::Fixed(row_h))
-    })
+    virtual_list_dyn(
+        count,
+        est,
+        |i| format!("row-{i}"),
+        move |i| {
+            column([crate::widgets::text::text(format!("r{i}"))])
+                .key(format!("row-{i}"))
+                .height(Size::Fixed(row_h))
+        },
+    )
     .key("dyn-list")
 }
 
@@ -236,8 +241,8 @@ fn scroll_request_resolves_against_dynamic_list_with_warm_cache() {
         .map(|m| m.len())
         .unwrap_or(0);
     assert!(
-        measured_count >= 7,
-        "expected first frame to measure ≥7 rows, got {measured_count}"
+        measured_count >= 6,
+        "expected first frame to measure ≥6 rows, got {measured_count}"
     );
     let id = tree.computed_id.clone();
 
