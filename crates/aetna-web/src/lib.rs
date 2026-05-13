@@ -124,7 +124,7 @@ mod web_entry {
     const SAMPLE_COUNT: u32 = 1;
     use wasm_bindgen::JsCast;
     use wasm_bindgen::prelude::Closure;
-    use web_time::Instant;
+    use web_time::{Duration, Instant};
     use winit::application::ApplicationHandler;
     use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
     use winit::event_loop::{ActiveEventLoop, EventLoop};
