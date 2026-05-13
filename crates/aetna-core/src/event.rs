@@ -573,6 +573,9 @@ impl FrameTrigger {
 /// [`BuildCx::diagnostics`]. Apps that surface a debug overlay (e.g.
 /// the showcase status block) read this each build to display the
 /// active backend, frame cadence, and what triggered the redraw.
+/// Timing fields describe the last completed rendered frame, not the
+/// frame currently being built; the host cannot know current layout /
+/// paint timings until after `App::build` returns.
 ///
 /// Hosts populate every field they can; `backend` is a static string
 /// (`"WebGPU"`, `"Vulkan"`, `"Metal"`, `"DX12"`, `"GL"`) so the app
@@ -597,6 +600,59 @@ pub struct HostDiagnostics {
     /// Wall-clock time between this redraw and the previous one.
     /// `Duration::ZERO` for the first frame (no prior frame).
     pub last_frame_dt: std::time::Duration,
+    /// Time spent in the app's `build` method for the last completed
+    /// frame. `Duration::ZERO` before the first full frame and on
+    /// paint-only frames that skipped build.
+    pub last_build: std::time::Duration,
+    /// Total time spent in the backend `prepare` call for the last
+    /// completed frame.
+    pub last_prepare: std::time::Duration,
+    /// Sub-stage inside `prepare`: layout pass, focus/selection sync,
+    /// state application, and animation tick.
+    pub last_layout: std::time::Duration,
+    /// Intrinsic-measurement cache hits during the last layout pass.
+    pub last_layout_intrinsic_cache_hits: u64,
+    /// Intrinsic-measurement cache misses during the last layout pass.
+    pub last_layout_intrinsic_cache_misses: u64,
+    /// Direct scroll children whose descendants were skipped during
+    /// layout because the child was outside the scroll viewport.
+    pub last_layout_pruned_subtrees: u64,
+    /// Descendant nodes assigned zero rects as part of scroll layout
+    /// pruning during the last layout pass.
+    pub last_layout_pruned_nodes: u64,
+    /// Sub-stage inside `prepare`: laid-out tree to backend-neutral
+    /// `DrawOp` list.
+    pub last_draw_ops: std::time::Duration,
+    /// Text draw ops skipped during draw-op generation because their
+    /// glyph rect did not intersect the inherited clip.
+    pub last_draw_ops_culled_text_ops: u64,
+    /// Sub-stage inside `prepare`: paint-stream packing and text
+    /// shaping/rasterization recording.
+    pub last_paint: std::time::Duration,
+    /// Paint ops skipped because their painted rect did not intersect
+    /// the effective clip/viewport in the last completed frame.
+    pub last_paint_culled_ops: u64,
+    /// Sub-stage inside `prepare`: backend-side buffer writes, glyph
+    /// atlas uploads, and frame uniforms.
+    pub last_gpu_upload: std::time::Duration,
+    /// Sub-stage inside `prepare`: clone the laid-out tree for
+    /// next-frame hit-testing.
+    pub last_snapshot: std::time::Duration,
+    /// Time spent encoding/submitting/presenting the last completed
+    /// frame after `prepare`.
+    pub last_submit: std::time::Duration,
+    /// Layout-side text-cache hits during the last completed full
+    /// prepare.
+    pub last_text_layout_cache_hits: u64,
+    /// Layout-side text-cache misses during the last completed full
+    /// prepare.
+    pub last_text_layout_cache_misses: u64,
+    /// Estimated layout-side text-cache evictions during the last
+    /// completed full prepare.
+    pub last_text_layout_cache_evictions: u64,
+    /// Total UTF-8 bytes shaped on layout-cache misses during the last
+    /// completed full prepare.
+    pub last_text_layout_shaped_bytes: u64,
     /// Why the host triggered this frame.
     pub trigger: FrameTrigger,
 }
@@ -610,6 +666,24 @@ impl Default for HostDiagnostics {
             msaa_samples: 1,
             frame_index: 0,
             last_frame_dt: std::time::Duration::ZERO,
+            last_build: std::time::Duration::ZERO,
+            last_prepare: std::time::Duration::ZERO,
+            last_layout: std::time::Duration::ZERO,
+            last_layout_intrinsic_cache_hits: 0,
+            last_layout_intrinsic_cache_misses: 0,
+            last_layout_pruned_subtrees: 0,
+            last_layout_pruned_nodes: 0,
+            last_draw_ops: std::time::Duration::ZERO,
+            last_draw_ops_culled_text_ops: 0,
+            last_paint: std::time::Duration::ZERO,
+            last_paint_culled_ops: 0,
+            last_gpu_upload: std::time::Duration::ZERO,
+            last_snapshot: std::time::Duration::ZERO,
+            last_submit: std::time::Duration::ZERO,
+            last_text_layout_cache_hits: 0,
+            last_text_layout_cache_misses: 0,
+            last_text_layout_cache_evictions: 0,
+            last_text_layout_shaped_bytes: 0,
             trigger: FrameTrigger::default(),
         }
     }

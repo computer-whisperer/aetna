@@ -61,6 +61,19 @@ pub struct MeasuredText {
     pub line_count: usize,
 }
 
+/// Per-frame counters for the layout-side text cache.
+///
+/// This tracks [`layout_text_with_line_height_and_family`], the cache
+/// used by layout / draw-op measurement. It does not include backend
+/// paint-side glyph atlas shaping.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TextLayoutCacheStats {
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+    pub shaped_bytes: u64,
+}
+
 /// Shared text geometry context for measurement, hit-testing, caret
 /// positioning, and selection rectangles.
 ///
@@ -322,8 +335,15 @@ pub fn layout_text_with_line_height_and_family(
         available_width_bits: available_width.map(f32::to_bits),
     };
     if let Some(cached) = SHAPE_CACHE.with_borrow_mut(|c| c.get(&key).cloned()) {
+        SHAPE_CACHE_STATS.with_borrow_mut(|stats| {
+            stats.hits += 1;
+        });
         return cached;
     }
+    SHAPE_CACHE_STATS.with_borrow_mut(|stats| {
+        stats.misses += 1;
+        stats.shaped_bytes += text.len() as u64;
+    });
     let layout = layout_text_uncached(
         text,
         size,
@@ -335,6 +355,11 @@ pub fn layout_text_with_line_height_and_family(
         available_width,
     );
     SHAPE_CACHE.with_borrow_mut(|c| {
+        if c.len() == SHAPE_CACHE_CAPACITY {
+            SHAPE_CACHE_STATS.with_borrow_mut(|stats| {
+                stats.evictions += 1;
+            });
+        }
         c.put(key, layout.clone());
     });
     layout
@@ -1215,14 +1240,25 @@ struct ShapeKey {
     available_width_bits: Option<u32>,
 }
 
-/// Bounded thread-local LRU of shaped layouts. 1024 is comfortably more
-/// than the ~50 distinct text labels a typical Aetna app renders per
-/// frame, plus the binary-search prefixes `ellipsize_text_with_family`
-/// produces. Eviction is benign — the next miss reshapes via cosmic.
-const SHAPE_CACHE_CAPACITY: usize = 1024;
+/// Bounded thread-local LRU of shaped layouts. UI chrome only needs a
+/// few dozen entries, but markdown-heavy conversation views can lower
+/// one frame into several thousand distinct text/style/width keys.
+/// Keep enough room for those views to stay warm across repeated
+/// layout probes; eviction is benign but expensive because the next
+/// miss reshapes via cosmic.
+const SHAPE_CACHE_CAPACITY: usize = 16_384;
 thread_local! {
     static SHAPE_CACHE: RefCell<LruCache<ShapeKey, TextLayout>> =
         RefCell::new(LruCache::new(NonZeroUsize::new(SHAPE_CACHE_CAPACITY).unwrap()));
+    static SHAPE_CACHE_STATS: RefCell<TextLayoutCacheStats> =
+        RefCell::new(TextLayoutCacheStats::default());
+}
+
+/// Drain layout-side text cache counters accumulated since the previous
+/// call. Runners call this once per full prepare so diagnostic overlays
+/// can distinguish cache churn from paint-side work.
+pub fn take_shape_cache_stats() -> TextLayoutCacheStats {
+    SHAPE_CACHE_STATS.with_borrow_mut(std::mem::take)
 }
 
 fn bundled_font_system() -> FontSystem {

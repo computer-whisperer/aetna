@@ -453,6 +453,25 @@ mod web_entry {
         last_frame_at: Option<Instant>,
         /// Counts redraws actually rendered.
         frame_index: u64,
+        /// Timing breakdown from the last completed rendered frame.
+        last_build: Duration,
+        last_prepare: Duration,
+        last_layout: Duration,
+        last_layout_intrinsic_cache_hits: u64,
+        last_layout_intrinsic_cache_misses: u64,
+        last_layout_pruned_subtrees: u64,
+        last_layout_pruned_nodes: u64,
+        last_draw_ops: Duration,
+        last_draw_ops_culled_text_ops: u64,
+        last_paint: Duration,
+        last_paint_culled_ops: u64,
+        last_gpu_upload: Duration,
+        last_snapshot: Duration,
+        last_submit: Duration,
+        last_text_layout_cache_hits: u64,
+        last_text_layout_cache_misses: u64,
+        last_text_layout_cache_evictions: u64,
+        last_text_layout_shaped_bytes: u64,
         /// Physical canvas size used by the most recent full
         /// [`Runner::prepare`] call. The repaint dispatcher requires
         /// this to match the current `gfx.config` size before taking
@@ -531,6 +550,24 @@ mod web_entry {
                 next_trigger: FrameTrigger::Initial,
                 last_frame_at: None,
                 frame_index: 0,
+                last_build: Duration::ZERO,
+                last_prepare: Duration::ZERO,
+                last_layout: Duration::ZERO,
+                last_layout_intrinsic_cache_hits: 0,
+                last_layout_intrinsic_cache_misses: 0,
+                last_layout_pruned_subtrees: 0,
+                last_layout_pruned_nodes: 0,
+                last_draw_ops: Duration::ZERO,
+                last_draw_ops_culled_text_ops: 0,
+                last_paint: Duration::ZERO,
+                last_paint_culled_ops: 0,
+                last_gpu_upload: Duration::ZERO,
+                last_snapshot: Duration::ZERO,
+                last_submit: Duration::ZERO,
+                last_text_layout_cache_hits: 0,
+                last_text_layout_cache_misses: 0,
+                last_text_layout_cache_evictions: 0,
+                last_text_layout_shaped_bytes: 0,
                 last_prepared_size: None,
                 backend: Rc::new(RefCell::new("?")),
                 pending_clipboard_text: Rc::new(RefCell::new(VecDeque::new())),
@@ -1275,6 +1312,25 @@ mod web_entry {
                             msaa_samples: SAMPLE_COUNT,
                             frame_index: self.frame_index,
                             last_frame_dt,
+                            last_build: self.last_build,
+                            last_prepare: self.last_prepare,
+                            last_layout: self.last_layout,
+                            last_layout_intrinsic_cache_hits: self.last_layout_intrinsic_cache_hits,
+                            last_layout_intrinsic_cache_misses: self
+                                .last_layout_intrinsic_cache_misses,
+                            last_layout_pruned_subtrees: self.last_layout_pruned_subtrees,
+                            last_layout_pruned_nodes: self.last_layout_pruned_nodes,
+                            last_draw_ops: self.last_draw_ops,
+                            last_draw_ops_culled_text_ops: self.last_draw_ops_culled_text_ops,
+                            last_paint: self.last_paint,
+                            last_paint_culled_ops: self.last_paint_culled_ops,
+                            last_gpu_upload: self.last_gpu_upload,
+                            last_snapshot: self.last_snapshot,
+                            last_submit: self.last_submit,
+                            last_text_layout_cache_hits: self.last_text_layout_cache_hits,
+                            last_text_layout_cache_misses: self.last_text_layout_cache_misses,
+                            last_text_layout_cache_evictions: self.last_text_layout_cache_evictions,
+                            last_text_layout_shaped_bytes: self.last_text_layout_shaped_bytes,
                             trigger,
                         };
                         self.app.before_build();
@@ -1348,6 +1404,28 @@ mod web_entry {
                         t_after_submit,
                         prepare.timings,
                     );
+                    self.last_build = t_after_build - frame_start;
+                    self.last_prepare = t_after_prepare - t_after_build;
+                    self.last_submit = t_after_submit - t_after_prepare;
+                    self.last_layout = prepare.timings.layout;
+                    self.last_layout_intrinsic_cache_hits =
+                        prepare.timings.layout_intrinsic_cache.hits;
+                    self.last_layout_intrinsic_cache_misses =
+                        prepare.timings.layout_intrinsic_cache.misses;
+                    self.last_layout_pruned_subtrees = prepare.timings.layout_prune.subtrees;
+                    self.last_layout_pruned_nodes = prepare.timings.layout_prune.nodes;
+                    self.last_draw_ops = prepare.timings.draw_ops;
+                    self.last_draw_ops_culled_text_ops = prepare.timings.draw_ops_culled_text_ops;
+                    self.last_paint = prepare.timings.paint;
+                    self.last_paint_culled_ops = prepare.timings.paint_culled_ops;
+                    self.last_gpu_upload = prepare.timings.gpu_upload;
+                    self.last_snapshot = prepare.timings.snapshot;
+                    self.last_text_layout_cache_hits = prepare.timings.text_layout_cache.hits;
+                    self.last_text_layout_cache_misses = prepare.timings.text_layout_cache.misses;
+                    self.last_text_layout_cache_evictions =
+                        prepare.timings.text_layout_cache.evictions;
+                    self.last_text_layout_shaped_bytes =
+                        prepare.timings.text_layout_cache.shaped_bytes;
 
                     // Two-lane scheduling: a layout-driven signal
                     // (animation settling, widget redraw_within,

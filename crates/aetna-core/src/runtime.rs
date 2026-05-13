@@ -52,7 +52,7 @@ use std::time::Duration;
 
 use web_time::Instant;
 
-use crate::draw_ops;
+use crate::draw_ops::{self, DrawOpsStats};
 use crate::event::{KeyChord, KeyModifiers, PointerButton, UiEvent, UiEventKind, UiKey, UiTarget};
 use crate::focus;
 use crate::hit_test;
@@ -65,6 +65,7 @@ use crate::paint::{
 use crate::shader::ShaderHandle;
 use crate::state::{AnimationMode, UiState};
 use crate::text::atlas::RunStyle;
+use crate::text::metrics::TextLayoutCacheStats;
 use crate::theme::Theme;
 use crate::toast;
 use crate::tooltip;
@@ -169,10 +170,15 @@ pub struct LayoutPrepared {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PrepareTimings {
     pub layout: Duration,
+    pub layout_intrinsic_cache: layout::LayoutIntrinsicCacheStats,
+    pub layout_prune: layout::LayoutPruneStats,
     pub draw_ops: Duration,
+    pub draw_ops_culled_text_ops: u64,
     pub paint: Duration,
+    pub paint_culled_ops: u64,
     pub gpu_upload: Duration,
     pub snapshot: Duration,
+    pub text_layout_cache: TextLayoutCacheStats,
 }
 
 /// Backend-agnostic runner state.
@@ -1219,13 +1225,24 @@ impl RunnerCore {
             animations || tooltip_pending || toast_pending
         };
         let t_after_layout = Instant::now();
-        let ops = {
+        timings.layout_intrinsic_cache = layout::take_intrinsic_cache_stats();
+        timings.layout_prune = layout::take_prune_stats();
+        let (ops, draw_ops_stats) = {
             crate::profile_span!("prepare::draw_ops");
-            draw_ops::draw_ops_with_theme(root, &self.ui_state, &self.theme)
+            let mut stats = DrawOpsStats::default();
+            let ops = draw_ops::draw_ops_with_theme_and_stats(
+                root,
+                &self.ui_state,
+                &self.theme,
+                &mut stats,
+            );
+            (ops, stats)
         };
         let t_after_draw_ops = Instant::now();
         timings.layout = t_after_layout - t0;
         timings.draw_ops = t_after_draw_ops - t_after_layout;
+        timings.draw_ops_culled_text_ops = draw_ops_stats.culled_text_ops;
+        timings.text_layout_cache = crate::text::metrics::take_shape_cache_stats();
 
         // Two-lane deadline split:
         //
@@ -1386,8 +1403,13 @@ impl RunnerCore {
                     if !is_registered(shader) {
                         continue;
                     }
+                    if !paint_rect_visible(*rect, *scissor, self.viewport_px, scale_factor) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
                     let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
                     if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        timings.paint_culled_ops += 1;
                         continue;
                     }
                     if !snapshot_emitted && samples_backdrop(shader) {
@@ -1437,6 +1459,15 @@ impl RunnerCore {
                     link,
                     ..
                 } => {
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
+                    if !paint_rect_visible(*rect, *scissor, self.viewport_px, scale_factor) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
                     close_run(
                         &mut self.runs,
                         &mut self.paint_items,
@@ -1447,10 +1478,6 @@ impl RunnerCore {
                     current = None;
                     run_first = self.quad_scratch.len() as u32;
 
-                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
-                        continue;
-                    }
                     let mut style = crate::text::atlas::RunStyle::new(*weight, *color)
                         .family(*family)
                         .mono_family(*mono_family);
@@ -1491,6 +1518,15 @@ impl RunnerCore {
                     anchor,
                     ..
                 } => {
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
+                    if !paint_rect_visible(*rect, *scissor, self.viewport_px, scale_factor) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
                     close_run(
                         &mut self.runs,
                         &mut self.paint_items,
@@ -1501,10 +1537,6 @@ impl RunnerCore {
                     current = None;
                     run_first = self.quad_scratch.len() as u32;
 
-                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
-                        continue;
-                    }
                     let layers = text.record_runs(
                         *rect,
                         phys,
@@ -1528,6 +1560,15 @@ impl RunnerCore {
                     stroke_width,
                     ..
                 } => {
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
+                    if !paint_rect_visible(*rect, *scissor, self.viewport_px, scale_factor) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
                     close_run(
                         &mut self.runs,
                         &mut self.paint_items,
@@ -1538,10 +1579,6 @@ impl RunnerCore {
                     current = None;
                     run_first = self.quad_scratch.len() as u32;
 
-                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
-                        continue;
-                    }
                     let recorded = text.record_icon(
                         *rect,
                         phys,
@@ -1573,6 +1610,15 @@ impl RunnerCore {
                     fit,
                     ..
                 } => {
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
+                    if !paint_rect_visible(*rect, *scissor, self.viewport_px, scale_factor) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
                     close_run(
                         &mut self.runs,
                         &mut self.paint_items,
@@ -1583,10 +1629,6 @@ impl RunnerCore {
                     current = None;
                     run_first = self.quad_scratch.len() as u32;
 
-                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
-                        continue;
-                    }
                     let recorded =
                         text.record_image(*rect, phys, image, *tint, *radius, *fit, scale_factor);
                     for index in recorded {
@@ -1601,6 +1643,15 @@ impl RunnerCore {
                     transform,
                     ..
                 } => {
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
+                    if !paint_rect_visible(*rect, *scissor, self.viewport_px, scale_factor) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
                     close_run(
                         &mut self.runs,
                         &mut self.paint_items,
@@ -1611,10 +1662,6 @@ impl RunnerCore {
                     current = None;
                     run_first = self.quad_scratch.len() as u32;
 
-                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
-                        continue;
-                    }
                     let recorded = text.record_app_texture(
                         *rect,
                         phys,
@@ -1634,6 +1681,15 @@ impl RunnerCore {
                     render_mode,
                     ..
                 } => {
+                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
+                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
+                    if !paint_rect_visible(*rect, *scissor, self.viewport_px, scale_factor) {
+                        timings.paint_culled_ops += 1;
+                        continue;
+                    }
                     close_run(
                         &mut self.runs,
                         &mut self.paint_items,
@@ -1644,10 +1700,6 @@ impl RunnerCore {
                     current = None;
                     run_first = self.quad_scratch.len() as u32;
 
-                    let phys = physical_scissor(*scissor, scale_factor, self.viewport_px);
-                    if matches!(phys, Some(s) if s.w == 0 || s.h == 0) {
-                        continue;
-                    }
                     let recorded =
                         text.record_vector(*rect, phys, asset, *render_mode, scale_factor);
                     for index in recorded {
@@ -1693,6 +1745,28 @@ impl RunnerCore {
         self.last_tree = Some(root.clone());
         timings.snapshot = Instant::now() - t0;
     }
+}
+
+fn paint_rect_visible(
+    rect: Rect,
+    scissor: Option<Rect>,
+    viewport_px: (u32, u32),
+    scale_factor: f32,
+) -> bool {
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        return false;
+    }
+    let scale = scale_factor.max(f32::EPSILON);
+    let viewport = Rect::new(
+        0.0,
+        0.0,
+        viewport_px.0 as f32 / scale,
+        viewport_px.1 as f32 / scale,
+    );
+    let Some(clip) = scissor.map_or(Some(viewport), |s| s.intersect(viewport)) else {
+        return false;
+    };
+    rect.intersect(clip).is_some()
 }
 
 /// Whether this op binds a shader whose output depends on `frame.time`.
@@ -2069,6 +2143,53 @@ mod tests {
             _scale_factor: f32,
         ) -> Range<usize> {
             0..0
+        }
+    }
+
+    #[derive(Default)]
+    struct CountingText {
+        records: usize,
+    }
+
+    impl TextRecorder for CountingText {
+        fn record(
+            &mut self,
+            _rect: Rect,
+            _scissor: Option<PhysicalScissor>,
+            _style: &RunStyle,
+            _text: &str,
+            _size: f32,
+            _line_height: f32,
+            _wrap: TextWrap,
+            _anchor: TextAnchor,
+            _scale_factor: f32,
+        ) -> Range<usize> {
+            self.records += 1;
+            0..0
+        }
+
+        fn record_runs(
+            &mut self,
+            _rect: Rect,
+            _scissor: Option<PhysicalScissor>,
+            _runs: &[(String, RunStyle)],
+            _size: f32,
+            _line_height: f32,
+            _wrap: TextWrap,
+            _anchor: TextAnchor,
+            _scale_factor: f32,
+        ) -> Range<usize> {
+            self.records += 1;
+            0..0
+        }
+    }
+
+    fn empty_text_layout(line_height: f32) -> crate::text::metrics::TextLayout {
+        crate::text::metrics::TextLayout {
+            lines: Vec::new(),
+            width: 0.0,
+            height: 0.0,
+            line_height,
         }
     }
 
@@ -4192,6 +4313,87 @@ mod tests {
             shader,
             uniforms: UniformBlock::new(),
         }
+    }
+
+    #[test]
+    fn prepare_paint_skips_ops_outside_viewport() {
+        let mut core = RunnerCore::new();
+        core.set_surface_size(100, 100);
+        core.viewport_px = (100, 100);
+        let ops = vec![
+            DrawOp::Quad {
+                id: "offscreen".into(),
+                rect: Rect::new(0.0, 150.0, 10.0, 10.0),
+                scissor: None,
+                shader: ShaderHandle::Stock(StockShader::RoundedRect),
+                uniforms: UniformBlock::new(),
+            },
+            quad(ShaderHandle::Stock(StockShader::RoundedRect)),
+        ];
+        let mut timings = PrepareTimings::default();
+        core.prepare_paint(&ops, |_| true, |_| false, &mut NoText, 1.0, &mut timings);
+
+        assert_eq!(timings.paint_culled_ops, 1);
+        assert_eq!(
+            core.runs.len(),
+            1,
+            "only the visible quad should become a paint run"
+        );
+    }
+
+    #[test]
+    fn prepare_paint_does_not_shape_text_outside_clip() {
+        let mut core = RunnerCore::new();
+        core.set_surface_size(100, 100);
+        core.viewport_px = (100, 100);
+        let ops = vec![
+            DrawOp::GlyphRun {
+                id: "offscreen-text".into(),
+                rect: Rect::new(0.0, 150.0, 80.0, 20.0),
+                scissor: Some(Rect::new(0.0, 0.0, 100.0, 100.0)),
+                shader: ShaderHandle::Stock(StockShader::Text),
+                color: Color::rgba(255, 255, 255, 255),
+                text: "offscreen".into(),
+                size: 14.0,
+                line_height: 20.0,
+                family: Default::default(),
+                mono_family: Default::default(),
+                weight: FontWeight::Regular,
+                mono: false,
+                wrap: TextWrap::NoWrap,
+                anchor: TextAnchor::Start,
+                layout: empty_text_layout(20.0),
+                underline: false,
+                strikethrough: false,
+                link: None,
+            },
+            DrawOp::GlyphRun {
+                id: "visible-text".into(),
+                rect: Rect::new(0.0, 10.0, 80.0, 20.0),
+                scissor: Some(Rect::new(0.0, 0.0, 100.0, 100.0)),
+                shader: ShaderHandle::Stock(StockShader::Text),
+                color: Color::rgba(255, 255, 255, 255),
+                text: "visible".into(),
+                size: 14.0,
+                line_height: 20.0,
+                family: Default::default(),
+                mono_family: Default::default(),
+                weight: FontWeight::Regular,
+                mono: false,
+                wrap: TextWrap::NoWrap,
+                anchor: TextAnchor::Start,
+                layout: empty_text_layout(20.0),
+                underline: false,
+                strikethrough: false,
+                link: None,
+            },
+        ];
+        let mut text = CountingText::default();
+        let mut timings = PrepareTimings::default();
+        core.prepare_paint(&ops, |_| true, |_| false, &mut text, 1.0, &mut timings);
+
+        assert_eq!(timings.paint_culled_ops, 1);
+        assert_eq!(text.records, 1, "offscreen text must not be shaped");
     }
 
     #[test]

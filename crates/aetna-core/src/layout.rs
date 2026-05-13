@@ -31,7 +31,10 @@
 //! for now; this keeps layout/lint/SVG close enough to glyphon output
 //! without committing to the final text stack.
 
+use std::cell::RefCell;
 use std::sync::Arc;
+
+use rustc_hash::FxHashMap;
 
 use crate::scroll::{ScrollAlignment, ScrollRequest};
 use crate::state::UiState;
@@ -83,6 +86,75 @@ impl std::fmt::Debug for LayoutFn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("LayoutFn(<fn>)")
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LayoutIntrinsicCacheStats {
+    pub hits: u64,
+    pub misses: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LayoutPruneStats {
+    pub subtrees: u64,
+    pub nodes: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct IntrinsicCacheKey {
+    computed_id: String,
+    available_width_bits: Option<u32>,
+}
+
+#[derive(Default)]
+struct IntrinsicCache {
+    measurements: FxHashMap<IntrinsicCacheKey, (f32, f32)>,
+    stats: LayoutIntrinsicCacheStats,
+    prune: LayoutPruneStats,
+}
+
+thread_local! {
+    static INTRINSIC_CACHE: RefCell<Option<IntrinsicCache>> = const { RefCell::new(None) };
+    static LAST_INTRINSIC_CACHE_STATS: RefCell<LayoutIntrinsicCacheStats> =
+        const { RefCell::new(LayoutIntrinsicCacheStats { hits: 0, misses: 0 }) };
+    static LAST_PRUNE_STATS: RefCell<LayoutPruneStats> =
+        const { RefCell::new(LayoutPruneStats { subtrees: 0, nodes: 0 }) };
+}
+
+struct IntrinsicCacheGuard {
+    previous: Option<IntrinsicCache>,
+}
+
+impl Drop for IntrinsicCacheGuard {
+    fn drop(&mut self) {
+        INTRINSIC_CACHE.with(|cell| {
+            cell.replace(self.previous.take());
+        });
+    }
+}
+
+fn with_intrinsic_cache(f: impl FnOnce()) {
+    let previous = INTRINSIC_CACHE.with(|cell| cell.replace(Some(IntrinsicCache::default())));
+    let mut guard = IntrinsicCacheGuard { previous };
+    f();
+    let finished = INTRINSIC_CACHE.with(|cell| cell.replace(guard.previous.take()));
+    if let Some(cache) = finished {
+        LAST_INTRINSIC_CACHE_STATS.with(|stats| {
+            *stats.borrow_mut() = cache.stats;
+        });
+        LAST_PRUNE_STATS.with(|stats| {
+            *stats.borrow_mut() = cache.prune;
+        });
+    }
+    std::mem::forget(guard);
+}
+
+pub fn take_intrinsic_cache_stats() -> LayoutIntrinsicCacheStats {
+    LAST_INTRINSIC_CACHE_STATS.with(|stats| std::mem::take(&mut *stats.borrow_mut()))
+}
+
+pub fn take_prune_stats() -> LayoutPruneStats {
+    LAST_PRUNE_STATS.with(|stats| std::mem::take(&mut *stats.borrow_mut()))
 }
 
 /// Virtualized list state attached to a [`Kind::VirtualList`] node.
@@ -225,22 +297,24 @@ pub fn layout(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
 /// then having any per-frame floating-layer synthesis pass call
 /// [`assign_id_appended`] on its newly pushed layer.
 pub fn layout_post_assign(root: &mut El, ui_state: &mut UiState, viewport: Rect) {
-    {
-        crate::profile_span!("layout::root_setup");
-        ui_state
-            .layout
-            .computed_rects
-            .insert(root.computed_id.clone(), viewport);
-        rebuild_key_index(root, ui_state);
-        // Per-scrollable scratch is rebuilt every layout — entries for
-        // scrollables that disappeared mid-frame must not leave stale
-        // thumb rects behind for hit-test or paint to find.
-        ui_state.scroll.metrics.clear();
-        ui_state.scroll.thumb_rects.clear();
-        ui_state.scroll.thumb_tracks.clear();
-    }
-    crate::profile_span!("layout::children");
-    layout_children(root, viewport, ui_state);
+    with_intrinsic_cache(|| {
+        {
+            crate::profile_span!("layout::root_setup");
+            ui_state
+                .layout
+                .computed_rects
+                .insert(root.computed_id.clone(), viewport);
+            rebuild_key_index(root, ui_state);
+            // Per-scrollable scratch is rebuilt every layout — entries for
+            // scrollables that disappeared mid-frame must not leave stale
+            // thumb rects behind for hit-test or paint to find.
+            ui_state.scroll.metrics.clear();
+            ui_state.scroll.thumb_rects.clear();
+            ui_state.scroll.thumb_tracks.clear();
+        }
+        crate::profile_span!("layout::children");
+        layout_children(root, viewport, ui_state);
+    });
 }
 
 /// Assign `computed_id`s to a child that was just appended to an
@@ -1070,6 +1144,7 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
         } else {
             0.0
         };
+    let scroll_visible = scroll_visible_content_rect(node, inner, vertical, ui_state);
 
     crate::profile_span!("layout::axis::place");
     for (i, (c, (iw, ih))) in node.children.iter_mut().zip(intrinsics).enumerate() {
@@ -1111,10 +1186,84 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
             .layout
             .computed_rects
             .insert(c.computed_id.clone(), c_rect);
-        layout_children(c, c_rect, ui_state);
+        if can_prune_scroll_child(c, c_rect, scroll_visible) {
+            let nodes = zero_descendant_rects(c, c_rect, ui_state);
+            record_pruned_subtree(nodes);
+        } else {
+            layout_children(c, c_rect, ui_state);
+        }
 
         cursor += main_size + node.gap + if i + 1 < n { between_extra } else { 0.0 };
     }
+}
+
+const SCROLL_LAYOUT_PRUNE_OVERSCAN: f32 = 256.0;
+
+fn scroll_visible_content_rect(
+    node: &El,
+    inner: Rect,
+    vertical: bool,
+    ui_state: &UiState,
+) -> Option<Rect> {
+    if !vertical || !node.scrollable || node.pin_end {
+        return None;
+    }
+    let offset = ui_state
+        .scroll
+        .offsets
+        .get(&node.computed_id)
+        .copied()
+        .unwrap_or(0.0)
+        .max(0.0);
+    Some(Rect::new(
+        inner.x,
+        inner.y + offset - SCROLL_LAYOUT_PRUNE_OVERSCAN,
+        inner.w,
+        inner.h + 2.0 * SCROLL_LAYOUT_PRUNE_OVERSCAN,
+    ))
+}
+
+fn can_prune_scroll_child(child: &El, child_rect: Rect, visible: Option<Rect>) -> bool {
+    let Some(visible) = visible else {
+        return false;
+    };
+    child_rect.intersect(visible).is_none() && subtree_is_layout_confined(child)
+}
+
+fn subtree_is_layout_confined(node: &El) -> bool {
+    if node.translate != (0.0, 0.0)
+        || node.scale != 1.0
+        || node.shadow > 0.0
+        || node.paint_overflow != Sides::zero()
+        || node.hit_overflow != Sides::zero()
+        || node.layout_override.is_some()
+        || node.virtual_items.is_some()
+    {
+        return false;
+    }
+    node.children.iter().all(subtree_is_layout_confined)
+}
+
+fn zero_descendant_rects(node: &El, rect: Rect, ui_state: &mut UiState) -> u64 {
+    let mut count = 0;
+    let zero = Rect::new(rect.x, rect.y, 0.0, 0.0);
+    for child in &node.children {
+        ui_state
+            .layout
+            .computed_rects
+            .insert(child.computed_id.clone(), zero);
+        count += 1 + zero_descendant_rects(child, zero, ui_state);
+    }
+    count
+}
+
+fn record_pruned_subtree(nodes: u64) {
+    INTRINSIC_CACHE.with(|cell| {
+        if let Some(cache) = cell.borrow_mut().as_mut() {
+            cache.prune.subtrees += 1;
+            cache.prune.nodes += nodes;
+        }
+    });
 }
 
 enum MainSize {
@@ -1193,6 +1342,56 @@ pub fn intrinsic(c: &El) -> (f32, f32) {
 }
 
 fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
+    let key = intrinsic_cache_key(c, available_width);
+    if let Some(key) = &key
+        && let Some(cached) = INTRINSIC_CACHE.with(|cell| {
+            let mut slot = cell.borrow_mut();
+            let cache = slot.as_mut()?;
+            let cached = cache.measurements.get(key).copied();
+            if cached.is_some() {
+                cache.stats.hits += 1;
+            }
+            cached
+        })
+    {
+        return cached;
+    }
+
+    if key.is_some() {
+        INTRINSIC_CACHE.with(|cell| {
+            if let Some(cache) = cell.borrow_mut().as_mut() {
+                cache.stats.misses += 1;
+            }
+        });
+    }
+
+    let measured = intrinsic_constrained_uncached(c, available_width);
+
+    if let Some(key) = key {
+        INTRINSIC_CACHE.with(|cell| {
+            if let Some(cache) = cell.borrow_mut().as_mut() {
+                cache.measurements.insert(key, measured);
+            }
+        });
+    }
+
+    measured
+}
+
+fn intrinsic_cache_key(c: &El, available_width: Option<f32>) -> Option<IntrinsicCacheKey> {
+    if INTRINSIC_CACHE.with(|cell| cell.borrow().is_none()) {
+        return None;
+    }
+    if c.computed_id.is_empty() {
+        return None;
+    }
+    Some(IntrinsicCacheKey {
+        computed_id: c.computed_id.clone(),
+        available_width_bits: available_width.map(f32::to_bits),
+    })
+}
+
+fn intrinsic_constrained_uncached(c: &El, available_width: Option<f32>) -> (f32, f32) {
     if c.layout_override.is_some() {
         // Custom-layout nodes don't define an intrinsic. Authors must
         // size them with `Fixed` or `Fill` on both axes; the returned
@@ -1257,15 +1456,6 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
         return apply_min(c, w, h);
     }
     if let Some(text) = &c.text {
-        let unwrapped = text_metrics::layout_text_with_family(
-            text,
-            c.font_size,
-            c.font_family,
-            c.font_weight,
-            c.font_mono,
-            TextWrap::NoWrap,
-            None,
-        );
         let content_available = match c.text_wrap {
             TextWrap::NoWrap => None,
             TextWrap::Wrap => available_width
@@ -1286,9 +1476,24 @@ fn intrinsic_constrained(c: &El, available_width: Option<f32>) -> (f32, f32) {
             c.text_wrap,
             content_available,
         );
-        let w = content_available
-            .map(|available| unwrapped.width.min(available) + c.padding.left + c.padding.right)
-            .unwrap_or(layout.width + c.padding.left + c.padding.right);
+        let w = match (content_available, c.width) {
+            (Some(available), Size::Hug) => {
+                let unwrapped = text_metrics::layout_text_with_family(
+                    text,
+                    c.font_size,
+                    c.font_family,
+                    c.font_weight,
+                    c.font_mono,
+                    TextWrap::NoWrap,
+                    None,
+                );
+                unwrapped.width.min(available) + c.padding.left + c.padding.right
+            }
+            (Some(available), Size::Fixed(_) | Size::Fill(_)) => {
+                available + c.padding.left + c.padding.right
+            }
+            (None, _) => layout.width + c.padding.left + c.padding.right,
+        };
         let h = layout.height + c.padding.top + c.padding.bottom;
         return apply_min(c, w, h);
     }
@@ -1471,16 +1676,6 @@ fn inline_paragraph_intrinsic(node: &El, available_width: Option<f32>) -> (f32, 
     let concat = concat_inline_text(&node.children);
     let size = inline_paragraph_size(node);
     let line_height = inline_paragraph_line_height(node);
-    let unwrapped = text_metrics::layout_text_with_line_height_and_family(
-        &concat,
-        size,
-        line_height,
-        node.font_family,
-        FontWeight::Regular,
-        false,
-        TextWrap::NoWrap,
-        None,
-    );
     let content_available = match node.text_wrap {
         TextWrap::NoWrap => None,
         TextWrap::Wrap => available_width
@@ -1500,9 +1695,25 @@ fn inline_paragraph_intrinsic(node: &El, available_width: Option<f32>) -> (f32, 
         node.text_wrap,
         content_available,
     );
-    let w = content_available
-        .map(|av| unwrapped.width.min(av) + node.padding.left + node.padding.right)
-        .unwrap_or(layout.width + node.padding.left + node.padding.right);
+    let w = match (content_available, node.width) {
+        (Some(available), Size::Hug) => {
+            let unwrapped = text_metrics::layout_text_with_line_height_and_family(
+                &concat,
+                size,
+                line_height,
+                node.font_family,
+                FontWeight::Regular,
+                false,
+                TextWrap::NoWrap,
+                None,
+            );
+            unwrapped.width.min(available) + node.padding.left + node.padding.right
+        }
+        (Some(available), Size::Fixed(_) | Size::Fill(_)) => {
+            available + node.padding.left + node.padding.right
+        }
+        (None, _) => layout.width + node.padding.left + node.padding.right,
+    };
     let h = layout.height + node.padding.top + node.padding.bottom;
     apply_min(node, w, h)
 }
@@ -1952,6 +2163,36 @@ mod tests {
                 .unwrap_or(0.0),
             0.0
         );
+    }
+
+    #[test]
+    fn scroll_layout_prunes_far_offscreen_descendants() {
+        let far = column([crate::widgets::text::text("far row body").key("far-text")])
+            .height(Size::Fixed(40.0));
+        let mut root = scroll([
+            column([crate::widgets::text::text("near row body")]).height(Size::Fixed(40.0)),
+            crate::tree::spacer().height(Size::Fixed(400.0)),
+            far,
+        ])
+        .key("list")
+        .height(Size::Fixed(80.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 80.0));
+        let stats = take_prune_stats();
+
+        assert!(
+            stats.subtrees >= 1,
+            "expected at least one far scroll child to be pruned, got {stats:?}"
+        );
+        assert!(
+            stats.nodes >= 1,
+            "expected pruned descendants to be zeroed, got {stats:?}"
+        );
+        let far_text = state
+            .rect_of_key(&root, "far-text")
+            .expect("far text keeps a zero rect while pruned");
+        assert_eq!(far_text.w, 0.0);
+        assert_eq!(far_text.h, 0.0);
     }
 
     #[test]

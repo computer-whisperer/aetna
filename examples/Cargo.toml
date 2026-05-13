@@ -36,6 +36,7 @@ doc = false
 [dependencies]
 aetna-core = { version = "0.3.3", path = "../crates/aetna-core" }
 aetna-fixtures = { version = "0.3.3", path = "../crates/aetna-fixtures" }
+aetna-markdown = { version = "0.3.3", path = "../crates/aetna-markdown" }
 aetna-wgpu = { version = "0.3.3", path = "../crates/aetna-wgpu" }
 aetna-winit-wgpu = { version = "0.3.3", path = "../crates/aetna-winit-wgpu" }
 wgpu = "29"

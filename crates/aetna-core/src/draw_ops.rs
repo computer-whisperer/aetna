@@ -30,6 +30,23 @@ pub fn draw_ops(root: &El, ui_state: &UiState) -> Vec<DrawOp> {
 
 /// Walk the laid-out tree and emit draw ops using a caller-supplied theme.
 pub fn draw_ops_with_theme(root: &El, ui_state: &UiState, theme: &Theme) -> Vec<DrawOp> {
+    let mut stats = DrawOpsStats::default();
+    draw_ops_with_theme_and_stats(root, ui_state, theme, &mut stats)
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DrawOpsStats {
+    pub culled_text_ops: u64,
+}
+
+/// Walk the laid-out tree and emit draw ops, reporting cheap culling
+/// decisions made before expensive text measurement.
+pub fn draw_ops_with_theme_and_stats(
+    root: &El,
+    ui_state: &UiState,
+    theme: &Theme,
+    stats: &mut DrawOpsStats,
+) -> Vec<DrawOp> {
     let mut out = Vec::new();
     push_node(
         root,
@@ -43,6 +60,7 @@ pub fn draw_ops_with_theme(root: &El, ui_state: &UiState, theme: &Theme) -> Vec<
         0.0,
         0.0,
         0.0,
+        stats,
     );
     resolve_palette(&mut out, theme.palette());
     out
@@ -128,6 +146,7 @@ fn push_node(
     inherited_hover_envelope: f32,
     inherited_press_envelope: f32,
     inherited_interaction_envelope: f32,
+    stats: &mut DrawOpsStats,
 ) {
     let computed = ui_state.rect(&n.computed_id);
     let state = ui_state.node_state(&n.computed_id);
@@ -427,87 +446,93 @@ fn push_node(
         // a text node would silently inflate intrinsic measurement only
         // and disappear once `Align::Stretch` flattened the Hug width.
         let glyph_rect = inner_painted_rect.inset(n.padding);
-        let display = match suffix {
-            Some(s) => format!("{text}{s}"),
-            None => text.clone(),
-        };
-        let display = match (n.text_wrap, n.text_max_lines) {
-            (TextWrap::Wrap, Some(max_lines)) => text_metrics::clamp_text_to_lines_with_family(
+        if !rect_visible_in_scissor(glyph_rect, own_scissor) {
+            stats.culled_text_ops += 1;
+        } else {
+            let display = match suffix {
+                Some(s) => format!("{text}{s}"),
+                None => text.clone(),
+            };
+            let display = match (n.text_wrap, n.text_max_lines) {
+                (TextWrap::Wrap, Some(max_lines)) => text_metrics::clamp_text_to_lines_with_family(
+                    &display,
+                    painted_font_size,
+                    n.font_family,
+                    weight,
+                    n.font_mono,
+                    glyph_rect.w,
+                    max_lines,
+                ),
+                _ => display,
+            };
+            let display = match (n.text_wrap, n.text_overflow) {
+                (TextWrap::NoWrap, TextOverflow::Ellipsis) => {
+                    text_metrics::ellipsize_text_with_family(
+                        &display,
+                        painted_font_size,
+                        n.font_family,
+                        weight,
+                        n.font_mono,
+                        glyph_rect.w,
+                    )
+                }
+                _ => display,
+            };
+            let anchor = match n.text_align {
+                TextAlign::Start => TextAnchor::Start,
+                TextAlign::Center => TextAnchor::Middle,
+                TextAlign::End => TextAnchor::End,
+            };
+            let text_color = opaque(text_color.unwrap_or(tokens::FOREGROUND), opacity);
+            let layout = text_metrics::layout_text_with_line_height_and_family(
                 &display,
                 painted_font_size,
+                n.line_height * n.scale,
                 n.font_family,
                 weight,
                 n.font_mono,
-                glyph_rect.w,
-                max_lines,
-            ),
-            _ => display,
-        };
-        let display = match (n.text_wrap, n.text_overflow) {
-            (TextWrap::NoWrap, TextOverflow::Ellipsis) => text_metrics::ellipsize_text_with_family(
+                n.text_wrap,
+                match n.text_wrap {
+                    TextWrap::NoWrap => None,
+                    TextWrap::Wrap => Some(glyph_rect.w),
+                },
+            );
+
+            push_selection_bands_for_text(
+                n,
+                ui_state,
+                out,
+                glyph_rect,
+                own_scissor,
+                opacity,
                 &display,
                 painted_font_size,
-                n.font_family,
+                effective_text_family(n),
                 weight,
-                n.font_mono,
-                glyph_rect.w,
-            ),
-            _ => display,
-        };
-        let anchor = match n.text_align {
-            TextAlign::Start => TextAnchor::Start,
-            TextAlign::Center => TextAnchor::Middle,
-            TextAlign::End => TextAnchor::End,
-        };
-        let text_color = opaque(text_color.unwrap_or(tokens::FOREGROUND), opacity);
-        let layout = text_metrics::layout_text_with_line_height_and_family(
-            &display,
-            painted_font_size,
-            n.line_height * n.scale,
-            n.font_family,
-            weight,
-            n.font_mono,
-            n.text_wrap,
-            match n.text_wrap {
-                TextWrap::NoWrap => None,
-                TextWrap::Wrap => Some(glyph_rect.w),
-            },
-        );
+                n.text_wrap,
+            );
 
-        push_selection_bands_for_text(
-            n,
-            ui_state,
-            out,
-            glyph_rect,
-            own_scissor,
-            opacity,
-            &display,
-            painted_font_size,
-            effective_text_family(n),
-            weight,
-            n.text_wrap,
-        );
-
-        out.push(DrawOp::GlyphRun {
-            id: n.computed_id.clone(),
-            rect: glyph_rect,
-            scissor: own_scissor,
-            shader: ShaderHandle::Stock(StockShader::Text),
-            color: text_color,
-            text: display,
-            size: painted_font_size,
-            line_height: n.line_height * n.scale,
-            family: n.font_family,
-            mono_family: n.mono_font_family,
-            weight,
-            mono: n.font_mono,
-            wrap: n.text_wrap,
-            anchor,
-            layout,
-            underline: n.text_underline,
-            strikethrough: n.text_strikethrough,
-            link: n.text_link.clone(),
-        });
+            out.push(DrawOp::GlyphRun {
+                id: n.computed_id.clone(),
+                rect: glyph_rect,
+                scissor: own_scissor,
+                shader: ShaderHandle::Stock(StockShader::Text),
+                color: text_color,
+                text: display,
+                size: painted_font_size,
+                line_height: n.line_height * n.scale,
+                family: n.font_family,
+                mono_family: n.mono_font_family,
+                weight,
+                mono: n.font_mono,
+                wrap: n.text_wrap,
+                anchor,
+                layout,
+                underline: n.text_underline,
+                strikethrough: n.text_strikethrough,
+                link: n.text_link.clone(),
+            });
+        }
     }
 
     if let Some(source) = &n.icon {
@@ -624,6 +649,10 @@ fn push_node(
     // independently.
     if matches!(n.kind, Kind::Inlines) {
         let glyph_rect = inner_painted_rect.inset(n.padding);
+        if !rect_visible_in_scissor(glyph_rect, own_scissor) {
+            stats.culled_text_ops += 1;
+            return;
+        }
         let inline_size = inline_paragraph_font_size(n) * n.scale;
         let inline_line_height = inline_paragraph_line_height(n) * n.scale;
         if n.children.iter().any(|c| matches!(c.kind, Kind::Math)) {
@@ -707,6 +736,7 @@ fn push_node(
             child_hover_envelope,
             child_press_envelope,
             child_interaction_envelope,
+            stats,
         );
     }
 
@@ -2184,6 +2214,16 @@ fn intersect_scissor(current: Option<Rect>, next: Rect) -> Option<Rect> {
     }
 }
 
+fn rect_visible_in_scissor(rect: Rect, scissor: Option<Rect>) -> bool {
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        return false;
+    }
+    match scissor {
+        Some(clip) => rect.intersect(clip).is_some(),
+        None => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3099,6 +3139,34 @@ mod tests {
             panic!("expected button surface quad");
         };
         assert_eq!(*scissor, Some(Rect::new(0.0, 0.0, 120.0, 32.0)));
+    }
+
+    #[test]
+    fn draw_ops_culls_text_fully_outside_inherited_clip() {
+        let clipped = column([
+            crate::widgets::text::text("visible").key("visible"),
+            crate::tree::spacer().height(Size::Fixed(40.0)),
+            crate::widgets::text::text("offscreen").key("offscreen"),
+        ])
+        .clip()
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(24.0));
+        let mut root = column([clipped]);
+        let mut state = UiState::new();
+        crate::layout::layout(&mut root, &mut state, Rect::new(0.0, 0.0, 240.0, 80.0));
+
+        let mut stats = DrawOpsStats::default();
+        let ops = draw_ops_with_theme_and_stats(&root, &state, &Theme::default(), &mut stats);
+
+        assert_eq!(stats.culled_text_ops, 1);
+        assert!(
+            ops.iter().any(|op| op.id().contains("visible")),
+            "visible text still emits a draw op"
+        );
+        assert!(
+            !ops.iter().any(|op| op.id().contains("offscreen")),
+            "fully clipped text should not reach draw ops"
+        );
     }
 
     #[test]
