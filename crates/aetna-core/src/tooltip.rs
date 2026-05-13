@@ -21,9 +21,9 @@
 //! library already tracks hover targets and animates per-node
 //! envelopes; tooltips are a small natural extension.
 //!
-//! See `docs/LIBRARY_VISION.md` and the floating-layer architecture
-//! note in `TODO.md` for why tooltips are the one runtime-appended
-//! floating layer (modals and popovers stay app-owned).
+//! See `docs/LIBRARY_VISION.md` for why tooltips are the one
+//! runtime-appended floating layer (modals and popovers stay
+//! app-owned).
 
 use std::time::Duration;
 

@@ -20,7 +20,7 @@ impl UiState {
     ///    drag that wanders onto a text region doesn't flicker the
     ///    cursor mid-press.
     /// 2. Else if the pointer is over a text-link run
-    ///    ([`Self::hovered_link`] is `Some`), use [`Cursor::Pointer`].
+    ///    (`hovered_link` is `Some`), use [`Cursor::Pointer`].
     ///    Link runs aren't keyed hit-test targets, so this branch sits
     ///    parallel to the keyed-hover lookup. Beats any
     ///    `.cursor(Cursor::Text)` declared on a containing paragraph

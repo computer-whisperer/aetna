@@ -1,5 +1,5 @@
 //! aetna-vulkano-demo — winit + vulkano harness and demo binaries for
-//! the [`aetna-vulkano`] backend.
+//! the `aetna-vulkano` backend.
 //!
 //! The host owns the event loop, the Vulkan instance/device/queue, the
 //! swapchain, the framebuffers, and the per-frame command buffer. The

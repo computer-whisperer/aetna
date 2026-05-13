@@ -311,7 +311,7 @@ pub fn image(img: impl Into<Image>) -> El {
 /// An app-supplied vector asset. By default Aetna preserves authored
 /// fills, strokes, and gradients through the painted vector path; call
 /// [`El::vector_mask`] when the asset should be treated as a one-colour
-/// coverage mask. Companion to [`crate::tree::icon`] for content that
+/// coverage mask. Companion to [`crate::icon`] for content that
 /// doesn't fit icon conventions: arbitrary-aspect bounding boxes,
 /// programmatic construction each frame. Pairs with
 /// [`crate::vector::PathBuilder`] for ergonomic path construction.

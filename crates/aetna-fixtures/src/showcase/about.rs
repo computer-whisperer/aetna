@@ -89,7 +89,7 @@ pub struct State {
     /// Folded selection for the message text input.
     pub message_selection: Selection,
     /// When true, dispatched toasts use the runtime's default TTL;
-    /// when false they get a long [`PERSISTENT_TTL`] so the user can
+    /// when false they get a long persistent TTL so the user can
     /// inspect them at leisure.
     pub auto_dismiss: bool,
     /// Counter shown in the dispatcher's badge.

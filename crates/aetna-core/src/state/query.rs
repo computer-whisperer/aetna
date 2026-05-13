@@ -34,10 +34,9 @@ impl UiState {
     }
 
     /// The keyed leaf currently under the pointer, or `None` when
-    /// nothing is hovered. Mirrors the data
-    /// [`Self::pointer_event_target`] would resolve, but read-only and
-    /// stable across rebuilds so apps can branch the build output on
-    /// "what is hovered right now."
+    /// nothing is hovered. Mirrors pointer hit-test target data, but
+    /// is read-only and stable across rebuilds so apps can branch the
+    /// build output on "what is hovered right now."
     ///
     /// Returns the *leaf* — the deepest keyed hit-test target. Use
     /// [`Self::is_hovering_within`] for subtree-aware queries

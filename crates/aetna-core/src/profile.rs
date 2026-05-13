@@ -1,6 +1,6 @@
 //! Span-tracing primitives gated behind the `profiling` Cargo feature.
 //!
-//! Off by default. When enabled, every [`profile_span!`] call enters a
+//! Off by default. When enabled, every [`crate::profile_span!`] call enters a
 //! `tracing::trace_span!` whose guard drops on scope exit — so spans
 //! nest exactly the way Rust scopes nest, which is what
 //! `tracing-chrome` / perfetto need to draw a clean flame chart.

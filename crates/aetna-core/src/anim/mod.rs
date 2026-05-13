@@ -61,7 +61,7 @@ impl AnimValue {
     /// channels. The token name is dropped — an in-flight interpolated
     /// rgba doesn't equal any palette token's rgb, so carrying a name
     /// on it would mislead palette resolution. When the animation
-    /// settles, [`step_spring`] / [`step_tween`] assign
+    /// settles, `step_spring` / `step_tween` assign
     /// `self.current = self.target` directly, restoring the target's
     /// token on the final value.
     pub fn from_channels(self, ch: AnimChannels) -> AnimValue {

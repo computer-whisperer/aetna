@@ -1,6 +1,6 @@
 [package]
 name = "aetna-examples"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2024"
 description = "Aetna — interactive examples built from the reusable host and fixture crates"
 license = "MIT OR Apache-2.0"
@@ -8,11 +8,36 @@ publish = false
 
 # Binaries auto-discovered from `src/bin/*.rs`.
 
+[[bin]]
+name = "counter"
+path = "src/bin/counter.rs"
+doc = false
+
+[[bin]]
+name = "icon_gallery"
+path = "src/bin/icon_gallery.rs"
+doc = false
+
+[[bin]]
+name = "icon_gallery_glass"
+path = "src/bin/icon_gallery_glass.rs"
+doc = false
+
+[[bin]]
+name = "icon_gallery_relief"
+path = "src/bin/icon_gallery_relief.rs"
+doc = false
+
+[[bin]]
+name = "showcase"
+path = "src/bin/showcase.rs"
+doc = false
+
 [dependencies]
-aetna-core = { version = "0.3.2", path = "../crates/aetna-core" }
-aetna-fixtures = { version = "0.3.2", path = "../crates/aetna-fixtures" }
-aetna-wgpu = { version = "0.3.2", path = "../crates/aetna-wgpu" }
-aetna-winit-wgpu = { version = "0.3.2", path = "../crates/aetna-winit-wgpu" }
+aetna-core = { version = "0.3.3", path = "../crates/aetna-core" }
+aetna-fixtures = { version = "0.3.3", path = "../crates/aetna-fixtures" }
+aetna-wgpu = { version = "0.3.3", path = "../crates/aetna-wgpu" }
+aetna-winit-wgpu = { version = "0.3.3", path = "../crates/aetna-winit-wgpu" }
 wgpu = "29"
 # Off by default. The `profiling` feature pulls these in and forwards
 # `aetna-winit-wgpu/profiling` (which transitively turns on the wgpu

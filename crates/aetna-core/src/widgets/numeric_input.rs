@@ -5,7 +5,7 @@
 //! renderer-agnostic UI kit we render the spinners explicitly so the
 //! affordance is consistent across backends.
 //!
-//! The app owns the value as a `String` (matching [`text_input`]) so
+//! The app owns the value as a `String` (matching [`crate::widgets::text_input`]) so
 //! mid-edit states like `"1."` aren't clobbered by a parse-and-reformat
 //! round-trip on every keystroke. Parse to a number with
 //! `s.parse::<f64>()` (or `i64`, …) when you actually need the value.
@@ -43,7 +43,7 @@
 //!
 //! - `{key}:dec` — `Click` on the `−` button. Steps the value down.
 //! - `{key}:inc` — `Click` on the `+` button. Steps the value up.
-//! - `{key}:field` — the inner [`text_input`]; routed text edits / IME
+//! - `{key}:field` — the inner [`crate::widgets::text_input`]; routed text edits / IME
 //!   commits / pointer caret moves all flow through this key.
 //!
 //! Spinner clicks parse the current `value`, add or subtract
@@ -188,7 +188,7 @@ pub fn numeric_input(
 /// Spinner clicks parse the current `value`, step by `opts.step`,
 /// clamp to `opts.min`/`opts.max`, and rewrite `value` formatted per
 /// `opts.decimals`. Text edits are forwarded verbatim to
-/// [`text_input::apply_event`] — no parse / reformat cycle, so a
+/// [`crate::widgets::text_input::apply_event`] — no parse / reformat cycle, so a
 /// half-typed `"1."` keeps its cursor position.
 pub fn apply_event(
     value: &mut String,

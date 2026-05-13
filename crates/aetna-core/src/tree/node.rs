@@ -198,8 +198,9 @@ pub struct El {
     pub stroke_width: f32,
     /// Corner radii in logical pixels. Authored as a scalar in the
     /// common case (`.radius(tokens::RADIUS_MD)` works via
-    /// [`Corners::from`]); per-corner shapes use [`Corners::top`],
-    /// [`Corners::bottom`], etc. The painter clamps each corner to
+    /// [`super::geometry::Corners::from`]); per-corner shapes use
+    /// [`super::geometry::Corners::top`],
+    /// [`super::geometry::Corners::bottom`], etc. The painter clamps each corner to
     /// half the shorter side.
     pub radius: super::geometry::Corners,
     pub shadow: f32,
@@ -219,7 +220,7 @@ pub struct El {
     /// This element is a vertical scroll viewport. The layout pass reads
     /// the offset from `UiState`'s scroll-offset side map keyed by
     /// `computed_id`, clamps it to `[0, content_h - viewport_h]`, and
-    /// writes the clamped value back. Set automatically by [`crate::scroll`].
+    /// writes the clamped value back. Set automatically by [`crate::scroll()`].
     pub scrollable: bool,
     /// When set on a [`Kind::Scroll`] container, the runtime tracks the
     /// "stick to bottom" pin used by chat logs and activity feeds: the
@@ -290,7 +291,7 @@ pub struct El {
     /// scrollable and its content overflows the viewport. The thumb
     /// overlays the right edge of the viewport — it does not reflow
     /// children. No effect on non-scrollable nodes. Defaults to
-    /// `false`; the [`crate::scroll`] and [`crate::virtual_list`]
+    /// `false`; the [`crate::scroll()`] and [`crate::virtual_list()`]
     /// constructors flip it on by default. Authors disable with
     /// [`Self::no_scrollbar`].
     pub scrollbar: bool,

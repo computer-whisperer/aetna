@@ -1,4 +1,4 @@
-//! User-selectable theme — drives [`crate::Showcase::theme`] so the
+//! User-selectable theme — drives the showcase's `App::theme` impl so the
 //! showcase renders against the chosen palette without rebuilding state.
 //!
 //! Eight themes total: Aetna's own dark/light pair (= shadcn zinc, the

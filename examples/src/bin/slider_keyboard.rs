@@ -1,6 +1,6 @@
 //! Slider keyboard — the controlled `slider::apply_input` helper.
 //!
-//! A focused [`slider`] receives both `KeyDown` and pointer events;
+//! A focused `slider` receives both `KeyDown` and pointer events;
 //! [`slider::apply_input`] folds either into a normalized value in
 //! one call. Keyboard follows the standard ARIA range pattern:
 //! `ArrowUp` / `ArrowRight` step up by `step`, `ArrowDown` /

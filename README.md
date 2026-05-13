@@ -13,7 +13,7 @@ Two architecture notes live under `docs/` — read these before reviewing. They 
 - **`docs/SHADER_VISION.md`** — the *rendering* layer. Current backend boundaries, paint-stream contract, shader/material model, backdrop-sampling contract, and host-integration split.
 - **`docs/LIBRARY_VISION.md`** — the *application* layer. Current app/widget model, public surfaces an LLM author should see after crates.io packaging, crate layering, controlled-widget policy, and stability questions before serious app ports.
 
-Open work is tracked in [`TODO.md`](TODO.md).
+Current direction and longer-form design notes live under `docs/`.
 
 ## Hero demo
 
@@ -224,6 +224,6 @@ Aetna's rendering thesis is well-defended (liquid glass running on three backend
 
 The popover positioning model is genuinely two-pass. `LayoutCtx::rect_of_key` reads the *current-frame* rect (not the previous frame's), so a popover anchored to a trigger that was just laid out sees the up-to-date position. `anchor_rect`'s viewport-edge auto-flip and secondary-axis clamping have unit-test coverage for both-sides-overflow, exact-edge, and missing-key cases. `dropdown` and `context_menu` are pure compositions of `popover` + `popover_panel` + `menu_item` — no extra runtime wiring.
 
-What remains is whether this shape is the right substrate for a polished native app, not just a Showcase. The first port — `aetna-volume`, a PipeWire control panel — is what tests it, and its findings drive the open work in [`TODO.md`](TODO.md).
+What remains is whether this shape is the right substrate for polished native apps, not just the Showcase fixtures. The first ports — including `aetna-volume`, a PipeWire control panel — are what test it, and their findings feed back into the design notes under `docs/`.
 
 This is a young project. Concrete pushback — including "the symmetry invariant will fail at X, here's why" — is more valuable than incremental polish.
