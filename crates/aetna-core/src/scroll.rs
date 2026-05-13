@@ -9,8 +9,8 @@
 //! and the runtime resolves them with state that's only fully known
 //! mid-frame.
 
-/// Where in the viewport a [`ScrollRequest::ToRow`] should land its
-/// target row.
+/// Where in the viewport a row-targeted [`ScrollRequest`] should land
+/// its target row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScrollAlignment {
     /// Top of the row aligns with the top of the viewport.
@@ -26,12 +26,16 @@ pub enum ScrollAlignment {
 }
 
 /// What the app produces from [`crate::App::drain_scroll_requests`].
-/// Two shapes today:
+/// Three shapes today:
 ///
 /// - [`ScrollRequest::ToRow`] — "scroll the virtual list keyed
 ///   `list_key` so row `row` lands per `align`." Resolved during
 ///   layout of the matching `virtual_list` / `virtual_list_dyn` using
 ///   the live viewport and the row-height cache.
+/// - [`ScrollRequest::ToRowKey`] — same operation, but targets the
+///   virtual-list row by stable row identity instead of current row
+///   index. Prefer this for `virtual_list_dyn` when the app already
+///   has message/thread/commit ids.
 /// - [`ScrollRequest::EnsureVisible`] — "scroll the nearest scroll
 ///   container under the node keyed `container_key` so the content-
 ///   space rect `y..y+h` is visible." Resolved during layout of the
@@ -47,6 +51,13 @@ pub enum ScrollRequest {
     ToRow {
         list_key: String,
         row: usize,
+        align: ScrollAlignment,
+    },
+    /// Bring the row identified by `row_key` in the virtual list keyed
+    /// `list_key` into view per `align`.
+    ToRowKey {
+        list_key: String,
+        row_key: String,
         align: ScrollAlignment,
     },
     /// Ensure the content-space rect at `y..y+h` is visible inside
@@ -69,6 +80,21 @@ impl ScrollRequest {
         ScrollRequest::ToRow {
             list_key: list_key.into(),
             row,
+            align,
+        }
+    }
+
+    /// Construct a [`ScrollRequest::ToRowKey`]. Dynamic virtual lists
+    /// resolve this against the same stable row identities passed to
+    /// [`crate::virtual_list_dyn`].
+    pub fn to_row_key(
+        list_key: impl Into<String>,
+        row_key: impl Into<String>,
+        align: ScrollAlignment,
+    ) -> Self {
+        ScrollRequest::ToRowKey {
+            list_key: list_key.into(),
+            row_key: row_key.into(),
             align,
         }
     }

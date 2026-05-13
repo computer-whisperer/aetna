@@ -264,6 +264,52 @@ fn scroll_request_resolves_against_dynamic_list_with_warm_cache() {
 }
 
 #[test]
+fn scroll_request_resolves_dynamic_list_row_key() {
+    let mut tree = dyn_list_root(50, 50.0, 30.0);
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+    let measured_count = state
+        .scroll
+        .measured_row_heights
+        .get(&tree.computed_id)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let id = tree.computed_id.clone();
+
+    let mut tree2 = dyn_list_root(50, 50.0, 30.0);
+    state.push_scroll_requests(vec![ScrollRequest::to_row_key(
+        "dyn-list",
+        "row-10",
+        ScrollAlignment::Start,
+    )]);
+    layout(&mut tree2, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+    let expected = (measured_count.min(10)) as f32 * 30.0
+        + (10_usize.saturating_sub(measured_count)) as f32 * 50.0;
+    let stored = state.scroll_offset(&id);
+    assert!(
+        (stored - expected).abs() < 0.5,
+        "expected row-key scroll offset {expected}, got {stored}"
+    );
+}
+
+#[test]
+fn scroll_request_unknown_row_key_drops_silently() {
+    let mut tree = dyn_list_root(50, 50.0, 30.0);
+    let mut state = UiState::new();
+    state.push_scroll_requests(vec![ScrollRequest::to_row_key(
+        "dyn-list",
+        "missing-row",
+        ScrollAlignment::Start,
+    )]);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 300.0, 200.0));
+
+    assert!((state.scroll_offset(&tree.computed_id) - 0.0).abs() < 0.5);
+    assert!(state.scroll.pending_requests.is_empty());
+}
+
+#[test]
 fn scroll_request_last_match_wins_when_multiple_target_same_list() {
     let mut tree = fixed_list_root(50, 50.0);
     let mut state = UiState::new();

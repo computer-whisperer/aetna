@@ -562,15 +562,17 @@ fn layout_virtual(node: &mut El, node_rect: Rect, items: VirtualItems, ui_state:
 /// Requests for other lists are left in the queue for sibling lists in
 /// the same layout pass. Anything still queued after layout completes is
 /// dropped by the runtime (see `prepare_layout`).
-fn resolve_scroll_requests<F>(
+fn resolve_scroll_requests<F, K>(
     node: &El,
     inner: Rect,
     count: usize,
     row_extent: F,
+    row_for_key: K,
     ui_state: &mut UiState,
 ) -> bool
 where
     F: Fn(usize) -> (f32, f32),
+    K: Fn(&str) -> Option<usize>,
 {
     if ui_state.scroll.pending_requests.is_empty() {
         return false;
@@ -582,6 +584,7 @@ where
     let (matched, remaining): (Vec<ScrollRequest>, Vec<ScrollRequest>) =
         pending.into_iter().partition(|req| match req {
             ScrollRequest::ToRow { list_key, .. } => list_key == key,
+            ScrollRequest::ToRowKey { list_key, .. } => list_key == key,
             // EnsureVisible isn't a virtual-list-row request; let the
             // non-virtual scroll resolver pick it up downstream.
             ScrollRequest::EnsureVisible { .. } => false,
@@ -590,8 +593,15 @@ where
 
     let mut wrote = false;
     for req in matched {
-        let ScrollRequest::ToRow { row, align, .. } = req else {
-            continue;
+        let (row, align) = match req {
+            ScrollRequest::ToRow { row, align, .. } => (row, align),
+            ScrollRequest::ToRowKey { row_key, align, .. } => {
+                let Some(row) = row_for_key(&row_key) else {
+                    continue;
+                };
+                (row, align)
+            }
+            ScrollRequest::EnsureVisible { .. } => continue,
         };
         if row >= count {
             continue;
@@ -695,6 +705,7 @@ fn layout_virtual_fixed(
         inner,
         count,
         |i| (i as f32 * pitch, row_height),
+        |row_key| row_key.parse::<usize>().ok().filter(|row| *row < count),
         ui_state,
     );
     let offset = write_virtual_scroll_state(node, inner, total_h, ui_state);
@@ -768,6 +779,7 @@ fn layout_virtual_dynamic(
     let has_request = node.key.as_deref().is_some_and(|k| {
         ui_state.scroll.pending_requests.iter().any(|r| match r {
             ScrollRequest::ToRow { list_key, .. } => list_key == k,
+            ScrollRequest::ToRowKey { list_key, .. } => list_key == k,
             ScrollRequest::EnsureVisible { .. } => false,
         })
     });
@@ -783,6 +795,7 @@ fn layout_virtual_dynamic(
                     row_heights[target],
                 )
             },
+            |row_key| row_keys.iter().position(|key| key == row_key),
             ui_state,
         );
     }
