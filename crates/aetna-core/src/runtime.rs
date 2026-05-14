@@ -55,8 +55,8 @@ use web_time::Instant;
 
 use crate::draw_ops::{self, DrawOpsStats};
 use crate::event::{
-    KeyChord, KeyModifiers, Pointer, PointerButton, PointerKind, UiEvent, UiEventKind, UiKey,
-    UiTarget,
+    KeyChord, KeyModifiers, Pointer, PointerButton, PointerId, PointerKind, UiEvent, UiEventKind,
+    UiKey, UiTarget,
 };
 use crate::focus;
 use crate::hit_test;
@@ -350,7 +350,18 @@ impl RunnerCore {
         // same hovered node are visual no-ops here, matching the
         // redraw-debouncing semantics. Always Leave-then-Enter so apps
         // observe the cleared state before the new one.
-        if hover_changed {
+        //
+        // Touch gating: a touchscreen has no resting hover. Without a
+        // press, a stray pointermove (very rare on touch — most
+        // platforms only fire pointermove during contact) should not
+        // synthesize a hover transition. With a press, hover identity
+        // changes during a drag are real and fire normally so widgets
+        // along the drag path can react. `pointer_down` and
+        // `pointer_up` separately stamp the contact-driven enter and
+        // leave for touch.
+        let touch_no_press =
+            matches!(kind, PointerKind::Touch) && self.ui_state.pressed.is_none();
+        if hover_changed && !touch_no_press {
             if let Some(prev) = prev_hover {
                 out.push(UiEvent {
                     key: Some(prev.key.clone()),
@@ -686,6 +697,51 @@ impl RunnerCore {
                 .next_click_count(now, (x, y), hit.as_ref().map(|t| t.node_id.as_str()));
 
         let mut out = Vec::new();
+
+        // Touch contact starts hover for this gesture. Mouse / pen
+        // already track hover continuously through `pointer_moved`,
+        // so this branch is touch-only — without it, a touch tap
+        // would fire `PointerDown` and `Click` with no preceding
+        // `PointerEnter`, and any hover-driven visual envelope on
+        // the target would never advance for the duration of the
+        // contact.
+        if matches!(kind, PointerKind::Touch) {
+            let prev_hover = self.ui_state.hovered.clone();
+            let hover_changed = self.ui_state.set_hovered(hit.clone(), now);
+            if hover_changed {
+                if let Some(prev) = prev_hover {
+                    out.push(UiEvent {
+                        key: Some(prev.key.clone()),
+                        target: Some(prev),
+                        pointer: Some((x, y)),
+                        key_press: None,
+                        text: None,
+                        selection: None,
+                        modifiers,
+                        click_count: 0,
+                        path: None,
+                        pointer_kind: Some(kind),
+                        kind: UiEventKind::PointerLeave,
+                    });
+                }
+                if let Some(new) = hit.clone() {
+                    out.push(UiEvent {
+                        key: Some(new.key.clone()),
+                        target: Some(new),
+                        pointer: Some((x, y)),
+                        key_press: None,
+                        text: None,
+                        selection: None,
+                        modifiers,
+                        click_count: 0,
+                        path: None,
+                        pointer_kind: Some(kind),
+                        kind: UiEventKind::PointerEnter,
+                    });
+                }
+            }
+        }
+
         if let Some(p) = hit.clone() {
             // Caret-blink reset: a press inside the focused widget
             // (e.g., to reposition the caret in an already-focused
@@ -953,6 +1009,31 @@ impl RunnerCore {
                 }
             }
         }
+
+        // Touch contact ends → clear hover. Mouse / pen keep tracking
+        // hover after a release because the pointer is still over
+        // something; a finger lifting off the screen has no analog,
+        // so the hover envelope must wind down. Mirrors the synthetic
+        // `PointerEnter` that `pointer_down` emits for touch.
+        if matches!(kind, PointerKind::Touch)
+            && let Some(prev) = self.ui_state.hovered.clone()
+        {
+            self.ui_state.set_hovered(None, Instant::now());
+            out.push(UiEvent {
+                key: Some(prev.key.clone()),
+                target: Some(prev),
+                pointer: Some((x, y)),
+                key_press: None,
+                text: None,
+                selection: None,
+                modifiers,
+                click_count: 0,
+                path: None,
+                pointer_kind: Some(kind),
+                kind: UiEventKind::PointerLeave,
+            });
+        }
+
         out
     }
 
@@ -2868,6 +2949,118 @@ mod tests {
         assert_eq!(cross.events[0].key.as_deref(), Some("btn"));
         assert_eq!(cross.events[1].key.as_deref(), Some("ti"));
         assert!(cross.needs_redraw);
+    }
+
+    #[test]
+    fn touch_pointer_down_emits_pointer_enter_then_pointer_down() {
+        // A touch tap has no preceding `pointer_moved` (most platforms
+        // only fire pointermove during contact), so `pointer_down`
+        // itself synthesizes the `PointerEnter` that mouse hosts get
+        // for free. Without this, hover-driven button visuals would
+        // never wake up for the duration of the contact.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+        let events = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![UiEventKind::PointerEnter, UiEventKind::PointerDown],
+        );
+        for e in &events {
+            assert_eq!(e.pointer_kind, Some(PointerKind::Touch));
+        }
+        assert_eq!(core.ui_state().hovered_key(), Some("btn"));
+    }
+
+    #[test]
+    fn touch_pointer_up_emits_pointer_leave_after_click() {
+        // Releasing a touch ends the gesture's hover, mirroring the
+        // synthetic enter on `pointer_down`. Mouse / pen leave hover
+        // tracking continuous; touch must wind down explicitly so
+        // hover envelopes don't latch on after release.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+        let _ = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let events = core.pointer_up(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                UiEventKind::PointerUp,
+                UiEventKind::Click,
+                UiEventKind::PointerLeave,
+            ],
+        );
+        assert_eq!(core.ui_state().hovered_key(), None);
+    }
+
+    #[test]
+    fn touch_pointer_moved_without_press_does_not_emit_hover_transitions() {
+        // A touch-modality `pointer_moved` with no active contact
+        // (synthetic, mostly — real touch hardware doesn't fire move
+        // without contact) must not synthesize a hover transition.
+        // Without this guard, an Apple Pencil hovering over the
+        // canvas would still drive button hover visuals without ever
+        // touching, which is the wrong default — pen sets its own
+        // `PointerKind::Pen` so it falls through to mouse semantics.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let mut p = Pointer::moving(btn.x + 4.0, btn.y + 4.0);
+        p.kind = PointerKind::Touch;
+        let moved = core.pointer_moved(p);
+        assert!(
+            moved.events.is_empty(),
+            "touch move without press should not emit hover events, got {:?}",
+            moved.events.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn touch_drag_between_targets_still_emits_hover_transitions() {
+        // Mid-drag identity changes (finger sliding from one keyed
+        // node to another) ARE real hover transitions on touch — the
+        // gating only suppresses move-without-press, not move-with-
+        // press. Widgets along the drag path get the same enter /
+        // leave they would on mouse, in the same order.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let ti = core.rect_of_key("ti").expect("ti rect");
+        let _ = core.pointer_down(Pointer::touch(
+            btn.x + 4.0,
+            btn.y + 4.0,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let mut move_p = Pointer::moving(ti.x + 4.0, ti.y + 4.0);
+        move_p.kind = PointerKind::Touch;
+        let cross = core.pointer_moved(move_p);
+        let kinds: Vec<UiEventKind> = cross.events.iter().map(|e| e.kind).collect();
+        assert!(
+            kinds.contains(&UiEventKind::PointerLeave)
+                && kinds.contains(&UiEventKind::PointerEnter),
+            "touch drag across targets should emit Leave + Enter, got {kinds:?}",
+        );
+        // Drag also fires because the press is still held on btn.
+        assert!(kinds.contains(&UiEventKind::Drag));
     }
 
     #[test]
