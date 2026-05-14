@@ -106,7 +106,7 @@ mod web_entry {
 
     use aetna_core::{
         App, BuildCx, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, Palette, Pointer,
-        PointerButton, Rect, UiEvent, UiEventKind, UiKey, clipboard,
+        PointerButton, PointerId, PointerKind, Rect, UiEvent, UiEventKind, UiKey, clipboard,
         widgets::text_input::{self, ClipboardKind},
     };
     use aetna_wgpu::{PrepareTimings, Runner};
@@ -126,7 +126,7 @@ mod web_entry {
     use wasm_bindgen::prelude::Closure;
     use web_time::{Duration, Instant};
     use winit::application::ApplicationHandler;
-    use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+    use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
     use winit::event_loop::{ActiveEventLoop, EventLoop};
     use winit::keyboard::{Key, NamedKey};
     use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
@@ -139,6 +139,64 @@ mod web_entry {
     /// animations are in flight; for idle UI (no redraws) the log
     /// just stops, which is the right behavior.
     const FRAME_LOG_INTERVAL: u32 = 60;
+
+    /// Pointer event captured by a DOM listener and queued for the
+    /// next frame's dispatch pass. We can't dispatch directly inside
+    /// the closure because the app handle and the renderer live on
+    /// `Host`, which is owned by winit's event loop and only reachable
+    /// through `&mut self` in `window_event`. The queue lets the
+    /// closures stay simple (push + request_redraw) while the
+    /// dispatch path runs with full host state.
+    enum QueuedPointer {
+        Move(Pointer),
+        Down(Pointer),
+        Up(Pointer),
+        Cancel(Pointer),
+        Leave,
+    }
+
+    /// Map `PointerEvent.pointerType` → [`PointerKind`].
+    fn pointer_kind_from_type(s: &str) -> PointerKind {
+        match s {
+            "touch" => PointerKind::Touch,
+            "pen" => PointerKind::Pen,
+            // "mouse", "" or any future / unknown value falls back to
+            // mouse semantics — that's the conservative default for
+            // hover-driven affordances.
+            _ => PointerKind::Mouse,
+        }
+    }
+
+    /// Map `PointerEvent.button` → [`PointerButton`]. `None` for
+    /// buttons Aetna does not route (back, forward, pen eraser).
+    fn pointer_button_from_event(b: i16) -> Option<PointerButton> {
+        match b {
+            0 => Some(PointerButton::Primary),
+            1 => Some(PointerButton::Middle),
+            2 => Some(PointerButton::Secondary),
+            _ => None,
+        }
+    }
+
+    /// Translate a DOM `PointerEvent` to an Aetna [`Pointer`]. Uses
+    /// `offset_x`/`offset_y` because they are already canvas-local
+    /// CSS pixels — the runtime expects logical-pixel coordinates,
+    /// so no DPI division is needed (in contrast to winit's
+    /// physical-pixel `CursorMoved`).
+    fn pointer_from_event(event: &web_sys::PointerEvent, button: PointerButton) -> Pointer {
+        let pressure = event.pressure();
+        Pointer {
+            x: event.offset_x() as f32,
+            y: event.offset_y() as f32,
+            button,
+            kind: pointer_kind_from_type(&event.pointer_type()),
+            id: PointerId(event.pointer_id() as u32),
+            // PointerEvent always returns a value for `pressure`, but
+            // it's `0.0` for non-pressure-sensitive devices (mouse).
+            // `Some(0.0)` would be misleading, so we filter that case.
+            pressure: if pressure > 0.0 { Some(pressure) } else { None },
+        }
+    }
 
     /// Rolling per-frame timing bucket. Three top-level CPU stages
     /// (`build`, `prepare`, `submit`) plus a per-stage breakdown of
@@ -424,6 +482,141 @@ mod web_entry {
         }
     }
 
+    /// Install `pointermove` / `pointerdown` / `pointerup` /
+    /// `pointercancel` / `pointerleave` listeners on `canvas` and
+    /// stash the closures in `out` for the host's lifetime.
+    ///
+    /// Each listener pushes onto the shared queue and requests a
+    /// redraw; the host's `window_event` drains the queue at the top
+    /// of every call. `pointerdown` also calls `setPointerCapture` so
+    /// the pointer keeps reporting to the canvas during a drag even
+    /// when the contact slides off — without this, slider scrubbing
+    /// and text-selection drag stop the moment the finger leaves the
+    /// element.
+    fn install_pointer_listeners(
+        canvas: &web_sys::HtmlCanvasElement,
+        window: &Arc<Window>,
+        pending: &Rc<RefCell<VecDeque<QueuedPointer>>>,
+        out: &mut Vec<Closure<dyn FnMut(web_sys::PointerEvent)>>,
+    ) {
+        // pointermove
+        {
+            let pending = pending.clone();
+            let window = window.clone();
+            let closure: Closure<dyn FnMut(web_sys::PointerEvent)> =
+                Closure::new(move |event: web_sys::PointerEvent| {
+                    let p = pointer_from_event(&event, PointerButton::Primary);
+                    pending.borrow_mut().push_back(QueuedPointer::Move(p));
+                    window.request_redraw();
+                });
+            canvas
+                .add_event_listener_with_callback(
+                    "pointermove",
+                    closure.as_ref().unchecked_ref(),
+                )
+                .expect("add pointermove listener");
+            out.push(closure);
+        }
+
+        // pointerdown
+        {
+            let pending = pending.clone();
+            let window = window.clone();
+            let canvas_for_capture = canvas.clone();
+            let closure: Closure<dyn FnMut(web_sys::PointerEvent)> =
+                Closure::new(move |event: web_sys::PointerEvent| {
+                    let Some(button) = pointer_button_from_event(event.button()) else {
+                        return;
+                    };
+                    let p = pointer_from_event(&event, button);
+                    // Take focus on tap-down so subsequent keydown
+                    // events (soft keyboard, hardware keyboard on
+                    // tablets) reach the canvas. winit's web backend
+                    // would normally do this for compat-mouse events,
+                    // but we no longer route through there.
+                    let _ = canvas_for_capture
+                        .dyn_ref::<web_sys::HtmlElement>()
+                        .and_then(|el| el.focus().ok());
+                    // Keep this pointer captured so a drag that
+                    // slides off the canvas still produces events to
+                    // the runner (essential for touch sliders and
+                    // drag-select).
+                    let _ = canvas_for_capture.set_pointer_capture(event.pointer_id());
+                    pending.borrow_mut().push_back(QueuedPointer::Down(p));
+                    window.request_redraw();
+                });
+            canvas
+                .add_event_listener_with_callback(
+                    "pointerdown",
+                    closure.as_ref().unchecked_ref(),
+                )
+                .expect("add pointerdown listener");
+            out.push(closure);
+        }
+
+        // pointerup
+        {
+            let pending = pending.clone();
+            let window = window.clone();
+            let closure: Closure<dyn FnMut(web_sys::PointerEvent)> =
+                Closure::new(move |event: web_sys::PointerEvent| {
+                    let Some(button) = pointer_button_from_event(event.button()) else {
+                        return;
+                    };
+                    let p = pointer_from_event(&event, button);
+                    pending.borrow_mut().push_back(QueuedPointer::Up(p));
+                    window.request_redraw();
+                });
+            canvas
+                .add_event_listener_with_callback(
+                    "pointerup",
+                    closure.as_ref().unchecked_ref(),
+                )
+                .expect("add pointerup listener");
+            out.push(closure);
+        }
+
+        // pointercancel — fired when the OS / browser steals the
+        // pointer (e.g., a system gesture interrupts a touch). Treat
+        // it like an up so any in-flight press / drag state clears.
+        {
+            let pending = pending.clone();
+            let window = window.clone();
+            let closure: Closure<dyn FnMut(web_sys::PointerEvent)> =
+                Closure::new(move |event: web_sys::PointerEvent| {
+                    let p = pointer_from_event(&event, PointerButton::Primary);
+                    pending.borrow_mut().push_back(QueuedPointer::Cancel(p));
+                    window.request_redraw();
+                });
+            canvas
+                .add_event_listener_with_callback(
+                    "pointercancel",
+                    closure.as_ref().unchecked_ref(),
+                )
+                .expect("add pointercancel listener");
+            out.push(closure);
+        }
+
+        // pointerleave — pointer left the canvas. Mirrors winit's
+        // CursorLeft on native; clears hover state.
+        {
+            let pending = pending.clone();
+            let window = window.clone();
+            let closure: Closure<dyn FnMut(web_sys::PointerEvent)> =
+                Closure::new(move |_event: web_sys::PointerEvent| {
+                    pending.borrow_mut().push_back(QueuedPointer::Leave);
+                    window.request_redraw();
+                });
+            canvas
+                .add_event_listener_with_callback(
+                    "pointerleave",
+                    closure.as_ref().unchecked_ref(),
+                )
+                .expect("add pointerleave listener");
+            out.push(closure);
+        }
+    }
+
     /// Mirrors the native winit + wgpu host shape, but with browser
     /// surface init (async via wasm-bindgen-futures rather than
     /// pollster). Kept inline here so `aetna-winit-wgpu` stays free of
@@ -505,6 +698,15 @@ mod web_entry {
         /// The observer itself; held alongside the closure so its
         /// JS-side observation outlives this frame.
         _resize_observer: Option<web_sys::ResizeObserver>,
+        /// DOM pointer events captured by the listeners installed in
+        /// `resumed()`. Drained at the top of every `window_event`
+        /// call so dispatch into the runner and app uses the same
+        /// `&mut self` path the rest of the host does.
+        pending_pointer: Rc<RefCell<VecDeque<QueuedPointer>>>,
+        /// Held for drop side-effects: the JS callbacks for each of
+        /// pointermove / pointerdown / pointerup / pointercancel /
+        /// pointerleave on the canvas.
+        _pointer_closures: Vec<Closure<dyn FnMut(web_sys::PointerEvent)>>,
     }
 
     struct Gfx {
@@ -576,7 +778,83 @@ mod web_entry {
                 _keydown_closure: None,
                 _resize_closure: None,
                 _resize_observer: None,
+                pending_pointer: Rc::new(RefCell::new(VecDeque::new())),
+                _pointer_closures: Vec::new(),
             }
+        }
+
+        /// Drain DOM PointerEvents captured by the listeners since the
+        /// last `window_event` call and dispatch them through the
+        /// runner + app the same way native winit pointer events do.
+        ///
+        /// Returns `true` when at least one event triggered a redraw
+        /// — the host uses this to set `next_trigger` for the next
+        /// frame's diagnostics.
+        fn drain_pending_pointer(&mut self, gfx: &mut Gfx) -> bool {
+            let queue: Vec<QueuedPointer> =
+                self.pending_pointer.borrow_mut().drain(..).collect();
+            if queue.is_empty() {
+                return false;
+            }
+            let mut redraw = false;
+            for queued in queue {
+                match queued {
+                    QueuedPointer::Move(p) => {
+                        self.last_pointer = Some((p.x, p.y));
+                        let moved = gfx.renderer.pointer_moved(p);
+                        for event in moved.events {
+                            dispatch_app_event(
+                                &mut self.app,
+                                event,
+                                &gfx.renderer,
+                                &mut self.primary_selection,
+                            );
+                        }
+                        if moved.needs_redraw {
+                            redraw = true;
+                        }
+                    }
+                    QueuedPointer::Down(p) => {
+                        self.last_pointer = Some((p.x, p.y));
+                        for event in gfx.renderer.pointer_down(p) {
+                            dispatch_app_event(
+                                &mut self.app,
+                                event,
+                                &gfx.renderer,
+                                &mut self.primary_selection,
+                            );
+                        }
+                        redraw = true;
+                    }
+                    QueuedPointer::Up(p) | QueuedPointer::Cancel(p) => {
+                        self.last_pointer = Some((p.x, p.y));
+                        for event in gfx.renderer.pointer_up(p) {
+                            let event =
+                                attach_primary_selection_text(event, &self.primary_selection);
+                            dispatch_app_event(
+                                &mut self.app,
+                                event,
+                                &gfx.renderer,
+                                &mut self.primary_selection,
+                            );
+                        }
+                        redraw = true;
+                    }
+                    QueuedPointer::Leave => {
+                        self.last_pointer = None;
+                        for event in gfx.renderer.pointer_left() {
+                            dispatch_app_event(
+                                &mut self.app,
+                                event,
+                                &gfx.renderer,
+                                &mut self.primary_selection,
+                            );
+                        }
+                        redraw = true;
+                    }
+                }
+            }
+            redraw
         }
     }
 
@@ -724,6 +1002,36 @@ mod web_entry {
                 )
                 .expect("add keydown listener");
             self._keydown_closure = Some(keydown_closure);
+
+            // Tell the browser the canvas owns all touch input —
+            // without this, `touch-action: auto` (the default) makes
+            // touch-drag pan/zoom the page before any PointerEvent
+            // ever fires, so the runtime sees nothing. Setting it on
+            // the element matches what touch-first canvas apps
+            // (drawing tools, games) ship.
+            if let Some(style) = canvas.dyn_ref::<web_sys::HtmlElement>().map(|e| e.style()) {
+                let _ = style.set_property("touch-action", "none");
+            }
+
+            // Bind DOM PointerEvent directly. winit on the browser
+            // collapses touch and pen to mouse before forwarding, so
+            // routing through `WindowEvent::MouseInput` would lose
+            // the modality, the per-pointer ID, and pressure — the
+            // exact information the runtime needs to specialize for
+            // touch. Each listener pushes onto `pending_pointer` and
+            // requests a redraw; the next `window_event` call drains
+            // the queue and dispatches into the runner + app with
+            // full host state. The compatibility mouse events winit
+            // would otherwise translate are ignored further down by
+            // this file deliberately not handling
+            // `WindowEvent::MouseInput` / `CursorMoved` /
+            // `CursorLeft` on web.
+            install_pointer_listeners(
+                &canvas,
+                &window,
+                &self.pending_pointer,
+                &mut self._pointer_closures,
+            );
 
             // Allow both browser backends. wgpu's synchronous
             // Instance::new() can't safely decide this: if
@@ -985,13 +1293,27 @@ mod web_entry {
             _id: WindowId,
             event: WindowEvent,
         ) {
-            let mut gfx_borrow = self.gfx.borrow_mut();
+            // Clone the `Rc` first so the `RefMut` we get from
+            // `borrow_mut` is tied to the cloned cell rather than
+            // through `&self.gfx` — that lets `drain_pending_pointer`
+            // re-borrow `self` mutably while `gfx_borrow` is still
+            // live.
+            let gfx_cell = self.gfx.clone();
+            let mut gfx_borrow = gfx_cell.borrow_mut();
             let Some(gfx) = gfx_borrow.as_mut() else {
                 // Async setup hasn't finished; drop the event. The
                 // post-setup `request_redraw` will trigger a fresh
                 // RedrawRequested once we're ready.
                 return;
             };
+            // Drain DOM PointerEvent listeners before processing the
+            // winit event. The closures pushed onto
+            // `pending_pointer` and called `request_redraw`, which
+            // is what brought us here — handle the captured input
+            // first so RedrawRequested sees the post-event state.
+            if self.drain_pending_pointer(gfx) {
+                self.next_trigger = FrameTrigger::Pointer;
+            }
             let scale = gfx.window.scale_factor() as f32;
 
             match event {
@@ -1018,38 +1340,15 @@ mod web_entry {
                     gfx.window.request_redraw();
                 }
 
-                WindowEvent::CursorMoved { position, .. } => {
-                    let lx = position.x as f32 / scale;
-                    let ly = position.y as f32 / scale;
-                    self.last_pointer = Some((lx, ly));
-                    let moved = gfx.renderer.pointer_moved(Pointer::moving(lx, ly));
-                    for event in moved.events {
-                        dispatch_app_event(
-                            &mut self.app,
-                            event,
-                            &gfx.renderer,
-                            &mut self.primary_selection,
-                        );
-                    }
-                    if moved.needs_redraw {
-                        self.next_trigger = FrameTrigger::Pointer;
-                        gfx.window.request_redraw();
-                    }
-                }
-
-                WindowEvent::CursorLeft { .. } => {
-                    self.last_pointer = None;
-                    for event in gfx.renderer.pointer_left() {
-                        dispatch_app_event(
-                            &mut self.app,
-                            event,
-                            &gfx.renderer,
-                            &mut self.primary_selection,
-                        );
-                    }
-                    self.next_trigger = FrameTrigger::Pointer;
-                    gfx.window.request_redraw();
-                }
+                // Pointer input on web flows through DOM PointerEvent
+                // listeners installed in `resumed()`. winit's
+                // CursorMoved / CursorLeft / MouseInput on the web
+                // backend collapse touch and pen to mouse before
+                // forwarding, so handling them here would either
+                // double-route (the DOM listener already saw them)
+                // or strip the modality. They're intentionally
+                // ignored — the drain at the top of window_event
+                // dispatches everything the closures captured.
 
                 // Browser drag/drop and clipboard-image plumbing rides
                 // the HTML File API rather than winit (which doesn't
@@ -1098,43 +1397,6 @@ mod web_entry {
                     }
                     self.next_trigger = FrameTrigger::Pointer;
                     gfx.window.request_redraw();
-                }
-
-                WindowEvent::MouseInput { state, button, .. } => {
-                    let Some(button) = pointer_button(button) else {
-                        return;
-                    };
-                    let Some((lx, ly)) = self.last_pointer else {
-                        return;
-                    };
-                    match state {
-                        ElementState::Pressed => {
-                            for event in gfx.renderer.pointer_down(Pointer::mouse(lx, ly, button)) {
-                                dispatch_app_event(
-                                    &mut self.app,
-                                    event,
-                                    &gfx.renderer,
-                                    &mut self.primary_selection,
-                                );
-                            }
-                            self.next_trigger = FrameTrigger::Pointer;
-                            gfx.window.request_redraw();
-                        }
-                        ElementState::Released => {
-                            for event in gfx.renderer.pointer_up(Pointer::mouse(lx, ly, button)) {
-                                let event =
-                                    attach_primary_selection_text(event, &self.primary_selection);
-                                dispatch_app_event(
-                                    &mut self.app,
-                                    event,
-                                    &gfx.renderer,
-                                    &mut self.primary_selection,
-                                );
-                            }
-                            self.next_trigger = FrameTrigger::Pointer;
-                            gfx.window.request_redraw();
-                        }
-                    }
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -1462,15 +1724,6 @@ mod web_entry {
             Key::Named(NamedKey::PageDown) => Some(UiKey::PageDown),
             Key::Character(s) => Some(UiKey::Character(s.to_string())),
             Key::Named(named) => Some(UiKey::Other(format!("{named:?}"))),
-            _ => None,
-        }
-    }
-
-    fn pointer_button(b: MouseButton) -> Option<PointerButton> {
-        match b {
-            MouseButton::Left => Some(PointerButton::Primary),
-            MouseButton::Right => Some(PointerButton::Secondary),
-            MouseButton::Middle => Some(PointerButton::Middle),
             _ => None,
         }
     }

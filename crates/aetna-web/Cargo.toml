@@ -47,14 +47,22 @@ web-time = "1"
 web-sys = { version = "0.3", features = [
     "Clipboard",
     "ClipboardEvent",
+    "CssStyleDeclaration",
     "DataTransfer",
     "Document",
     "Element",
     "Event",
     "EventTarget",
     "HtmlCanvasElement",
+    "HtmlElement",
     "KeyboardEvent",
+    "MouseEvent",
     "Navigator",
+    # PointerEvent is the unified mouse / touch / pen input surface.
+    # The web host binds it directly so a touch tap arrives at the
+    # runtime tagged as `PointerKind::Touch` rather than collapsed
+    # to a mouse event by winit's compatibility layer.
+    "PointerEvent",
     # ResizeObserver re-syncs the canvas backing buffer to its CSS
     # box size whenever the layout changes (window resize, devtools
     # toggle, css media-query crossing, etc). Without this the
