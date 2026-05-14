@@ -197,17 +197,18 @@ impl ShaderBinding {
 /// WGSL source for stock shaders. Backend crates compile these into
 /// pipelines; the source lives here so the asset shipping is centralised.
 pub mod stock_wgsl {
-    pub const ROUNDED_RECT: &str = include_str!("../shaders/rounded_rect.wgsl");
-    pub const TEXT: &str = include_str!("../shaders/text.wgsl");
-    pub const TEXT_MSDF: &str = include_str!("../shaders/text_msdf.wgsl");
-    pub const TEXT_HIGHLIGHT: &str = include_str!("../shaders/text_highlight.wgsl");
-    pub const ICON_LINE: &str = include_str!("../shaders/icon_line.wgsl");
-    pub const VECTOR: &str = include_str!("../shaders/vector.wgsl");
-    pub const VECTOR_RELIEF: &str = include_str!("../shaders/vector_relief.wgsl");
-    pub const VECTOR_GLASS: &str = include_str!("../shaders/vector_glass.wgsl");
-    pub const IMAGE: &str = include_str!("../shaders/image.wgsl");
-    pub const SURFACE: &str = include_str!("../shaders/surface.wgsl");
-    pub const SPINNER: &str = include_str!("../shaders/spinner.wgsl");
-    pub const SKELETON: &str = include_str!("../shaders/skeleton.wgsl");
-    pub const PROGRESS_INDETERMINATE: &str = include_str!("../shaders/progress_indeterminate.wgsl");
+    pub const ROUNDED_RECT: &str = include_str!("../../shaders/rounded_rect.wgsl");
+    pub const TEXT: &str = include_str!("../../shaders/text.wgsl");
+    pub const TEXT_MSDF: &str = include_str!("../../shaders/text_msdf.wgsl");
+    pub const TEXT_HIGHLIGHT: &str = include_str!("../../shaders/text_highlight.wgsl");
+    pub const ICON_LINE: &str = include_str!("../../shaders/icon_line.wgsl");
+    pub const VECTOR: &str = include_str!("../../shaders/vector.wgsl");
+    pub const VECTOR_RELIEF: &str = include_str!("../../shaders/vector_relief.wgsl");
+    pub const VECTOR_GLASS: &str = include_str!("../../shaders/vector_glass.wgsl");
+    pub const IMAGE: &str = include_str!("../../shaders/image.wgsl");
+    pub const SURFACE: &str = include_str!("../../shaders/surface.wgsl");
+    pub const SPINNER: &str = include_str!("../../shaders/spinner.wgsl");
+    pub const SKELETON: &str = include_str!("../../shaders/skeleton.wgsl");
+    pub const PROGRESS_INDETERMINATE: &str =
+        include_str!("../../shaders/progress_indeterminate.wgsl");
 }

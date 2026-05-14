@@ -16,12 +16,23 @@
 //! The one paint concern this module *doesn't* own is `set_scissor` —
 //! that one needs the backend-specific encoder type, so each backend
 //! keeps a thin `set_scissor` of its own.
+//!
+//! Sibling modules:
+//! - [`ir`] — the backend-neutral [`DrawOp`] enum the El tree resolves into.
+//! - [`draw_ops`] — the producer pass that walks the tree + state and emits `DrawOp`s.
+//! - [`shader`] — `ShaderHandle`, `StockShader`, uniform-block types.
+//! - [`surface`] — `AppTexture` / surface-format types for host-owned textures.
+
+pub mod draw_ops;
+pub mod ir;
+pub mod shader;
+pub mod surface;
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
 use crate::tree::{Color, Rect};
 use crate::vector::IconMaterial;
+use shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
 
 /// One instance of a rect-shaped shader. Layout is shared between
 /// `stock::rounded_rect` and any custom shader registered via the host's

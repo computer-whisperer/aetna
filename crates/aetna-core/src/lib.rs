@@ -42,27 +42,31 @@ pub mod anim;
 pub mod bundle;
 pub mod clipboard;
 pub mod cursor;
-pub mod draw_ops;
 pub mod event;
 pub mod focus;
 pub mod hit_test;
 pub mod icons;
 pub mod image;
-pub mod ir;
 pub mod layout;
 pub mod math;
 pub mod metrics;
 #[doc(hidden)]
 pub mod paint;
+// Back-compat re-exports of paint submodules at the crate root. These
+// modules (draw_ops / ir / shader / surface) are referenced from ~85
+// sites across this crate and downstream renderers / examples; the
+// paint-pipeline regrouping shouldn't break those imports.
+pub use paint::draw_ops;
+pub use paint::ir;
+pub use paint::shader;
+pub use paint::surface;
 pub mod prelude;
 pub mod profile;
 #[doc(hidden)]
 pub mod runtime;
 pub mod scroll;
 pub mod selection;
-pub mod shader;
 pub mod state;
-pub mod surface;
 pub mod text;
 pub mod theme;
 // Back-compat re-exports of theme submodules at the crate root, since
