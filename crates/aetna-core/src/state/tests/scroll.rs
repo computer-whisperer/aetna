@@ -119,6 +119,44 @@ fn pointer_wheel_bubbles_when_deepest_scrollable_is_at_directional_edge() {
     assert!((state.scroll_offset(&tree.computed_id) - 30.0).abs() < 0.5);
 }
 
+#[test]
+fn pointer_wheel_does_not_bubble_past_block_pointer_barrier() {
+    // Page scroll behind a dialog. The dialog content carries
+    // `block_pointer` (as `dialog_content` does). When the inner
+    // scroll inside the dialog is exhausted, the wheel must NOT
+    // bubble out to the page scroll underneath.
+    let mut tree = scroll([
+        button("page-row").key("page-row").height(Size::Fixed(200.0)),
+        column([scroll([button("inner-row")
+            .key("inner-row")
+            .height(Size::Fixed(40.0))])
+        .key("dialog-scroll")
+        .height(Size::Fixed(80.0))])
+        .block_pointer()
+        .width(Size::Fixed(200.0))
+        .height(Size::Fixed(100.0)),
+    ])
+    .key("page")
+    .height(Size::Fixed(160.0));
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 160.0));
+
+    let inner_rect = find_rect(&tree, &state, "inner-row").expect("inner row rect");
+    let routed = state.pointer_wheel(&tree, (inner_rect.center_x(), inner_rect.center_y()), 30.0);
+
+    let page_id = tree.computed_id.clone();
+    let dialog_id = find_id_for_kind(&tree, "dialog-scroll").expect("dialog scroll id");
+    assert!(
+        !routed,
+        "wheel must be absorbed by the block_pointer barrier when nothing inside the dialog can scroll"
+    );
+    assert!((state.scroll_offset(&dialog_id) - 0.0).abs() < 0.5);
+    assert!(
+        (state.scroll_offset(&page_id) - 0.0).abs() < 0.5,
+        "page scroll behind the dialog must not move"
+    );
+}
+
 fn fixed_list_root(count: usize, row_height: f32) -> El {
     virtual_list(count, row_height, |i| {
         crate::widgets::text::text(format!("r{i}"))

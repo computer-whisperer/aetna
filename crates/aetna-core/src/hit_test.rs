@@ -704,6 +704,11 @@ fn selectable_rec<'a>(
 /// to innermost. Wheel routing can then try the deepest target first
 /// and bubble outward when that target cannot scroll in the requested
 /// direction.
+///
+/// `block_pointer` subtrees that contain the point isolate scroll
+/// routing — scrollables outside such a subtree are dropped, so a
+/// dialog's scroll doesn't bubble out to the page underneath when it
+/// hits an edge.
 pub(crate) fn scroll_targets_at(root: &El, ui_state: &UiState, point: (f32, f32)) -> Vec<String> {
     let mut hits = Vec::new();
     scroll_target_rec(root, ui_state, point, None, (0.0, 0.0), &mut hits);
@@ -730,10 +735,18 @@ fn scroll_target_rec(
     let computed = ui_state.rect(&node.computed_id);
     let translated_rect = translated(computed, total_translate);
     let painted_rect = scaled_around_center(translated_rect, node.scale);
+    let contains_point = painted_rect.contains(point.0, point.1);
+    // A `block_pointer` node containing the point is a scroll-routing
+    // barrier: anything collected from outside this subtree (pre-order,
+    // so anything already in `out`) must not consume wheel events that
+    // bubble past the inner scrollables here.
+    if node.block_pointer && contains_point {
+        out.clear();
+    }
     // Self counts as a scroll target only if its painted rect contains
     // the point — but we still recurse into children regardless, since
     // a child can paint outside its parent (translate/scale).
-    if node.scrollable && painted_rect.contains(point.0, point.1) {
+    if node.scrollable && contains_point {
         out.push(node.computed_id.clone());
     }
     let child_clip = if node.clip {
