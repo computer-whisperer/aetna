@@ -700,13 +700,14 @@ fn selectable_rec<'a>(
     }
 }
 
-/// Return the `computed_id` of the deepest scrollable container whose
-/// laid-out rect contains `point`, respecting clipping ancestors.
-/// Used to route wheel events.
-pub(crate) fn scroll_target_at(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<String> {
-    let mut hit = None;
-    scroll_target_rec(root, ui_state, point, None, (0.0, 0.0), &mut hit);
-    hit
+/// Return scrollable containers under `point`, ordered from outermost
+/// to innermost. Wheel routing can then try the deepest target first
+/// and bubble outward when that target cannot scroll in the requested
+/// direction.
+pub(crate) fn scroll_targets_at(root: &El, ui_state: &UiState, point: (f32, f32)) -> Vec<String> {
+    let mut hits = Vec::new();
+    scroll_target_rec(root, ui_state, point, None, (0.0, 0.0), &mut hits);
+    hits
 }
 
 fn scroll_target_rec(
@@ -715,7 +716,7 @@ fn scroll_target_rec(
     point: (f32, f32),
     inherited_clip: Option<Rect>,
     inherited_translate: (f32, f32),
-    out: &mut Option<String>,
+    out: &mut Vec<String>,
 ) {
     if let Some(clip) = inherited_clip
         && !clip.contains(point.0, point.1)
@@ -733,7 +734,7 @@ fn scroll_target_rec(
     // the point — but we still recurse into children regardless, since
     // a child can paint outside its parent (translate/scale).
     if node.scrollable && painted_rect.contains(point.0, point.1) {
-        *out = Some(node.computed_id.clone());
+        out.push(node.computed_id.clone());
     }
     let child_clip = if node.clip {
         match inherited_clip {

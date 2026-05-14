@@ -1,9 +1,11 @@
 //! Scroll offset, scrollbar, and wheel helpers for [`UiState`](super::UiState).
 
-use crate::hit_test::scroll_target_at;
+use crate::hit_test::scroll_targets_at;
 use crate::tree::{El, Rect};
 
 use super::UiState;
+
+const WHEEL_EPSILON: f32 = 0.5;
 
 impl UiState {
     /// Seed or read the persistent scroll offset for `id`. Use this to
@@ -73,14 +75,47 @@ impl UiState {
     }
 
     /// Increment the scroll offset for the deepest scrollable container
-    /// containing `point`. Returns `true` if any scrollable was hit and
-    /// updated (host can use this to decide whether to request a redraw).
+    /// under `point` that can move in `dy`'s direction. If the deepest
+    /// container is already at that edge (or has no overflow), the wheel
+    /// bubbles to the nearest scrollable ancestor that can move.
+    ///
+    /// Returns `true` if any scrollable consumed the wheel and updated
+    /// its stored offset. Hosts use this to decide whether to request a
+    /// redraw.
     pub fn pointer_wheel(&mut self, root: &El, point: (f32, f32), dy: f32) -> bool {
-        if let Some(id) = scroll_target_at(root, self, point) {
-            *self.scroll.offsets.entry(id).or_insert(0.0) += dy;
-            true
-        } else {
-            false
+        if dy.abs() <= f32::EPSILON {
+            return false;
         }
+        let targets = scroll_targets_at(root, self, point);
+        for id in targets.into_iter().rev() {
+            let Some(metrics) = self.scroll.metrics.get(&id).copied() else {
+                continue;
+            };
+            if metrics.max_offset <= WHEEL_EPSILON {
+                continue;
+            }
+            let current = self
+                .scroll
+                .offsets
+                .get(&id)
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(0.0, metrics.max_offset);
+            let can_scroll = if dy > 0.0 {
+                current < metrics.max_offset - WHEEL_EPSILON
+            } else {
+                current > WHEEL_EPSILON
+            };
+            if !can_scroll {
+                continue;
+            }
+            let next = (current + dy).clamp(0.0, metrics.max_offset);
+            if (next - current).abs() <= f32::EPSILON {
+                continue;
+            }
+            self.scroll.offsets.insert(id, next);
+            return true;
+        }
+        false
     }
 }

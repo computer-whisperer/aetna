@@ -34,7 +34,7 @@ use crate::event::{KeyModifiers, PointerButton, UiTarget};
 
 pub use types::{AnimationMode, EnvelopeKind, ScrollMetrics, ThumbDrag, WidgetState};
 pub(crate) use types::{
-    SelectionDrag, SelectionDragGranularity, VirtualAnchor, caret_blink_alpha_for,
+    ScrollAnchor, SelectionDrag, SelectionDragGranularity, VirtualAnchor, caret_blink_alpha_for,
 };
 
 use types::{

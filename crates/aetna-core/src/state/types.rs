@@ -360,6 +360,14 @@ pub(crate) struct VirtualAnchor {
     pub resolved_offset: f32,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ScrollAnchor {
+    pub node_id: String,
+    pub rect_fraction: f32,
+    pub viewport_y: f32,
+    pub resolved_offset: f32,
+}
+
 /// Runtime state for scrollable nodes. Kept as one subsystem inside
 /// [`UiState`](super::UiState) so layout, paint, and input code do not
 /// each grow their own loose side maps.
@@ -404,6 +412,12 @@ pub(crate) struct ScrollState {
     /// anchor resolves the current frame; layout then rebases this to
     /// a row point that is visible in the current viewport.
     pub(crate) virtual_anchors: FxHashMap<String, VirtualAnchor>,
+    /// Plain scroll-container anchor per scrollable. The previous
+    /// frame's visible descendant point resolves the current frame
+    /// after content reflows, then layout rebases it to a still-visible
+    /// descendant point. This preserves focus during horizontal
+    /// resizes that change wrapped content height.
+    pub(crate) scroll_anchors: FxHashMap<String, ScrollAnchor>,
     /// Programmatic scroll requests buffered between frames. Hosts
     /// call [`UiState::push_scroll_requests`] once per build with the
     /// requests produced by [`crate::event::App::drain_scroll_requests`];

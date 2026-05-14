@@ -37,7 +37,7 @@ use std::sync::Arc;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::scroll::{ScrollAlignment, ScrollRequest};
-use crate::state::{UiState, VirtualAnchor};
+use crate::state::{ScrollAnchor, UiState, VirtualAnchor};
 use crate::text::metrics as text_metrics;
 use crate::tree::*;
 
@@ -1259,6 +1259,7 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
             .scroll
             .offsets
             .insert(node.computed_id.clone(), 0.0);
+        ui_state.scroll.scroll_anchors.remove(&node.computed_id);
         ui_state.scroll.metrics.insert(
             node.computed_id.clone(),
             crate::state::ScrollMetrics {
@@ -1284,7 +1285,7 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
     // keyed `container_key` is an ancestor of this scroll —
     // `key_index` resolves the key to a computed_id and a
     // prefix-match on `node.computed_id` tells us we're inside.
-    resolve_ensure_visible_for_scroll(node, inner, content_h, ui_state);
+    let request_wrote = resolve_ensure_visible_for_scroll(node, inner, content_h, ui_state);
 
     let stored = ui_state
         .scroll
@@ -1293,6 +1294,18 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
         .copied()
         .unwrap_or(0.0);
     let stored = resolve_pin_end(node, stored, max_offset, ui_state);
+    let pin_active = node.pin_end
+        && ui_state
+            .scroll
+            .pin_active
+            .get(&node.computed_id)
+            .copied()
+            .unwrap_or(false);
+    let stored = if pin_active || request_wrote {
+        stored
+    } else {
+        scroll_anchor_offset(node, inner, stored, ui_state).unwrap_or(stored)
+    };
     let clamped = stored.clamp(0.0, max_offset);
     if clamped > 0.0 {
         for c in &node.children {
@@ -1313,6 +1326,108 @@ fn apply_scroll_offset(node: &El, node_rect: Rect, ui_state: &mut UiState) {
     );
 
     write_thumb_rect(node, inner, content_h, max_offset, clamped, ui_state);
+
+    if let Some(anchor) = choose_scroll_anchor(node, inner, clamped, ui_state) {
+        ui_state
+            .scroll
+            .scroll_anchors
+            .insert(node.computed_id.clone(), anchor);
+    } else {
+        ui_state.scroll.scroll_anchors.remove(&node.computed_id);
+    }
+}
+
+fn scroll_anchor_offset(node: &El, inner: Rect, stored: f32, ui_state: &UiState) -> Option<f32> {
+    let anchor = ui_state.scroll.scroll_anchors.get(&node.computed_id)?;
+    let rect = ui_state.layout.computed_rects.get(&anchor.node_id)?;
+    if rect.h <= 0.0 {
+        return None;
+    }
+    let rect_point = rect.h * anchor.rect_fraction.clamp(0.0, 1.0);
+    let scroll_delta = stored - anchor.resolved_offset;
+    let viewport_y = anchor.viewport_y - scroll_delta;
+    Some(rect.y - inner.y + rect_point - viewport_y)
+}
+
+fn choose_scroll_anchor(
+    node: &El,
+    inner: Rect,
+    offset: f32,
+    ui_state: &UiState,
+) -> Option<ScrollAnchor> {
+    if inner.h <= 0.0 {
+        return None;
+    }
+    let target_y = inner.y + inner.h * 0.25;
+    let mut best = None;
+    for child in &node.children {
+        choose_scroll_anchor_in_subtree(child, inner, target_y, 1, ui_state, &mut best);
+    }
+    let candidate = best?;
+    let anchor_y = target_y.clamp(candidate.rect.y, candidate.rect.bottom());
+    let rect_fraction = if candidate.rect.h > 0.0 {
+        ((anchor_y - candidate.rect.y) / candidate.rect.h).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    Some(ScrollAnchor {
+        node_id: candidate.node_id,
+        rect_fraction,
+        viewport_y: anchor_y - inner.y,
+        resolved_offset: offset,
+    })
+}
+
+#[derive(Clone, Debug)]
+struct ScrollAnchorCandidate {
+    node_id: String,
+    rect: Rect,
+    distance: f32,
+    depth: usize,
+}
+
+fn choose_scroll_anchor_in_subtree(
+    node: &El,
+    inner: Rect,
+    target_y: f32,
+    depth: usize,
+    ui_state: &UiState,
+    best: &mut Option<ScrollAnchorCandidate>,
+) {
+    let Some(rect) = ui_state
+        .layout
+        .computed_rects
+        .get(&node.computed_id)
+        .copied()
+    else {
+        return;
+    };
+    if rect.w > 0.0 && rect.h > 0.0 && rect.bottom() > inner.y && rect.y < inner.bottom() {
+        let distance = distance_to_interval(target_y, rect.y, rect.bottom());
+        let candidate = ScrollAnchorCandidate {
+            node_id: node.computed_id.clone(),
+            rect,
+            distance,
+            depth,
+        };
+        let replace = best.as_ref().is_none_or(|current| {
+            candidate.distance < current.distance
+                || (candidate.distance == current.distance && candidate.depth > current.depth)
+                || (candidate.distance == current.distance
+                    && candidate.depth == current.depth
+                    && candidate.rect.h < current.rect.h)
+        });
+        if replace {
+            *best = Some(candidate);
+        }
+    }
+
+    if node.scrollable {
+        return;
+    }
+    for child in &node.children {
+        choose_scroll_anchor_in_subtree(child, inner, target_y, depth + 1, ui_state, best);
+    }
 }
 
 /// Stored offset within this much of `max_offset` counts as "at the
@@ -1392,12 +1507,13 @@ fn resolve_ensure_visible_for_scroll(
     inner: Rect,
     content_h: f32,
     ui_state: &mut UiState,
-) {
+) -> bool {
     if ui_state.scroll.pending_requests.is_empty() {
-        return;
+        return false;
     }
     let pending = std::mem::take(&mut ui_state.scroll.pending_requests);
     let mut remaining: Vec<ScrollRequest> = Vec::with_capacity(pending.len());
+    let mut wrote = false;
     for req in pending {
         let ScrollRequest::EnsureVisible {
             container_key,
@@ -1462,8 +1578,10 @@ fn resolve_ensure_visible_for_scroll(
             .scroll
             .offsets
             .insert(node.computed_id.clone(), new_offset);
+        wrote = true;
     }
     ui_state.scroll.pending_requests = remaining;
+    wrote
 }
 
 /// Compute and store the scrollbar thumb + track rects for `node`
@@ -1506,6 +1624,12 @@ fn write_thumb_rect(
 fn shift_subtree_y(node: &El, dy: f32, ui_state: &mut UiState) {
     if let Some(rect) = ui_state.layout.computed_rects.get_mut(&node.computed_id) {
         rect.y += dy;
+    }
+    if let Some(thumb) = ui_state.scroll.thumb_rects.get_mut(&node.computed_id) {
+        thumb.y += dy;
+    }
+    if let Some(track) = ui_state.scroll.thumb_tracks.get_mut(&node.computed_id) {
+        track.y += dy;
     }
     for c in &node.children {
         shift_subtree_y(c, dy, ui_state);
@@ -2613,6 +2737,53 @@ mod tests {
     }
 
     #[test]
+    fn plain_scroll_preserves_visible_anchor_when_width_reflows_content() {
+        let make_root = || {
+            let paragraph_text = "Variable width text wraps into a different number of lines when \
+                                  the viewport narrows, which used to make a plain scroll box lose \
+                                  the item the user was reading.";
+            scroll([column((0..30).map(|i| {
+                crate::widgets::text::paragraph(format!("{i}: {paragraph_text}"))
+                    .key(format!("paragraph-{i}"))
+            }))
+            .gap(8.0)])
+            .key("article")
+            .height(Size::Fixed(180.0))
+        };
+
+        let mut root = make_root();
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 320.0, 180.0));
+
+        state.scroll.offsets.insert(root.computed_id.clone(), 520.0);
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 320.0, 180.0));
+
+        let anchor = state
+            .scroll
+            .scroll_anchors
+            .get(&root.computed_id)
+            .cloned()
+            .expect("plain scroll should store a visible descendant anchor");
+        let before_rect = state.rect(&anchor.node_id);
+        let before_anchor_y = before_rect.y + before_rect.h * anchor.rect_fraction;
+        let before_offset = state.scroll_offset(&root.computed_id);
+
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 180.0));
+
+        let after_rect = state.rect(&anchor.node_id);
+        let after_anchor_y = after_rect.y + after_rect.h * anchor.rect_fraction;
+        let after_offset = state.scroll_offset(&root.computed_id);
+        assert!(
+            (after_anchor_y - before_anchor_y).abs() < 0.5,
+            "anchor point should stay at y={before_anchor_y}, got {after_anchor_y}"
+        );
+        assert!(
+            (after_offset - before_offset).abs() > 20.0,
+            "offset should absorb height changes above the anchor"
+        );
+    }
+
+    #[test]
     fn scrollbar_thumb_size_and_position_track_overflow() {
         // 6 rows x 50px + 5 gaps x 12 = 360 content; 200 viewport.
         // viewport/content = 200/360 ≈ 0.555 → thumb_h ≈ 111.1.
@@ -2749,6 +2920,67 @@ mod tests {
                 .scroll
                 .thumb_rects
                 .contains_key(&tiny.computed_id)
+        );
+    }
+
+    #[test]
+    fn nested_scrollbar_thumb_moves_with_outer_scroll_content() {
+        let make_root = || {
+            scroll([
+                crate::tree::spacer().height(Size::Fixed(80.0)),
+                scroll((0..6).map(|i| {
+                    crate::widgets::text::text(format!("inner row {i}")).height(Size::Fixed(50.0))
+                }))
+                .key("inner")
+                .height(Size::Fixed(120.0)),
+                crate::tree::spacer().height(Size::Fixed(260.0)),
+            ])
+            .key("outer")
+            .height(Size::Fixed(220.0))
+        };
+
+        let mut root = make_root();
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 220.0));
+        let inner = root
+            .children
+            .iter()
+            .find(|child| child.key.as_deref() == Some("inner"))
+            .expect("inner scroll");
+        let inner_id = inner.computed_id.clone();
+        let inner_rect = state.rect(&inner_id);
+        let thumb = state
+            .scroll
+            .thumb_rects
+            .get(&inner_id)
+            .copied()
+            .expect("inner scroll should have a thumb");
+        let track = state
+            .scroll
+            .thumb_tracks
+            .get(&inner_id)
+            .copied()
+            .expect("inner scroll should have a track");
+        let thumb_rel_y = thumb.y - inner_rect.y;
+        let track_rel_y = track.y - inner_rect.y;
+
+        state.scroll.offsets.insert(root.computed_id.clone(), 60.0);
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 300.0, 220.0));
+        let inner_rect_after = state.rect(&inner_id);
+        let thumb_after = state.scroll.thumb_rects.get(&inner_id).copied().unwrap();
+        let track_after = state.scroll.thumb_tracks.get(&inner_id).copied().unwrap();
+
+        assert!(
+            (inner_rect_after.y - (inner_rect.y - 60.0)).abs() < 0.5,
+            "outer scroll should shift the inner viewport"
+        );
+        assert!(
+            (thumb_after.y - inner_rect_after.y - thumb_rel_y).abs() < 0.5,
+            "inner thumb should stay fixed relative to its viewport"
+        );
+        assert!(
+            (track_after.y - inner_rect_after.y - track_rel_y).abs() < 0.5,
+            "inner track should stay fixed relative to its viewport"
         );
     }
 

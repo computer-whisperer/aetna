@@ -37,30 +37,86 @@ fn hit_test_through_scrolled_content() {
 #[test]
 fn pointer_wheel_routes_to_deepest_scrollable() {
     // Outer scroll containing an inner scroll. Wheel events at the
-    // inner's center should target the inner.
+    // inner's center should target the inner when the inner has room
+    // to move in the wheel direction.
     let mut tree = scroll([
-        button("above").key("above").height(Size::Fixed(40.0)),
+        button("above").key("above").height(Size::Fixed(80.0)),
+        scroll((0..4).map(|i| {
+            button(format!("inner-row-{i}"))
+                .key(format!("inner-row-{i}"))
+                .height(Size::Fixed(50.0))
+        }))
+        .key("inner")
+        .height(Size::Fixed(100.0)),
+        button("below").key("below").height(Size::Fixed(200.0)),
+    ])
+    .key("outer")
+    .height(Size::Fixed(160.0));
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 160.0));
+
+    let inner_rect = find_rect(&tree, &state, "inner-row-0").expect("inner row rect");
+    let routed = state.pointer_wheel(&tree, (inner_rect.center_x(), inner_rect.center_y()), 30.0);
+    assert!(routed, "wheel should route to a scrollable");
+    let inner_id = find_id_for_kind(&tree, "inner").expect("inner id");
+    assert!((state.scroll_offset(&inner_id) - 30.0).abs() < 0.5);
+    assert!((state.scroll_offset(&tree.computed_id) - 0.0).abs() < 0.5);
+}
+
+#[test]
+fn pointer_wheel_bubbles_when_deepest_scrollable_has_no_overflow() {
+    let mut tree = scroll([
+        button("above").key("above").height(Size::Fixed(80.0)),
         scroll([button("inner-row")
             .key("inner-row")
             .height(Size::Fixed(60.0))])
         .key("inner")
         .height(Size::Fixed(100.0)),
+        button("below").key("below").height(Size::Fixed(200.0)),
     ])
     .key("outer")
-    .height(Size::Fixed(300.0));
+    .height(Size::Fixed(160.0));
     let mut state = UiState::new();
-    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 300.0));
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 160.0));
 
     let inner_rect = find_rect(&tree, &state, "inner-row").expect("inner row rect");
     let routed = state.pointer_wheel(&tree, (inner_rect.center_x(), inner_rect.center_y()), 30.0);
-    assert!(routed, "wheel should route to a scrollable");
-    // Inner's id includes its key.
-    let inner_id = find_id_for_kind(&tree, "inner").expect("inner id");
     assert!(
-        state.scroll.offsets.contains_key(&inner_id),
-        "expected inner offset, got {:?}",
-        state.scroll.offsets.keys().collect::<Vec<_>>()
+        routed,
+        "wheel should bubble to the overflowing outer scroll"
     );
+
+    let inner_id = find_id_for_kind(&tree, "inner").expect("inner id");
+    assert!((state.scroll_offset(&inner_id) - 0.0).abs() < 0.5);
+    assert!((state.scroll_offset(&tree.computed_id) - 30.0).abs() < 0.5);
+}
+
+#[test]
+fn pointer_wheel_bubbles_when_deepest_scrollable_is_at_directional_edge() {
+    let mut tree = scroll([
+        button("above").key("above").height(Size::Fixed(80.0)),
+        scroll((0..4).map(|i| {
+            button(format!("inner-row-{i}"))
+                .key(format!("inner-row-{i}"))
+                .height(Size::Fixed(50.0))
+        }))
+        .key("inner")
+        .height(Size::Fixed(100.0)),
+        button("below").key("below").height(Size::Fixed(200.0)),
+    ])
+    .key("outer")
+    .height(Size::Fixed(160.0));
+    let mut state = UiState::new();
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 160.0));
+    let inner_id = find_id_for_kind(&tree, "inner").expect("inner id");
+    state.scroll.offsets.insert(inner_id.clone(), 100.0);
+    layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 160.0));
+
+    let inner_rect = find_rect(&tree, &state, "inner-row-2").expect("visible inner row rect");
+    let routed = state.pointer_wheel(&tree, (inner_rect.center_x(), inner_rect.center_y()), 30.0);
+    assert!(routed, "downward wheel at inner tail should bubble outward");
+    assert!((state.scroll_offset(&inner_id) - 100.0).abs() < 0.5);
+    assert!((state.scroll_offset(&tree.computed_id) - 30.0).abs() < 0.5);
 }
 
 fn fixed_list_root(count: usize, row_height: f32) -> El {
