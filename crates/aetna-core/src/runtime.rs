@@ -54,7 +54,10 @@ use std::time::Duration;
 use web_time::Instant;
 
 use crate::draw_ops::{self, DrawOpsStats};
-use crate::event::{KeyChord, KeyModifiers, PointerButton, UiEvent, UiEventKind, UiKey, UiTarget};
+use crate::event::{
+    KeyChord, KeyModifiers, Pointer, PointerButton, PointerKind, UiEvent, UiEventKind, UiKey,
+    UiTarget,
+};
 use crate::focus;
 use crate::hit_test;
 use crate::ir::{DrawOp, TextAnchor};
@@ -279,14 +282,21 @@ impl RunnerCore {
 
     // ---- Input plumbing ----
 
-    /// Pointer moved to `(x, y)` (logical px). Updates the hovered
+    /// Pointer moved to `p.x, p.y` (logical px). Updates the hovered
     /// node (readable via `ui_state().hovered`) and, if the primary
     /// button is currently held, returns a `Drag` event routed to the
     /// originally pressed target. The event's `modifiers` field
     /// reflects the mask currently tracked on `UiState` (set by the
     /// host via `set_modifiers`).
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> PointerMove {
+    ///
+    /// `p.button` is ignored — pointer move events do not carry a
+    /// button press. `p.kind` is recorded on emitted events as
+    /// [`UiEvent::pointer_kind`] so apps can specialize for touch
+    /// vs. mouse / pen.
+    pub fn pointer_moved(&mut self, p: Pointer) -> PointerMove {
+        let Pointer { x, y, kind, .. } = p;
         self.ui_state.pointer_pos = Some((x, y));
+        self.ui_state.pointer_kind = kind;
 
         // Active scrollbar drag: translate cursor delta into
         // `scroll.offsets` updates. The drag is captured at
@@ -352,6 +362,7 @@ impl RunnerCore {
                     modifiers,
                     click_count: 0,
                     path: None,
+                    pointer_kind: Some(kind),
                     kind: UiEventKind::PointerLeave,
                 });
             }
@@ -366,6 +377,7 @@ impl RunnerCore {
                     modifiers,
                     click_count: 0,
                     path: None,
+                    pointer_kind: Some(kind),
                     kind: UiEventKind::PointerEnter,
                 });
             }
@@ -388,7 +400,12 @@ impl RunnerCore {
             };
             if new_sel != self.ui_state.current_selection {
                 self.ui_state.current_selection = new_sel.clone();
-                out.push(selection_event(new_sel, modifiers, Some((x, y))));
+                out.push(selection_event(
+                    new_sel,
+                    modifiers,
+                    Some((x, y)),
+                    Some(kind),
+                ));
             }
         }
 
@@ -414,6 +431,7 @@ impl RunnerCore {
                 modifiers,
                 click_count: self.ui_state.current_click_count(),
                 path: None,
+                pointer_kind: Some(kind),
                 kind: UiEventKind::Drag,
             });
         }
@@ -436,6 +454,11 @@ impl RunnerCore {
         let last_pos = self.ui_state.pointer_pos;
         let prev_hover = self.ui_state.hovered.clone();
         let modifiers = self.ui_state.modifiers;
+        // pointer_left is a mouse-only signal — touch has no "cursor
+        // outside the window" state. Tag the leave event with the
+        // last-known modality so apps that branch on touch don't see
+        // a phantom Mouse-tagged leave for what was a touch session.
+        let kind = self.ui_state.pointer_kind;
         self.ui_state.pointer_pos = None;
         self.ui_state.set_hovered(None, Instant::now());
         self.ui_state.pressed = None;
@@ -460,6 +483,7 @@ impl RunnerCore {
                 modifiers,
                 click_count: 0,
                 path: None,
+                pointer_kind: Some(kind),
                 kind: UiEventKind::PointerLeave,
             });
         }
@@ -496,6 +520,7 @@ impl RunnerCore {
             modifiers: self.ui_state.modifiers,
             click_count: 0,
             path: Some(path),
+            pointer_kind: None,
             kind: UiEventKind::FileHovered,
         }]
     }
@@ -515,6 +540,7 @@ impl RunnerCore {
             modifiers: self.ui_state.modifiers,
             click_count: 0,
             path: None,
+            pointer_kind: None,
             kind: UiEventKind::FileHoverCancelled,
         }]
     }
@@ -540,6 +566,7 @@ impl RunnerCore {
             modifiers: self.ui_state.modifiers,
             click_count: 0,
             path: Some(path),
+            pointer_kind: None,
             kind: UiEventKind::FileDropped,
         }]
     }
@@ -556,7 +583,11 @@ impl RunnerCore {
     /// `SelectionChanged` event; a press on any other element clears
     /// any active static-text selection by emitting a
     /// `SelectionChanged` with an empty range.
-    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
+    pub fn pointer_down(&mut self, p: Pointer) -> Vec<UiEvent> {
+        let Pointer {
+            x, y, button, kind, ..
+        } = p;
+        self.ui_state.pointer_kind = kind;
         // Scrollbar track pre-empts normal hit-test: a primary press
         // inside a scrollable's track column either captures a thumb
         // drag (when the press lands inside the visible thumb rect)
@@ -675,6 +706,7 @@ impl RunnerCore {
                 modifiers,
                 click_count,
                 path: None,
+                pointer_kind: Some(kind),
                 kind: UiEventKind::PointerDown,
             });
         }
@@ -691,7 +723,7 @@ impl RunnerCore {
             .as_ref()
             .and_then(|t| hit_test::selection_point_at(t, &self.ui_state, (x, y)))
         {
-            self.start_selection_drag(point, &mut out, modifiers, (x, y), click_count);
+            self.start_selection_drag(point, &mut out, modifiers, (x, y), click_count, kind);
         } else if !self.ui_state.current_selection.is_empty() {
             // Clear-on-click only when the press lands somewhere that
             // can't take selection ownership itself.
@@ -731,6 +763,7 @@ impl RunnerCore {
                     crate::selection::Selection::default(),
                     modifiers,
                     Some((x, y)),
+                    Some(kind),
                 ));
                 self.ui_state.current_selection = crate::selection::Selection::default();
                 self.ui_state.selection.drag = None;
@@ -754,6 +787,7 @@ impl RunnerCore {
         modifiers: KeyModifiers,
         pointer: (f32, f32),
         click_count: u8,
+        kind: PointerKind,
     ) {
         let leaf_text = self
             .last_tree
@@ -784,7 +818,7 @@ impl RunnerCore {
             head,
             granularity,
         });
-        out.push(selection_event(new_sel, modifiers, Some(pointer)));
+        out.push(selection_event(new_sel, modifiers, Some(pointer), Some(kind)));
     }
 
     /// Pointer released. For the primary button, fires `PointerUp`
@@ -794,7 +828,11 @@ impl RunnerCore {
     /// fires the corresponding click variant when the up landed on the
     /// same node; no analogue of `PointerUp` since drag is a primary-
     /// button concept here.
-    pub fn pointer_up(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
+    pub fn pointer_up(&mut self, p: Pointer) -> Vec<UiEvent> {
+        let Pointer {
+            x, y, button, kind, ..
+        } = p;
+        self.ui_state.pointer_kind = kind;
         // Scrollbar drag ends without producing app-level events —
         // the press never went through `pressed` / `pressed_secondary`
         // so there's nothing else to clean up. Released from anywhere;
@@ -831,6 +869,7 @@ impl RunnerCore {
                         modifiers,
                         click_count,
                         path: None,
+                        pointer_kind: Some(kind),
                         kind: UiEventKind::PointerUp,
                     });
                 }
@@ -855,6 +894,7 @@ impl RunnerCore {
                             modifiers,
                             click_count,
                             path: None,
+                            pointer_kind: Some(kind),
                             kind: UiEventKind::Click,
                         });
                     }
@@ -880,6 +920,7 @@ impl RunnerCore {
                             modifiers,
                             click_count: 1,
                             path: None,
+                            pointer_kind: Some(kind),
                             kind: UiEventKind::LinkActivated,
                         });
                     }
@@ -891,7 +932,7 @@ impl RunnerCore {
                     && b == button
                     && p.node_id == h.node_id
                 {
-                    let kind = match button {
+                    let event_kind = match button {
                         PointerButton::Secondary => UiEventKind::SecondaryClick,
                         PointerButton::Middle => UiEventKind::MiddleClick,
                         PointerButton::Primary => unreachable!(),
@@ -906,7 +947,8 @@ impl RunnerCore {
                         modifiers,
                         click_count: 1,
                         path: None,
-                        kind,
+                        pointer_kind: Some(kind),
+                        kind: event_kind,
                     });
                 }
             }
@@ -985,6 +1027,7 @@ impl RunnerCore {
             out.push(selection_event(
                 crate::selection::Selection::default(),
                 modifiers,
+                None,
                 None,
             ));
         }
@@ -1067,6 +1110,7 @@ impl RunnerCore {
             modifiers,
             click_count: 0,
             path: None,
+            pointer_kind: None,
             kind: UiEventKind::TextInput,
         })
     }
@@ -1923,6 +1967,7 @@ fn selection_event(
     new_sel: crate::selection::Selection,
     modifiers: KeyModifiers,
     pointer: Option<(f32, f32)>,
+    pointer_kind: Option<PointerKind>,
 ) -> UiEvent {
     UiEvent {
         kind: UiEventKind::SelectionChanged,
@@ -1935,6 +1980,7 @@ fn selection_event(
         modifiers,
         click_count: 0,
         path: None,
+        pointer_kind,
     }
 }
 
@@ -2329,9 +2375,9 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_moved(cx, cy);
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        let events = core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_moved(Pointer::moving(cx, cy));
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let events = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         assert_eq!(kinds, vec![UiEventKind::PointerUp, UiEventKind::Click]);
     }
@@ -2376,9 +2422,9 @@ mod tests {
         // run, which extends ~250+px from there.
         let cx = para.x + 100.0;
         let cy = para.y + para.h * 0.5;
-        core.pointer_moved(cx, cy);
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        let events = core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_moved(Pointer::moving(cx, cy));
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let events = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         let link = events
             .iter()
             .find(|e| e.kind == UiEventKind::LinkActivated)
@@ -2391,12 +2437,12 @@ mod tests {
         let (mut core, para, _url) = lay_out_link_tree();
         let press_x = para.x + 100.0;
         let cy = para.y + para.h * 0.5;
-        core.pointer_moved(press_x, cy);
-        core.pointer_down(press_x, cy, PointerButton::Primary);
+        core.pointer_moved(Pointer::moving(press_x, cy));
+        core.pointer_down(Pointer::mouse(press_x, cy, PointerButton::Primary));
         // Release far below the paragraph — the user dragged off the
         // link before letting go, which native browsers treat as
         // cancel.
-        let events = core.pointer_up(press_x, 180.0, PointerButton::Primary);
+        let events = core.pointer_up(Pointer::mouse(press_x, 180.0, PointerButton::Primary));
         let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         assert!(
             !kinds.contains(&UiEventKind::LinkActivated),
@@ -2411,7 +2457,7 @@ mod tests {
         let cx = para.x + 100.0;
         let cy = para.y + para.h * 0.5;
         // Pointer initially well outside the paragraph.
-        let initial = core.pointer_moved(para.x - 50.0, cy);
+        let initial = core.pointer_moved(Pointer::moving(para.x - 50.0, cy));
         assert!(
             !initial.needs_redraw,
             "moving in empty space shouldn't request a redraw"
@@ -2424,7 +2470,7 @@ mod tests {
         );
         // Move onto the link — needs_redraw flips so the host
         // re-resolves the cursor on the next frame.
-        let onto = core.pointer_moved(cx, cy);
+        let onto = core.pointer_moved(Pointer::moving(cx, cy));
         assert!(
             onto.needs_redraw,
             "entering a link region should flag a redraw so the cursor refresh isn't stale"
@@ -2436,7 +2482,7 @@ mod tests {
         );
         // Move back off — should flag a redraw again so the cursor
         // returns to Default.
-        let off = core.pointer_moved(para.x - 50.0, cy);
+        let off = core.pointer_moved(Pointer::moving(para.x - 50.0, cy));
         assert!(
             off.needs_redraw,
             "leaving a link region should flag a redraw"
@@ -2451,9 +2497,9 @@ mod tests {
         // prefix, before the linked run starts.
         let cx = para.x + 1.0;
         let cy = para.y + para.h * 0.5;
-        core.pointer_moved(cx, cy);
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        let events = core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_moved(Pointer::moving(cx, cy));
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let events = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         assert!(
             !kinds.contains(&UiEventKind::LinkActivated),
@@ -2467,9 +2513,9 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         // Release off-target (well outside any keyed node).
-        let events = core.pointer_up(180.0, 180.0, PointerButton::Primary);
+        let events = core.pointer_up(Pointer::mouse(180.0, 180.0, PointerButton::Primary));
         let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         assert_eq!(
             kinds,
@@ -2484,9 +2530,9 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         let drag = core
-            .pointer_moved(cx + 30.0, cy)
+            .pointer_moved(Pointer::moving(cx + 30.0, cy))
             .events
             .into_iter()
             .find(|e| e.kind == UiEventKind::Drag)
@@ -2529,8 +2575,8 @@ mod tests {
         let cx = dismiss_rect.x + dismiss_rect.w * 0.5;
         let cy = dismiss_rect.y + dismiss_rect.h * 0.5;
 
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        let events = core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let events = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         // PointerUp still fires (kept generic so drag-aware widgets
         // observe drag-end); Click is intercepted by the toast
@@ -2548,7 +2594,7 @@ mod tests {
     #[test]
     fn pointer_moved_without_press_emits_no_drag() {
         let mut core = lay_out_input_tree(false);
-        let events = core.pointer_moved(50.0, 50.0).events;
+        let events = core.pointer_moved(Pointer::moving(50.0, 50.0)).events;
         // No press → no Drag emission. Hover-transition events
         // (PointerEnter/Leave) may fire; just assert nothing in the
         // out vec carries the Drag kind.
@@ -2764,7 +2810,7 @@ mod tests {
         // First move enters the button — hover identity changes, so a
         // PointerEnter fires (no preceding Leave because no prior
         // hover target).
-        let first = core.pointer_moved(cx, cy);
+        let first = core.pointer_moved(Pointer::moving(cx, cy));
         assert_eq!(first.events.len(), 1);
         assert_eq!(first.events[0].kind, UiEventKind::PointerEnter);
         assert_eq!(first.events[0].key.as_deref(), Some("btn"));
@@ -2776,7 +2822,7 @@ mod tests {
         // Same node, slightly different coords. Hover identity is
         // unchanged, no drag is active — must not redraw or emit any
         // events.
-        let second = core.pointer_moved(cx + 1.0, cy);
+        let second = core.pointer_moved(Pointer::moving(cx + 1.0, cy));
         assert!(second.events.is_empty());
         assert!(
             !second.needs_redraw,
@@ -2786,7 +2832,7 @@ mod tests {
         // Moving off the button into empty space changes hover to
         // None — that's a visible transition (envelope ramps down)
         // and a PointerLeave fires.
-        let off = core.pointer_moved(0.0, 0.0);
+        let off = core.pointer_moved(Pointer::moving(0.0, 0.0));
         assert_eq!(off.events.len(), 1);
         assert_eq!(off.events[0].kind, UiEventKind::PointerLeave);
         assert_eq!(off.events[0].key.as_deref(), Some("btn"));
@@ -2809,10 +2855,10 @@ mod tests {
         let ti = core.rect_of_key("ti").expect("ti rect");
 
         // Enter btn first.
-        let _ = core.pointer_moved(btn.x + 4.0, btn.y + 4.0);
+        let _ = core.pointer_moved(Pointer::moving(btn.x + 4.0, btn.y + 4.0));
 
         // Cross to ti.
-        let cross = core.pointer_moved(ti.x + 4.0, ti.y + 4.0);
+        let cross = core.pointer_moved(Pointer::moving(ti.x + 4.0, ti.y + 4.0));
         let kinds: Vec<UiEventKind> = cross.events.iter().map(|e| e.kind).collect();
         assert_eq!(
             kinds,
@@ -2828,7 +2874,7 @@ mod tests {
     fn pointer_left_emits_leave_for_prior_hover() {
         let mut core = lay_out_input_tree(false);
         let btn = core.rect_of_key("btn").expect("btn rect");
-        let _ = core.pointer_moved(btn.x + 4.0, btn.y + 4.0);
+        let _ = core.pointer_moved(Pointer::moving(btn.x + 4.0, btn.y + 4.0));
 
         let events = core.pointer_left();
         assert_eq!(events.len(), 1);
@@ -2851,11 +2897,11 @@ mod tests {
         assert_eq!(core.ui_state().hovered_key(), None);
 
         let btn = core.rect_of_key("btn").expect("btn rect");
-        core.pointer_moved(btn.x + 4.0, btn.y + 4.0);
+        core.pointer_moved(Pointer::moving(btn.x + 4.0, btn.y + 4.0));
         assert_eq!(core.ui_state().hovered_key(), Some("btn"));
 
         // Off-target → None again.
-        core.pointer_moved(0.0, 0.0);
+        core.pointer_moved(Pointer::moving(0.0, 0.0));
         assert_eq!(core.ui_state().hovered_key(), None);
     }
 
@@ -2890,7 +2936,7 @@ mod tests {
         // Hover the inner button. Both the leaf and its ancestor card
         // should report subtree-hover true.
         let inner = core.rect_of_key("inner_btn").expect("inner rect");
-        core.pointer_moved(inner.x + 4.0, inner.y + 4.0);
+        core.pointer_moved(Pointer::moving(inner.x + 4.0, inner.y + 4.0));
         assert!(core.ui_state().is_hovering_within("card"));
         assert!(core.ui_state().is_hovering_within("inner_btn"));
 
@@ -2898,7 +2944,7 @@ mod tests {
         assert!(!core.ui_state().is_hovering_within("not_a_key"));
 
         // Off the tree — both flip back to false.
-        core.pointer_moved(0.0, 0.0);
+        core.pointer_moved(Pointer::moving(0.0, 0.0));
         assert!(!core.ui_state().is_hovering_within("card"));
         assert!(!core.ui_state().is_hovering_within("inner_btn"));
     }
@@ -2957,7 +3003,7 @@ mod tests {
 
         // Hover the card. is_hovering_within flips true.
         let card_rect = core.rect_of_key("card").expect("card rect");
-        core.pointer_moved(card_rect.x + 4.0, card_rect.y + 4.0);
+        core.pointer_moved(Pointer::moving(card_rect.x + 4.0, card_rect.y + 4.0));
 
         // Frame 2: app sees hovering=true, rebuilds with scale=1.05.
         // Settled animate tick snaps scale to the new target.
@@ -2981,7 +3027,7 @@ mod tests {
         );
 
         // Unhover → app rebuilds with scale=1.0; settled tick snaps back.
-        core.pointer_moved(0.0, 0.0);
+        core.pointer_moved(Pointer::moving(0.0, 0.0));
         let cx_cold = crate::BuildCx::new(&theme).with_ui_state(core.ui_state());
         assert!(!cx_cold.is_hovering_within("card"));
         let mut tree = build_card(cx_cold.is_hovering_within("card"));
@@ -3063,7 +3109,7 @@ mod tests {
         use crate::Theme;
         let mut core = lay_out_input_tree(false);
         let btn = core.rect_of_key("btn").expect("btn rect");
-        core.pointer_moved(btn.x + 4.0, btn.y + 4.0);
+        core.pointer_moved(Pointer::moving(btn.x + 4.0, btn.y + 4.0));
 
         let theme = Theme::default();
         let cx = crate::BuildCx::new(&theme).with_ui_state(core.ui_state());
@@ -3102,7 +3148,7 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let cx = p1.x + 4.0;
         let cy = p1.y + p1.h * 0.5;
-        let events = core.pointer_down(cx, cy, PointerButton::Primary);
+        let events = core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         let sel_event = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -3124,11 +3170,11 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let cx = p1.x + 4.0;
         let cy = p1.y + p1.h * 0.5;
-        core.pointer_moved(cx, cy);
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_moved(Pointer::moving(cx, cy));
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
 
         // Drag to the right inside p1.
-        let events = core.pointer_moved(p1.x + p1.w - 10.0, cy).events;
+        let events = core.pointer_moved(Pointer::moving(p1.x + p1.w - 10.0, cy)).events;
         let sel_event = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -3152,9 +3198,9 @@ mod tests {
         let cx = p1.x + 4.0;
         let cy = p1.y + p1.h * 0.5;
 
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        core.pointer_up(cx, cy, PointerButton::Primary);
-        let down = core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let down = core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         let sel = down
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -3164,7 +3210,7 @@ mod tests {
         assert_eq!(sel.anchor.byte, 0);
         assert_eq!(sel.head.byte, 5);
 
-        let events = core.pointer_moved(cx + 1.0, cy).events;
+        let events = core.pointer_moved(Pointer::moving(cx + 1.0, cy)).events;
         assert!(
             !events
                 .iter()
@@ -3187,9 +3233,9 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let cx = p1.x + 4.0;
         let cy = p1.y + p1.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        core.pointer_moved(p1.x + p1.w - 10.0, cy);
-        let _ = core.pointer_up(p1.x + p1.w - 10.0, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        core.pointer_moved(Pointer::moving(p1.x + p1.w - 10.0, cy));
+        let _ = core.pointer_up(Pointer::mouse(p1.x + p1.w - 10.0, cy, PointerButton::Primary));
         assert!(
             core.ui_state.selection.drag.is_none(),
             "drag flag should clear on pointer_up"
@@ -3211,12 +3257,12 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let p2 = core.rect_of_key("p2").expect("p2 rect");
         // Anchor in p1.
-        core.pointer_down(p1.x + 4.0, p1.y + p1.h * 0.5, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(p1.x + 4.0, p1.y + p1.h * 0.5, PointerButton::Primary));
         // Drag into p2 first — head migrates.
-        core.pointer_moved(p2.x + 8.0, p2.y + p2.h * 0.5);
+        core.pointer_moved(Pointer::moving(p2.x + 8.0, p2.y + p2.h * 0.5));
         // Now move WELL BELOW p2's rect (well below all selectables).
         // Head should remain in p2 (last leaf in this fixture is p2).
-        let events = core.pointer_moved(p2.x + 8.0, p2.y + p2.h + 200.0).events;
+        let events = core.pointer_moved(Pointer::moving(p2.x + 8.0, p2.y + p2.h + 200.0)).events;
         let sel = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -3238,9 +3284,9 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let p2 = core.rect_of_key("p2").expect("p2 rect");
         // Anchor at the start of p1.
-        core.pointer_down(p1.x + 4.0, p1.y + p1.h * 0.5, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(p1.x + 4.0, p1.y + p1.h * 0.5, PointerButton::Primary));
         // Drag down into p2.
-        let events = core.pointer_moved(p2.x + 8.0, p2.y + p2.h * 0.5).events;
+        let events = core.pointer_moved(Pointer::moving(p2.x + 8.0, p2.y + p2.h * 0.5)).events;
         let sel_event = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -3268,7 +3314,7 @@ mod tests {
         let cx = ti.x + ti.w * 0.5;
         let cy = ti.y + ti.h * 0.5;
 
-        let events = core.pointer_down(cx, cy, PointerButton::Primary);
+        let events = core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         let cleared = events.iter().find(|e| {
             e.kind == UiEventKind::SelectionChanged
                 && e.selection.as_ref().map(|s| s.is_empty()).unwrap_or(false)
@@ -3302,7 +3348,7 @@ mod tests {
         let cx = ti.x + ti.w * 0.5;
         let cy = ti.y + ti.h * 0.5;
 
-        let events = core.pointer_down(cx, cy, PointerButton::Primary);
+        let events = core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         let cleared = events.iter().any(|e| {
             e.kind == UiEventKind::SelectionChanged
                 && e.selection.as_ref().map(|s| s.is_empty()).unwrap_or(false)
@@ -3319,12 +3365,12 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let cy = p1.y + p1.h * 0.5;
         // Establish a selection in p1.
-        core.pointer_down(p1.x + 4.0, cy, PointerButton::Primary);
-        core.pointer_up(p1.x + 4.0, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(p1.x + 4.0, cy, PointerButton::Primary));
+        core.pointer_up(Pointer::mouse(p1.x + 4.0, cy, PointerButton::Primary));
         assert!(!core.ui_state.current_selection.is_empty());
 
         // Press in empty space (no selectable, no focusable).
-        let events = core.pointer_down(2.0, 2.0, PointerButton::Primary);
+        let events = core.pointer_down(Pointer::mouse(2.0, 2.0, PointerButton::Primary));
         let cleared = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -3340,14 +3386,14 @@ mod tests {
         let btn = core.rect_of_key("btn").expect("btn rect");
         let cx = btn.x + btn.w * 0.5;
         let cy = btn.y + btn.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let _ = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         assert_eq!(
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("btn")
         );
 
-        core.pointer_down(2.0, 2.0, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(2.0, 2.0, PointerButton::Primary));
 
         assert_eq!(core.ui_state.focused.as_ref().map(|t| t.key.as_str()), None);
     }
@@ -3416,14 +3462,14 @@ mod tests {
         let cy = ti.y + ti.h * 0.5;
 
         // First click → focus moves → bump.
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let _ = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         let after_first = core.ui_state.caret.activity_at.unwrap();
 
         // Second click on the same input → focus doesn't move, but
         // it's still caret-relevant activity.
         std::thread::sleep(std::time::Duration::from_millis(2));
-        core.pointer_down(cx + 1.0, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx + 1.0, cy, PointerButton::Primary));
         let after_second = core
             .ui_state
             .caret
@@ -3467,6 +3513,7 @@ mod tests {
             modifiers: KeyModifiers::default(),
             click_count: 0,
             path: None,
+            pointer_kind: None,
             kind: UiEventKind::KeyDown,
         };
 
@@ -3538,9 +3585,9 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let cy = p1.y + p1.h * 0.5;
         // Drag-select inside p1 to establish a non-empty selection.
-        core.pointer_down(p1.x + 4.0, cy, PointerButton::Primary);
-        core.pointer_moved(p1.x + p1.w - 10.0, cy);
-        core.pointer_up(p1.x + p1.w - 10.0, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(p1.x + 4.0, cy, PointerButton::Primary));
+        core.pointer_moved(Pointer::moving(p1.x + p1.w - 10.0, cy));
+        core.pointer_up(Pointer::mouse(p1.x + p1.w - 10.0, cy, PointerButton::Primary));
         assert!(!core.ui_state.current_selection.is_empty());
 
         let events = core.key_down(UiKey::Escape, KeyModifiers::default(), false);
@@ -3566,13 +3613,13 @@ mod tests {
         let cy = btn.y + btn.h * 0.5;
 
         // First press: count = 1.
-        let down1 = core.pointer_down(cx, cy, PointerButton::Primary);
+        let down1 = core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         let pd1 = down1
             .iter()
             .find(|e| e.kind == UiEventKind::PointerDown)
             .expect("PointerDown emitted");
         assert_eq!(pd1.click_count, 1, "first press starts the sequence");
-        let up1 = core.pointer_up(cx, cy, PointerButton::Primary);
+        let up1 = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         let click1 = up1
             .iter()
             .find(|e| e.kind == UiEventKind::Click)
@@ -3583,13 +3630,13 @@ mod tests {
         );
 
         // Second press immediately after, same target: count = 2.
-        let down2 = core.pointer_down(cx, cy, PointerButton::Primary);
+        let down2 = core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         let pd2 = down2
             .iter()
             .find(|e| e.kind == UiEventKind::PointerDown)
             .unwrap();
         assert_eq!(pd2.click_count, 2, "second press extends the sequence");
-        let up2 = core.pointer_up(cx, cy, PointerButton::Primary);
+        let up2 = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         assert_eq!(
             up2.iter()
                 .find(|e| e.kind == UiEventKind::Click)
@@ -3599,13 +3646,13 @@ mod tests {
         );
 
         // Third: count = 3.
-        let down3 = core.pointer_down(cx, cy, PointerButton::Primary);
+        let down3 = core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         let pd3 = down3
             .iter()
             .find(|e| e.kind == UiEventKind::PointerDown)
             .unwrap();
         assert_eq!(pd3.click_count, 3, "third press → triple-click");
-        core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
     }
 
     #[test]
@@ -3615,11 +3662,10 @@ mod tests {
         let ti = core.rect_of_key("ti").expect("ti rect");
 
         // Press on btn → count=1.
-        let down1 = core.pointer_down(
+        let down1 = core.pointer_down(Pointer::mouse(
             btn.x + btn.w * 0.5,
             btn.y + btn.h * 0.5,
-            PointerButton::Primary,
-        );
+            PointerButton::Primary));
         assert_eq!(
             down1
                 .iter()
@@ -3628,14 +3674,13 @@ mod tests {
                 .click_count,
             1
         );
-        let _ = core.pointer_up(
+        let _ = core.pointer_up(Pointer::mouse(
             btn.x + btn.w * 0.5,
             btn.y + btn.h * 0.5,
-            PointerButton::Primary,
-        );
+            PointerButton::Primary));
 
         // Press on ti (different target) → count resets to 1.
-        let down2 = core.pointer_down(ti.x + ti.w * 0.5, ti.y + ti.h * 0.5, PointerButton::Primary);
+        let down2 = core.pointer_down(Pointer::mouse(ti.x + ti.w * 0.5, ti.y + ti.h * 0.5, PointerButton::Primary));
         let pd2 = down2
             .iter()
             .find(|e| e.kind == UiEventKind::PointerDown)
@@ -3654,9 +3699,9 @@ mod tests {
         // Click near the start of "First paragraph of text." — twice
         // within the multi-click window.
         let cx = p1.x + 4.0;
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        core.pointer_up(cx, cy, PointerButton::Primary);
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         // The current selection should now span the first word.
         let sel = &core.ui_state.current_selection;
         let r = sel.range.as_ref().expect("selection set");
@@ -3673,11 +3718,11 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let cy = p1.y + p1.h * 0.5;
         let cx = p1.x + 4.0;
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        core.pointer_up(cx, cy, PointerButton::Primary);
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        core.pointer_up(cx, cy, PointerButton::Primary);
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         let sel = &core.ui_state.current_selection;
         let r = sel.range.as_ref().expect("selection set");
         assert_eq!(r.anchor.byte, 0);
@@ -3692,12 +3737,12 @@ mod tests {
         let cx = btn.x + btn.w * 0.5;
         let cy = btn.y + btn.h * 0.5;
 
-        let _ = core.pointer_down(cx, cy, PointerButton::Primary);
-        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+        let _ = core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let _ = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
 
         // Move 10 px (well outside MULTI_CLICK_DIST=4.0). Even if same
         // target, the second press starts a fresh sequence.
-        let down2 = core.pointer_down(cx + 10.0, cy, PointerButton::Primary);
+        let down2 = core.pointer_down(Pointer::mouse(cx + 10.0, cy, PointerButton::Primary));
         let pd2 = down2
             .iter()
             .find(|e| e.kind == UiEventKind::PointerDown)
@@ -3750,11 +3795,10 @@ mod tests {
             .get(&scroll_id)
             .copied()
             .expect("scrollable should have a thumb");
-        let event = core.pointer_down(
+        let event = core.pointer_down(Pointer::mouse(
             thumb.x + thumb.w * 0.5,
             thumb.y + thumb.h * 0.5,
-            PointerButton::Primary,
-        );
+            PointerButton::Primary));
         assert!(
             event.is_empty(),
             "thumb press should not emit PointerDown to the app"
@@ -3794,11 +3838,10 @@ mod tests {
             .unwrap();
 
         // Press in the track below the thumb at offset 0 → page down.
-        let evt = core.pointer_down(
+        let evt = core.pointer_down(Pointer::mouse(
             track.x + track.w * 0.5,
             thumb.y + thumb.h + 10.0,
-            PointerButton::Primary,
-        );
+            PointerButton::Primary));
         assert!(evt.is_empty(), "track press should not surface PointerDown");
         assert!(
             core.ui_state.scroll.thumb_drag.is_none(),
@@ -3811,7 +3854,7 @@ mod tests {
             "page-down offset = {after_down} (expected ~{expected_page})",
         );
         // pointer_up after a track-page is a no-op (no drag to clear).
-        let _ = core.pointer_up(0.0, 0.0, PointerButton::Primary);
+        let _ = core.pointer_up(Pointer::mouse(0.0, 0.0, PointerButton::Primary));
 
         // Re-layout to refresh the thumb position at the new offset,
         // then click-to-page up.
@@ -3838,11 +3881,10 @@ mod tests {
             .copied()
             .unwrap();
 
-        core.pointer_down(
+        core.pointer_down(Pointer::mouse(
             track.x + track.w * 0.5,
             thumb.y - 4.0,
-            PointerButton::Primary,
-        );
+            PointerButton::Primary));
         let after_up = core.ui_state.scroll_offset(&tree.computed_id);
         assert!(
             after_up < after_down,
@@ -3884,9 +3926,9 @@ mod tests {
         let track_remaining = (metrics.viewport_h - thumb.h).max(0.0);
 
         let press_y = thumb.y + thumb.h * 0.5;
-        core.pointer_down(thumb.x + thumb.w * 0.5, press_y, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(thumb.x + thumb.w * 0.5, press_y, PointerButton::Primary));
         // Drag 20 px down — offset should advance by `20 * max_offset / track_remaining`.
-        let evt = core.pointer_moved(thumb.x + thumb.w * 0.5, press_y + 20.0);
+        let evt = core.pointer_moved(Pointer::moving(thumb.x + thumb.w * 0.5, press_y + 20.0));
         assert!(
             evt.events.is_empty(),
             "thumb-drag move should suppress Drag event",
@@ -3898,7 +3940,7 @@ mod tests {
             "offset {offset} (expected {expected})",
         );
         // Overshooting clamps to max_offset.
-        core.pointer_moved(thumb.x + thumb.w * 0.5, press_y + 9999.0);
+        core.pointer_moved(Pointer::moving(thumb.x + thumb.w * 0.5, press_y + 9999.0));
         let offset = core.ui_state.scroll_offset(&scroll_id);
         assert!(
             (offset - metrics.max_offset).abs() < 0.5,
@@ -3906,7 +3948,7 @@ mod tests {
             metrics.max_offset
         );
         // Release clears the drag without emitting events.
-        let events = core.pointer_up(thumb.x, press_y, PointerButton::Primary);
+        let events = core.pointer_up(Pointer::mouse(thumb.x, press_y, PointerButton::Primary));
         assert!(events.is_empty(), "thumb release shouldn't emit events");
         assert!(core.ui_state.scroll.thumb_drag.is_none());
     }
@@ -3921,12 +3963,12 @@ mod tests {
         let ti_rect = core.rect_of_key("ti").expect("ti rect");
         let tx = ti_rect.x + ti_rect.w * 0.5;
         let ty = ti_rect.y + ti_rect.h * 0.5;
-        core.pointer_down(tx, ty, PointerButton::Primary);
-        let _ = core.pointer_up(tx, ty, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(tx, ty, PointerButton::Primary));
+        let _ = core.pointer_up(Pointer::mouse(tx, ty, PointerButton::Primary));
         let focused_before = core.ui_state.focused.as_ref().map(|t| t.key.clone());
         // Right-click on the button.
-        core.pointer_down(cx, cy, PointerButton::Secondary);
-        let events = core.pointer_up(cx, cy, PointerButton::Secondary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Secondary));
+        let events = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Secondary));
         let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
         assert_eq!(kinds, vec![UiEventKind::SecondaryClick]);
         let focused_after = core.ui_state.focused.as_ref().map(|t| t.key.clone());
@@ -3949,8 +3991,8 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let _ = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         let event = core.text_input("hi".into()).expect("focused → event");
         assert_eq!(event.kind, UiEventKind::TextInput);
         assert_eq!(event.text.as_deref(), Some("hi"));
@@ -3967,8 +4009,8 @@ mod tests {
         let ti_rect = core.rect_of_key("ti").expect("ti rect");
         let tx = ti_rect.x + ti_rect.w * 0.5;
         let ty = ti_rect.y + ti_rect.h * 0.5;
-        core.pointer_down(tx, ty, PointerButton::Primary);
-        let _ = core.pointer_up(tx, ty, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(tx, ty, PointerButton::Primary));
+        let _ = core.pointer_up(Pointer::mouse(tx, ty, PointerButton::Primary));
         assert_eq!(
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("ti"),
@@ -3993,8 +4035,8 @@ mod tests {
         let ti_rect = core.rect_of_key("ti").expect("ti rect");
         let tx = ti_rect.x + ti_rect.w * 0.5;
         let ty = ti_rect.y + ti_rect.h * 0.5;
-        core.pointer_down(tx, ty, PointerButton::Primary);
-        let _ = core.pointer_up(tx, ty, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(tx, ty, PointerButton::Primary));
+        let _ = core.pointer_up(Pointer::mouse(tx, ty, PointerButton::Primary));
         assert_eq!(
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("ti")
@@ -4021,7 +4063,7 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         assert_eq!(
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("btn"),
@@ -4040,7 +4082,7 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         assert!(!core.ui_state.focus_visible);
         // Tab moves focus and should raise the ring.
         let _ = core.key_down(UiKey::Tab, KeyModifiers::default(), false);
@@ -4060,7 +4102,7 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         assert!(
             !core.ui_state.focus_visible,
             "pointer-down clears focus_visible — ring fades back out",
@@ -4076,7 +4118,7 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         assert!(!core.ui_state.focus_visible);
         let _ = core.key_down(UiKey::ArrowRight, KeyModifiers::default(), false);
         assert!(
@@ -4148,7 +4190,7 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         assert!(!core.ui_state.focus_visible);
 
         let ctrl = KeyModifiers {
@@ -4205,8 +4247,8 @@ mod tests {
         let btn_rect = core.rect_of_key("btn").expect("btn rect");
         let cx = btn_rect.x + btn_rect.w * 0.5;
         let cy = btn_rect.y + btn_rect.h * 0.5;
-        core.pointer_down(cx, cy, PointerButton::Primary);
-        let _ = core.pointer_up(cx, cy, PointerButton::Primary);
+        core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
+        let _ = core.pointer_up(Pointer::mouse(cx, cy, PointerButton::Primary));
         assert_eq!(
             core.ui_state.focused.as_ref().map(|t| t.key.as_str()),
             Some("btn"),

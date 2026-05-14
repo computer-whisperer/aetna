@@ -51,6 +51,7 @@ impl UiState {
             modifiers,
             click_count: 0,
             path: None,
+            pointer_kind: None,
             kind: UiEventKind::Hotkey,
         })
     }
@@ -80,6 +81,7 @@ impl UiState {
             modifiers,
             click_count: 0,
             path: None,
+            pointer_kind: None,
             kind: UiEventKind::KeyDown,
         })
     }
@@ -140,6 +142,7 @@ impl UiState {
             modifiers,
             click_count: 0,
             path: None,
+            pointer_kind: None,
             kind,
         })
     }

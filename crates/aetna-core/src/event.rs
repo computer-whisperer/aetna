@@ -94,6 +94,107 @@ pub enum PointerButton {
     Middle,
 }
 
+/// Physical kind of pointer that produced an event. Mirrors the DOM
+/// `PointerEvent.pointerType`. Backends without a real signal pass
+/// [`PointerKind::Mouse`].
+///
+/// The runtime uses this to specialize behavior that does not transfer
+/// across modalities — for example, `Touch` has no resting hover state
+/// and gates `PointerEnter`/`PointerLeave` accordingly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PointerKind {
+    /// Mouse, trackpad, or any device that reports continuous hover.
+    #[default]
+    Mouse,
+    /// Touchscreen. No hover state; contact starts with `pointer_down`.
+    Touch,
+    /// Pen / stylus. Behaves like `Mouse` for hover, but backends may
+    /// surface pressure in [`Pointer::pressure`].
+    Pen,
+}
+
+/// Stable per-pointer identifier within a frame. Mirrors the DOM
+/// `PointerEvent.pointerId`. Backends with only one pointer pass
+/// [`PointerId::PRIMARY`]; multi-touch backends keep IDs stable for the
+/// lifetime of a single contact.
+///
+/// The runtime currently routes only the primary contact; secondary IDs
+/// are reserved for future multi-touch / gesture work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub struct PointerId(pub u32);
+
+impl PointerId {
+    /// The conventional ID for backends that have only one pointer
+    /// (mouse-only hosts, synthetic test events, the first touch
+    /// contact when multi-touch IDs are not tracked).
+    pub const PRIMARY: PointerId = PointerId(0);
+}
+
+/// One pointer sample, in logical pixels. The argument shape for
+/// [`crate::runtime::RunnerCore::pointer_moved`],
+/// [`crate::runtime::RunnerCore::pointer_down`], and
+/// [`crate::runtime::RunnerCore::pointer_up`].
+///
+/// Modeled on the DOM `PointerEvent` interface so backends that
+/// already speak browser pointer events can map fields directly.
+/// `button` is meaningful on `pointer_down` / `pointer_up` and is
+/// ignored on `pointer_moved`; constructors default it to
+/// [`PointerButton::Primary`] for that case.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pointer {
+    /// X coordinate in logical pixels relative to the window origin.
+    pub x: f32,
+    /// Y coordinate in logical pixels relative to the window origin.
+    pub y: f32,
+    /// Which button this event refers to. Ignored by `pointer_moved`.
+    pub button: PointerButton,
+    /// Physical kind of pointer (mouse / touch / pen).
+    pub kind: PointerKind,
+    /// Stable per-pointer ID. Use [`PointerId::PRIMARY`] for
+    /// single-pointer backends.
+    pub id: PointerId,
+    /// Normalized pressure in `0.0..=1.0` when the device reports it
+    /// (pen, force-touch). `None` when unavailable; mouse backends
+    /// always pass `None`.
+    pub pressure: Option<f32>,
+}
+
+impl Pointer {
+    /// A mouse-driven pointer at `(x, y)` for the given button. Use
+    /// from mouse-only hosts and synthetic tests.
+    pub fn mouse(x: f32, y: f32, button: PointerButton) -> Self {
+        Self {
+            x,
+            y,
+            button,
+            kind: PointerKind::Mouse,
+            id: PointerId::PRIMARY,
+            pressure: None,
+        }
+    }
+
+    /// A mouse pointer for `pointer_moved`, where `button` is
+    /// irrelevant. Equivalent to
+    /// [`Pointer::mouse(x, y, PointerButton::Primary)`][Self::mouse].
+    pub fn moving(x: f32, y: f32) -> Self {
+        Self::mouse(x, y, PointerButton::Primary)
+    }
+
+    /// A touch contact at `(x, y)` carrying the given pointer ID.
+    /// Backends translating browser `PointerEvent` should pass the
+    /// browser's `pointerId` directly.
+    pub fn touch(x: f32, y: f32, button: PointerButton, id: PointerId) -> Self {
+        Self {
+            x,
+            y,
+            button,
+            kind: PointerKind::Touch,
+            id,
+            pressure: None,
+        }
+    }
+}
+
 /// Keyboard key values normalized by the core library. This keeps the
 /// core independent from host/windowing crates while covering the
 /// navigation and activation keys the library owns.
@@ -294,6 +395,12 @@ pub struct UiEvent {
     /// because Windows wide-char paths and unusual Unix paths aren't
     /// guaranteed to be UTF-8.
     pub path: Option<std::path::PathBuf>,
+    /// Modality of the pointer that produced this event. `None` for
+    /// non-pointer events (hotkeys, keyboard activation, file drops
+    /// without a tracked pointer). Apps that need to specialize for
+    /// touch (accessibility, analytics, alternate affordances) read
+    /// this; most app code can ignore it.
+    pub pointer_kind: Option<PointerKind>,
     pub kind: UiEventKind,
 }
 
@@ -315,6 +422,7 @@ impl UiEvent {
             modifiers: KeyModifiers::default(),
             click_count: 1,
             path: None,
+            pointer_kind: None,
         }
     }
 

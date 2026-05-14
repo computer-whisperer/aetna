@@ -105,8 +105,8 @@ mod web_entry {
     use std::sync::Arc;
 
     use aetna_core::{
-        App, BuildCx, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, Palette, PointerButton,
-        Rect, UiEvent, UiEventKind, UiKey, clipboard,
+        App, BuildCx, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, Palette, Pointer,
+        PointerButton, Rect, UiEvent, UiEventKind, UiKey, clipboard,
         widgets::text_input::{self, ClipboardKind},
     };
     use aetna_wgpu::{PrepareTimings, Runner};
@@ -1022,7 +1022,7 @@ mod web_entry {
                     let lx = position.x as f32 / scale;
                     let ly = position.y as f32 / scale;
                     self.last_pointer = Some((lx, ly));
-                    let moved = gfx.renderer.pointer_moved(lx, ly);
+                    let moved = gfx.renderer.pointer_moved(Pointer::moving(lx, ly));
                     for event in moved.events {
                         dispatch_app_event(
                             &mut self.app,
@@ -1109,7 +1109,7 @@ mod web_entry {
                     };
                     match state {
                         ElementState::Pressed => {
-                            for event in gfx.renderer.pointer_down(lx, ly, button) {
+                            for event in gfx.renderer.pointer_down(Pointer::mouse(lx, ly, button)) {
                                 dispatch_app_event(
                                     &mut self.app,
                                     event,
@@ -1121,7 +1121,7 @@ mod web_entry {
                             gfx.window.request_redraw();
                         }
                         ElementState::Released => {
-                            for event in gfx.renderer.pointer_up(lx, ly, button) {
+                            for event in gfx.renderer.pointer_up(Pointer::mouse(lx, ly, button)) {
                                 let event =
                                     attach_primary_selection_text(event, &self.primary_selection);
                                 dispatch_app_event(

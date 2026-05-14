@@ -1,0 +1,194 @@
+# Aetna Mobile Vision
+
+This is the maintainer-facing architecture note for Aetna on small viewports
+and touch input. It covers what already works, what is missing, and the
+short-term work needed to make a phone web browser a first-class target.
+Public author guidance belongs in crate READMEs and rustdoc once a surface is
+stable enough to document.
+
+## Goal
+
+A user opening an Aetna app in a phone web browser should get a real touch
+experience: taps land on the right targets, scrolling has momentum, content
+fits the viewport, the on-screen keyboard does not strand a focused input,
+and stock widgets do not depend on a hovering pointer to behave. The same
+input model should later extend to a native Android host without redesigning
+core abstractions.
+
+## Current Thesis
+
+Aetna's interaction model is already pointer-generic at the core. The
+`UiEvent` and `PointerButton` surfaces are named for any pointing device, not
+for a mouse. The work required to support touch is mostly in three places:
+
+- **Backend ingest**, where browser and OS events are translated into
+  `pointer_*` runner calls.
+- **Hover-equivalent visual state**, where stock widget animations assume a
+  pointer that can rest over a target without committing to a press.
+- **Layout response to the viewport**, where current size primitives assume
+  a roughly desktop-shaped window.
+
+This shape lets us add touch without forking the widget kit or introducing a
+parallel "mobile" tree. The HTML platform already worked through the same
+problem with `PointerEvent`; Aetna should follow that paradigm rather than
+invent a new one.
+
+## What Is Already Flexible Enough
+
+- **Pointer-generic event vocabulary.** `UiEvent` exposes `PointerDown`,
+  `PointerUp`, `Drag`, `PointerEnter`, `PointerLeave`, `Click`, plus
+  modifier-aware variants. `PointerButton` documents primary / secondary /
+  middle as roles, not as mouse buttons. No core variant is mouse-named.
+- **Backend split.** Adding a touch ingest path is a backend concern.
+  Hosts call `Runner::pointer_down/up/moved/wheel`; core does not need to
+  know what produced the event.
+- **DPI plumbing.** `HostDiagnostics::scale_factor` is available at build
+  time. Apps can already branch on density without backend changes.
+- **`hit_overflow`.** Nodes can expand their pointer target without
+  changing paint. This is the right primitive for enforcing minimum touch
+  targets without reflowing layout.
+- **Focus and IME.** Tab order and `Ime::Commit` already exist, so a soft
+  keyboard has a place to deliver text into a focused widget.
+
+These are load-bearing for the plan. None of them should be redesigned to
+add touch.
+
+## What Is Missing
+
+1. **Touch ingest.** No backend translates real touch events. The browser
+   path goes through winit, which collapses `TouchEvent` to a single mouse
+   pointer; multi-touch and pressure are lost before core sees them. The
+   native side has no touch path at all.
+2. **Hover-equivalent for touch.** Stock widget visual state is driven by
+   `SubtreeHoverAmount`-style animation. Touch has no resting hover, so
+   buttons land in their "rest" appearance until pressed, and any
+   reveal-on-hover affordance is unreachable.
+3. **Responsive layout primitives.** `Size` is `Fixed | Hug | Fill`. There
+   are no min/max constraints, no breakpoint context, and no way for a
+   widget to query the viewport size during build. Apps that want phone
+   layouts must thread the window size through their own state.
+4. **Minimum hit-target enforcement.** Nothing prevents a button from
+   shipping with a sub-44pt tap area on a dense display.
+5. **Scroll momentum.** `pointer_wheel` is instantaneous. Touch scroll
+   without fling feels broken even when nothing is functionally wrong.
+6. **Soft-keyboard awareness.** Hosts do not surface viewport changes
+   caused by an on-screen keyboard, so a focused input can be hidden
+   behind it.
+7. **Gestures.** No long-press, swipe, pinch, or two-finger pan; no
+   pointer-id tracking on which to build them.
+
+## Design Principles
+
+- **Follow HTML where it has already solved the problem.** `PointerEvent`,
+  viewport-relative sizing, and minimum hit-target conventions are
+  load-bearing prior art. Aetna should prefer those shapes over
+  framework-specific reinventions.
+- **No parallel "mobile" widget kit.** The same stock widgets must work
+  across desktop and touch. If a widget cannot, the hover/focus model is
+  wrong, not the widget.
+- **Touch is one input modality, not the only one.** A laptop with a
+  touchscreen, a tablet with a Bluetooth keyboard, and a phone are all
+  realistic targets. The model must handle simultaneous mouse + touch +
+  keyboard, not assume one excludes the others.
+- **Core stays backend-neutral.** Touch ingest belongs in backend crates.
+  Core gains pointer-id and modality tagging at most, never DOM or OS
+  types.
+
+## Near-Term Priorities
+
+Ordered by leverage. Each item should be small enough to land and validate
+before the next begins.
+
+### 1. Pointer-event ingest in `aetna-web`
+
+Bind DOM `PointerEvent` directly in the web host instead of routing pointer
+input through winit's mouse-only translation. This unlocks:
+
+- touch and pen input alongside mouse, normalized by the browser,
+- per-pointer IDs, the foundation for everything multi-touch later,
+- correct pressure and tilt fields when present,
+- correct `pointerType` so core can later tag events as `mouse | touch | pen`.
+
+Scope is narrow: replace the current mouse-event routing inside the web host
+with a `PointerEvent`-based path, keep the existing `pointer_down/up/moved`
+runner calls, and discard winit's pointer translation on web. Native hosts
+are unaffected.
+
+### 2. Modality tag on pointer events
+
+Add an enum tag (`PointerKind::{Mouse, Touch, Pen}`) carried on
+`UiEvent::PointerDown/Up/Moved` and on `UiTarget` callbacks. Core does not
+branch on it; widgets and animation can. This is the hook that lets the
+hover-equivalent work in step 3 without making touch pretend to be a mouse.
+
+### 3. Press-affinity animation companion to hover
+
+Today, hover state drives `SubtreeHoverAmount`. Add a press / contact-driven
+animation source so touch input drives the same visual response that hover
+drives on desktop. Buttons feel alive on tap-down, not only after a click
+fires. This is intentionally a small extension to the existing animation
+plumbing, not a new widget surface.
+
+### 4. Viewport at build time + min/max sizing
+
+Expose viewport size in `BuildCx` so widgets can branch on it. Add `min_size`
+and `max_size` modifiers on `El`. Optionally add a `breakpoint(...)` helper
+for the common "phone vs desktop" split. The goal is for a single `App` to
+adapt without the host orchestrating layout choices.
+
+### 5. Minimum hit-target via theme
+
+Let the active theme declare a minimum interactive target (default 44pt or
+similar). Interactive nodes whose paint rect is smaller automatically gain
+`hit_overflow` to satisfy the minimum, without changing what is drawn. Opt
+out per node when needed.
+
+### 6. Scroll momentum
+
+Add fling/momentum to scroll regions when input arrives from a touch
+modality. Wheel input from a mouse continues to be instantaneous. This is
+local to scroll machinery and should not change the public scroll API.
+
+## Deferred
+
+These matter eventually but should not block the items above:
+
+- **Multi-touch gestures.** Pinch-to-zoom, two-finger pan, rotation. Pointer
+  IDs from step 1 are the prerequisite; the gesture grammar itself is its
+  own design.
+- **Native Android host.** Depends on winit's Android maturity and a real
+  touch event path on that side. The pointer-id and modality work above is
+  reusable when the time comes.
+- **IME composition.** Multi-stage composition, dead keys, candidate
+  windows. The current `Ime::Commit` path is enough to unblock soft
+  keyboards on phones; richer composition is a separate effort.
+- **Soft-keyboard viewport awareness.** Worth doing, but not before the
+  layout primitives in step 4 exist; otherwise apps have no way to react to
+  the viewport change anyway.
+
+## Non-Goals
+
+- A separate mobile widget kit, theme, or layout DSL.
+- Reactive layout that recomputes on every scroll or animation frame
+  beyond what the existing build cycle already does.
+- A gesture recognizer framework before stock widgets can use it.
+- Pretending touch is a mouse. The point of pointer-id and modality is to
+  let widgets respond correctly to each modality, not to flatten them.
+
+## Open Questions
+
+- Should `PointerEnter` / `PointerLeave` fire on touch at all, or only on
+  pointers whose modality is `Mouse | Pen`? Firing them on `PointerDown`
+  for touch keeps tooltips trivially reachable but changes what "hover"
+  means in app code.
+- Is the right viewport API a value on `BuildCx`, an `Env`-style ambient
+  context, or a typed `viewport()` helper? All three are workable; the
+  choice affects how widgets compose.
+- Should the minimum hit-target floor come from the theme, the host
+  (because it knows the input device class), or both?
+- For scroll momentum, should the velocity model live in `aetna-core` so
+  it is consistent across backends, or in the host that owns the input
+  cadence?
+
+These should be resolved as the corresponding priority is implemented, not
+in advance.

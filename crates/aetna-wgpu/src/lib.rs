@@ -84,7 +84,7 @@ use web_time::Instant;
 
 use wgpu::util::DeviceExt;
 
-use aetna_core::event::{KeyChord, KeyModifiers, PointerButton, UiEvent, UiKey};
+use aetna_core::event::{KeyChord, KeyModifiers, Pointer, UiEvent, UiKey};
 use aetna_core::ir::TextAnchor;
 use aetna_core::paint::{IconRunKind, PhysicalScissor, QuadInstance};
 use aetna_core::runtime::{RecordedPaint, RunnerCore, TextRecorder};
@@ -936,13 +936,14 @@ impl Runner {
     /// Update pointer position and recompute the hovered key.
     /// Returns the new hovered key, if any (host can use it for cursor
     /// styling or to decide whether to call `request_redraw`).
-    /// Pointer moved to `(x, y)` (logical px). Returns the events to
+    /// Pointer moved to `p.x, p.y` (logical px). Returns the events to
     /// dispatch via `App::on_event` plus a `needs_redraw` flag — see
     /// [`PointerMove`] for why hosts must gate `request_redraw` on
     /// the flag. The hovered node is updated on `ui_state().hovered`
-    /// regardless.
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> PointerMove {
-        self.core.pointer_moved(x, y)
+    /// regardless. Mouse-only hosts can construct `p` via
+    /// [`Pointer::moving`].
+    pub fn pointer_moved(&mut self, p: Pointer) -> PointerMove {
+        self.core.pointer_moved(p)
     }
 
     /// Pointer left the window — clear hover/press. Returns a
@@ -984,15 +985,16 @@ impl Runner {
         self.core.file_dropped(path, x, y)
     }
 
-    /// Mouse button down at `(x, y)` (logical px) for the given
-    /// `button`. For `Primary`, records the pressed key for press-
-    /// visual feedback, updates focus, and returns a `PointerDown`
-    /// event so widgets that need to react at down-time (text input
-    /// selection anchor, draggable handles) can do so. For
-    /// `Secondary` / `Middle`, records on a side channel and returns
-    /// `None`. The actual click event fires on `pointer_up`.
-    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
-        self.core.pointer_down(x, y, button)
+    /// Pointer pressed at `p.x, p.y` (logical px) for `p.button`. For
+    /// `Primary`, records the pressed key for press-visual feedback,
+    /// updates focus, and returns a `PointerDown` event so widgets that
+    /// need to react at down-time (text input selection anchor,
+    /// draggable handles) can do so. For `Secondary` / `Middle`, records
+    /// on a side channel and returns `None`. The actual click event
+    /// fires on `pointer_up`. Mouse-only hosts can construct `p` via
+    /// [`Pointer::mouse`].
+    pub fn pointer_down(&mut self, p: Pointer) -> Vec<UiEvent> {
+        self.core.pointer_down(p)
     }
 
     /// Replace the tracked modifier mask. Hosts call this from their
@@ -1003,14 +1005,15 @@ impl Runner {
         self.core.ui_state.set_modifiers(modifiers);
     }
 
-    /// Mouse button up at `(x, y)` for the given `button`. Returns
-    /// the events the host should dispatch in order: for `Primary`,
-    /// always a `PointerUp` (when there was a corresponding down)
-    /// followed by an optional `Click` (when the up landed on the
-    /// down's node). For `Secondary` / `Middle`, an optional
-    /// `SecondaryClick` / `MiddleClick` on the same-node match.
-    pub fn pointer_up(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
-        self.core.pointer_up(x, y, button)
+    /// Pointer released at `p.x, p.y` for `p.button`. Returns the
+    /// events the host should dispatch in order: for `Primary`, always
+    /// a `PointerUp` (when there was a corresponding down) followed
+    /// by an optional `Click` (when the up landed on the down's
+    /// node). For `Secondary` / `Middle`, an optional `SecondaryClick`
+    /// / `MiddleClick` on the same-node match. Mouse-only hosts can
+    /// construct `p` via [`Pointer::mouse`].
+    pub fn pointer_up(&mut self, p: Pointer) -> Vec<UiEvent> {
+        self.core.pointer_up(p)
     }
 
     pub fn key_down(&mut self, key: UiKey, modifiers: KeyModifiers, repeat: bool) -> Vec<UiEvent> {

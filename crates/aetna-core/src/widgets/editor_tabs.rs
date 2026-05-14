@@ -489,6 +489,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 1,
+            pointer_kind: None,
         }
     }
 

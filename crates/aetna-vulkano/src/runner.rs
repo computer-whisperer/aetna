@@ -37,7 +37,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use aetna_core::{
-    AnimationMode, El, KeyChord, KeyModifiers, PointerButton, Rect, Theme, UiEvent, UiKey, UiState,
+    AnimationMode, El, KeyChord, KeyModifiers, Pointer, Rect, Theme, UiEvent, UiKey, UiState,
     shader::{ShaderHandle, StockShader, stock_wgsl},
     vector::IconMaterial,
 };
@@ -899,8 +899,8 @@ impl Runner {
         }
     }
 
-    pub fn pointer_moved(&mut self, x: f32, y: f32) -> PointerMove {
-        self.core.pointer_moved(x, y)
+    pub fn pointer_moved(&mut self, p: Pointer) -> PointerMove {
+        self.core.pointer_moved(p)
     }
 
     pub fn pointer_left(&mut self) -> Vec<aetna_core::UiEvent> {
@@ -929,12 +929,12 @@ impl Runner {
         self.core.file_dropped(path, x, y)
     }
 
-    pub fn pointer_down(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
-        self.core.pointer_down(x, y, button)
+    pub fn pointer_down(&mut self, p: Pointer) -> Vec<UiEvent> {
+        self.core.pointer_down(p)
     }
 
-    pub fn pointer_up(&mut self, x: f32, y: f32, button: PointerButton) -> Vec<UiEvent> {
-        self.core.pointer_up(x, y, button)
+    pub fn pointer_up(&mut self, p: Pointer) -> Vec<UiEvent> {
+        self.core.pointer_up(p)
     }
 
     pub fn set_modifiers(&mut self, modifiers: KeyModifiers) {

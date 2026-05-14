@@ -2927,7 +2927,7 @@ mod tests {
         // regressions where the runtime's per-frame updates would
         // overwrite the live selection or where the painter doesn't
         // see the manager's writes.
-        use crate::event::PointerButton;
+        use crate::event::{Pointer, PointerButton};
         use crate::runtime::{PrepareTimings, RunnerCore};
 
         let mut core = RunnerCore::new();
@@ -2950,9 +2950,9 @@ mod tests {
 
         let p_rect = core.rect_of_key("p").expect("p rect");
         let cy = p_rect.y + p_rect.h * 0.5;
-        let _ = core.pointer_down(p_rect.x + 4.0, cy, PointerButton::Primary);
+        let _ = core.pointer_down(Pointer::mouse(p_rect.x + 4.0, cy, PointerButton::Primary));
         // Drag to extend.
-        let _ = core.pointer_moved(p_rect.x + p_rect.w - 8.0, cy);
+        let _ = core.pointer_moved(Pointer::moving(p_rect.x + p_rect.w - 8.0, cy));
 
         // Selection in UiState must be a non-collapsed range now.
         let sel = &core.ui_state.current_selection;

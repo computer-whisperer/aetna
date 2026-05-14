@@ -1009,7 +1009,7 @@ fn next_char_boundary(s: &str, from: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{KeyModifiers, KeyPress, PointerButton, UiTarget};
+    use crate::event::{KeyModifiers, KeyPress, Pointer, PointerButton, UiTarget};
     use crate::layout::layout;
     use crate::runtime::RunnerCore;
     use crate::state::UiState;
@@ -1085,6 +1085,7 @@ mod tests {
             selection: None,
             modifiers,
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::TextInput,
         }
     }
@@ -1108,6 +1109,7 @@ mod tests {
             selection: None,
             modifiers,
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::KeyDown,
         }
     }
@@ -1132,6 +1134,7 @@ mod tests {
             selection: None,
             modifiers,
             click_count,
+            pointer_kind: None,
             kind: UiEventKind::PointerDown,
         }
     }
@@ -1151,6 +1154,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count,
+            pointer_kind: None,
             kind: UiEventKind::Drag,
         }
     }
@@ -1166,6 +1170,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 1,
+            pointer_kind: None,
             kind: UiEventKind::MiddleClick,
         }
     }
@@ -1889,6 +1894,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 1,
+            pointer_kind: None,
             kind: UiEventKind::Click,
         };
         assert!(!apply_event(&mut value, &mut sel, &click));
@@ -2403,23 +2409,23 @@ mod tests {
         let drag_x = rect.x + 80.0;
         let cy = rect.y + rect.h * 0.5;
 
-        core.pointer_moved(down_x, cy);
+        core.pointer_moved(Pointer::moving(down_x, cy));
         let down = core
-            .pointer_down(down_x, cy, PointerButton::Primary)
+            .pointer_down(Pointer::mouse(down_x, cy, PointerButton::Primary))
             .into_iter()
             .find(|e| e.kind == UiEventKind::PointerDown)
             .expect("pointer_down emits PointerDown");
         assert!(apply_event(&mut value, &mut sel, &down));
 
         let drag = core
-            .pointer_moved(drag_x, cy)
+            .pointer_moved(Pointer::moving(drag_x, cy))
             .events
             .into_iter()
             .find(|e| e.kind == UiEventKind::Drag)
             .expect("Drag while pressed");
         assert!(apply_event(&mut value, &mut sel, &drag));
 
-        let events = core.pointer_up(drag_x, cy, PointerButton::Primary);
+        let events = core.pointer_up(Pointer::mouse(drag_x, cy, PointerButton::Primary));
         for e in &events {
             apply_event(&mut value, &mut sel, e);
         }

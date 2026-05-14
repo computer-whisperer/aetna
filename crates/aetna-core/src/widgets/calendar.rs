@@ -263,6 +263,7 @@ mod tests {
             selection: None,
             modifiers: Default::default(),
             click_count: 1,
+            pointer_kind: None,
         }
     }
 

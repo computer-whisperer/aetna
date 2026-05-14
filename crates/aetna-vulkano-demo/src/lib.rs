@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use aetna_core::{App, BuildCx, KeyModifiers, PointerButton, Rect, UiKey};
+use aetna_core::{App, BuildCx, KeyModifiers, Pointer, PointerButton, Rect, UiKey};
 use aetna_vulkano::Runner;
 use vulkano::{
     VulkanLibrary,
@@ -275,7 +275,7 @@ impl<A: App> ApplicationHandler for Host<A> {
                 let lx = position.x as f32 / scale;
                 let ly = position.y as f32 / scale;
                 self.last_pointer = Some((lx, ly));
-                let moved = rcx.runner.pointer_moved(lx, ly);
+                let moved = rcx.runner.pointer_moved(Pointer::moving(lx, ly));
                 for event in moved.events {
                     self.app.on_event(event);
                 }
@@ -324,13 +324,13 @@ impl<A: App> ApplicationHandler for Host<A> {
                 };
                 match state {
                     ElementState::Pressed => {
-                        for event in rcx.runner.pointer_down(lx, ly, button) {
+                        for event in rcx.runner.pointer_down(Pointer::mouse(lx, ly, button)) {
                             self.app.on_event(event);
                         }
                         rcx.window.request_redraw();
                     }
                     ElementState::Released => {
-                        for event in rcx.runner.pointer_up(lx, ly, button) {
+                        for event in rcx.runner.pointer_up(Pointer::mouse(lx, ly, button)) {
                             self.app.on_event(event);
                         }
                         rcx.window.request_redraw();
@@ -741,7 +741,7 @@ fn srgb_to_linear(c: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use aetna_core::{
-        AnimationMode, IconMaterial, KeyChord, KeyModifiers, PointerButton, Rect, Selection, Theme,
+        AnimationMode, IconMaterial, KeyChord, KeyModifiers, Pointer, Rect, Selection, Theme,
         UiEvent, UiKey, UiState, runtime::PointerMove, scroll::ScrollRequest, toast::ToastSpec,
     };
 
@@ -755,12 +755,10 @@ mod tests {
             let _: for<'a> fn(&'a $runner) -> &'a UiState = <$runner>::ui_state;
             let _: fn(&$runner) -> String = <$runner>::debug_summary;
             let _: fn(&$runner, &str) -> Option<Rect> = <$runner>::rect_of_key;
-            let _: fn(&mut $runner, f32, f32) -> PointerMove = <$runner>::pointer_moved;
+            let _: fn(&mut $runner, Pointer) -> PointerMove = <$runner>::pointer_moved;
             let _: fn(&mut $runner) -> Vec<UiEvent> = <$runner>::pointer_left;
-            let _: fn(&mut $runner, f32, f32, PointerButton) -> Vec<UiEvent> =
-                <$runner>::pointer_down;
-            let _: fn(&mut $runner, f32, f32, PointerButton) -> Vec<UiEvent> =
-                <$runner>::pointer_up;
+            let _: fn(&mut $runner, Pointer) -> Vec<UiEvent> = <$runner>::pointer_down;
+            let _: fn(&mut $runner, Pointer) -> Vec<UiEvent> = <$runner>::pointer_up;
             let _: fn(&mut $runner, KeyModifiers) = <$runner>::set_modifiers;
             let _: fn(&mut $runner, UiKey, KeyModifiers, bool) -> Vec<UiEvent> =
                 <$runner>::key_down;

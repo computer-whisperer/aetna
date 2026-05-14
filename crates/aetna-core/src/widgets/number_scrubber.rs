@@ -308,6 +308,7 @@ mod tests {
             selection: None,
             modifiers: mods,
             click_count: 0,
+            pointer_kind: None,
             kind,
         }
     }
@@ -333,6 +334,7 @@ mod tests {
             selection: None,
             modifiers: mods,
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::KeyDown,
         }
     }

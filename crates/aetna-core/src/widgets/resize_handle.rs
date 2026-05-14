@@ -447,6 +447,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count,
+            pointer_kind: None,
             kind,
         }
     }
@@ -472,6 +473,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::KeyDown,
         }
     }

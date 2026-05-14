@@ -30,7 +30,7 @@ use std::fmt::Debug;
 // native and uses `performance.now()` on wasm32 — std's `Instant::now()`
 // panics in the browser because there is no monotonic clock there.
 
-use crate::event::{KeyModifiers, PointerButton, UiTarget};
+use crate::event::{KeyModifiers, PointerButton, PointerKind, UiTarget};
 
 pub use types::{AnimationMode, EnvelopeKind, ScrollMetrics, ThumbDrag, WidgetState};
 pub(crate) use types::{
@@ -56,6 +56,12 @@ pub struct UiState {
     /// Last known pointer position in **logical** pixels. `None` until
     /// the pointer enters the window.
     pub pointer_pos: Option<(f32, f32)>,
+    /// Modality of the most recent pointer ingest. Used to stamp
+    /// emitted [`crate::event::UiEvent::pointer_kind`] and to gate
+    /// hover-only behavior on touch. Defaults to
+    /// [`PointerKind::Mouse`] until the first ingest, which matches
+    /// historical behavior on hosts without touch.
+    pub pointer_kind: PointerKind,
     pub hovered: Option<UiTarget>,
     pub pressed: Option<UiTarget>,
     /// Secondary / middle button down-target, kept on a separate

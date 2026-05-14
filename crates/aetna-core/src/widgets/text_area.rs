@@ -864,6 +864,7 @@ mod tests {
             selection: None,
             modifiers,
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::KeyDown,
         }
     }
@@ -883,6 +884,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::KeyDown,
         }
     }
@@ -906,6 +908,7 @@ mod tests {
             selection: None,
             modifiers,
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::KeyDown,
         }
     }
@@ -940,6 +943,7 @@ mod tests {
             selection: None,
             modifiers,
             click_count,
+            pointer_kind: None,
             kind: UiEventKind::PointerDown,
         }
     }
@@ -960,6 +964,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count,
+            pointer_kind: None,
             kind: UiEventKind::Drag,
         }
     }
@@ -980,6 +985,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 1,
+            pointer_kind: None,
             kind: UiEventKind::MiddleClick,
         }
     }
@@ -1205,6 +1211,7 @@ mod tests {
             selection: None,
             modifiers: ctrl,
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::TextInput,
         };
         assert!(!apply_event(&mut value, &mut sel, &ev));
@@ -1225,6 +1232,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::TextInput,
         };
         assert!(apply_event(&mut value, &mut sel, &ev));
@@ -1407,6 +1415,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 1,
+            pointer_kind: None,
             kind: UiEventKind::PointerDown,
         };
         let mut value_mut = value.clone();
@@ -1446,6 +1455,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::Drag,
         };
         let req = drag_autoscroll_request_for(&ev, TEST_KEY)
@@ -1485,6 +1495,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::Drag,
         };
         assert!(drag_autoscroll_request_for(&ev, TEST_KEY).is_none());
@@ -1506,6 +1517,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 0,
+            pointer_kind: None,
             kind: UiEventKind::Drag,
         };
         let req = drag_autoscroll_request_for(&ev, TEST_KEY)
@@ -1534,6 +1546,7 @@ mod tests {
             selection: None,
             modifiers: KeyModifiers::default(),
             click_count: 1,
+            pointer_kind: None,
             kind: UiEventKind::PointerDown,
         };
         assert!(drag_autoscroll_request_for(&ev, TEST_KEY).is_none());

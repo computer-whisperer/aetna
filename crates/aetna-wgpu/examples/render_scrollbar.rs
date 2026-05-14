@@ -151,10 +151,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|(_id, rect)| *rect)
         .max_by(|a, b| a.x.total_cmp(&b.x))
         .expect("at least one scrollable should have a track");
-    renderer.pointer_moved(
+    renderer.pointer_moved(Pointer::moving(
         right_track.x + right_track.w * 0.5,
         right_track.y + right_track.h * 0.5,
-    );
+    ));
     renderer.prepare(&device, &queue, &mut tree, viewport, scale_factor);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

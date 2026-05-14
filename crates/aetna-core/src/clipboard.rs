@@ -63,6 +63,7 @@ mod tests {
             },
             click_count: 0,
             path: None,
+            pointer_kind: None,
             kind: UiEventKind::KeyDown,
         }
     }

@@ -96,7 +96,7 @@ pub use cursor::Cursor;
 pub use draw_ops::{draw_ops, draw_ops_with_theme};
 pub use event::{
     App, AppShader, BuildCx, FrameTrigger, HostDiagnostics, KeyChord, KeyModifiers, KeyPress,
-    PointerButton, UiEvent, UiEventKind, UiKey, UiTarget,
+    Pointer, PointerButton, PointerId, PointerKind, UiEvent, UiEventKind, UiKey, UiTarget,
 };
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
