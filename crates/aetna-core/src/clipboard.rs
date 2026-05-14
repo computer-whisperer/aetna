@@ -4,26 +4,7 @@
 //! custom shells). This module only contains the event/tree glue those
 //! hosts need to turn clipboard operations into normal Aetna app events.
 
-use crate::{
-    event::{App, BuildCx, KeyModifiers, UiEvent, UiEventKind, UiKey},
-    selection,
-    state::UiState,
-};
-
-/// Resolve the currently selected text for an app from the host's last
-/// [`UiState`].
-///
-/// Hosts call this after the runtime has updated selection state and
-/// before performing platform clipboard IO. The helper rebuilds the
-/// app tree with the same UI state the renderer uses, then asks the
-/// selection system to extract text from the app's current
-/// [`crate::event::App::selection`].
-pub fn selected_text_for_app<A: App>(app: &A, ui_state: &UiState) -> Option<String> {
-    let theme = app.theme();
-    let cx = BuildCx::new(&theme).with_ui_state(ui_state);
-    let tree = app.build(&cx);
-    selection::selected_text(&tree, &app.selection())
-}
+use crate::event::{KeyModifiers, UiEvent, UiEventKind, UiKey};
 
 /// Rewrite a key event into a text-paste event with `text`.
 ///
@@ -59,9 +40,7 @@ pub fn delete_selection_event(mut event: UiEvent) -> UiEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        KeyPress, Selection, SelectionPoint, SelectionRange, widgets::text_input::text_input,
-    };
+    use crate::KeyPress;
 
     fn key_event() -> UiEvent {
         UiEvent {
@@ -106,30 +85,5 @@ mod tests {
         assert_eq!(key_press.modifiers, KeyModifiers::default());
         assert!(!key_press.repeat);
         assert_eq!(event.modifiers, KeyModifiers::default());
-    }
-
-    #[test]
-    fn selected_text_for_app_extracts_text_from_rebuilt_tree() {
-        struct AppWithSelectableText;
-        impl App for AppWithSelectableText {
-            fn build(&self, _cx: &BuildCx) -> crate::El {
-                text_input("hello clipboard", &self.selection(), "copy-source")
-            }
-
-            fn selection(&self) -> Selection {
-                Selection {
-                    range: Some(SelectionRange {
-                        anchor: SelectionPoint::new("copy-source", 6),
-                        head: SelectionPoint::new("copy-source", 15),
-                    }),
-                }
-            }
-        }
-
-        let ui_state = UiState::new();
-        assert_eq!(
-            selected_text_for_app(&AppWithSelectableText, &ui_state).as_deref(),
-            Some("clipboard")
-        );
     }
 }

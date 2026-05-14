@@ -109,11 +109,16 @@ impl UiState {
         }
 
         let target = self.focused.clone();
-        // Non-hotkey keypress on a focused element (Space, Escape,
-        // arrow-nudge a slider, …) is keyboard activity — `:focus-
-        // visible` rule: raise the ring even if a prior click had
-        // suppressed it.
-        if target.is_some() {
+        // `:focus-visible` rule: raise the ring only when the key is
+        // unambiguous keyboard interaction with the focused widget —
+        // navigation arrows / Home / End / PageUp / PageDown, or
+        // Enter / Space activation. A Ctrl/Cmd/Alt-held key is a
+        // global shortcut; the focused widget is incidental and
+        // shouldn't flash. Character / function / Escape keys also
+        // don't count — they're typing, dismissal, or app actions,
+        // not "I'm steering this widget with the keyboard." Tab
+        // already raised the ring above when it moved focus.
+        if target.is_some() && raises_focus_visible(&key, modifiers) {
             self.set_focus_visible(true);
         }
         let kind = match (&key, target.is_some()) {
@@ -138,4 +143,26 @@ impl UiState {
             kind,
         })
     }
+}
+
+/// Whether `key` (with `modifiers` held) should turn on the focus
+/// ring on a pointer-focused widget. Conservative whitelist — see
+/// [`UiState::key_down`] for the rationale.
+fn raises_focus_visible(key: &UiKey, modifiers: KeyModifiers) -> bool {
+    if modifiers.ctrl || modifiers.alt || modifiers.logo {
+        return false;
+    }
+    matches!(
+        key,
+        UiKey::ArrowUp
+            | UiKey::ArrowDown
+            | UiKey::ArrowLeft
+            | UiKey::ArrowRight
+            | UiKey::Home
+            | UiKey::End
+            | UiKey::PageUp
+            | UiKey::PageDown
+            | UiKey::Enter
+            | UiKey::Space
+    )
 }

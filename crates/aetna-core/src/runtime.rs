@@ -1086,6 +1086,33 @@ impl RunnerCore {
         self.ui_state.current_selection = selection;
     }
 
+    /// Resolve the runtime's current selection to a text payload using
+    /// the most recently laid-out tree. Returns `None` when nothing is
+    /// selected or the selection's keyed leaves are missing from the
+    /// snapshot (typically because they scrolled out of a
+    /// [`crate::widgets::virtual_list`] since the selection was made).
+    ///
+    /// This is the wiring `Ctrl+C` / `Ctrl+X` should use from a host.
+    /// A naive "rebuild the app tree and walk it" approach silently
+    /// breaks for virtualized panes: virtual_list rows are realized
+    /// during layout, not build, so a freshly built tree doesn't
+    /// contain them and selections inside a chat-style virtualized
+    /// pane resolve to `None`. `last_tree` already has the visible
+    /// rows realized at their live scroll offset.
+    pub fn selected_text(&self) -> Option<String> {
+        self.selected_text_for(&self.ui_state.current_selection)
+    }
+
+    /// Like [`Self::selected_text`], but resolves an explicit
+    /// [`crate::selection::Selection`] against the last laid-out tree —
+    /// useful immediately after an event handler updates
+    /// [`crate::event::App::selection`] but before the host has
+    /// rebroadcast it via [`Self::set_selection`].
+    pub fn selected_text_for(&self, selection: &crate::selection::Selection) -> Option<String> {
+        let tree = self.last_tree.as_ref()?;
+        crate::selection::selected_text(tree, selection)
+    }
+
     /// Queue toast specs onto the runtime's toast stack. Each spec
     /// is stamped with a monotonic id and `expires_at = now + ttl`;
     /// the next `prepare_layout` call drops expired entries and
@@ -4055,6 +4082,104 @@ mod tests {
         assert!(
             core.ui_state.focus_visible,
             "non-Tab key on focused widget raises focus_visible",
+        );
+    }
+
+    #[test]
+    fn selected_text_resolves_a_selection_inside_a_virtual_list() {
+        // Regression: a build-the-tree-then-walk-it path would miss
+        // virtual_list children, because rows are realized in layout
+        // (not build) — copy/cut from a visible row in a chat-style
+        // virtualized pane silently produced an empty clipboard. The
+        // runtime helper reads `last_tree`, which already has the
+        // visible rows realized at the live scroll offset.
+        use crate::selection::{Selection, SelectionPoint, SelectionRange};
+        use crate::tree::*;
+
+        // 20 rows; each row is a keyed selectable leaf so the
+        // selection can point at it directly. 50px high so a 200px
+        // viewport realizes the first few rows on the initial pass.
+        let mut tree = virtual_list_dyn(
+            20,
+            50.0,
+            |i| format!("row-{i}"),
+            |i| {
+                crate::widgets::text::text(format!("row {i} text"))
+                    .key(format!("row-{i}"))
+                    .selectable()
+                    .height(Size::Fixed(50.0))
+            },
+        );
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+        );
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+
+        // Select the middle of "row 1 text" — bytes 0..9 = "row 1 tex".
+        let selection = Selection {
+            range: Some(SelectionRange {
+                anchor: SelectionPoint::new("row-1", 0),
+                head: SelectionPoint::new("row-1", 9),
+            }),
+        };
+        core.set_selection(selection);
+
+        assert_eq!(
+            core.selected_text().as_deref(),
+            Some("row 1 tex"),
+            "runtime.selected_text() must walk last_tree (realized rows) — \
+             a build-only path would miss virtual_list children entirely",
+        );
+    }
+
+    #[test]
+    fn shortcut_chord_does_not_raise_focus_visible() {
+        // Pointer-click focuses the button and suppresses the ring.
+        // Tapping or holding a bare modifier (Ctrl, Shift, …) before
+        // the second half of a chord must NOT light the ring, and
+        // completing the chord (e.g. Ctrl+C) must NOT light it
+        // either — the focused widget is incidental to a global
+        // shortcut, matching browser `:focus-visible` heuristics.
+        let mut core = lay_out_input_tree(false);
+        let btn_rect = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn_rect.x + btn_rect.w * 0.5;
+        let cy = btn_rect.y + btn_rect.h * 0.5;
+        core.pointer_down(cx, cy, PointerButton::Primary);
+        assert!(!core.ui_state.focus_visible);
+
+        let ctrl = KeyModifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let _ = core.key_down(UiKey::Other("Control".into()), ctrl, false);
+        assert!(
+            !core.ui_state.focus_visible,
+            "bare Ctrl press must not raise focus_visible on a pointer-focused widget",
+        );
+        let _ = core.key_down(UiKey::Character("c".into()), ctrl, false);
+        assert!(
+            !core.ui_state.focus_visible,
+            "Ctrl+C is a shortcut, not interaction with the focused widget",
+        );
+
+        let _ = core.key_down(UiKey::Other("Shift".into()), KeyModifiers::default(), false);
+        assert!(
+            !core.ui_state.focus_visible,
+            "bare Shift press must not raise focus_visible",
+        );
+        let _ = core.key_down(UiKey::Character("a".into()), KeyModifiers::default(), false);
+        assert!(
+            !core.ui_state.focus_visible,
+            "bare character keys are typing/activation guesses, not navigation",
+        );
+        let _ = core.key_down(UiKey::Escape, KeyModifiers::default(), false);
+        assert!(
+            !core.ui_state.focus_visible,
+            "Escape is dismissal, not navigation — no ring",
         );
     }
 

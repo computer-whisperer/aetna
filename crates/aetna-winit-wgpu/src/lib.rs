@@ -597,7 +597,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             dispatch_app_event(
                                 &mut self.app,
                                 event,
-                                gfx.renderer.ui_state(),
+                                &gfx.renderer,
                                 &mut self.clipboard,
                                 &mut self.last_primary,
                             );
@@ -620,7 +620,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             dispatch_app_event(
                                 &mut self.app,
                                 event,
-                                gfx.renderer.ui_state(),
+                                &gfx.renderer,
                                 &mut self.clipboard,
                                 &mut self.last_primary,
                             );
@@ -639,7 +639,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             dispatch_app_event(
                                 &mut self.app,
                                 event,
-                                gfx.renderer.ui_state(),
+                                &gfx.renderer,
                                 &mut self.clipboard,
                                 &mut self.last_primary,
                             );
@@ -653,7 +653,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             dispatch_app_event(
                                 &mut self.app,
                                 event,
-                                gfx.renderer.ui_state(),
+                                &gfx.renderer,
                                 &mut self.clipboard,
                                 &mut self.last_primary,
                             );
@@ -668,7 +668,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             dispatch_app_event(
                                 &mut self.app,
                                 event,
-                                gfx.renderer.ui_state(),
+                                &gfx.renderer,
                                 &mut self.clipboard,
                                 &mut self.last_primary,
                             );
@@ -690,7 +690,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                     dispatch_app_event(
                                         &mut self.app,
                                         event,
-                                        gfx.renderer.ui_state(),
+                                        &gfx.renderer,
                                         &mut self.clipboard,
                                         &mut self.last_primary,
                                     );
@@ -707,7 +707,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                     dispatch_app_event(
                                         &mut self.app,
                                         event,
-                                        gfx.renderer.ui_state(),
+                                        &gfx.renderer,
                                         &mut self.clipboard,
                                         &mut self.last_primary,
                                     );
@@ -756,29 +756,27 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                 match text_input::clipboard_request(&event) {
                                     Some(ClipboardKind::Copy) => {
                                         copy_current_selection(
-                                            &self.app,
-                                            gfx.renderer.ui_state(),
+                                            &gfx.renderer,
                                             self.clipboard.as_mut(),
                                         );
                                         dispatch_app_event(
                                             &mut self.app,
                                             event,
-                                            gfx.renderer.ui_state(),
+                                            &gfx.renderer,
                                             &mut self.clipboard,
                                             &mut self.last_primary,
                                         );
                                     }
                                     Some(ClipboardKind::Cut) => {
                                         copy_current_selection(
-                                            &self.app,
-                                            gfx.renderer.ui_state(),
+                                            &gfx.renderer,
                                             self.clipboard.as_mut(),
                                         );
                                         let delete = clipboard::delete_selection_event(event);
                                         dispatch_app_event(
                                             &mut self.app,
                                             delete,
-                                            gfx.renderer.ui_state(),
+                                            &gfx.renderer,
                                             &mut self.clipboard,
                                             &mut self.last_primary,
                                         );
@@ -791,7 +789,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                             dispatch_app_event(
                                                 &mut self.app,
                                                 paste,
-                                                gfx.renderer.ui_state(),
+                                                &gfx.renderer,
                                                 &mut self.clipboard,
                                                 &mut self.last_primary,
                                             );
@@ -799,7 +797,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                             dispatch_app_event(
                                                 &mut self.app,
                                                 event,
-                                                gfx.renderer.ui_state(),
+                                                &gfx.renderer,
                                                 &mut self.clipboard,
                                                 &mut self.last_primary,
                                             );
@@ -808,7 +806,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                     None => dispatch_app_event(
                                         &mut self.app,
                                         event,
-                                        gfx.renderer.ui_state(),
+                                        &gfx.renderer,
                                         &mut self.clipboard,
                                         &mut self.last_primary,
                                     ),
@@ -825,7 +823,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             dispatch_app_event(
                                 &mut self.app,
                                 event,
-                                gfx.renderer.ui_state(),
+                                &gfx.renderer,
                                 &mut self.clipboard,
                                 &mut self.last_primary,
                             );
@@ -838,7 +836,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             dispatch_app_event(
                                 &mut self.app,
                                 event,
-                                gfx.renderer.ui_state(),
+                                &gfx.renderer,
                                 &mut self.clipboard,
                                 &mut self.last_primary,
                             );
@@ -1272,12 +1270,11 @@ fn bg_color(palette: &aetna_core::Palette) -> wgpu::Color {
     }
 }
 
-fn copy_current_selection<A: App>(
-    app: &A,
-    ui_state: &aetna_core::state::UiState,
-    clipboard: Option<&mut arboard::Clipboard>,
-) {
-    let Some(text) = clipboard::selected_text_for_app(app, ui_state) else {
+fn copy_current_selection(renderer: &Runner, clipboard: Option<&mut arboard::Clipboard>) {
+    // Read the selection out of `last_tree` (via the runtime helper) —
+    // see `RunnerCore::selected_text` for why a build-only path would
+    // miss selections inside a virtual list.
+    let Some(text) = renderer.selected_text() else {
         return;
     };
     let Some(clipboard) = clipboard else {
@@ -1289,24 +1286,25 @@ fn copy_current_selection<A: App>(
 fn dispatch_app_event<A: App>(
     app: &mut A,
     event: UiEvent,
-    ui_state: &aetna_core::state::UiState,
+    renderer: &Runner,
     clipboard: &mut Option<arboard::Clipboard>,
     last_primary: &mut String,
 ) {
     let before = app.selection();
     app.on_event(event);
     if app.selection() != before {
-        sync_primary_selection(app, ui_state, clipboard.as_mut(), last_primary);
+        sync_primary_selection(&app.selection(), renderer, clipboard.as_mut(), last_primary);
     }
 }
 
-fn sync_primary_selection<A: App>(
-    app: &A,
-    ui_state: &aetna_core::state::UiState,
+fn sync_primary_selection(
+    selection: &aetna_core::selection::Selection,
+    renderer: &Runner,
     clipboard: Option<&mut arboard::Clipboard>,
     last_primary: &mut String,
 ) {
-    let text = clipboard::selected_text_for_app(app, ui_state)
+    let text = renderer
+        .selected_text_for(selection)
         .filter(|s| !s.is_empty())
         .unwrap_or_default();
     if text == *last_primary {

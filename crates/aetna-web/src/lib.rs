@@ -1027,7 +1027,7 @@ mod web_entry {
                         dispatch_app_event(
                             &mut self.app,
                             event,
-                            gfx.renderer.ui_state(),
+                            &gfx.renderer,
                             &mut self.primary_selection,
                         );
                     }
@@ -1043,7 +1043,7 @@ mod web_entry {
                         dispatch_app_event(
                             &mut self.app,
                             event,
-                            gfx.renderer.ui_state(),
+                            &gfx.renderer,
                             &mut self.primary_selection,
                         );
                     }
@@ -1065,7 +1065,7 @@ mod web_entry {
                         dispatch_app_event(
                             &mut self.app,
                             event,
-                            gfx.renderer.ui_state(),
+                            &gfx.renderer,
                             &mut self.primary_selection,
                         );
                     }
@@ -1078,7 +1078,7 @@ mod web_entry {
                         dispatch_app_event(
                             &mut self.app,
                             event,
-                            gfx.renderer.ui_state(),
+                            &gfx.renderer,
                             &mut self.primary_selection,
                         );
                     }
@@ -1092,7 +1092,7 @@ mod web_entry {
                         dispatch_app_event(
                             &mut self.app,
                             event,
-                            gfx.renderer.ui_state(),
+                            &gfx.renderer,
                             &mut self.primary_selection,
                         );
                     }
@@ -1113,7 +1113,7 @@ mod web_entry {
                                 dispatch_app_event(
                                     &mut self.app,
                                     event,
-                                    gfx.renderer.ui_state(),
+                                    &gfx.renderer,
                                     &mut self.primary_selection,
                                 );
                             }
@@ -1127,7 +1127,7 @@ mod web_entry {
                                 dispatch_app_event(
                                     &mut self.app,
                                     event,
-                                    gfx.renderer.ui_state(),
+                                    &gfx.renderer,
                                     &mut self.primary_selection,
                                 );
                             }
@@ -1169,28 +1169,20 @@ mod web_entry {
                         for event in gfx.renderer.key_down(key, self.modifiers, key_event.repeat) {
                             match text_input::clipboard_request(&event) {
                                 Some(ClipboardKind::Copy) => {
-                                    copy_current_selection(
-                                        &self.app,
-                                        gfx.renderer.ui_state(),
-                                        write_clipboard_text,
-                                    );
+                                    copy_current_selection(&gfx.renderer, write_clipboard_text);
                                     dispatch_app_event(
                                         &mut self.app,
                                         event,
-                                        gfx.renderer.ui_state(),
+                                        &gfx.renderer,
                                         &mut self.primary_selection,
                                     );
                                 }
                                 Some(ClipboardKind::Cut) => {
-                                    copy_current_selection(
-                                        &self.app,
-                                        gfx.renderer.ui_state(),
-                                        write_clipboard_text,
-                                    );
+                                    copy_current_selection(&gfx.renderer, write_clipboard_text);
                                     dispatch_app_event(
                                         &mut self.app,
                                         clipboard::delete_selection_event(event),
-                                        gfx.renderer.ui_state(),
+                                        &gfx.renderer,
                                         &mut self.primary_selection,
                                     );
                                 }
@@ -1198,7 +1190,7 @@ mod web_entry {
                                 None => dispatch_app_event(
                                     &mut self.app,
                                     event,
-                                    gfx.renderer.ui_state(),
+                                    &gfx.renderer,
                                     &mut self.primary_selection,
                                 ),
                             }
@@ -1210,7 +1202,7 @@ mod web_entry {
                         dispatch_app_event(
                             &mut self.app,
                             event,
-                            gfx.renderer.ui_state(),
+                            &gfx.renderer,
                             &mut self.primary_selection,
                         );
                     }
@@ -1222,7 +1214,7 @@ mod web_entry {
                         dispatch_app_event(
                             &mut self.app,
                             event,
-                            gfx.renderer.ui_state(),
+                            &gfx.renderer,
                             &mut self.primary_selection,
                         );
                     }
@@ -1568,12 +1560,12 @@ mod web_entry {
         }
     }
 
-    fn copy_current_selection<A: App>(
-        app: &A,
-        ui_state: &aetna_core::state::UiState,
-        write_text: impl FnOnce(String),
-    ) {
-        let Some(text) = clipboard::selected_text_for_app(app, ui_state) else {
+    fn copy_current_selection(renderer: &Runner, write_text: impl FnOnce(String)) {
+        // Read the selection out of `last_tree` (via the runtime
+        // helper) — see `RunnerCore::selected_text` for why a
+        // build-only path would miss selections inside a virtual
+        // list.
+        let Some(text) = renderer.selected_text() else {
             return;
         };
         write_text(text);
@@ -1602,13 +1594,18 @@ mod web_entry {
     fn dispatch_app_event<A: App>(
         app: &mut A,
         event: UiEvent,
-        ui_state: &aetna_core::state::UiState,
+        renderer: &Runner,
         primary_selection: &mut String,
     ) {
         let before = app.selection();
         app.on_event(event);
         if app.selection() != before {
-            *primary_selection = clipboard::selected_text_for_app(app, ui_state)
+            // Resolve the post-event selection against `last_tree`.
+            // The new selection's keys are typically the row the user
+            // just clicked, which is present in the previous frame's
+            // snapshot.
+            *primary_selection = renderer
+                .selected_text_for(&app.selection())
                 .filter(|text| !text.is_empty())
                 .unwrap_or_default();
         }
@@ -1627,7 +1624,7 @@ mod web_entry {
             };
             drained = true;
             let event = clipboard::paste_text_event(event, text);
-            dispatch_app_event(app, event, renderer.ui_state(), primary_selection);
+            dispatch_app_event(app, event, renderer, primary_selection);
         }
         drained
     }

@@ -1037,6 +1037,24 @@ impl Runner {
         self.core.set_selection(selection);
     }
 
+    /// Resolve the runtime's current selection to a text payload from
+    /// the most recently laid-out tree. See
+    /// [`RunnerCore::selected_text`] — virtual-list rows are realized
+    /// during layout, so a freshly built app tree would miss them and
+    /// a `Ctrl+C` lookup that walked it would silently come back empty.
+    pub fn selected_text(&self) -> Option<String> {
+        self.core.selected_text()
+    }
+
+    /// Resolve an explicit [`aetna_core::selection::Selection`] against
+    /// the last laid-out tree. See [`RunnerCore::selected_text_for`].
+    pub fn selected_text_for(
+        &self,
+        selection: &aetna_core::selection::Selection,
+    ) -> Option<String> {
+        self.core.selected_text_for(selection)
+    }
+
     /// Queue toast specs onto the runtime's toast stack. Hosts call
     /// this once per frame with `app.drain_toasts()`. Each spec is
     /// stamped with a monotonic id and an `expires_at` deadline
