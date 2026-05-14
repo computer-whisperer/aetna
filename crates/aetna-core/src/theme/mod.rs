@@ -10,15 +10,24 @@
 //! constants today, but surface appearance can already move from
 //! `stock::rounded_rect` to a custom material without rewriting every
 //! `button`, `card`, or `text_input`.
+//!
+//! Sibling modules cover the rest of the appearance system:
+//! - [`tokens`] — semantic color / spacing / radius constants.
+//! - [`palette`] — runtime swappable color palette layered on the tokens.
+//! - [`style`] — style profiles (Solid, TextOnly, …) + variant chainables
+//!   (`.primary()`, `.ghost()`, …).
+
+pub mod palette;
+pub mod style;
+pub mod tokens;
 
 use std::collections::BTreeMap;
 
 use crate::metrics::{ComponentSize, ThemeMetrics};
-use crate::palette::Palette;
 use crate::shader::{ShaderHandle, StockShader, UniformBlock, UniformValue};
-use crate::tokens;
 use crate::tree::{Color, FontFamily, SurfaceRole};
 use crate::vector::IconMaterial;
+use palette::Palette;
 
 /// Runtime paint theme for implicit widget visuals.
 #[derive(Clone, Debug)]

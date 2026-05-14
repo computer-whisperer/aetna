@@ -54,7 +54,6 @@ pub mod math;
 pub mod metrics;
 #[doc(hidden)]
 pub mod paint;
-pub mod palette;
 pub mod prelude;
 pub mod profile;
 #[doc(hidden)]
@@ -63,12 +62,16 @@ pub mod scroll;
 pub mod selection;
 pub mod shader;
 pub mod state;
-pub mod style;
 pub mod surface;
 pub mod text;
 pub mod theme;
+// Back-compat re-exports of theme submodules at the crate root, since
+// `tokens::`, `palette::`, and `style::` are referenced from ~130 call
+// sites across this crate and downstream renderers / examples.
+pub use theme::palette;
+pub use theme::style;
+pub use theme::tokens;
 pub mod toast;
-pub mod tokens;
 pub mod tooltip;
 pub mod tree;
 pub mod vector;
