@@ -14,6 +14,7 @@ const EULER_KEY: &str = "math-preset-euler";
 const FRACTION_KEY: &str = "math-preset-fraction";
 const MATRIX_KEY: &str = "math-preset-matrix";
 const LIMITS_KEY: &str = "math-preset-limits";
+const LOGIC_KEY: &str = "math-preset-logic";
 const ERRORS_KEY: &str = "math-preset-errors";
 const STRESS_KEY: &str = "math-preset-stress";
 
@@ -71,6 +72,37 @@ $$
 
 $$
 \\int_0^1 f(x)dx
+$$
+";
+
+const LOGIC_SOURCE: &str = "\
+# Logic, sets, and relations
+
+Quantifiers and implications: $\\forall x \\in \\mathbb{R},\\ \\exists n \\in \\mathbb{N}$ \
+with $n > x \\implies n + 1 > x$.
+
+$$
+\\forall \\epsilon > 0,\\ \\exists \\delta > 0\\ :\\
+|x - a| < \\delta \\implies |f(x) - f(a)| < \\epsilon
+$$
+
+$$
+A \\subseteq B \\iff \\forall x\\ (x \\in A \\implies x \\in B)
+$$
+
+$$
+\\gcd(a, b) \\cdot \\mathrm{lcm}(a, b) = a \\cdot b,
+\\qquad \\Pr(A \\cup B) \\leq \\Pr(A) + \\Pr(B)
+$$
+
+$$
+\\liminf_{n \\to \\infty} a_n
+\\leq \\limsup_{n \\to \\infty} a_n
+$$
+
+$$
+\\bigoplus_{i=1}^{n} V_i \\cong \\bigotimes_{j=1}^{m} W_j,
+\\qquad \\oint_{\\partial \\Omega} \\omega = \\iint_{\\Omega} d\\omega
 $$
 ";
 
@@ -151,6 +183,11 @@ const PRESETS: &[Preset] = &[
         key: LIMITS_KEY,
         label: "Limits",
         source: LIMITS_SOURCE,
+    },
+    Preset {
+        key: LOGIC_KEY,
+        label: "Logic",
+        source: LOGIC_SOURCE,
     },
     Preset {
         key: ERRORS_KEY,

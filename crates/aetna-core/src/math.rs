@@ -24,7 +24,7 @@ const RADICAL_GLYPH: char = '√';
 const THIN_MATH_SPACE_EM: f32 = 0.08;
 const MEDIUM_MATH_SPACE_EM: f32 = 0.18;
 const THICK_MATH_SPACE_EM: f32 = 0.28;
-const STRETCHY_VARIANT_CHARS: [char; 18] = [
+const STRETCHY_VARIANT_CHARS: [char; 29] = [
     '(',
     ')',
     '[',
@@ -43,6 +43,17 @@ const STRETCHY_VARIANT_CHARS: [char; 18] = [
     '∏',
     '⋂',
     '⋃',
+    '∐',
+    '∮',
+    '∬',
+    '∭',
+    '⨁',
+    '⨂',
+    '⨀',
+    '⋁',
+    '⋀',
+    '⨄',
+    '⨆',
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -231,17 +242,28 @@ impl MathOperatorInfo {
 fn operator_info(operator: &str) -> MathOperatorInfo {
     use MathOperatorClass::*;
     match operator {
-        "+" | "-" | "±" | "∓" | "·" | "×" | "÷" | "∪" | "∩" => {
+        "+" | "-" | "±" | "∓" | "·" | "×" | "÷" | "∪" | "∩"
+        | "∧" | "∨" | "⊕" | "⊖" | "⊗" | "⊘" | "⊙"
+        | "⋆" | "∗" | "∘" | "•" | "⊔" | "⊓" | "⨿" | "≀"
+        | "◁" | "▷" | "⋄" | "∖" => {
             MathOperatorInfo::new(Binary, MEDIUM_MATH_SPACE_EM, MEDIUM_MATH_SPACE_EM)
         }
-        "=" | "<" | ">" | "≤" | "≥" | "≠" | "≈" | "∼" | "→" | "←" | "↔" => {
+        "=" | "<" | ">" | "≤" | "≥" | "≠" | "≈" | "∼" | "→" | "←" | "↔"
+        | "⇒" | "⇐" | "⇔" | "⟹" | "⟸" | "⟺" | "⟶" | "⟵" | "⟷"
+        | "↦" | "⟼" | "↪" | "↩"
+        | "∈" | "∉" | "∋" | "∌" | "⊂" | "⊃" | "⊆" | "⊇" | "⊊" | "⊋"
+        | "≡" | "≃" | "≅" | "∝" | "≺" | "≻" | "⪯" | "⪰" | "≪" | "≫"
+        | "∥" | "⊥" | "≍" | "≐" | "⊨" | "⊢" | "⊣" | "∴" | "∵" => {
             MathOperatorInfo::new(Relation, MEDIUM_MATH_SPACE_EM, MEDIUM_MATH_SPACE_EM)
         }
-        "∑" | "∏" | "⋂" | "⋃" => {
+        "∑" | "∏" | "⋂" | "⋃" | "∐"
+        | "⨁" | "⨂" | "⨀" | "⋁" | "⋀" | "⨄" | "⨆" => {
             MathOperatorInfo::new(Large, THIN_MATH_SPACE_EM, THIN_MATH_SPACE_EM).large()
         }
-        "∫" => MathOperatorInfo::new(Large, THIN_MATH_SPACE_EM, THIN_MATH_SPACE_EM)
-            .large_with_side_scripts(),
+        "∫" | "∮" | "∬" | "∭" => {
+            MathOperatorInfo::new(Large, THIN_MATH_SPACE_EM, THIN_MATH_SPACE_EM)
+                .large_with_side_scripts()
+        }
         "," | "." | ";" | ":" => MathOperatorInfo::new(Punctuation, 0.0, THIN_MATH_SPACE_EM),
         _ => MathOperatorInfo::new(Ordinary, 0.0, 0.0),
     }
@@ -1550,7 +1572,10 @@ fn layout_accent_mark(accent: &MathExpr, ctx: LayoutCtx) -> MathLayout {
 fn is_display_limits_base(expr: &MathExpr) -> bool {
     match expr.without_source() {
         MathExpr::Operator(_) | MathExpr::OperatorWithMetadata { .. } => has_movable_limits(expr),
-        MathExpr::Text(s) => matches!(s.as_str(), "lim" | "max" | "min" | "sup" | "inf"),
+        MathExpr::Text(s) => matches!(
+            s.as_str(),
+            "lim" | "max" | "min" | "sup" | "inf" | "det" | "gcd" | "Pr" | "lim inf" | "lim sup"
+        ),
         _ => false,
     }
 }
@@ -2876,32 +2901,7 @@ impl<'a> TexParser<'a> {
                 let expr = self.parse_required_group()?;
                 Ok(map_mathbb_expr(expr))
             }
-            "cdot" => Ok(MathExpr::Operator("·".into())),
-            "times" => Ok(MathExpr::Operator("×".into())),
-            "div" => Ok(MathExpr::Operator("÷".into())),
-            "pm" => Ok(MathExpr::Operator("±".into())),
-            "approx" => Ok(MathExpr::Operator("≈".into())),
-            "le" | "leq" => Ok(MathExpr::Operator("≤".into())),
-            "ge" | "geq" => Ok(MathExpr::Operator("≥".into())),
-            "ne" | "neq" => Ok(MathExpr::Operator("≠".into())),
-            "to" | "rightarrow" => Ok(MathExpr::Operator("→".into())),
-            "leftarrow" => Ok(MathExpr::Operator("←".into())),
-            "mid" => Ok(MathExpr::Operator("|".into())),
-            "sum" => Ok(MathExpr::Operator("∑".into())),
-            "prod" => Ok(MathExpr::Operator("∏".into())),
-            "int" => Ok(MathExpr::Operator("∫".into())),
-            "cup" => Ok(MathExpr::Operator("∪".into())),
-            "cap" => Ok(MathExpr::Operator("∩".into())),
-            "bigcup" => Ok(MathExpr::Operator("⋃".into())),
-            "bigcap" => Ok(MathExpr::Operator("⋂".into())),
-            "nabla" => Ok(MathExpr::Operator("∇".into())),
-            "partial" => Ok(MathExpr::Identifier("∂".into())),
-            "infty" => Ok(MathExpr::Identifier("∞".into())),
-            "pi" => Ok(MathExpr::Identifier("π".into())),
-            "theta" => Ok(MathExpr::Identifier("θ".into())),
-            "lambda" => Ok(MathExpr::Identifier("λ".into())),
-            "mu" => Ok(MathExpr::Identifier("μ".into())),
-            "sigma" => Ok(MathExpr::Identifier("σ".into())),
+            // Greek lowercase
             "alpha" => Ok(MathExpr::Identifier("α".into())),
             "beta" => Ok(MathExpr::Identifier("β".into())),
             "gamma" => Ok(MathExpr::Identifier("γ".into())),
@@ -2909,33 +2909,206 @@ impl<'a> TexParser<'a> {
             "varepsilon" | "epsilon" => Ok(MathExpr::Identifier("ε".into())),
             "zeta" => Ok(MathExpr::Identifier("ζ".into())),
             "eta" => Ok(MathExpr::Identifier("η".into())),
+            "theta" => Ok(MathExpr::Identifier("θ".into())),
+            "vartheta" => Ok(MathExpr::Identifier("ϑ".into())),
             "iota" => Ok(MathExpr::Identifier("ι".into())),
             "kappa" => Ok(MathExpr::Identifier("κ".into())),
+            "varkappa" => Ok(MathExpr::Identifier("ϰ".into())),
+            "lambda" => Ok(MathExpr::Identifier("λ".into())),
+            "mu" => Ok(MathExpr::Identifier("μ".into())),
             "nu" => Ok(MathExpr::Identifier("ν".into())),
             "xi" => Ok(MathExpr::Identifier("ξ".into())),
+            "pi" => Ok(MathExpr::Identifier("π".into())),
+            "varpi" => Ok(MathExpr::Identifier("ϖ".into())),
             "rho" => Ok(MathExpr::Identifier("ρ".into())),
+            "varrho" => Ok(MathExpr::Identifier("ϱ".into())),
+            "sigma" => Ok(MathExpr::Identifier("σ".into())),
+            "varsigma" => Ok(MathExpr::Identifier("ς".into())),
             "tau" => Ok(MathExpr::Identifier("τ".into())),
             "upsilon" => Ok(MathExpr::Identifier("υ".into())),
             "phi" | "varphi" => Ok(MathExpr::Identifier("φ".into())),
             "chi" => Ok(MathExpr::Identifier("χ".into())),
             "psi" => Ok(MathExpr::Identifier("ψ".into())),
             "omega" => Ok(MathExpr::Identifier("ω".into())),
+            // Greek uppercase
             "Gamma" => Ok(MathExpr::Identifier("Γ".into())),
             "Delta" => Ok(MathExpr::Identifier("Δ".into())),
+            "Theta" => Ok(MathExpr::Identifier("Θ".into())),
+            "Lambda" => Ok(MathExpr::Identifier("Λ".into())),
+            "Xi" => Ok(MathExpr::Identifier("Ξ".into())),
+            "Pi" => Ok(MathExpr::Identifier("Π".into())),
+            "Sigma" => Ok(MathExpr::Identifier("Σ".into())),
+            "Upsilon" => Ok(MathExpr::Identifier("Υ".into())),
+            "Phi" => Ok(MathExpr::Identifier("Φ".into())),
+            "Psi" => Ok(MathExpr::Identifier("Ψ".into())),
             "Omega" => Ok(MathExpr::Identifier("Ω".into())),
+            // Other identifiers
+            "partial" => Ok(MathExpr::Identifier("∂".into())),
+            "infty" => Ok(MathExpr::Identifier("∞".into())),
             "hbar" => Ok(MathExpr::Identifier("ℏ".into())),
-            "dagger" => Ok(MathExpr::Operator("†".into())),
             "Re" => Ok(MathExpr::Identifier("ℜ".into())),
-            "ldots" => Ok(MathExpr::Text("...".into())),
-            "cdots" => Ok(MathExpr::Operator("⋯".into())),
-            "langle" => Ok(MathExpr::Operator("⟨".into())),
-            "rangle" => Ok(MathExpr::Operator("⟩".into())),
+            "Im" => Ok(MathExpr::Identifier("ℑ".into())),
+            "aleph" => Ok(MathExpr::Identifier("ℵ".into())),
+            "beth" => Ok(MathExpr::Identifier("ℶ".into())),
+            "wp" => Ok(MathExpr::Identifier("℘".into())),
+            "ell" => Ok(MathExpr::Identifier("ℓ".into())),
             "emptyset" | "varnothing" => Ok(MathExpr::Identifier("∅".into())),
-            "sin" | "cos" | "tan" | "log" | "ln" | "lim" | "max" | "min" | "sup" | "inf"
-            | "det" | "exp" => Ok(MathExpr::Text(name)),
+            "triangle" => Ok(MathExpr::Identifier("△".into())),
+            "square" => Ok(MathExpr::Identifier("□".into())),
+            "flat" => Ok(MathExpr::Identifier("♭".into())),
+            "sharp" => Ok(MathExpr::Identifier("♯".into())),
+            "natural" => Ok(MathExpr::Identifier("♮".into())),
+            // Binary operators
+            "pm" => Ok(MathExpr::Operator("±".into())),
+            "mp" => Ok(MathExpr::Operator("∓".into())),
+            "cdot" => Ok(MathExpr::Operator("·".into())),
+            "times" => Ok(MathExpr::Operator("×".into())),
+            "div" => Ok(MathExpr::Operator("÷".into())),
+            "cup" => Ok(MathExpr::Operator("∪".into())),
+            "cap" => Ok(MathExpr::Operator("∩".into())),
+            "wedge" | "land" => Ok(MathExpr::Operator("∧".into())),
+            "vee" | "lor" => Ok(MathExpr::Operator("∨".into())),
+            "oplus" => Ok(MathExpr::Operator("⊕".into())),
+            "ominus" => Ok(MathExpr::Operator("⊖".into())),
+            "otimes" => Ok(MathExpr::Operator("⊗".into())),
+            "oslash" => Ok(MathExpr::Operator("⊘".into())),
+            "odot" => Ok(MathExpr::Operator("⊙".into())),
+            "circ" => Ok(MathExpr::Operator("∘".into())),
+            "bullet" => Ok(MathExpr::Operator("•".into())),
+            "star" => Ok(MathExpr::Operator("⋆".into())),
+            "ast" => Ok(MathExpr::Operator("∗".into())),
+            "sqcup" => Ok(MathExpr::Operator("⊔".into())),
+            "sqcap" => Ok(MathExpr::Operator("⊓".into())),
+            "amalg" => Ok(MathExpr::Operator("⨿".into())),
+            "wr" => Ok(MathExpr::Operator("≀".into())),
+            "triangleleft" => Ok(MathExpr::Operator("◁".into())),
+            "triangleright" => Ok(MathExpr::Operator("▷".into())),
+            "diamond" => Ok(MathExpr::Operator("⋄".into())),
+            "setminus" | "smallsetminus" => Ok(MathExpr::Operator("∖".into())),
+            // Relations
+            "approx" => Ok(MathExpr::Operator("≈".into())),
+            "sim" => Ok(MathExpr::Operator("∼".into())),
+            "simeq" => Ok(MathExpr::Operator("≃".into())),
+            "cong" => Ok(MathExpr::Operator("≅".into())),
+            "equiv" => Ok(MathExpr::Operator("≡".into())),
+            "propto" => Ok(MathExpr::Operator("∝".into())),
+            "le" | "leq" => Ok(MathExpr::Operator("≤".into())),
+            "ge" | "geq" => Ok(MathExpr::Operator("≥".into())),
+            "ne" | "neq" => Ok(MathExpr::Operator("≠".into())),
+            "ll" => Ok(MathExpr::Operator("≪".into())),
+            "gg" => Ok(MathExpr::Operator("≫".into())),
+            "prec" => Ok(MathExpr::Operator("≺".into())),
+            "succ" => Ok(MathExpr::Operator("≻".into())),
+            "preceq" => Ok(MathExpr::Operator("⪯".into())),
+            "succeq" => Ok(MathExpr::Operator("⪰".into())),
+            "parallel" => Ok(MathExpr::Operator("∥".into())),
+            "perp" => Ok(MathExpr::Operator("⊥".into())),
+            "asymp" => Ok(MathExpr::Operator("≍".into())),
+            "doteq" => Ok(MathExpr::Operator("≐".into())),
+            "models" => Ok(MathExpr::Operator("⊨".into())),
+            "vdash" => Ok(MathExpr::Operator("⊢".into())),
+            "dashv" => Ok(MathExpr::Operator("⊣".into())),
+            "therefore" => Ok(MathExpr::Operator("∴".into())),
+            "because" => Ok(MathExpr::Operator("∵".into())),
+            // Set theory
+            "in" => Ok(MathExpr::Operator("∈".into())),
+            "notin" => Ok(MathExpr::Operator("∉".into())),
+            "ni" => Ok(MathExpr::Operator("∋".into())),
+            "subset" => Ok(MathExpr::Operator("⊂".into())),
+            "supset" => Ok(MathExpr::Operator("⊃".into())),
+            "subseteq" => Ok(MathExpr::Operator("⊆".into())),
+            "supseteq" => Ok(MathExpr::Operator("⊇".into())),
+            "subsetneq" => Ok(MathExpr::Operator("⊊".into())),
+            "supsetneq" => Ok(MathExpr::Operator("⊋".into())),
+            "complement" => Ok(MathExpr::Operator("∁".into())),
+            // Logic / quantifiers
+            "forall" => Ok(MathExpr::Operator("∀".into())),
+            "exists" => Ok(MathExpr::Operator("∃".into())),
+            "nexists" => Ok(MathExpr::Operator("∄".into())),
+            "neg" | "lnot" => Ok(MathExpr::Operator("¬".into())),
+            "top" => Ok(MathExpr::Operator("⊤".into())),
+            "bot" => Ok(MathExpr::Operator("⊥".into())),
+            "implies" => Ok(extra_wide_operator("⟹")),
+            "impliedby" => Ok(extra_wide_operator("⟸")),
+            "iff" => Ok(extra_wide_operator("⟺")),
+            // Arrows
+            "to" | "rightarrow" => Ok(MathExpr::Operator("→".into())),
+            "leftarrow" | "gets" => Ok(MathExpr::Operator("←".into())),
+            "leftrightarrow" => Ok(MathExpr::Operator("↔".into())),
+            "Rightarrow" => Ok(MathExpr::Operator("⇒".into())),
+            "Leftarrow" => Ok(MathExpr::Operator("⇐".into())),
+            "Leftrightarrow" => Ok(MathExpr::Operator("⇔".into())),
+            "longrightarrow" => Ok(MathExpr::Operator("⟶".into())),
+            "longleftarrow" => Ok(MathExpr::Operator("⟵".into())),
+            "longleftrightarrow" => Ok(MathExpr::Operator("⟷".into())),
+            "Longrightarrow" => Ok(MathExpr::Operator("⟹".into())),
+            "Longleftarrow" => Ok(MathExpr::Operator("⟸".into())),
+            "Longleftrightarrow" => Ok(MathExpr::Operator("⟺".into())),
+            "uparrow" => Ok(MathExpr::Operator("↑".into())),
+            "downarrow" => Ok(MathExpr::Operator("↓".into())),
+            "updownarrow" => Ok(MathExpr::Operator("↕".into())),
+            "Uparrow" => Ok(MathExpr::Operator("⇑".into())),
+            "Downarrow" => Ok(MathExpr::Operator("⇓".into())),
+            "Updownarrow" => Ok(MathExpr::Operator("⇕".into())),
+            "mapsto" => Ok(MathExpr::Operator("↦".into())),
+            "longmapsto" => Ok(MathExpr::Operator("⟼".into())),
+            "hookrightarrow" => Ok(MathExpr::Operator("↪".into())),
+            "hookleftarrow" => Ok(MathExpr::Operator("↩".into())),
+            // Large operators
+            "sum" => Ok(MathExpr::Operator("∑".into())),
+            "prod" => Ok(MathExpr::Operator("∏".into())),
+            "coprod" => Ok(MathExpr::Operator("∐".into())),
+            "int" => Ok(MathExpr::Operator("∫".into())),
+            "oint" => Ok(MathExpr::Operator("∮".into())),
+            "iint" => Ok(MathExpr::Operator("∬".into())),
+            "iiint" => Ok(MathExpr::Operator("∭".into())),
+            "bigcup" => Ok(MathExpr::Operator("⋃".into())),
+            "bigcap" => Ok(MathExpr::Operator("⋂".into())),
+            "biguplus" => Ok(MathExpr::Operator("⨄".into())),
+            "bigsqcup" => Ok(MathExpr::Operator("⨆".into())),
+            "bigvee" => Ok(MathExpr::Operator("⋁".into())),
+            "bigwedge" => Ok(MathExpr::Operator("⋀".into())),
+            "bigoplus" => Ok(MathExpr::Operator("⨁".into())),
+            "bigotimes" => Ok(MathExpr::Operator("⨂".into())),
+            "bigodot" => Ok(MathExpr::Operator("⨀".into())),
+            // Misc symbols
+            "nabla" => Ok(MathExpr::Operator("∇".into())),
+            "dagger" => Ok(MathExpr::Operator("†".into())),
+            "ddagger" => Ok(MathExpr::Operator("‡".into())),
+            "mid" => Ok(MathExpr::Operator("|".into())),
+            "angle" => Ok(MathExpr::Operator("∠".into())),
+            "measuredangle" => Ok(MathExpr::Operator("∡".into())),
+            // Dots
+            "ldots" | "dots" => Ok(MathExpr::Text("...".into())),
+            "cdots" => Ok(MathExpr::Operator("⋯".into())),
+            "vdots" => Ok(MathExpr::Operator("⋮".into())),
+            "ddots" => Ok(MathExpr::Operator("⋱".into())),
+            // Function-like operator names (rendered upright)
+            "sin" | "cos" | "tan" | "cot" | "sec" | "csc"
+            | "sinh" | "cosh" | "tanh" | "coth"
+            | "arcsin" | "arccos" | "arctan"
+            | "log" | "lg" | "ln" | "exp"
+            | "lim" | "max" | "min" | "sup" | "inf" | "det"
+            | "arg" | "deg" | "dim" | "hom" | "ker" => Ok(MathExpr::Text(name)),
+            "gcd" => Ok(MathExpr::Text("gcd".into())),
+            "Pr" => Ok(MathExpr::Text("Pr".into())),
+            "liminf" => Ok(MathExpr::Text("lim inf".into())),
+            "limsup" => Ok(MathExpr::Text("lim sup".into())),
+            // Spacing
             "quad" => Ok(MathExpr::Space(1.0)),
             "qquad" => Ok(MathExpr::Space(2.0)),
-            _ => Ok(MathExpr::Identifier(format!("\\{name}"))),
+            "thinspace" => Ok(MathExpr::Space(THIN_MATH_SPACE_EM)),
+            "medspace" => Ok(MathExpr::Space(MEDIUM_MATH_SPACE_EM)),
+            "thickspace" => Ok(MathExpr::Space(THICK_MATH_SPACE_EM)),
+            "negthinspace" => Ok(MathExpr::Space(-THIN_MATH_SPACE_EM)),
+            "negmedspace" => Ok(MathExpr::Space(-MEDIUM_MATH_SPACE_EM)),
+            "negthickspace" => Ok(MathExpr::Space(-THICK_MATH_SPACE_EM)),
+            "enspace" => Ok(MathExpr::Space(0.5)),
+            "space" => Ok(MathExpr::Space(MEDIUM_MATH_SPACE_EM)),
+            _ => match delimiter_command(&name) {
+                Some(symbol) => Ok(MathExpr::Operator(symbol)),
+                None => Ok(MathExpr::Identifier(format!("\\{name}"))),
+            },
         }
     }
 
@@ -3121,6 +3294,17 @@ impl<'a> TexParser<'a> {
             message: message.to_string(),
             byte: self.pos,
         }
+    }
+}
+
+fn extra_wide_operator(symbol: &str) -> MathExpr {
+    let spacing = MEDIUM_MATH_SPACE_EM + THICK_MATH_SPACE_EM;
+    MathExpr::OperatorWithMetadata {
+        text: symbol.into(),
+        lspace: Some(spacing),
+        rspace: Some(spacing),
+        large_operator: None,
+        movable_limits: None,
     }
 }
 
@@ -3890,6 +4074,162 @@ S &= \frac{1 - r^{n+1}}{1 - r}, \quad r \neq 1
         assert_eq!(integral.class, MathOperatorClass::Large);
         assert!(integral.large_operator);
         assert!(!integral.movable_limits);
+
+        // Expanded class coverage
+        let wedge = operator_info("∧");
+        assert_eq!(wedge.class, MathOperatorClass::Binary);
+        let oplus = operator_info("⊕");
+        assert_eq!(oplus.class, MathOperatorClass::Binary);
+
+        let element_of = operator_info("∈");
+        assert_eq!(element_of.class, MathOperatorClass::Relation);
+        let double_right_arrow = operator_info("⇒");
+        assert_eq!(double_right_arrow.class, MathOperatorClass::Relation);
+
+        let coproduct = operator_info("∐");
+        assert_eq!(coproduct.class, MathOperatorClass::Large);
+        assert!(coproduct.movable_limits);
+
+        let contour_integral = operator_info("∮");
+        assert_eq!(contour_integral.class, MathOperatorClass::Large);
+        assert!(contour_integral.large_operator);
+        assert!(!contour_integral.movable_limits);
+    }
+
+    #[test]
+    fn parses_logic_and_set_theory_commands() {
+        let expr = parse_tex(r"\forall x \in S, \exists y \notin T \implies x \neq y")
+            .expect("valid logic tex");
+        assert_no_unknown_tex_commands(&expr);
+
+        let MathExpr::Row(children) = &expr else {
+            panic!("expected row");
+        };
+
+        assert!(
+            children
+                .iter()
+                .any(|c| matches!(c.without_source(), MathExpr::Operator(s) if s == "∀")),
+            "expected ∀ in {children:?}"
+        );
+        assert!(
+            children
+                .iter()
+                .any(|c| matches!(c.without_source(), MathExpr::Operator(s) if s == "∃")),
+            "expected ∃ in {children:?}"
+        );
+        assert!(
+            children
+                .iter()
+                .any(|c| matches!(c.without_source(), MathExpr::Operator(s) if s == "∈")),
+            "expected ∈ in {children:?}"
+        );
+        assert!(
+            children
+                .iter()
+                .any(|c| matches!(c.without_source(), MathExpr::Operator(s) if s == "∉")),
+            "expected ∉ in {children:?}"
+        );
+
+        let implies = children
+            .iter()
+            .find_map(|child| match child.without_source() {
+                MathExpr::OperatorWithMetadata {
+                    text,
+                    lspace,
+                    rspace,
+                    ..
+                } if text == "⟹" => Some((*lspace, *rspace)),
+                _ => None,
+            })
+            .expect("expected \\implies operator with metadata");
+        let (lspace, rspace) = implies;
+        // Should be wider than the default relation spacing.
+        assert!(
+            lspace.is_some_and(|v| v > MEDIUM_MATH_SPACE_EM),
+            "lspace = {lspace:?}"
+        );
+        assert!(
+            rspace.is_some_and(|v| v > MEDIUM_MATH_SPACE_EM),
+            "rspace = {rspace:?}"
+        );
+    }
+
+    #[test]
+    fn parses_function_like_operators_with_limits() {
+        let expr = parse_tex(r"\gcd_{p \mid n}(p) + \liminf_{n \to \infty} a_n")
+            .expect("valid function tex");
+        assert_no_unknown_tex_commands(&expr);
+
+        let layout = layout_math(&expr, 22.0, MathDisplay::Block);
+        assert!(layout.width.is_finite() && layout.height().is_finite());
+
+        // \gcd should be a Text base; \liminf renders with a thin space.
+        assert!(is_display_limits_base(&MathExpr::Text("gcd".into())));
+        assert!(is_display_limits_base(&MathExpr::Text("Pr".into())));
+        assert!(is_display_limits_base(&MathExpr::Text("det".into())));
+        assert!(is_display_limits_base(&MathExpr::Text("lim inf".into())));
+        assert!(is_display_limits_base(&MathExpr::Text("lim sup".into())));
+    }
+
+    #[test]
+    fn parses_bare_delimiter_commands_as_operators() {
+        let expr = parse_tex(r"\lfloor x \rfloor + \lceil y \rceil + \langle u, v \rangle")
+            .expect("valid bare delimiter tex");
+        assert_no_unknown_tex_commands(&expr);
+        let MathExpr::Row(children) = &expr else {
+            panic!("expected row");
+        };
+        for symbol in ["⌊", "⌋", "⌈", "⌉", "⟨", "⟩"] {
+            assert!(
+                children
+                    .iter()
+                    .any(|c| matches!(c.without_source(), MathExpr::Operator(s) if s == symbol)),
+                "expected {symbol} in {children:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_arrows_and_big_operators() {
+        let formulas = [
+            r"f : A \hookrightarrow B",
+            r"x \mapsto x^2",
+            r"a \Rightarrow b \Leftrightarrow c",
+            r"\bigoplus_{i=1}^{n} V_i \cong \bigotimes_{j=1}^{m} W_j",
+            r"\oint_{\partial \Omega} \omega = \iint_{\Omega} d\omega",
+            r"\coprod_{i \in I} X_i",
+            r"\bigvee_{k} a_k \wedge \bigwedge_{k} b_k",
+            r"A \subseteq B \subset C \supseteq D \supset E",
+            r"x \equiv y",
+            r"\therefore \forall \epsilon > 0, \exists \delta > 0",
+            r"\neg p \vee q \iff p \implies q",
+            r"\gcd(a, b) \cdot \mathrm{lcm}(a, b) = a \cdot b",
+            r"\Pr(A \cup B) \leq \Pr(A) + \Pr(B)",
+            r"\liminf_{n \to \infty} a_n \leq \limsup_{n \to \infty} a_n",
+            r"\sin^2\theta + \cos^2\theta = 1, \quad \tan\theta = \frac{\sin\theta}{\cos\theta}",
+            r"\arcsin x + \arccos x = \frac{\pi}{2}",
+            r"\sinh x = \frac{e^x - e^{-x}}{2}, \quad \cosh x = \frac{e^x + e^{-x}}{2}",
+            r"\Pi_{i} a_i \prec \Sigma_{i} a_i \succ \Phi_{i} a_i",
+            r"a \parallel b, \quad u \perp v",
+            r"\vec{v} \cdot \vec{w} = \|\vec{v}\| \|\vec{w}\| \cos\theta",
+            r"x \ll y \ll z, \quad a \gg b \gg c",
+            r"\aleph_0 < 2^{\aleph_0}",
+            r"\Im(z) + i\,\Re(z), \quad \ell^2(\mathbb{N})",
+            r"x \star y \ne y \star x, \quad a \oplus b \otimes c",
+            r"p \models \phi \vdash \psi \dashv \rho",
+        ];
+
+        for formula in formulas {
+            let expr = parse_tex(formula)
+                .unwrap_or_else(|err| panic!("failed to parse {formula:?}: {}", err.message));
+            assert_no_unknown_tex_commands(&expr);
+            let layout = layout_math(&expr, 16.0, MathDisplay::Block);
+            assert!(
+                layout.width.is_finite() && layout.height().is_finite(),
+                "layout finite for {formula:?}"
+            );
+        }
     }
 
     #[test]
