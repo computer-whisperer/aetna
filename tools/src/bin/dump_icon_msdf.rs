@@ -4,8 +4,8 @@
 
 use std::path::PathBuf;
 
-use aetna_core::icon_msdf::{IconMsdf, build_icon_msdf};
 use aetna_core::icons::icon_vector_asset;
+use aetna_core::icons::msdf::{IconMsdf, build_icon_msdf};
 use aetna_core::tree::IconName;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

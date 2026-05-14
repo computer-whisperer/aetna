@@ -16,8 +16,8 @@
 
 use std::collections::HashMap;
 
-use crate::icon_msdf::{IconMsdf, build_icon_msdf};
-use crate::svg_icon::IconSource;
+use super::msdf::{IconMsdf, build_icon_msdf};
+use super::svg::IconSource;
 use crate::tree::IconName;
 
 /// Default atlas pixels per source view-box unit. 64 px/(24 unit

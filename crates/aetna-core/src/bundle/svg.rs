@@ -22,9 +22,9 @@
 use std::fmt::Write as _;
 
 use crate::icons;
+use crate::icons::svg::IconSource;
 use crate::ir::*;
 use crate::shader::*;
-use crate::svg_icon::IconSource;
 use crate::text::metrics as text_metrics;
 use crate::tokens;
 use crate::tree::*;

@@ -4,15 +4,24 @@
 //! Icons are semantic `El`s that emit vector draw ops for artifact/SVG
 //! rendering and a text fallback in GPU backends until the dedicated
 //! vector-icon pipeline lands.
+//!
+//! Sibling modules:
+//! - [`svg`] — `IconSource`, `SvgIcon`, custom user-supplied icon assets.
+//! - [`msdf`] — MSDF (multi-channel signed distance field) generation.
+//! - [`msdf_atlas`] — atlas packing of MSDF tiles for GPU consumption.
+
+pub mod msdf;
+pub mod msdf_atlas;
+pub mod svg;
 
 use std::panic::Location;
 use std::sync::OnceLock;
 
 use crate::style::StyleProfile;
-use crate::svg_icon::IntoIconSource;
 use crate::tokens;
 use crate::tree::*;
 use crate::vector::{VectorAsset, parse_current_color_svg_asset};
+use svg::IntoIconSource;
 
 /// Resolve a string-typed icon name to a built-in [`IconName`], with a
 /// visible `AlertCircle` fallback (and a one-line stderr warning) for
@@ -477,7 +486,7 @@ mod tests {
 
     #[test]
     fn icon_builder_sets_vector_icon_defaults() {
-        use crate::svg_icon::IconSource;
+        use super::svg::IconSource;
         let el = icon("git-branch");
         assert_eq!(el.icon, Some(IconSource::Builtin(IconName::GitBranch)));
         assert_eq!(el.width, Size::Fixed(16.0));
@@ -490,7 +499,7 @@ mod tests {
     /// surfaces visibly in the UI but doesn't take the whole program down.
     #[test]
     fn unknown_string_icon_falls_back_without_panic() {
-        use crate::svg_icon::IconSource;
+        use super::svg::IconSource;
         let el = icon("not-a-real-icon-name");
         assert_eq!(el.icon, Some(IconSource::Builtin(IconName::AlertCircle)));
         let el2 = icon(String::from("abrows-right"));

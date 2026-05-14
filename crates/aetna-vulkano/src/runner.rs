@@ -253,7 +253,7 @@ impl TextRecorder for PaintRecorder<'_> {
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
-        source: &aetna_core::svg_icon::IconSource,
+        source: &aetna_core::icons::svg::IconSource,
         color: Color,
         _size: f32,
         stroke_width: f32,

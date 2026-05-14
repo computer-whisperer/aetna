@@ -341,7 +341,7 @@ pub struct El {
     pub math_display: MathDisplay,
 
     // Icon
-    pub icon: Option<crate::svg_icon::IconSource>,
+    pub icon: Option<crate::icons::svg::IconSource>,
     pub icon_stroke_width: f32,
 
     /// Raster image. When set together with [`Kind::Image`] (or any

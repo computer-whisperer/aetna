@@ -262,7 +262,7 @@ enum MixedHitKind {
 }
 
 fn mixed_inline_hit_items(node: &El, rect: Rect) -> Vec<MixedHitItem> {
-    let mut breaker = crate::inline_mixed::MixedInlineBreaker::new(
+    let mut breaker = crate::text::inline_mixed::MixedInlineBreaker::new(
         node.text_wrap,
         Some(rect.w),
         node.font_size * 0.82,
@@ -368,7 +368,7 @@ fn mixed_inline_hit_items(node: &El, rect: Rect) -> Vec<MixedHitItem> {
 fn flush_mixed_hit_line(
     parent: &El,
     rect: Rect,
-    breaker: &mut crate::inline_mixed::MixedInlineBreaker,
+    breaker: &mut crate::text::inline_mixed::MixedInlineBreaker,
     pending: &mut Vec<PendingMixedHitItem>,
     out: &mut Vec<MixedHitItem>,
     line_index: usize,

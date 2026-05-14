@@ -2135,15 +2135,15 @@ pub trait TextRecorder {
         &mut self,
         rect: Rect,
         scissor: Option<PhysicalScissor>,
-        source: &crate::svg_icon::IconSource,
+        source: &crate::icons::svg::IconSource,
         color: Color,
         size: f32,
         _stroke_width: f32,
         scale_factor: f32,
     ) -> RecordedPaint {
         let glyph = match source {
-            crate::svg_icon::IconSource::Builtin(name) => name.fallback_glyph(),
-            crate::svg_icon::IconSource::Custom(_) => "?",
+            crate::icons::svg::IconSource::Builtin(name) => name.fallback_glyph(),
+            crate::icons::svg::IconSource::Custom(_) => "?",
         };
         RecordedPaint::Text(self.record(
             rect,

@@ -7,6 +7,7 @@
 //! [`crate::widgets::text`] and compose against this module.
 
 pub mod atlas;
+pub(crate) mod inline_mixed;
 pub mod metrics;
 pub mod msdf;
 pub mod msdf_atlas;

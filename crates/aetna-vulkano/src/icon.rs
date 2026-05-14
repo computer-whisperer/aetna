@@ -21,12 +21,12 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use aetna_core::icon_msdf_atlas::{
+use aetna_core::icons::msdf_atlas::{
     DEFAULT_PX_PER_UNIT, DEFAULT_SPREAD, IconMsdfAtlas, IconMsdfPage, IconMsdfSlot, IconRect,
 };
+use aetna_core::icons::svg::{IconSource, SvgIconPaintMode};
 use aetna_core::paint::{IconRun, IconRunKind, PhysicalScissor, rgba_f32};
 use aetna_core::shader::stock_wgsl;
-use aetna_core::svg_icon::{IconSource, SvgIconPaintMode};
 use aetna_core::tree::{Color, Rect};
 use aetna_core::vector::{
     IconMaterial, VectorAsset, VectorMeshOptions, VectorMeshVertex, VectorRenderMode,

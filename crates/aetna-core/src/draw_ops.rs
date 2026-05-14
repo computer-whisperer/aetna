@@ -1211,7 +1211,7 @@ fn push_inline_mixed_ops(
     opacity: f32,
     out: &mut Vec<DrawOp>,
 ) {
-    let mut breaker = crate::inline_mixed::MixedInlineBreaker::new(
+    let mut breaker = crate::text::inline_mixed::MixedInlineBreaker::new(
         n.text_wrap,
         Some(rect.w),
         n.font_size * 0.82,
@@ -1234,7 +1234,7 @@ fn push_inline_mixed_ops(
     let finish_line =
         |line_items: &mut Vec<InlineMixedItem>,
          out: &mut Vec<DrawOp>,
-         breaker: &mut crate::inline_mixed::MixedInlineBreaker| {
+         breaker: &mut crate::text::inline_mixed::MixedInlineBreaker| {
             let line = breaker.finish_line();
             flush_inline_mixed_line(&paint, line.top, line.ascent, line_items, out);
         };
@@ -3836,7 +3836,7 @@ mod tests {
             asset.view_box
         );
 
-        let mut atlas = crate::icon_msdf_atlas::IconMsdfAtlas::default();
+        let mut atlas = crate::icons::msdf_atlas::IconMsdfAtlas::default();
         let slot = atlas
             .ensure_vector_asset(&asset)
             .expect("normalized glyph should rasterize");

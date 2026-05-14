@@ -2269,7 +2269,7 @@ fn inline_mixed_intrinsic(node: &El, available_width: Option<f32>) -> (f32, f32)
     }
     .map(|w| (w - node.padding.left - node.padding.right).max(1.0));
 
-    let mut breaker = crate::inline_mixed::MixedInlineBreaker::new(
+    let mut breaker = crate::text::inline_mixed::MixedInlineBreaker::new(
         node.text_wrap,
         wrap_width,
         node.font_size * 0.82,

@@ -26,6 +26,7 @@ pub use crate::event::{
     App, AppShader, BuildCx, FrameTrigger, HostDiagnostics, KeyChord, KeyModifiers, KeyPress,
     PointerButton, UiEvent, UiEventKind, UiKey, UiTarget,
 };
+pub use crate::icons::svg::{IconSource, IntoIconSource, SvgIcon, SvgIconPaintMode};
 pub use crate::icons::{all_icon_names, icon};
 pub use crate::image::{Image, ImageFit};
 pub use crate::ir::{DrawOp, TextAnchor};
@@ -42,7 +43,6 @@ pub use crate::style::StyleProfile;
 pub use crate::surface::{
     AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat, SurfaceSource,
 };
-pub use crate::svg_icon::{IconSource, IntoIconSource, SvgIcon, SvgIconPaintMode};
 pub use crate::text::metrics::{
     MeasuredText, TextHit, TextLayout, TextLine, caret_xy, caret_xy_with_family, hit_text,
     hit_text_with_family, layout_text, layout_text_with_family,

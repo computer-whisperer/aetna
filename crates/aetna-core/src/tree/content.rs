@@ -109,14 +109,14 @@ impl El {
     /// Set the icon for this element to either a built-in [`crate::IconName`],
     /// an app-supplied [`crate::SvgIcon`], or a string-typed name from
     /// the built-in vocabulary.
-    pub fn icon_source(mut self, source: impl crate::svg_icon::IntoIconSource) -> Self {
+    pub fn icon_source(mut self, source: impl crate::icons::svg::IntoIconSource) -> Self {
         self.icon = Some(source.into_icon_source());
         self
     }
 
     /// Convenience alias for [`Self::icon_source`] preserved for call
     /// sites that want the historical name.
-    pub fn icon_name(self, source: impl crate::svg_icon::IntoIconSource) -> Self {
+    pub fn icon_name(self, source: impl crate::icons::svg::IntoIconSource) -> Self {
         self.icon_source(source)
     }
 

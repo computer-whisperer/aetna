@@ -46,11 +46,8 @@ pub mod draw_ops;
 pub mod event;
 pub mod focus;
 pub mod hit_test;
-pub mod icon_msdf;
-pub mod icon_msdf_atlas;
 pub mod icons;
 pub mod image;
-mod inline_mixed;
 pub mod ir;
 pub mod layout;
 pub mod math;
@@ -68,7 +65,6 @@ pub mod shader;
 pub mod state;
 pub mod style;
 pub mod surface;
-pub mod svg_icon;
 pub mod text;
 pub mod theme;
 pub mod toast;
@@ -97,6 +93,7 @@ pub use event::{
 };
 pub use focus::focus_order;
 pub use hit_test::{hit_test, hit_test_target};
+pub use icons::svg::{IconSource, IntoIconSource, SvgIcon, SvgIconPaintMode};
 pub use icons::{IconStroke, all_icon_names, icon, icon_path, icon_strokes, icon_vector_asset};
 pub use ir::{DrawOp, TextAnchor};
 pub use layout::{LayoutCtx, LayoutFn, VirtualAnchorPolicy, VirtualItems, VirtualMode, layout};
@@ -112,7 +109,6 @@ pub use surface::{
     AppTexture, AppTextureBackend, AppTextureId, SurfaceAlpha, SurfaceFormat, SurfaceSource,
     next_app_texture_id,
 };
-pub use svg_icon::{IconSource, IntoIconSource, SvgIcon, SvgIconPaintMode};
 // Atlas/glyph types are backend-implementer surface (consumed by
 // `aetna-wgpu` / `aetna-vulkano` paint paths). App authors don't
 // touch them, so hide from docs.rs while keeping them resolvable

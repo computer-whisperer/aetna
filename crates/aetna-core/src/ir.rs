@@ -16,9 +16,9 @@
 //! shadows, focus rings, and glass effects resolve to stock shader uniforms or
 //! custom shader bindings before a backend records GPU commands.
 
+use crate::icons::svg::IconSource;
 use crate::image::{Image, ImageFit};
 use crate::shader::{ShaderHandle, UniformBlock};
-use crate::svg_icon::IconSource;
 use crate::text::atlas::RunStyle;
 use crate::text::metrics::TextLayout;
 use crate::tree::{Color, Corners, FontFamily, FontWeight, Rect, TextWrap};
