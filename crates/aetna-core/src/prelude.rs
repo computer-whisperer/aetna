@@ -119,6 +119,7 @@ pub use crate::widgets::menubar::{
     menubar_item_with_shortcut, menubar_label, menubar_menu, menubar_separator, menubar_shortcut,
     menubar_trigger, menubar_trigger_key,
 };
+pub use crate::widgets::number_scrubber::{self, ScrubDrag, ScrubberOpts, number_scrubber};
 pub use crate::widgets::numeric_input::{self, NumericInputOpts, numeric_input};
 pub use crate::widgets::overlay::{modal, modal_panel, overlay, overlays, scrim};
 pub use crate::widgets::pagination::{

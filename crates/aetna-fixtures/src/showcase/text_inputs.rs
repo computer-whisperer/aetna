@@ -34,6 +34,9 @@ pub struct State {
     pub region: String,
     pub region_open: bool,
     pub quantity: String,
+    pub quantity_stacked: String,
+    pub gain_db: String,
+    pub gain_drag: ScrubDrag,
     pub otp_code: String,
     pub command_open: bool,
     pub last_command: Option<String>,
@@ -51,6 +54,9 @@ impl Default for State {
             region: "us-east".into(),
             region_open: false,
             quantity: "12".into(),
+            quantity_stacked: "4".into(),
+            gain_db: "-6.0".into(),
+            gain_drag: ScrubDrag::default(),
             otp_code: "248".into(),
             command_open: false,
             last_command: None,
@@ -82,11 +88,12 @@ pub fn view(state: &State) -> El {
         [
             input_row(
                 "Display name",
-                text_input(&state.display_name, &state.selection, "ti-display-name"),
+                text_input(&state.display_name, &state.selection, "ti-display-name")
+                    .width(Size::Fill(1.0)),
             ),
             input_row(
                 "Email",
-                text_input(&state.email, &state.selection, "ti-email"),
+                text_input(&state.email, &state.selection, "ti-email").width(Size::Fill(1.0)),
             ),
         ],
     );
@@ -100,15 +107,15 @@ pub fn view(state: &State) -> El {
         "Select dropdown",
         [input_row(
             "Region",
-            select_trigger("ti-region", region_label(&state.region)),
+            select_trigger("ti-region", region_label(&state.region)).width(Size::Fill(1.0)),
         )],
     );
 
     let quantity_card = titled_card(
         "Numeric input",
-        [
+        [column([
             input_row(
-                "Items",
+                "Items (flanked)",
                 numeric_input(
                     &state.quantity,
                     &state.selection,
@@ -116,10 +123,42 @@ pub fn view(state: &State) -> El {
                     quantity_opts(),
                 ),
             ),
-            text("Click `−` / `+` to step; clamps to 0..=99. Type to edit directly.")
-                .small()
-                .muted(),
-        ],
+            input_row(
+                "Servings (stacked)",
+                numeric_input(
+                    &state.quantity_stacked,
+                    &state.selection,
+                    "ti-quantity-stacked",
+                    quantity_opts().stacked(),
+                ),
+            ),
+            paragraph(
+                "Click the steppers, or focus the field and press ↑/↓. \
+                 Shift = ×10 step, Alt = ×0.1. Clamps to 0..=99.",
+            )
+            .small()
+            .muted(),
+        ])
+        .gap(tokens::SPACE_2)
+        .width(Size::Fill(1.0))],
+    );
+
+    let scrubber_card = titled_card(
+        "Number scrubber",
+        [column([
+            input_row(
+                "Gain (dB)",
+                number_scrubber(&state.gain_db, "ti-gain").width(Size::Fixed(96.0)),
+            ),
+            paragraph(
+                "Drag the cell horizontally to scrub; ←/→ when focused. \
+                 Shift = ×10, Alt = ×0.1. Range -60..=12 dB.",
+            )
+            .small()
+            .muted(),
+        ])
+        .gap(tokens::SPACE_2)
+        .width(Size::Fill(1.0))],
     );
 
     let otp_card = titled_card(
@@ -152,7 +191,8 @@ pub fn view(state: &State) -> El {
                     .small()
                     .muted(),
                 ])
-                .align(Align::Center),
+                .align(Align::Center)
+                .width(Size::Fill(1.0)),
             ),
             paragraph(
                 "`command_*` widgets compose a fuzzy palette anatomy — \
@@ -172,6 +212,7 @@ pub fn view(state: &State) -> El {
             multi_line,
             region_card,
             quantity_card,
+            scrubber_card,
             otp_card,
             command_card,
         ])
@@ -208,12 +249,31 @@ pub fn on_event(state: &mut State, e: UiEvent) {
     ) {
         return;
     }
-    // Numeric
+    // Numeric (flanked + stacked share the same options)
     if numeric_input::apply_event(
         &mut state.quantity,
         &mut state.selection,
         "ti-quantity",
         &quantity_opts(),
+        &e,
+    ) {
+        return;
+    }
+    if numeric_input::apply_event(
+        &mut state.quantity_stacked,
+        &mut state.selection,
+        "ti-quantity-stacked",
+        &quantity_opts().stacked(),
+        &e,
+    ) {
+        return;
+    }
+    // Number scrubber
+    if number_scrubber::apply_event(
+        &mut state.gain_db,
+        &mut state.gain_drag,
+        "ti-gain",
+        &gain_opts(),
         &e,
     ) {
         return;
@@ -317,10 +377,27 @@ fn quantity_opts() -> NumericInputOpts<'static> {
         .placeholder("0")
 }
 
+fn gain_opts() -> ScrubberOpts {
+    ScrubberOpts::default()
+        .min(-60.0)
+        .max(12.0)
+        .step(0.5)
+        .sensitivity(3.0)
+        .decimals(1)
+}
+
 fn input_row(label: &str, control: El) -> El {
+    // Caller owns the control's width — text inputs that want to fill
+    // the row chain `.width(Size::Fill(1.0))` themselves; narrow
+    // affordances (numeric inputs, scrubbers, OTP, trigger buttons)
+    // keep their intrinsic width.
+    //
+    // Label slot wide enough for the longest label here ("Servings
+    // (stacked)" runs ~124 px); ellipsizes longer text rather than
+    // overflowing into the control.
     row([
-        text(label).width(Size::Fixed(110.0)).muted(),
-        control.width(Size::Fill(1.0)),
+        text(label).width(Size::Fixed(140.0)).ellipsis().muted(),
+        control,
     ])
     .gap(tokens::SPACE_2)
     .align(Align::Center)

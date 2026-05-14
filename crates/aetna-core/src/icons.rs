@@ -123,6 +123,7 @@ const CHECK: &[IconStroke] = &[stroke(20.0, 6.0, 9.0, 17.0), stroke(9.0, 17.0, 4
 const CHEVRON_DOWN: &[IconStroke] = &[stroke(6.0, 9.0, 12.0, 15.0), stroke(12.0, 15.0, 18.0, 9.0)];
 const CHEVRON_LEFT: &[IconStroke] = &[stroke(15.0, 6.0, 9.0, 12.0), stroke(9.0, 12.0, 15.0, 18.0)];
 const CHEVRON_RIGHT: &[IconStroke] = &[stroke(9.0, 6.0, 15.0, 12.0), stroke(15.0, 12.0, 9.0, 18.0)];
+const CHEVRON_UP: &[IconStroke] = &[stroke(6.0, 15.0, 12.0, 9.0), stroke(12.0, 9.0, 18.0, 15.0)];
 const COMMAND: &[IconStroke] = &[
     stroke(9.0, 9.0, 15.0, 9.0),
     stroke(15.0, 9.0, 15.0, 15.0),
@@ -322,6 +323,7 @@ pub fn icon_strokes(name: IconName) -> &'static [IconStroke] {
         IconName::ChevronDown => CHEVRON_DOWN,
         IconName::ChevronLeft => CHEVRON_LEFT,
         IconName::ChevronRight => CHEVRON_RIGHT,
+        IconName::ChevronUp => CHEVRON_UP,
         IconName::Command => COMMAND,
         IconName::Download => DOWNLOAD,
         IconName::FileText => FILE_TEXT,
@@ -357,6 +359,7 @@ pub fn all_icon_names() -> &'static [IconName] {
         IconName::ChevronDown,
         IconName::ChevronLeft,
         IconName::ChevronRight,
+        IconName::ChevronUp,
         IconName::Command,
         IconName::Download,
         IconName::FileText,
@@ -414,6 +417,7 @@ pub fn icon_path(name: IconName) -> &'static str {
         IconName::ChevronDown => r#"<path d="m6 9 6 6 6-6"/>"#,
         IconName::ChevronLeft => r#"<path d="m15 6-6 6 6 6"/>"#,
         IconName::ChevronRight => r#"<path d="m9 6 6 6-6 6"/>"#,
+        IconName::ChevronUp => r#"<path d="m6 15 6-6 6 6"/>"#,
         IconName::Command => {
             r#"<path d="M9 9h6v6H9z"/><path d="M9 9H6a3 3 0 1 1 3-3v3Z"/><path d="M15 9V6a3 3 0 1 1 3 3h-3Z"/><path d="M15 15h3a3 3 0 1 1-3 3v-3Z"/><path d="M9 15v3a3 3 0 1 1-3-3h3Z"/>"#
         }

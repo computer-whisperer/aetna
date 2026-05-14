@@ -30,7 +30,8 @@
 //! **Inputs & forms**
 //! - [`calendar`] — controlled date grid; `calendar_month(key, "May 2026", days)` + `calendar::apply_event`
 //! - [`text_input`] / [`text_area`] — controlled text editing; app owns `(value, Selection)` and calls `apply_event`; fixed-height text areas also drain caret scroll requests after accepted events
-//! - [`numeric_input`] — number entry with stepper / formatting
+//! - [`numeric_input`] — number entry with stepper / formatting; `.stacked()` opt switches to the `<input type="number">`-style chevron column
+//! - [`number_scrubber`] — drag-to-scrub numeric cell (Figma/Blender shape); `number_scrubber(value, key)` + `ScrubDrag` / `number_scrubber::apply_event`
 //! - [`input_otp`] — segmented one-time-password input
 //! - [`select`] — controlled dropdown; `select_trigger(key, label)` + `select_menu(key, options)` + `SelectAction`
 //! - [`switch`] / [`checkbox`] — controlled bools with `apply_event`
@@ -87,6 +88,7 @@ pub mod input_otp;
 pub mod item;
 pub mod list;
 pub mod menubar;
+pub mod number_scrubber;
 pub mod numeric_input;
 pub mod overlay;
 pub mod pagination;
