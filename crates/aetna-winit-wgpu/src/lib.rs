@@ -45,7 +45,7 @@ use std::{
 
 use aetna_core::widgets::text_input::{self, ClipboardKind};
 use aetna_core::{
-    App, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, Pointer, PointerButton, Rect,
+    App, Cursor, FrameTrigger, HostDiagnostics, KeyModifiers, Pointer, PointerButton, Rect, Sides,
     UiEvent, UiEventKind, UiKey, clipboard,
 };
 use aetna_wgpu::{MsaaTarget, Runner};
@@ -62,6 +62,8 @@ use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Force, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
+#[cfg(target_os = "android")]
+use winit::platform::android::WindowExtAndroid;
 use winit::window::{CursorIcon, Window, WindowId};
 
 /// Configuration for the optional native winit + wgpu host.
@@ -446,6 +448,26 @@ fn surface_extent(config: &wgpu::SurfaceConfiguration) -> wgpu::Extent3d {
     }
 }
 
+#[cfg(target_os = "android")]
+fn safe_area_for_window(window: &Window, surface_size: (u32, u32), scale_factor: f32) -> Sides {
+    let rect = window.content_rect();
+    if rect.right <= rect.left || rect.bottom <= rect.top || scale_factor <= 0.0 {
+        return Sides::default();
+    }
+    let (surface_w, surface_h) = (surface_size.0 as i32, surface_size.1 as i32);
+    Sides {
+        left: rect.left.max(0) as f32 / scale_factor,
+        top: rect.top.max(0) as f32 / scale_factor,
+        right: (surface_w - rect.right).max(0) as f32 / scale_factor,
+        bottom: (surface_h - rect.bottom).max(0) as f32 / scale_factor,
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn safe_area_for_window(_window: &Window, _surface_size: (u32, u32), _scale_factor: f32) -> Sides {
+    Sides::default()
+}
+
 impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.gfx.is_some() {
@@ -593,6 +615,22 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             .redraw_interval
             .map(|interval| Instant::now() + interval);
         gfx.window.request_redraw();
+    }
+
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        #[cfg(target_os = "android")]
+        {
+            // Android destroys the native window while keeping the Rust
+            // process alive. Any surface/window handles derived from
+            // that native window must be dropped and recreated on the
+            // next `resumed`, otherwise returning from Home can leave a
+            // live process presenting to a dead surface.
+            self.gfx.take();
+            self.pending_resize = None;
+            self.last_pointer = None;
+            self.last_frame_at = None;
+            self.next_periodic_redraw = None;
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -1092,7 +1130,12 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                 let cx = aetna_core::BuildCx::new(&theme)
                                     .with_ui_state(gfx.renderer.ui_state())
                                     .with_diagnostics(&diagnostics)
-                                    .with_viewport(viewport.w, viewport.h);
+                                    .with_viewport(viewport.w, viewport.h)
+                                    .with_safe_area(safe_area_for_window(
+                                        &gfx.window,
+                                        (gfx.config.width, gfx.config.height),
+                                        scale_factor,
+                                    ));
                                 let tree = self.app.build(&cx);
                                 gfx.renderer.set_theme(theme);
                                 gfx.renderer.set_hotkeys(self.app.hotkeys());

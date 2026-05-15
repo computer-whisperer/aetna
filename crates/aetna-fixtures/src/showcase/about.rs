@@ -116,7 +116,18 @@ impl Default for State {
     }
 }
 
-pub fn view(state: &State) -> El {
+pub fn view(state: &State, cx: &BuildCx) -> El {
+    let runtime_note = if cx
+        .diagnostics()
+        .is_some_and(|diag| matches!(diag.backend, "WebGPU" | "WebGL2"))
+    {
+        "The page you're looking at is wasm-compiled Rust running through a \
+         browser GPU canvas; native shells use the same widget vocabulary."
+    } else {
+        "The page you're looking at is native Rust running through a wgpu \
+         surface; the browser shell uses the same widget vocabulary through \
+         WebGPU."
+    };
     scroll([column([
         row([
             icon((*AETNA_BADGE_ICON).clone()).icon_size(64.0),
@@ -128,11 +139,10 @@ pub fn view(state: &State) -> El {
         paragraph(
             "Aetna is a GPU UI rendering library that mounts inside an \
              existing Vulkan or wgpu host rather than owning the device, \
-             queue, or swapchain. The page you're looking at is \
-             wasm-compiled Rust running through a WebGPU canvas — the \
-             same widget vocabulary every native build of this app uses.",
+             queue, or swapchain.",
         )
         .muted(),
+        paragraph(runtime_note).muted(),
         paragraph(
             "Browse the sidebar for every widget category and system \
              feature. Switch themes from the picker above the nav and \

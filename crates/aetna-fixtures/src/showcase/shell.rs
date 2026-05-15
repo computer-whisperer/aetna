@@ -32,10 +32,11 @@ pub(super) const PHONE_BREAKPOINT_PX: f32 = 700.0;
 /// `overlays(main, layers)`.
 pub fn frame(app: &Showcase, cx: &BuildCx, body: El) -> (El, Vec<Option<El>>) {
     let phone = cx.viewport_below(PHONE_BREAKPOINT_PX);
+    let safe = cx.safe_area();
     let main = if phone {
-        column([phone_topbar(app), content(body, true)])
+        column([phone_topbar(app, safe.top), content(body, true, safe)])
     } else {
-        row([sidebar_chrome(app), content(body, false)])
+        row([sidebar_chrome(app, safe), content(body, false, safe)])
     };
     // Note: we deliberately do *not* apply `cx.safe_area_bottom()` as
     // padding at the shell root. The first attempt did
@@ -75,7 +76,7 @@ pub fn frame(app: &Showcase, cx: &BuildCx, body: El) -> (El, Vec<Option<El>>) {
     (main, layers)
 }
 
-fn sidebar_chrome(app: &Showcase) -> El {
+fn sidebar_chrome(app: &Showcase, safe: Sides) -> El {
     let groups = Group::ALL
         .iter()
         .copied()
@@ -103,6 +104,12 @@ fn sidebar_chrome(app: &Showcase) -> El {
         .height(Size::Fill(1.0)),
         diagnostics_toggle(app.diagnostics_visible),
     ])
+    .padding(Sides {
+        left: tokens::SPACE_4 + safe.left,
+        right: tokens::SPACE_4,
+        top: tokens::SPACE_4 + safe.top,
+        bottom: tokens::SPACE_4,
+    })
 }
 
 fn group_block(active: Section, group: Group) -> El {
@@ -148,7 +155,7 @@ fn theme_picker_menu() -> El {
 /// nav remains the primary affordance), compact theme picker, and the
 /// diagnostics toggle. Sits inside a `Card`-equivalent panel with a
 /// bottom border so it reads as page chrome rather than content.
-fn phone_topbar(app: &Showcase) -> El {
+fn phone_topbar(app: &Showcase, safe_top: f32) -> El {
     row([
         // Section picker — fills the remaining width so the active
         // page's name is readable even on a 360px-wide screen.
@@ -164,7 +171,7 @@ fn phone_topbar(app: &Showcase) -> El {
     .padding(Sides {
         left: tokens::SPACE_3,
         right: tokens::SPACE_3,
-        top: tokens::SPACE_3,
+        top: tokens::SPACE_3 + safe_top,
         bottom: tokens::SPACE_3,
     })
     .gap(tokens::SPACE_2)
@@ -202,14 +209,19 @@ fn section_picker_menu() -> El {
 
 /// Content panel. Padding shrinks on phone so the page body has
 /// breathing room without wasting screen real estate on margins.
-fn content(body: El, phone: bool) -> El {
+fn content(body: El, phone: bool, safe: Sides) -> El {
     let pad = if phone {
         tokens::SPACE_3
     } else {
         tokens::SPACE_7
     };
     column([body])
-        .padding(pad)
+        .padding(Sides {
+            left: pad + safe.left,
+            right: pad + safe.right,
+            top: pad + if phone { 0.0 } else { safe.top },
+            bottom: pad,
+        })
         .width(Size::Fill(1.0))
         .height(Size::Fill(1.0))
 }

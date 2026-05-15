@@ -323,7 +323,7 @@ impl App for Showcase {
     fn build(&self, cx: &BuildCx) -> El {
         let theme = self.theme();
         let body = match self.section {
-            Section::About => about::view(&self.about),
+            Section::About => about::view(&self.about, cx),
             Section::Palette => palette::view(theme.palette()),
             Section::Typography => typography::view(&self.typography),
             Section::Math => math::view(&self.math),
