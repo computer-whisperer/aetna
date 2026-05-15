@@ -1002,6 +1002,18 @@ mod web_entry {
         /// listeners; this just suppresses the platform menu so apps
         /// can render their own.
         _contextmenu_closure: Option<Closure<dyn FnMut(web_sys::MouseEvent)>>,
+        /// Bottom safe-area inset in logical pixels, set by the
+        /// VisualViewport `resize` listener whenever the keyboard
+        /// (or any other platform chrome that shrinks the visual
+        /// viewport) appears or disappears. The cell is shared with
+        /// the JS callback via `Rc<Cell<f32>>`; the host reads it
+        /// each frame and feeds it into `BuildCx::with_safe_area`.
+        keyboard_inset_bottom: Rc<Cell<f32>>,
+        /// Held for drop side-effects: the JS callback that updates
+        /// `keyboard_inset_bottom` on visualViewport resize. None on
+        /// browsers that don't expose `window.visualViewport` (older
+        /// engines / jsdom-style test contexts).
+        _viewport_closure: Option<Closure<dyn FnMut(web_sys::Event)>>,
         /// Hidden `<textarea>` that summons the on-screen keyboard
         /// when a touch press lands on an Aetna text-input widget.
         /// `None` when soft-keyboard install failed (no body, etc.)
@@ -1084,6 +1096,8 @@ mod web_entry {
                 pending_pointer: Rc::new(RefCell::new(VecDeque::new())),
                 _pointer_closures: Vec::new(),
                 _contextmenu_closure: None,
+                keyboard_inset_bottom: Rc::new(Cell::new(0.0)),
+                _viewport_closure: None,
                 soft_keyboard: None,
             }
         }
@@ -1454,6 +1468,58 @@ mod web_entry {
                 )
                 .expect("add contextmenu listener");
             self._contextmenu_closure = Some(contextmenu_closure);
+
+            // VisualViewport reports the visible region of the page
+            // minus platform chrome. When the on-screen keyboard
+            // appears, `visualViewport.height` shrinks while
+            // `window.innerHeight` (the layout viewport) doesn't —
+            // the difference is the keyboard inset, which apps read
+            // through `BuildCx::safe_area_bottom` and use to inset
+            // their interactive content. Skip silently on browsers
+            // without VisualViewport (older engines, jsdom).
+            if let Some(window_obj) = web_sys::window()
+                && let Some(vv) = window_obj.visual_viewport()
+            {
+                let cell = self.keyboard_inset_bottom.clone();
+                let win_for_redraw = window.clone();
+                let layout_window = window_obj.clone();
+                // Seed the cell with the current value so the first
+                // frame after install has the right inset (handles
+                // the case of resuming a tab where the keyboard is
+                // already up).
+                let initial_inset = (layout_window.inner_height().ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0)
+                    - vv.height() as f64)
+                    .max(0.0) as f32;
+                cell.set(initial_inset);
+                let viewport_closure: Closure<dyn FnMut(web_sys::Event)> =
+                    Closure::new(move |_event: web_sys::Event| {
+                        let Some(window_obj) = web_sys::window() else { return };
+                        let Some(vv) = window_obj.visual_viewport() else {
+                            return;
+                        };
+                        let layout_h = window_obj
+                            .inner_height()
+                            .ok()
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let visible_h = vv.height() as f64;
+                        let inset = (layout_h - visible_h).max(0.0) as f32;
+                        cell.set(inset);
+                        // Force a redraw so the next frame's
+                        // `BuildCx::safe_area` reflects the new
+                        // value — the keyboard appearing/disappearing
+                        // is otherwise invisible to the runtime.
+                        win_for_redraw.request_redraw();
+                    });
+                vv.add_event_listener_with_callback(
+                    "resize",
+                    viewport_closure.as_ref().unchecked_ref(),
+                )
+                .expect("add visualViewport resize listener");
+                self._viewport_closure = Some(viewport_closure);
+            }
 
             // Allow both browser backends. wgpu's synchronous
             // Instance::new() can't safely decide this: if
@@ -2023,10 +2089,17 @@ mod web_entry {
                         };
                         self.app.before_build();
                         let theme = self.app.theme();
+                        let safe_area = aetna_core::Sides {
+                            left: 0.0,
+                            right: 0.0,
+                            top: 0.0,
+                            bottom: self.keyboard_inset_bottom.get(),
+                        };
                         let cx = BuildCx::new(&theme)
                             .with_ui_state(gfx.renderer.ui_state())
                             .with_diagnostics(&diagnostics)
-                            .with_viewport(viewport_rect.w, viewport_rect.h);
+                            .with_viewport(viewport_rect.w, viewport_rect.h)
+                            .with_safe_area(safe_area);
                         let mut tree = self.app.build(&cx);
                         let palette = theme.palette().clone();
                         gfx.renderer.set_theme(theme);

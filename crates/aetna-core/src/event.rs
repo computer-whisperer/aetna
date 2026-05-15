@@ -667,6 +667,14 @@ pub struct BuildCx<'a> {
     /// [`Self::viewport_below`] to branch layout on phone-vs-desktop
     /// without threading the surface size through their own state.
     viewport: Option<(f32, f32)>,
+    /// Logical-pixel insets the host wants the app to inset its
+    /// layout by — content underneath these bands is obscured by
+    /// platform chrome and shouldn't host interactive widgets.
+    /// Today only the bottom inset is populated, by the web host's
+    /// VisualViewport listener when the on-screen keyboard appears;
+    /// the same field will carry status-bar / notch / home-indicator
+    /// insets when native mobile hosts land.
+    safe_area: Option<crate::tree::Sides>,
 }
 
 /// Why the current frame is being built. Hosts set this before each
@@ -853,6 +861,7 @@ impl<'a> BuildCx<'a> {
             ui_state: None,
             diagnostics: None,
             viewport: None,
+            safe_area: None,
         }
     }
 
@@ -882,6 +891,18 @@ impl<'a> BuildCx<'a> {
     /// without a meaningful viewport leave it unset.
     pub fn with_viewport(mut self, width: f32, height: f32) -> Self {
         self.viewport = Some((width, height));
+        self
+    }
+
+    /// Attach the host's reported safe-area insets in logical pixels.
+    /// Hosts chain this when platform chrome (on-screen keyboard,
+    /// notch, status bar, home indicator) is obscuring some band of
+    /// the viewport. Apps read it via [`Self::safe_area`] /
+    /// [`Self::safe_area_bottom`] and inset their interactive content
+    /// accordingly. Hosts that don't report safe-area metrics omit
+    /// this; apps see `Sides::zero()` from the read accessors.
+    pub fn with_safe_area(mut self, sides: crate::tree::Sides) -> Self {
+        self.safe_area = Some(sides);
         self
     }
 
@@ -940,6 +961,27 @@ impl<'a> BuildCx<'a> {
     /// ```
     pub fn viewport_below(&self, threshold: f32) -> bool {
         self.viewport_width().is_some_and(|w| w < threshold)
+    }
+
+    /// Logical-pixel safe-area insets the host reports for this frame
+    /// (`Sides::zero()` when nothing was attached). Today this is
+    /// populated only by aetna-web when the on-screen keyboard
+    /// shrinks the visual viewport — `bottom` carries the keyboard
+    /// height; future native mobile hosts will additionally populate
+    /// `top` for status-bar / notch and `bottom` for home-indicator.
+    ///
+    /// Apps inset their root layout (or just the focused-input
+    /// region) by these amounts so interactive content doesn't sit
+    /// underneath platform chrome. The runtime does not auto-apply
+    /// this — apps decide where the inset matters.
+    pub fn safe_area(&self) -> crate::tree::Sides {
+        self.safe_area.unwrap_or_default()
+    }
+
+    /// Convenience: just the bottom inset, in logical pixels. Most
+    /// commonly the soft-keyboard height.
+    pub fn safe_area_bottom(&self) -> f32 {
+        self.safe_area().bottom
     }
 
     /// Key of the leaf node currently under the pointer, or `None`

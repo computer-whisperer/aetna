@@ -74,6 +74,12 @@ web-sys = { version = "0.3", features = [
     # canvas's drawing buffer is whatever we set it to on first
     # paint and the surface ends up stretched until the page reloads.
     "ResizeObserver",
+    # VisualViewport reports the visible region of the page minus
+    # platform chrome. Bound on the web host so we can detect the
+    # on-screen keyboard appearing (it shrinks visualViewport.height
+    # without changing the layout viewport) and propagate the
+    # resulting bottom inset to apps via `BuildCx::safe_area`.
+    "VisualViewport",
     "Window",
 ] }
 # Browser wgpu backends — workspace's plain `wgpu = "29"` only enables

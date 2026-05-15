@@ -32,11 +32,17 @@ pub(super) const PHONE_BREAKPOINT_PX: f32 = 700.0;
 /// `overlays(main, layers)`.
 pub fn frame(app: &Showcase, cx: &BuildCx, body: El) -> (El, Vec<Option<El>>) {
     let phone = cx.viewport_below(PHONE_BREAKPOINT_PX);
+    let safe_bottom = cx.safe_area_bottom();
     let main = if phone {
         column([phone_topbar(app), content(body, true)])
     } else {
         row([sidebar_chrome(app), content(body, false)])
     };
+    // Pad the bottom by the host-reported safe-area inset (today: the
+    // on-screen keyboard's height on web). Applied at the shell root
+    // so the inset shrinks every page's scrollable region rather than
+    // requiring per-page wiring.
+    let main = main.pb(safe_bottom);
     // Each page contributes zero or one floating layer; theme picker is
     // always available across pages. `Showcase::build` wraps the result
     // in `overlays(main, layers)` and inactive layers drop out.
