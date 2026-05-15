@@ -22,8 +22,10 @@ pub const DIAGNOSTICS_TOGGLE_KEY: &str = "diagnostics-toggle";
 
 /// Viewport width below which the shell drops the side panel and
 /// renders the phone topbar instead. Picked to fit a 360px phone while
-/// keeping the sidebar visible on tablets in portrait.
-const PHONE_BREAKPOINT_PX: f32 = 700.0;
+/// keeping the sidebar visible on tablets in portrait. `pub(super)` so
+/// individual section views (`text_inputs`, etc.) can use the same
+/// breakpoint to switch their per-page layouts.
+pub(super) const PHONE_BREAKPOINT_PX: f32 = 700.0;
 
 /// Build the main view (sidebar + content) plus the list of floating
 /// layers each page contributes. `Showcase::build` wraps the result in

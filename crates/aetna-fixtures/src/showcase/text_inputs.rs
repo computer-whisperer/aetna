@@ -65,7 +65,8 @@ impl Default for State {
     }
 }
 
-pub fn view(state: &State) -> El {
+pub fn view(state: &State, cx: &BuildCx) -> El {
+    let phone = cx.viewport_below(super::shell::PHONE_BREAKPOINT_PX);
     let volume_card = titled_card(
         "Slider",
         [
@@ -77,7 +78,7 @@ pub fn view(state: &State) -> El {
             .align(Align::Center),
             column([slider(state.volume, tokens::PRIMARY).key("ti-volume")])
                 .padding(Sides::bottom(tokens::RING_WIDTH)),
-            text("Drag the thumb, or focus and use ←/→ · PageUp/Down · Home/End.")
+            paragraph("Drag the thumb, or focus and use ←/→ · PageUp/Down · Home/End.")
                 .small()
                 .muted(),
         ],
@@ -90,10 +91,12 @@ pub fn view(state: &State) -> El {
                 "Display name",
                 text_input(&state.display_name, &state.selection, "ti-display-name")
                     .width(Size::Fill(1.0)),
+                phone,
             ),
             input_row(
                 "Email",
                 text_input(&state.email, &state.selection, "ti-email").width(Size::Fill(1.0)),
+                phone,
             ),
         ],
     );
@@ -108,6 +111,7 @@ pub fn view(state: &State) -> El {
         [input_row(
             "Region",
             select_trigger("ti-region", region_label(&state.region)).width(Size::Fill(1.0)),
+            phone,
         )],
     );
 
@@ -122,6 +126,7 @@ pub fn view(state: &State) -> El {
                     "ti-quantity",
                     quantity_opts(),
                 ),
+                phone,
             ),
             input_row(
                 "Servings (stacked)",
@@ -131,6 +136,7 @@ pub fn view(state: &State) -> El {
                     "ti-quantity-stacked",
                     quantity_opts().stacked(),
                 ),
+                phone,
             ),
             paragraph(
                 "Click the steppers, or focus the field and press ↑/↓. \
@@ -149,6 +155,7 @@ pub fn view(state: &State) -> El {
             input_row(
                 "Gain (dB)",
                 number_scrubber(&state.gain_db, "ti-gain").width(Size::Fixed(96.0)),
+                phone,
             ),
             paragraph(
                 "Drag the cell horizontally to scrub; ←/→ when focused. \
@@ -161,10 +168,13 @@ pub fn view(state: &State) -> El {
         .width(Size::Fill(1.0))],
     );
 
+    // OTP cells are 36px each + 4px gap × 6 = ~236px. The "Code" label
+    // alone consumes 140px before the control even starts, so on phone
+    // we stack the label above and let the OTP take the full row.
     let otp_card = titled_card(
         "Verification code",
         [
-            input_row("Code", input_otp(&state.otp_code, "ti-otp", 6)),
+            input_row("Code", input_otp(&state.otp_code, "ti-otp", 6), phone),
             paragraph(
                 "Six-digit code; the next-to-fill cell shows the active border. \
                  Backspace pops the last entry.",
@@ -174,26 +184,35 @@ pub fn view(state: &State) -> El {
         ],
     );
 
+    // Command palette trigger row: the "last command" status text is
+    // a nice-to-have on desktop; on phone it pushes the trigger button
+    // off-screen, so we drop it and rely on the paragraph below for
+    // feedback context.
+    let command_trigger = if phone {
+        button("Open command palette")
+            .secondary()
+            .key("ti-command-trigger")
+            .width(Size::Fill(1.0))
+    } else {
+        row([
+            button("Open command palette")
+                .secondary()
+                .key("ti-command-trigger"),
+            spacer(),
+            text(match &state.last_command {
+                Some(c) => format!("last: {c}"),
+                None => "none yet".into(),
+            })
+            .small()
+            .muted(),
+        ])
+        .align(Align::Center)
+        .width(Size::Fill(1.0))
+    };
     let command_card = titled_card(
         "Command palette",
         [
-            input_row(
-                "Trigger",
-                row([
-                    button("Open command palette")
-                        .secondary()
-                        .key("ti-command-trigger"),
-                    spacer(),
-                    text(match &state.last_command {
-                        Some(c) => format!("last: {c}"),
-                        None => "none yet".into(),
-                    })
-                    .small()
-                    .muted(),
-                ])
-                .align(Align::Center)
-                .width(Size::Fill(1.0)),
-            ),
+            input_row("Trigger", command_trigger, phone),
             paragraph(
                 "`command_*` widgets compose a fuzzy palette anatomy — \
                  group / item / icon / shortcut. The trigger button \
@@ -386,21 +405,32 @@ fn gain_opts() -> ScrubberOpts {
         .decimals(1)
 }
 
-fn input_row(label: &str, control: El) -> El {
-    // Caller owns the control's width — text inputs that want to fill
-    // the row chain `.width(Size::Fill(1.0))` themselves; narrow
-    // affordances (numeric inputs, scrubbers, OTP, trigger buttons)
-    // keep their intrinsic width.
-    //
-    // Label slot wide enough for the longest label here ("Servings
-    // (stacked)" runs ~124 px); ellipsizes longer text rather than
+fn input_row(label: &str, control: El, phone: bool) -> El {
+    // Phone viewports stack label above control as a column so the
+    // label doesn't eat the row width and force narrow affordances
+    // (OTP, numeric input, command-trigger button) off the right edge.
+    // Desktop stays as a label-on-the-left row, where the label slot
+    // is wide enough for the longest label here ("Servings (stacked)"
+    // runs ~124 px) and ellipsizes longer text rather than
     // overflowing into the control.
-    row([
-        text(label).width(Size::Fixed(140.0)).ellipsis().muted(),
-        control,
-    ])
-    .gap(tokens::SPACE_2)
-    .align(Align::Center)
+    if phone {
+        column([
+            text(label).label().muted(),
+            // Force the control to fill the full content width so the
+            // OTP / numeric / select widgets size to the available
+            // space rather than to a desktop-shape intrinsic.
+            row([control]).width(Size::Fill(1.0)),
+        ])
+        .gap(tokens::SPACE_1)
+        .width(Size::Fill(1.0))
+    } else {
+        row([
+            text(label).width(Size::Fixed(140.0)).ellipsis().muted(),
+            control,
+        ])
+        .gap(tokens::SPACE_2)
+        .align(Align::Center)
+    }
 }
 
 #[cfg(test)]
