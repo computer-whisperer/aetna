@@ -51,9 +51,15 @@ use aetna_core::{
 use aetna_wgpu::{MsaaTarget, Runner};
 
 const DEFAULT_SAMPLE_COUNT: u32 = 4;
+#[cfg(not(target_os = "android"))]
+type PlatformClipboard = Option<arboard::Clipboard>;
+#[cfg(target_os = "android")]
+#[derive(Default)]
+struct PlatformClipboard;
+
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Force, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{CursorIcon, Window, WindowId};
@@ -226,6 +232,21 @@ pub fn run_with_config<A: App + 'static>(
     run_host(title, viewport, BasicApp(app), config)
 }
 
+/// Run a plain [`App`] using a caller-created winit event loop.
+///
+/// This is primarily for platform hosts that need to configure the
+/// event loop before Aetna owns it. Android, for example, must attach
+/// the `AndroidApp` received by `android_main` before `build()`.
+pub fn run_on_event_loop<A: App + 'static>(
+    event_loop: EventLoop<()>,
+    title: &'static str,
+    viewport: Rect,
+    app: A,
+    config: HostConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_host_on_event_loop(event_loop, title, viewport, BasicApp(app), config)
+}
+
 /// Run a windowed app with host-specific configuration.
 ///
 /// Prefer [`run_with_config`] for new apps; [`App::before_build`] is
@@ -237,6 +258,18 @@ pub fn run_host_app_with_config<A: WinitWgpuApp + 'static>(
     config: HostConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     run_host(title, viewport, app, config)
+}
+
+/// Run a host-specific [`WinitWgpuApp`] using a caller-created winit
+/// event loop.
+pub fn run_host_app_on_event_loop<A: WinitWgpuApp + 'static>(
+    event_loop: EventLoop<()>,
+    title: &'static str,
+    viewport: Rect,
+    app: A,
+    config: HostConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_host_on_event_loop(event_loop, title, viewport, app, config)
 }
 
 /// Run a windowed app with default host configuration.
@@ -258,6 +291,16 @@ fn run_host<A: WinitWgpuApp + 'static>(
     config: HostConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
+    run_host_on_event_loop(event_loop, title, viewport, app, config)
+}
+
+fn run_host_on_event_loop<A: WinitWgpuApp + 'static>(
+    event_loop: EventLoop<()>,
+    title: &'static str,
+    viewport: Rect,
+    app: A,
+    config: HostConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
     let mut host = Host {
         title,
@@ -294,7 +337,7 @@ fn run_host<A: WinitWgpuApp + 'static>(
         last_text_layout_shaped_bytes: 0,
         frame_index: 0,
         backend: "?",
-        clipboard: arboard::Clipboard::new().ok(),
+        clipboard: new_clipboard(),
         last_primary: String::new(),
     };
     event_loop.run_app(&mut host)?;
@@ -374,7 +417,7 @@ struct Host<A: WinitWgpuApp> {
     /// Best-effort native clipboard. Initialization can fail in
     /// display-less/headless environments; the host simply leaves copy
     /// shortcuts as no-ops in that case.
-    clipboard: Option<arboard::Clipboard>,
+    clipboard: PlatformClipboard,
     /// Last text mirrored into Linux's primary selection.
     last_primary: String,
 }
@@ -703,10 +746,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             ElementState::Released => {
                                 for event in gfx.renderer.pointer_up(Pointer::mouse(lx, ly, button))
                                 {
-                                    let event = attach_primary_selection_text(
-                                        event,
-                                        self.clipboard.as_mut(),
-                                    );
+                                    let event =
+                                        attach_primary_selection_text(event, &mut self.clipboard);
                                     dispatch_app_event(
                                         &mut self.app,
                                         event,
@@ -758,10 +799,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             {
                                 match text_input::clipboard_request(&event) {
                                     Some(ClipboardKind::Copy) => {
-                                        copy_current_selection(
-                                            &gfx.renderer,
-                                            self.clipboard.as_mut(),
-                                        );
+                                        copy_current_selection(&gfx.renderer, &mut self.clipboard);
                                         dispatch_app_event(
                                             &mut self.app,
                                             event,
@@ -771,10 +809,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                         );
                                     }
                                     Some(ClipboardKind::Cut) => {
-                                        copy_current_selection(
-                                            &gfx.renderer,
-                                            self.clipboard.as_mut(),
-                                        );
+                                        copy_current_selection(&gfx.renderer, &mut self.clipboard);
                                         let delete = clipboard::delete_selection_event(event);
                                         dispatch_app_event(
                                             &mut self.app,
@@ -787,7 +822,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                     Some(ClipboardKind::Paste) => {
                                         if let Some(paste) = paste_text_from_clipboard(
                                             event.clone(),
-                                            self.clipboard.as_mut(),
+                                            &mut self.clipboard,
                                         ) {
                                             dispatch_app_event(
                                                 &mut self.app,
@@ -845,6 +880,73 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                             );
                         }
                         self.next_trigger = FrameTrigger::Keyboard;
+                        gfx.window.request_redraw();
+                    }
+
+                    WindowEvent::Touch(touch) => {
+                        let lx = touch.location.x as f32 / scale;
+                        let ly = touch.location.y as f32 / scale;
+                        self.last_pointer = Some((lx, ly));
+                        let mut pointer = Pointer::touch(
+                            lx,
+                            ly,
+                            PointerButton::Primary,
+                            aetna_core::PointerId(touch.id as u32),
+                        );
+                        pointer.pressure = touch_pressure(touch.force);
+                        match touch.phase {
+                            TouchPhase::Started => {
+                                for event in gfx.renderer.pointer_down(pointer) {
+                                    dispatch_app_event(
+                                        &mut self.app,
+                                        event,
+                                        &gfx.renderer,
+                                        &mut self.clipboard,
+                                        &mut self.last_primary,
+                                    );
+                                }
+                            }
+                            TouchPhase::Moved => {
+                                let moved = gfx.renderer.pointer_moved(pointer);
+                                for event in moved.events {
+                                    dispatch_app_event(
+                                        &mut self.app,
+                                        event,
+                                        &gfx.renderer,
+                                        &mut self.clipboard,
+                                        &mut self.last_primary,
+                                    );
+                                }
+                                if !moved.needs_redraw {
+                                    return;
+                                }
+                            }
+                            TouchPhase::Ended => {
+                                for event in gfx.renderer.pointer_up(pointer) {
+                                    dispatch_app_event(
+                                        &mut self.app,
+                                        event,
+                                        &gfx.renderer,
+                                        &mut self.clipboard,
+                                        &mut self.last_primary,
+                                    );
+                                }
+                                self.last_pointer = None;
+                            }
+                            TouchPhase::Cancelled => {
+                                for event in gfx.renderer.pointer_left() {
+                                    dispatch_app_event(
+                                        &mut self.app,
+                                        event,
+                                        &gfx.renderer,
+                                        &mut self.clipboard,
+                                        &mut self.last_primary,
+                                    );
+                                }
+                                self.last_pointer = None;
+                            }
+                        }
+                        self.next_trigger = FrameTrigger::Pointer;
                         gfx.window.request_redraw();
                     }
 
@@ -1231,13 +1333,39 @@ fn pointer_button(b: MouseButton) -> Option<PointerButton> {
     }
 }
 
+#[cfg(not(target_os = "android"))]
+fn new_clipboard() -> PlatformClipboard {
+    arboard::Clipboard::new().ok()
+}
+
+#[cfg(target_os = "android")]
+fn new_clipboard() -> PlatformClipboard {
+    PlatformClipboard
+}
+
 /// Open a URL surfaced by `App::drain_link_opens` through the OS's
 /// default URL handler — `xdg-open` on Linux, `start` on Windows,
 /// `open` on macOS — via the `open` crate. Failures (no handler
 /// installed, sandboxed environment) are logged rather than panicking.
+#[cfg(not(target_os = "android"))]
 fn open_link(url: &str) {
     if let Err(err) = open::that_detached(url) {
         eprintln!("aetna-winit-wgpu: failed to open {url}: {err}");
+    }
+}
+
+#[cfg(target_os = "android")]
+fn open_link(_url: &str) {}
+
+fn touch_pressure(force: Option<Force>) -> Option<f32> {
+    match force? {
+        Force::Calibrated {
+            force,
+            max_possible_force,
+            ..
+        } if max_possible_force > 0.0 => Some((force / max_possible_force).clamp(0.0, 1.0) as f32),
+        Force::Calibrated { force, .. } => Some(force.clamp(0.0, 1.0) as f32),
+        Force::Normalized(v) => Some(v.clamp(0.0, 1.0) as f32),
     }
 }
 
@@ -1285,37 +1413,34 @@ fn bg_color(palette: &aetna_core::Palette) -> wgpu::Color {
     }
 }
 
-fn copy_current_selection(renderer: &Runner, clipboard: Option<&mut arboard::Clipboard>) {
+fn copy_current_selection(renderer: &Runner, clipboard: &mut PlatformClipboard) {
     // Read the selection out of `last_tree` (via the runtime helper) —
     // see `RunnerCore::selected_text` for why a build-only path would
     // miss selections inside a virtual list.
     let Some(text) = renderer.selected_text() else {
         return;
     };
-    let Some(clipboard) = clipboard else {
-        return;
-    };
-    let _ = clipboard.set_text(text);
+    set_clipboard_text(clipboard, text);
 }
 
 fn dispatch_app_event<A: App>(
     app: &mut A,
     event: UiEvent,
     renderer: &Runner,
-    clipboard: &mut Option<arboard::Clipboard>,
+    clipboard: &mut PlatformClipboard,
     last_primary: &mut String,
 ) {
     let before = app.selection();
     app.on_event(event);
     if app.selection() != before {
-        sync_primary_selection(&app.selection(), renderer, clipboard.as_mut(), last_primary);
+        sync_primary_selection(&app.selection(), renderer, clipboard, last_primary);
     }
 }
 
 fn sync_primary_selection(
     selection: &aetna_core::selection::Selection,
     renderer: &Runner,
-    clipboard: Option<&mut arboard::Clipboard>,
+    clipboard: &mut PlatformClipboard,
     last_primary: &mut String,
 ) {
     let text = renderer
@@ -1331,27 +1456,41 @@ fn sync_primary_selection(
     *last_primary = text;
 }
 
-fn paste_text_from_clipboard(
-    event: UiEvent,
-    clipboard: Option<&mut arboard::Clipboard>,
-) -> Option<UiEvent> {
-    let text = clipboard?.get_text().ok()?;
+fn paste_text_from_clipboard(event: UiEvent, clipboard: &mut PlatformClipboard) -> Option<UiEvent> {
+    let text = get_clipboard_text(clipboard)?;
     Some(clipboard::paste_text_event(event, text))
 }
 
-fn attach_primary_selection_text(
-    mut event: UiEvent,
-    clipboard: Option<&mut arboard::Clipboard>,
-) -> UiEvent {
+fn attach_primary_selection_text(mut event: UiEvent, clipboard: &mut PlatformClipboard) -> UiEvent {
     if event.kind == UiEventKind::MiddleClick {
         event.text = primary::get(clipboard);
     }
     event
 }
 
+#[cfg(not(target_os = "android"))]
+fn set_clipboard_text(clipboard: &mut PlatformClipboard, text: String) {
+    if let Some(cb) = clipboard {
+        let _ = cb.set_text(text);
+    }
+}
+
+#[cfg(target_os = "android")]
+fn set_clipboard_text(_clipboard: &mut PlatformClipboard, _text: String) {}
+
+#[cfg(not(target_os = "android"))]
+fn get_clipboard_text(clipboard: &mut PlatformClipboard) -> Option<String> {
+    clipboard.as_mut()?.get_text().ok()
+}
+
+#[cfg(target_os = "android")]
+fn get_clipboard_text(_clipboard: &mut PlatformClipboard) -> Option<String> {
+    None
+}
+
 mod primary {
     #[cfg(target_os = "linux")]
-    pub fn set(clipboard: Option<&mut arboard::Clipboard>, text: &str) {
+    pub fn set(clipboard: &mut super::PlatformClipboard, text: &str) {
         use arboard::{LinuxClipboardKind, SetExtLinux};
         if let Some(cb) = clipboard {
             let _ = cb.set().clipboard(LinuxClipboardKind::Primary).text(text);
@@ -1359,17 +1498,17 @@ mod primary {
     }
 
     #[cfg(target_os = "linux")]
-    pub fn get(clipboard: Option<&mut arboard::Clipboard>) -> Option<String> {
+    pub fn get(clipboard: &mut super::PlatformClipboard) -> Option<String> {
         use arboard::{GetExtLinux, LinuxClipboardKind};
-        let cb = clipboard?;
+        let cb = clipboard.as_mut()?;
         cb.get().clipboard(LinuxClipboardKind::Primary).text().ok()
     }
 
     #[cfg(not(target_os = "linux"))]
-    pub fn set(_clipboard: Option<&mut arboard::Clipboard>, _text: &str) {}
+    pub fn set(_clipboard: &mut super::PlatformClipboard, _text: &str) {}
 
     #[cfg(not(target_os = "linux"))]
-    pub fn get(_clipboard: Option<&mut arboard::Clipboard>) -> Option<String> {
+    pub fn get(_clipboard: &mut super::PlatformClipboard) -> Option<String> {
         None
     }
 }

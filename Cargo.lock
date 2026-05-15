@@ -25,6 +25,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "aetna-android"
+version = "0.3.5"
+dependencies = [
+ "aetna-core",
+ "aetna-winit-wgpu",
+ "winit",
+]
+
+[[package]]
+name = "aetna-android-showcase"
+version = "0.3.5"
+dependencies = [
+ "aetna-android",
+ "aetna-core",
+ "aetna-fixtures",
+ "winit",
+]
+
+[[package]]
 name = "aetna-core"
 version = "0.3.5"
 dependencies = [
