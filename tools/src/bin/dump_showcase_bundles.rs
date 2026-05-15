@@ -14,31 +14,52 @@ use aetna_core::prelude::{Rect, render_bundle, write_bundle};
 use aetna_core::{App, BuildCx};
 use aetna_fixtures::{Showcase, showcase::Section};
 
+/// Viewport sizes the bundle pass renders every scene at. Desktop
+/// matches the windowed showcase; phone matches a typical Android
+/// device's logical width and roughly 16:9 portrait height. Both
+/// shapes feed `BuildCx::with_viewport` so the showcase shell picks
+/// its desktop or phone branch the same way it would in a real host.
+const DESKTOP_VIEWPORT: (f32, f32) = (900.0, 640.0);
+const PHONE_VIEWPORT: (f32, f32) = (360.0, 780.0);
+
 fn main() -> std::io::Result<()> {
-    // Match the windowed Showcase's viewport so the same layout math
-    // runs (the bug, if any, won't depend on the viewport size).
-    let viewport = Rect::new(0.0, 0.0, 900.0, 640.0);
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../crates/aetna-fixtures/out");
     let mut finding_count = 0;
 
     for scene in showcase_bundle_scenes() {
-        let mut app = scene.app;
-        app.before_build();
-        let theme = app.theme();
-        let cx = BuildCx::new(&theme);
-        let mut tree = app.build(&cx);
+        for variant in [
+            ViewportVariant {
+                suffix: "",
+                size: DESKTOP_VIEWPORT,
+            },
+            ViewportVariant {
+                suffix: ".phone",
+                size: PHONE_VIEWPORT,
+            },
+        ] {
+            // Each variant gets its own Showcase clone-equivalent: we
+            // rebuild from the scene factory rather than mutate one
+            // app, so per-section state (toasts queued, dropdown open,
+            // etc.) starts from the same baseline at each viewport.
+            let mut app = (scene.factory)();
+            app.before_build();
+            let theme = app.theme();
+            let cx = BuildCx::new(&theme).with_viewport(variant.size.0, variant.size.1);
+            let mut tree = app.build(&cx);
 
-        let bundle = render_bundle(&mut tree, viewport);
+            let viewport = Rect::new(0.0, 0.0, variant.size.0, variant.size.1);
+            let bundle = render_bundle(&mut tree, viewport);
 
-        let name = scene.name;
-        let written = write_bundle(&bundle, &out_dir, &name)?;
-        for p in &written {
-            println!("wrote {}", p.display());
-        }
-        if !bundle.lint.findings.is_empty() {
-            eprintln!("\n[{name}] lint findings ({}):", bundle.lint.findings.len());
-            eprint!("{}", bundle.lint.text());
-            finding_count += bundle.lint.findings.len();
+            let name = format!("{}{}", scene.name, variant.suffix);
+            let written = write_bundle(&bundle, &out_dir, &name)?;
+            for p in &written {
+                println!("wrote {}", p.display());
+            }
+            if !bundle.lint.findings.is_empty() {
+                eprintln!("\n[{name}] lint findings ({}):", bundle.lint.findings.len());
+                eprint!("{}", bundle.lint.text());
+                finding_count += bundle.lint.findings.len();
+            }
         }
     }
 
@@ -51,28 +72,41 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct ViewportVariant {
+    /// Filename suffix appended after the scene name. Empty for the
+    /// default desktop variant so existing artifacts keep their names.
+    suffix: &'static str,
+    /// Logical-pixel viewport dimensions (width, height).
+    size: (f32, f32),
+}
+
 struct ShowcaseBundleScene {
     name: String,
-    app: Showcase,
+    /// Builds a fresh Showcase per render. We rebuild rather than
+    /// `Clone` because some scenes carry state we mutate inline (e.g.
+    /// the open-overlay variants), and each viewport variant should
+    /// see the same baseline.
+    factory: Box<dyn Fn() -> Showcase>,
 }
 
 fn showcase_bundle_scenes() -> Vec<ShowcaseBundleScene> {
-    let mut scenes = Section::ALL
+    let mut scenes: Vec<ShowcaseBundleScene> = Section::ALL
         .into_iter()
         .map(|section| ShowcaseBundleScene {
             name: format!("showcase_{}", section.slug()),
-            app: Showcase::with_section(section),
+            factory: Box::new(move || Showcase::with_section(section)),
         })
-        .collect::<Vec<_>>();
+        .collect();
 
     scenes.push(ShowcaseBundleScene {
         name: "showcase_overlays_dropdown".into(),
-        app: Showcase::with_overlay_dropdown_open(),
+        factory: Box::new(Showcase::with_overlay_dropdown_open),
     });
 
     scenes.push(ShowcaseBundleScene {
         name: "showcase_overlays_context_menu".into(),
-        app: Showcase::with_overlay_context_menu_at(560.0, 450.0),
+        factory: Box::new(|| Showcase::with_overlay_context_menu_at(560.0, 450.0)),
     });
 
     scenes
