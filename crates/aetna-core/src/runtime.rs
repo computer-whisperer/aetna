@@ -388,8 +388,7 @@ impl RunnerCore {
         // along the drag path can react. `pointer_down` and
         // `pointer_up` separately stamp the contact-driven enter and
         // leave for touch.
-        let touch_no_press =
-            matches!(kind, PointerKind::Touch) && self.ui_state.pressed.is_none();
+        let touch_no_press = matches!(kind, PointerKind::Touch) && self.ui_state.pressed.is_none();
         if hover_changed && !touch_no_press {
             if let Some(prev) = prev_hover {
                 out.push(UiEvent {
@@ -441,8 +440,7 @@ impl RunnerCore {
                         // Suppress selection / drag emission for this
                         // move; return only any hover events that
                         // already accumulated.
-                        let needs_redraw =
-                            hover_changed || link_hover_changed || !out.is_empty();
+                        let needs_redraw = hover_changed || link_hover_changed || !out.is_empty();
                         return PointerMove {
                             events: out,
                             needs_redraw,
@@ -481,8 +479,7 @@ impl RunnerCore {
                 }
                 TouchGestureState::Scrolling { last_pos } => {
                     let scroll_dy = last_pos.1 - y;
-                    self.ui_state.touch_gesture =
-                        TouchGestureState::Scrolling { last_pos: (x, y) };
+                    self.ui_state.touch_gesture = TouchGestureState::Scrolling { last_pos: (x, y) };
                     if let Some(tree) = self.last_tree.as_ref() {
                         self.ui_state.pointer_wheel(tree, (x, y), scroll_dy);
                     }
@@ -1009,7 +1006,12 @@ impl RunnerCore {
             head,
             granularity,
         });
-        out.push(selection_event(new_sel, modifiers, Some(pointer), Some(kind)));
+        out.push(selection_event(
+            new_sel,
+            modifiers,
+            Some(pointer),
+            Some(kind),
+        ));
     }
 
     /// Cancel an in-flight touch press because the gesture committed
@@ -4039,7 +4041,9 @@ mod tests {
         core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
 
         // Drag to the right inside p1.
-        let events = core.pointer_moved(Pointer::moving(p1.x + p1.w - 10.0, cy)).events;
+        let events = core
+            .pointer_moved(Pointer::moving(p1.x + p1.w - 10.0, cy))
+            .events;
         let sel_event = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -4100,7 +4104,11 @@ mod tests {
         let cy = p1.y + p1.h * 0.5;
         core.pointer_down(Pointer::mouse(cx, cy, PointerButton::Primary));
         core.pointer_moved(Pointer::moving(p1.x + p1.w - 10.0, cy));
-        let _ = core.pointer_up(Pointer::mouse(p1.x + p1.w - 10.0, cy, PointerButton::Primary));
+        let _ = core.pointer_up(Pointer::mouse(
+            p1.x + p1.w - 10.0,
+            cy,
+            PointerButton::Primary,
+        ));
         assert!(
             core.ui_state.selection.drag.is_none(),
             "drag flag should clear on pointer_up"
@@ -4122,12 +4130,18 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let p2 = core.rect_of_key("p2").expect("p2 rect");
         // Anchor in p1.
-        core.pointer_down(Pointer::mouse(p1.x + 4.0, p1.y + p1.h * 0.5, PointerButton::Primary));
+        core.pointer_down(Pointer::mouse(
+            p1.x + 4.0,
+            p1.y + p1.h * 0.5,
+            PointerButton::Primary,
+        ));
         // Drag into p2 first — head migrates.
         core.pointer_moved(Pointer::moving(p2.x + 8.0, p2.y + p2.h * 0.5));
         // Now move WELL BELOW p2's rect (well below all selectables).
         // Head should remain in p2 (last leaf in this fixture is p2).
-        let events = core.pointer_moved(Pointer::moving(p2.x + 8.0, p2.y + p2.h + 200.0)).events;
+        let events = core
+            .pointer_moved(Pointer::moving(p2.x + 8.0, p2.y + p2.h + 200.0))
+            .events;
         let sel = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -4149,9 +4163,15 @@ mod tests {
         let p1 = core.rect_of_key("p1").expect("p1 rect");
         let p2 = core.rect_of_key("p2").expect("p2 rect");
         // Anchor at the start of p1.
-        core.pointer_down(Pointer::mouse(p1.x + 4.0, p1.y + p1.h * 0.5, PointerButton::Primary));
+        core.pointer_down(Pointer::mouse(
+            p1.x + 4.0,
+            p1.y + p1.h * 0.5,
+            PointerButton::Primary,
+        ));
         // Drag down into p2.
-        let events = core.pointer_moved(Pointer::moving(p2.x + 8.0, p2.y + p2.h * 0.5)).events;
+        let events = core
+            .pointer_moved(Pointer::moving(p2.x + 8.0, p2.y + p2.h * 0.5))
+            .events;
         let sel_event = events
             .iter()
             .find(|e| e.kind == UiEventKind::SelectionChanged)
@@ -4452,7 +4472,11 @@ mod tests {
         // Drag-select inside p1 to establish a non-empty selection.
         core.pointer_down(Pointer::mouse(p1.x + 4.0, cy, PointerButton::Primary));
         core.pointer_moved(Pointer::moving(p1.x + p1.w - 10.0, cy));
-        core.pointer_up(Pointer::mouse(p1.x + p1.w - 10.0, cy, PointerButton::Primary));
+        core.pointer_up(Pointer::mouse(
+            p1.x + p1.w - 10.0,
+            cy,
+            PointerButton::Primary,
+        ));
         assert!(!core.ui_state.current_selection.is_empty());
 
         let events = core.key_down(UiKey::Escape, KeyModifiers::default(), false);
@@ -4530,7 +4554,8 @@ mod tests {
         let down1 = core.pointer_down(Pointer::mouse(
             btn.x + btn.w * 0.5,
             btn.y + btn.h * 0.5,
-            PointerButton::Primary));
+            PointerButton::Primary,
+        ));
         assert_eq!(
             down1
                 .iter()
@@ -4542,10 +4567,15 @@ mod tests {
         let _ = core.pointer_up(Pointer::mouse(
             btn.x + btn.w * 0.5,
             btn.y + btn.h * 0.5,
-            PointerButton::Primary));
+            PointerButton::Primary,
+        ));
 
         // Press on ti (different target) → count resets to 1.
-        let down2 = core.pointer_down(Pointer::mouse(ti.x + ti.w * 0.5, ti.y + ti.h * 0.5, PointerButton::Primary));
+        let down2 = core.pointer_down(Pointer::mouse(
+            ti.x + ti.w * 0.5,
+            ti.y + ti.h * 0.5,
+            PointerButton::Primary,
+        ));
         let pd2 = down2
             .iter()
             .find(|e| e.kind == UiEventKind::PointerDown)
@@ -4663,7 +4693,8 @@ mod tests {
         let event = core.pointer_down(Pointer::mouse(
             thumb.x + thumb.w * 0.5,
             thumb.y + thumb.h * 0.5,
-            PointerButton::Primary));
+            PointerButton::Primary,
+        ));
         assert!(
             event.is_empty(),
             "thumb press should not emit PointerDown to the app"
@@ -4706,7 +4737,8 @@ mod tests {
         let evt = core.pointer_down(Pointer::mouse(
             track.x + track.w * 0.5,
             thumb.y + thumb.h + 10.0,
-            PointerButton::Primary));
+            PointerButton::Primary,
+        ));
         assert!(evt.is_empty(), "track press should not surface PointerDown");
         assert!(
             core.ui_state.scroll.thumb_drag.is_none(),
@@ -4749,7 +4781,8 @@ mod tests {
         core.pointer_down(Pointer::mouse(
             track.x + track.w * 0.5,
             thumb.y - 4.0,
-            PointerButton::Primary));
+            PointerButton::Primary,
+        ));
         let after_up = core.ui_state.scroll_offset(&tree.computed_id);
         assert!(
             after_up < after_down,
@@ -4791,7 +4824,11 @@ mod tests {
         let track_remaining = (metrics.viewport_h - thumb.h).max(0.0);
 
         let press_y = thumb.y + thumb.h * 0.5;
-        core.pointer_down(Pointer::mouse(thumb.x + thumb.w * 0.5, press_y, PointerButton::Primary));
+        core.pointer_down(Pointer::mouse(
+            thumb.x + thumb.w * 0.5,
+            press_y,
+            PointerButton::Primary,
+        ));
         // Drag 20 px down — offset should advance by `20 * max_offset / track_remaining`.
         let evt = core.pointer_moved(Pointer::moving(thumb.x + thumb.w * 0.5, press_y + 20.0));
         assert!(

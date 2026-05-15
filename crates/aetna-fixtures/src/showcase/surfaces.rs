@@ -240,11 +240,7 @@ fn surface_role_tile(title: &str, token_name: &str, fill: Color) -> El {
 fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {
     card([
         text(label).title().width(Size::Fill(1.0)).ellipsis(),
-        text(sub)
-            .muted()
-            .small()
-            .width(Size::Fill(1.0))
-            .ellipsis(),
+        text(sub).muted().small().width(Size::Fill(1.0)).ellipsis(),
     ])
     .shadow(shadow)
     .padding(tokens::SPACE_4)

@@ -686,7 +686,9 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                         };
                         match state {
                             ElementState::Pressed => {
-                                for event in gfx.renderer.pointer_down(Pointer::mouse(lx, ly, button)) {
+                                for event in
+                                    gfx.renderer.pointer_down(Pointer::mouse(lx, ly, button))
+                                {
                                     dispatch_app_event(
                                         &mut self.app,
                                         event,
@@ -699,7 +701,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                 gfx.window.request_redraw();
                             }
                             ElementState::Released => {
-                                for event in gfx.renderer.pointer_up(Pointer::mouse(lx, ly, button)) {
+                                for event in gfx.renderer.pointer_up(Pointer::mouse(lx, ly, button))
+                                {
                                     let event = attach_primary_selection_text(
                                         event,
                                         self.clipboard.as_mut(),

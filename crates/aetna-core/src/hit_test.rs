@@ -118,9 +118,7 @@ fn hit_test_rec(
     } else {
         Sides::default()
     };
-    let hit_rect = painted_rect
-        .outset(node.hit_overflow)
-        .outset(auto_inflate);
+    let hit_rect = painted_rect.outset(node.hit_overflow).outset(auto_inflate);
     if !hit_rect.contains(point.0, point.1) {
         return Hit::Miss;
     }

@@ -512,10 +512,7 @@ mod web_entry {
                     window.request_redraw();
                 });
             canvas
-                .add_event_listener_with_callback(
-                    "pointermove",
-                    closure.as_ref().unchecked_ref(),
-                )
+                .add_event_listener_with_callback("pointermove", closure.as_ref().unchecked_ref())
                 .expect("add pointermove listener");
             out.push(closure);
         }
@@ -602,10 +599,7 @@ mod web_entry {
                     window.request_redraw();
                 });
             canvas
-                .add_event_listener_with_callback(
-                    "pointerdown",
-                    closure.as_ref().unchecked_ref(),
-                )
+                .add_event_listener_with_callback("pointerdown", closure.as_ref().unchecked_ref())
                 .expect("add pointerdown listener");
             out.push(closure);
         }
@@ -624,10 +618,7 @@ mod web_entry {
                     window.request_redraw();
                 });
             canvas
-                .add_event_listener_with_callback(
-                    "pointerup",
-                    closure.as_ref().unchecked_ref(),
-                )
+                .add_event_listener_with_callback("pointerup", closure.as_ref().unchecked_ref())
                 .expect("add pointerup listener");
             out.push(closure);
         }
@@ -645,10 +636,7 @@ mod web_entry {
                     window.request_redraw();
                 });
             canvas
-                .add_event_listener_with_callback(
-                    "pointercancel",
-                    closure.as_ref().unchecked_ref(),
-                )
+                .add_event_listener_with_callback("pointercancel", closure.as_ref().unchecked_ref())
                 .expect("add pointercancel listener");
             out.push(closure);
         }
@@ -664,10 +652,7 @@ mod web_entry {
                     window.request_redraw();
                 });
             canvas
-                .add_event_listener_with_callback(
-                    "pointerleave",
-                    closure.as_ref().unchecked_ref(),
-                )
+                .add_event_listener_with_callback("pointerleave", closure.as_ref().unchecked_ref())
                 .expect("add pointerleave listener");
             out.push(closure);
         }
@@ -809,10 +794,10 @@ mod web_entry {
                     let composing = event.is_composing();
                     let input_type = event.input_type();
                     let edit = match input_type.as_str() {
-                        "deleteContentBackward" | "deleteWordBackward"
-                        | "deleteSoftLineBackward" | "deleteHardLineBackward" => {
-                            Some(TextEdit::Backspace)
-                        }
+                        "deleteContentBackward"
+                        | "deleteWordBackward"
+                        | "deleteSoftLineBackward"
+                        | "deleteHardLineBackward" => Some(TextEdit::Backspace),
                         _ => {
                             let value = input_el_for_input.value();
                             if value.is_empty() || composing {
@@ -834,10 +819,7 @@ mod web_entry {
                     }
                 });
             input
-                .add_event_listener_with_callback(
-                    "input",
-                    input_closure.as_ref().unchecked_ref(),
-                )
+                .add_event_listener_with_callback("input", input_closure.as_ref().unchecked_ref())
                 .ok()?;
 
             // keydown: when our hidden input has focus, the canvas
@@ -876,10 +858,7 @@ mod web_entry {
                     blur_focused.set(false);
                 });
             input
-                .add_event_listener_with_callback(
-                    "blur",
-                    blur_closure.as_ref().unchecked_ref(),
-                )
+                .add_event_listener_with_callback("blur", blur_closure.as_ref().unchecked_ref())
                 .ok()?;
 
             Some(Self {
@@ -1144,8 +1123,7 @@ mod web_entry {
                     );
                 }
             }
-            let queue: Vec<QueuedPointer> =
-                self.pending_pointer.borrow_mut().drain(..).collect();
+            let queue: Vec<QueuedPointer> = self.pending_pointer.borrow_mut().drain(..).collect();
             if queue.is_empty() {
                 return redraw;
             }
@@ -1237,11 +1215,10 @@ mod web_entry {
                         }
                     }
                     TextEdit::Backspace => {
-                        for event in gfx.renderer.key_down(
-                            UiKey::Backspace,
-                            self.modifiers,
-                            false,
-                        ) {
+                        for event in gfx
+                            .renderer
+                            .key_down(UiKey::Backspace, self.modifiers, false)
+                        {
                             dispatch_app_event(
                                 &mut self.app,
                                 event,
@@ -1510,7 +1487,9 @@ mod web_entry {
                 // already up). Clamp small differences (URL-bar
                 // hide/show varies inner_height vs visualViewport by
                 // ~5px on iOS Safari) so the seed reads as zero.
-                let initial_inset = ((layout_window.inner_height().ok()
+                let initial_inset = ((layout_window
+                    .inner_height()
+                    .ok()
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0)
                     - vv.height() as f64)
@@ -1534,7 +1513,9 @@ mod web_entry {
                 // new value.
                 let viewport_closure: Closure<dyn FnMut(web_sys::Event)> =
                     Closure::new(move |_event: web_sys::Event| {
-                        let Some(window_obj) = web_sys::window() else { return };
+                        let Some(window_obj) = web_sys::window() else {
+                            return;
+                        };
                         let Some(vv) = window_obj.visual_viewport() else {
                             return;
                         };

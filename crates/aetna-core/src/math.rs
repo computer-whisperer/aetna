@@ -242,22 +242,17 @@ impl MathOperatorInfo {
 fn operator_info(operator: &str) -> MathOperatorInfo {
     use MathOperatorClass::*;
     match operator {
-        "+" | "-" | "±" | "∓" | "·" | "×" | "÷" | "∪" | "∩"
-        | "∧" | "∨" | "⊕" | "⊖" | "⊗" | "⊘" | "⊙"
-        | "⋆" | "∗" | "∘" | "•" | "⊔" | "⊓" | "⨿" | "≀"
-        | "◁" | "▷" | "⋄" | "∖" => {
+        "+" | "-" | "±" | "∓" | "·" | "×" | "÷" | "∪" | "∩" | "∧" | "∨" | "⊕" | "⊖" | "⊗" | "⊘"
+        | "⊙" | "⋆" | "∗" | "∘" | "•" | "⊔" | "⊓" | "⨿" | "≀" | "◁" | "▷" | "⋄" | "∖" => {
             MathOperatorInfo::new(Binary, MEDIUM_MATH_SPACE_EM, MEDIUM_MATH_SPACE_EM)
         }
-        "=" | "<" | ">" | "≤" | "≥" | "≠" | "≈" | "∼" | "→" | "←" | "↔"
-        | "⇒" | "⇐" | "⇔" | "⟹" | "⟸" | "⟺" | "⟶" | "⟵" | "⟷"
-        | "↦" | "⟼" | "↪" | "↩"
-        | "∈" | "∉" | "∋" | "∌" | "⊂" | "⊃" | "⊆" | "⊇" | "⊊" | "⊋"
-        | "≡" | "≃" | "≅" | "∝" | "≺" | "≻" | "⪯" | "⪰" | "≪" | "≫"
-        | "∥" | "⊥" | "≍" | "≐" | "⊨" | "⊢" | "⊣" | "∴" | "∵" => {
+        "=" | "<" | ">" | "≤" | "≥" | "≠" | "≈" | "∼" | "→" | "←" | "↔" | "⇒" | "⇐" | "⇔" | "⟹"
+        | "⟸" | "⟺" | "⟶" | "⟵" | "⟷" | "↦" | "⟼" | "↪" | "↩" | "∈" | "∉" | "∋" | "∌" | "⊂"
+        | "⊃" | "⊆" | "⊇" | "⊊" | "⊋" | "≡" | "≃" | "≅" | "∝" | "≺" | "≻" | "⪯" | "⪰" | "≪"
+        | "≫" | "∥" | "⊥" | "≍" | "≐" | "⊨" | "⊢" | "⊣" | "∴" | "∵" => {
             MathOperatorInfo::new(Relation, MEDIUM_MATH_SPACE_EM, MEDIUM_MATH_SPACE_EM)
         }
-        "∑" | "∏" | "⋂" | "⋃" | "∐"
-        | "⨁" | "⨂" | "⨀" | "⋁" | "⋀" | "⨄" | "⨆" => {
+        "∑" | "∏" | "⋂" | "⋃" | "∐" | "⨁" | "⨂" | "⨀" | "⋁" | "⋀" | "⨄" | "⨆" => {
             MathOperatorInfo::new(Large, THIN_MATH_SPACE_EM, THIN_MATH_SPACE_EM).large()
         }
         "∫" | "∮" | "∬" | "∭" => {
@@ -3084,12 +3079,11 @@ impl<'a> TexParser<'a> {
             "vdots" => Ok(MathExpr::Operator("⋮".into())),
             "ddots" => Ok(MathExpr::Operator("⋱".into())),
             // Function-like operator names (rendered upright)
-            "sin" | "cos" | "tan" | "cot" | "sec" | "csc"
-            | "sinh" | "cosh" | "tanh" | "coth"
-            | "arcsin" | "arccos" | "arctan"
-            | "log" | "lg" | "ln" | "exp"
-            | "lim" | "max" | "min" | "sup" | "inf" | "det"
-            | "arg" | "deg" | "dim" | "hom" | "ker" => Ok(MathExpr::Text(name)),
+            "sin" | "cos" | "tan" | "cot" | "sec" | "csc" | "sinh" | "cosh" | "tanh" | "coth"
+            | "arcsin" | "arccos" | "arctan" | "log" | "lg" | "ln" | "exp" | "lim" | "max"
+            | "min" | "sup" | "inf" | "det" | "arg" | "deg" | "dim" | "hom" | "ker" => {
+                Ok(MathExpr::Text(name))
+            }
             "gcd" => Ok(MathExpr::Text("gcd".into())),
             "Pr" => Ok(MathExpr::Text("Pr".into())),
             "liminf" => Ok(MathExpr::Text("lim inf".into())),

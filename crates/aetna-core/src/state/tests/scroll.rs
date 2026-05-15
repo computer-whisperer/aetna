@@ -126,7 +126,9 @@ fn pointer_wheel_does_not_bubble_past_block_pointer_barrier() {
     // scroll inside the dialog is exhausted, the wheel must NOT
     // bubble out to the page scroll underneath.
     let mut tree = scroll([
-        button("page-row").key("page-row").height(Size::Fixed(200.0)),
+        button("page-row")
+            .key("page-row")
+            .height(Size::Fixed(200.0)),
         column([scroll([button("inner-row")
             .key("inner-row")
             .height(Size::Fixed(40.0))])
