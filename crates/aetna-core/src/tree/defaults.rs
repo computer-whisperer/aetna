@@ -25,6 +25,7 @@ impl Default for El {
             focus_ring_placement: Default::default(),
             always_show_focus_ring: false,
             selectable: false,
+            consumes_touch_drag: false,
             selection_source: None,
             capture_keys: false,
             alpha_follows_focused_ancestor: false,

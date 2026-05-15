@@ -76,6 +76,21 @@ pub struct El {
     /// transfers focus and clears selection; pointer-down on a
     /// selectable-only leaf moves selection without disturbing focus.
     pub selectable: bool,
+    /// When true, a touch contact starting on this node (or any
+    /// descendant) is treated as a drag rather than a pan/scroll
+    /// gesture. The runner's touch-scroll synthesis defaults to
+    /// "scroll wins" on touch — every interactive widget loses
+    /// touch drag to the nearest enclosing scrollable, matching
+    /// platform behavior where you can pan over a button. Widgets
+    /// that legitimately need a touch drag — sliders, scrubbers,
+    /// resize handles — opt in here so the runner commits to drag
+    /// instead of cancelling the press.
+    ///
+    /// Inherits along the ancestor path: a press on a slider's
+    /// thumb child consumes touch drag if the slider's outer
+    /// surface set the flag. Has no effect on mouse / pen pointers
+    /// — those follow the historical "press + move = drag" model.
+    pub consumes_touch_drag: bool,
     /// Optional source-backed selection payload. Plain text leaves
     /// select/copy their rendered [`Self::text`]. Rich text systems can
     /// attach a [`crate::selection::SelectionSource`] so pointer

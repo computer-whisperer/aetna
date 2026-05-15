@@ -83,6 +83,18 @@ impl El {
         self
     }
 
+    /// Opt this node into consuming touch drag. A touch contact that
+    /// starts on this node (or any descendant — the flag inherits
+    /// down the tree) is treated as a drag rather than a pan/scroll
+    /// gesture, suppressing the runner's touch-scroll synthesis.
+    /// Use on widgets whose primary interaction is dragging:
+    /// sliders, scrubbers, resize handles, draggable cards. No
+    /// effect on mouse / pen pointers.
+    pub fn consumes_touch_drag(mut self) -> Self {
+        self.consumes_touch_drag = true;
+        self
+    }
+
     /// Attach source-backed copy/hit-test text for this selectable
     /// node. The node still needs `.selectable().key(...)`; this only
     /// changes how selection offsets map to copied text.

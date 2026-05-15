@@ -184,6 +184,10 @@ pub fn resize_handle(axis: Axis) -> El {
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
         .cursor(cursor)
+        // Touch drag is the whole point of a resize handle. Without
+        // this opt-in the runner would cancel the press and route
+        // the motion to scroll, leaving the handle inert on touch.
+        .consumes_touch_drag()
         .width(width)
         .height(height)
 }

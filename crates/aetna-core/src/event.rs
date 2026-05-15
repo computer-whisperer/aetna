@@ -581,6 +581,21 @@ pub enum UiEventKind {
     /// `event.pointer` is the current pointer position (or the last
     /// known position when the pointer left the window).
     PointerLeave,
+    /// The runner is abandoning a press because the gesture became
+    /// something else — currently only fired when a touch contact's
+    /// movement crosses the touch-scroll threshold and the press
+    /// target did not opt in via `consumes_touch_drag`. The contact
+    /// has *not* lifted; the user is still touching the screen, but
+    /// from the widget's perspective the press is gone (no
+    /// subsequent `Drag`, no `Click`, no `PointerUp`). Routed to the
+    /// originally pressed target — apps that handle `PointerDown`
+    /// for in-flight visual / state setup should also handle
+    /// `PointerCancel` to roll it back.
+    ///
+    /// Browser-initiated pointer cancels (OS gesture takeover, etc.)
+    /// currently come through as `PointerUp` rather than this event;
+    /// that may change.
+    PointerCancel,
     /// A file is being dragged over the window (the user hasn't
     /// released yet). `event.path` carries the file's path; multi-file
     /// drags fire one event per file, matching the underlying winit

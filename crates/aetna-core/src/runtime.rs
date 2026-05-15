@@ -67,7 +67,9 @@ use crate::paint::{
     physical_scissor,
 };
 use crate::shader::ShaderHandle;
-use crate::state::{AnimationMode, SelectionDragGranularity, UiState};
+use crate::state::{
+    AnimationMode, SelectionDragGranularity, TOUCH_DRAG_THRESHOLD, TouchGestureState, UiState,
+};
 use crate::text::atlas::RunStyle;
 use crate::text::metrics::TextLayoutCacheStats;
 use crate::theme::Theme;
@@ -394,6 +396,80 @@ impl RunnerCore {
             }
         }
 
+        // Touch gesture state machine: resolve the tap / drag / scroll
+        // ambiguity before falling through to selection / drag
+        // emission. Mouse and pen pointers stay at `None` here and
+        // bypass the machine entirely.
+        if matches!(kind, PointerKind::Touch) {
+            match self.ui_state.touch_gesture {
+                TouchGestureState::Pending {
+                    initial,
+                    consumes_drag,
+                } => {
+                    let dx = x - initial.0;
+                    let dy = y - initial.1;
+                    if (dx * dx + dy * dy).sqrt() < TOUCH_DRAG_THRESHOLD {
+                        // Below threshold — could still be a tap.
+                        // Suppress selection / drag emission for this
+                        // move; return only any hover events that
+                        // already accumulated.
+                        let needs_redraw =
+                            hover_changed || link_hover_changed || !out.is_empty();
+                        return PointerMove {
+                            events: out,
+                            needs_redraw,
+                        };
+                    }
+                    if consumes_drag {
+                        // The press target opted in via
+                        // `consumes_touch_drag` — commit to drag and
+                        // fall through to the normal drag emission
+                        // below (this move and subsequent ones).
+                        self.ui_state.touch_gesture = TouchGestureState::None;
+                    } else {
+                        // Commit to scroll. Cancel the press so the
+                        // widget that thought it was being clicked
+                        // sees `PointerCancel` + `PointerLeave` and
+                        // stops receiving further events for this
+                        // gesture, then fold this move's delta into
+                        // the scroll routing.
+                        self.ui_state.touch_gesture =
+                            TouchGestureState::Scrolling { last_pos: (x, y) };
+                        self.cancel_press_for_scroll(&mut out, x, y, kind, modifiers);
+                        // Sign: a finger dragging *down* should expose
+                        // content above (scroll position decreases).
+                        // `pointer_wheel`'s `dy` matches mouse-wheel
+                        // convention where positive = scroll-down, so
+                        // we negate the finger's positive Δy.
+                        let scroll_dy = initial.1 - y;
+                        if let Some(tree) = self.last_tree.as_ref() {
+                            self.ui_state.pointer_wheel(tree, (x, y), scroll_dy);
+                        }
+                        return PointerMove {
+                            events: out,
+                            needs_redraw: true,
+                        };
+                    }
+                }
+                TouchGestureState::Scrolling { last_pos } => {
+                    let scroll_dy = last_pos.1 - y;
+                    self.ui_state.touch_gesture =
+                        TouchGestureState::Scrolling { last_pos: (x, y) };
+                    if let Some(tree) = self.last_tree.as_ref() {
+                        self.ui_state.pointer_wheel(tree, (x, y), scroll_dy);
+                    }
+                    return PointerMove {
+                        events: out,
+                        needs_redraw: true,
+                    };
+                }
+                TouchGestureState::None => {
+                    // Already committed to drag (or there was no press
+                    // to gate). Fall through.
+                }
+            }
+        }
+
         // Selection drag-extend takes precedence over the focusable
         // Drag emission. Cross-leaf: if the pointer hits a selectable
         // leaf, head migrates there. Otherwise we project the pointer
@@ -474,6 +550,7 @@ impl RunnerCore {
         self.ui_state.set_hovered(None, Instant::now());
         self.ui_state.pressed = None;
         self.ui_state.pressed_secondary = None;
+        self.ui_state.touch_gesture = TouchGestureState::None;
         // Pointer leaves the window → no link is hovered or pressed
         // anymore. Clearing here keeps a stale `Pointer` cursor from
         // sticking after the user moves the mouse out of the canvas
@@ -740,6 +817,25 @@ impl RunnerCore {
                     });
                 }
             }
+            // Enter the gesture state machine. Decide upfront whether
+            // the press target (or any ancestor) consumes touch drag,
+            // so the threshold-cross branch in `pointer_moved` doesn't
+            // re-walk the tree once per move. A press that hits dead
+            // space (no keyed leaf) defaults to "doesn't consume" —
+            // scroll wins, matching the natural mobile expectation
+            // that swiping over background pans the page.
+            let consumes_drag = hit
+                .as_ref()
+                .and_then(|t| {
+                    self.last_tree
+                        .as_ref()
+                        .and_then(|tree| find_consumes_touch_drag(tree, &t.node_id, false))
+                })
+                .unwrap_or(false);
+            self.ui_state.touch_gesture = TouchGestureState::Pending {
+                initial: (x, y),
+                consumes_drag,
+            };
         }
 
         if let Some(p) = hit.clone() {
@@ -877,6 +973,61 @@ impl RunnerCore {
         out.push(selection_event(new_sel, modifiers, Some(pointer), Some(kind)));
     }
 
+    /// Cancel an in-flight touch press because the gesture committed
+    /// to scrolling. Emits `PointerCancel` for the pressed target
+    /// (so widgets can roll back any setup they did at
+    /// `PointerDown`) and `PointerLeave` for the hovered target
+    /// (mirroring the contact-driven hover model from
+    /// [`Self::pointer_up`]). Clears `pressed` so subsequent moves
+    /// don't emit `Drag`, and clears the selection drag so the press
+    /// doesn't keep extending a text selection from inside the
+    /// scroll motion.
+    fn cancel_press_for_scroll(
+        &mut self,
+        out: &mut Vec<UiEvent>,
+        x: f32,
+        y: f32,
+        kind: PointerKind,
+        modifiers: KeyModifiers,
+    ) {
+        let pressed = self.ui_state.pressed.take();
+        let hovered = self.ui_state.hovered.clone();
+        self.ui_state.set_hovered(None, Instant::now());
+        self.ui_state.pressed_secondary = None;
+        self.ui_state.pressed_link = None;
+        self.ui_state.selection.drag = None;
+        if let Some(p) = pressed {
+            out.push(UiEvent {
+                key: Some(p.key.clone()),
+                target: Some(p),
+                pointer: Some((x, y)),
+                key_press: None,
+                text: None,
+                selection: None,
+                modifiers,
+                click_count: 0,
+                path: None,
+                pointer_kind: Some(kind),
+                kind: UiEventKind::PointerCancel,
+            });
+        }
+        if let Some(h) = hovered {
+            out.push(UiEvent {
+                key: Some(h.key.clone()),
+                target: Some(h),
+                pointer: Some((x, y)),
+                key_press: None,
+                text: None,
+                selection: None,
+                modifiers,
+                click_count: 0,
+                path: None,
+                pointer_kind: Some(kind),
+                kind: UiEventKind::PointerLeave,
+            });
+        }
+    }
+
     /// Pointer released. For the primary button, fires `PointerUp`
     /// (always, with the originally pressed target so drag-aware
     /// widgets see drag-end) and additionally `Click` if the release
@@ -895,6 +1046,21 @@ impl RunnerCore {
         // the drag is global once captured, matching native scrollbars.
         if matches!(button, PointerButton::Primary) && self.ui_state.scroll.thumb_drag.is_some() {
             self.ui_state.scroll.thumb_drag = None;
+            self.ui_state.touch_gesture = TouchGestureState::None;
+            return Vec::new();
+        }
+
+        // Touch gesture cleanup. Reset the state machine first so the
+        // logic below sees a fresh slate; if the gesture had already
+        // committed to scrolling, the press has been cancelled and
+        // `pressed` is `None`, so the Click / PointerUp branches
+        // naturally no-op.
+        let was_scrolling = matches!(
+            self.ui_state.touch_gesture,
+            TouchGestureState::Scrolling { .. }
+        );
+        self.ui_state.touch_gesture = TouchGestureState::None;
+        if was_scrolling {
             return Vec::new();
         }
 
@@ -2043,6 +2209,25 @@ pub(crate) fn find_capture_keys(node: &El, id: &str) -> Option<bool> {
     node.children.iter().find_map(|c| find_capture_keys(c, id))
 }
 
+/// Walk the tree looking for the node with `computed_id == id` and
+/// return whether it (or any ancestor on the path to it) opted into
+/// [`crate::tree::El::consumes_touch_drag`]. Returns `None` if the
+/// id isn't in the tree.
+///
+/// Inheritance lets a compound widget mark its outer surface and
+/// have presses on inner keyed children — a slider's thumb, the
+/// number-scrubber's handle — also consume touch drag without each
+/// piece needing to flip the flag.
+fn find_consumes_touch_drag(node: &El, id: &str, ancestor_consumes: bool) -> Option<bool> {
+    let consumes = ancestor_consumes || node.consumes_touch_drag;
+    if node.computed_id == id {
+        return Some(consumes);
+    }
+    node.children
+        .iter()
+        .find_map(|c| find_consumes_touch_drag(c, id, consumes))
+}
+
 /// Construct a `SelectionChanged` event carrying the new selection.
 fn selection_event(
     new_sel: crate::selection::Selection,
@@ -3038,19 +3223,41 @@ mod tests {
     fn touch_drag_between_targets_still_emits_hover_transitions() {
         // Mid-drag identity changes (finger sliding from one keyed
         // node to another) ARE real hover transitions on touch — the
-        // gating only suppresses move-without-press, not move-with-
-        // press. Widgets along the drag path get the same enter /
-        // leave they would on mouse, in the same order.
-        let mut core = lay_out_input_tree(false);
+        // hover gating only suppresses move-without-press, not move-
+        // with-press. Widgets along the drag path get the same enter
+        // / leave they would on mouse, in the same order.
+        //
+        // Premise: the press target opts into `consumes_touch_drag`
+        // so the touch gesture commits to drag (not scroll). Without
+        // that opt-in the runner cancels the press and routes the
+        // motion to scroll, which is covered by a separate test.
+        use crate::tree::*;
+        let mut tree = crate::column([
+            crate::widgets::button::button("Btn")
+                .key("btn")
+                .consumes_touch_drag(),
+            crate::widgets::button::button("Other").key("other"),
+        ])
+        .padding(10.0);
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+
         let btn = core.rect_of_key("btn").expect("btn rect");
-        let ti = core.rect_of_key("ti").expect("ti rect");
+        let other = core.rect_of_key("other").expect("other rect");
         let _ = core.pointer_down(Pointer::touch(
             btn.x + 4.0,
             btn.y + 4.0,
             PointerButton::Primary,
             PointerId::PRIMARY,
         ));
-        let mut move_p = Pointer::moving(ti.x + 4.0, ti.y + 4.0);
+        let mut move_p = Pointer::moving(other.x + 4.0, other.y + 4.0);
         move_p.kind = PointerKind::Touch;
         let cross = core.pointer_moved(move_p);
         let kinds: Vec<UiEventKind> = cross.events.iter().map(|e| e.kind).collect();
@@ -3059,8 +3266,194 @@ mod tests {
                 && kinds.contains(&UiEventKind::PointerEnter),
             "touch drag across targets should emit Leave + Enter, got {kinds:?}",
         );
-        // Drag also fires because the press is still held on btn.
+        // Drag also fires because the press is still held on btn
+        // (consumes_touch_drag commits the gesture to drag rather
+        // than scroll).
         assert!(kinds.contains(&UiEventKind::Drag));
+    }
+
+    #[test]
+    fn touch_jiggle_below_threshold_still_taps() {
+        // Real touch contact has small involuntary movement between
+        // pointer_down and pointer_up. As long as the total motion
+        // stays under TOUCH_DRAG_THRESHOLD the gesture must remain a
+        // tap — Click fires on release just like a perfectly still
+        // press.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+        let _ = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        // Jiggle by a few pixels — well under the 10px threshold.
+        let mut jiggle = Pointer::moving(cx + 3.0, cy + 2.0);
+        jiggle.kind = PointerKind::Touch;
+        let _ = core.pointer_moved(jiggle);
+        let events = core.pointer_up(Pointer::touch(
+            cx + 3.0,
+            cy + 2.0,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let kinds: Vec<UiEventKind> = events.iter().map(|e| e.kind).collect();
+        assert!(
+            kinds.contains(&UiEventKind::Click),
+            "small jiggle should not commit to scroll, expected Click in {kinds:?}",
+        );
+    }
+
+    #[test]
+    fn touch_drag_on_consuming_widget_emits_drag_not_cancel() {
+        // A press on a node opted into `consumes_touch_drag` (slider,
+        // scrubber, resize handle) commits the gesture to drag once
+        // the threshold is crossed, so subsequent moves emit the
+        // normal `Drag` event and the press is *not* cancelled.
+        use crate::tree::*;
+        let mut tree = crate::column([crate::widgets::button::button("Drag me")
+            .key("draggable")
+            .consumes_touch_drag()])
+        .padding(10.0);
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+
+        let r = core.rect_of_key("draggable").expect("rect");
+        let cx = r.x + r.w * 0.5;
+        let cy = r.y + r.h * 0.5;
+        let _ = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        // Move past the threshold along x (still inside the widget
+        // since the test widget is wide).
+        let mut over = Pointer::moving(cx + 30.0, cy);
+        over.kind = PointerKind::Touch;
+        let moved = core.pointer_moved(over);
+        let kinds: Vec<UiEventKind> = moved.events.iter().map(|e| e.kind).collect();
+        assert!(
+            kinds.contains(&UiEventKind::Drag),
+            "drag-consuming widget should receive Drag past threshold, got {kinds:?}",
+        );
+        assert!(
+            !kinds.contains(&UiEventKind::PointerCancel),
+            "drag-consuming widget should not see PointerCancel, got {kinds:?}",
+        );
+    }
+
+    #[test]
+    fn touch_drag_in_scrollable_cancels_press_and_scrolls() {
+        // Press on non-draggable content inside a scroll region:
+        // crossing the threshold commits to scroll, which means
+        // (a) the press is cancelled (PointerCancel + PointerLeave
+        // for the pressed/hovered targets), (b) the scroll offset
+        // advances by the move delta, and (c) the subsequent
+        // pointer_up does NOT fire Click.
+        use crate::tree::*;
+        let mut tree = crate::scroll([
+            crate::widgets::button::button("row 0")
+                .key("row0")
+                .height(Size::Fixed(50.0)),
+            crate::widgets::button::button("row 1")
+                .key("row1")
+                .height(Size::Fixed(50.0)),
+            crate::widgets::button::button("row 2")
+                .key("row2")
+                .height(Size::Fixed(50.0)),
+            crate::widgets::button::button("row 3")
+                .key("row3")
+                .height(Size::Fixed(50.0)),
+            crate::widgets::button::button("row 4")
+                .key("row4")
+                .height(Size::Fixed(50.0)),
+        ])
+        .key("list")
+        .height(Size::Fixed(120.0));
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 200.0, 120.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+        let scroll_id = core
+            .last_tree
+            .as_ref()
+            .map(|t| t.computed_id.clone())
+            .expect("scroll id");
+
+        // Press inside row1, near the middle of the viewport, so a
+        // 40px upward drag still lands inside the scrollable region
+        // — `pointer_wheel` only routes when the up-finger position
+        // is inside a scrollable's rect.
+        let row1 = core.rect_of_key("row1").expect("row1");
+        let cx = row1.x + row1.w * 0.5;
+        let cy = row1.y + row1.h * 0.5;
+
+        // Press on row1.
+        let down_events = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        // Sanity: PointerDown was emitted.
+        assert!(
+            down_events
+                .iter()
+                .any(|e| matches!(e.kind, UiEventKind::PointerDown)),
+            "expected PointerDown on press",
+        );
+
+        // Drag finger upward by 40px (past the 10px threshold). Sign
+        // convention: finger moving up = positive scroll delta =
+        // content scrolls down (offset increases).
+        let mut up_finger = Pointer::moving(cx, cy - 40.0);
+        up_finger.kind = PointerKind::Touch;
+        let move_events = core.pointer_moved(up_finger);
+        let kinds: Vec<UiEventKind> = move_events.events.iter().map(|e| e.kind).collect();
+        assert!(
+            kinds.contains(&UiEventKind::PointerCancel),
+            "scroll commit should fire PointerCancel, got {kinds:?}",
+        );
+        assert!(
+            !kinds.contains(&UiEventKind::Drag),
+            "scroll commit should NOT emit Drag, got {kinds:?}",
+        );
+
+        // Scroll offset advanced by ~the finger delta (40px).
+        let offset = core.ui_state().scroll_offset(&scroll_id);
+        assert!(
+            offset > 30.0 && offset <= 50.0,
+            "scroll offset should advance ~40px after a 40px finger drag, got {offset}",
+        );
+
+        // Releasing now does NOT fire Click — the press was already
+        // cancelled, so pointer_up returns nothing app-facing.
+        let up_events = core.pointer_up(Pointer::touch(
+            cx,
+            cy - 40.0,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let up_kinds: Vec<UiEventKind> = up_events.iter().map(|e| e.kind).collect();
+        assert!(
+            !up_kinds.contains(&UiEventKind::Click),
+            "scroll-committed gesture must not fire Click on release, got {up_kinds:?}",
+        );
     }
 
     #[test]

@@ -166,6 +166,9 @@ pub fn number_scrubber(value: &str, key: &str) -> El {
         // the affordance visible during the actual drag too.
         .cursor(Cursor::EwResize)
         .cursor_pressed(Cursor::EwResize)
+        // Touch drag scrubs the value; opt out of the touch-scroll
+        // synthesis so the gesture doesn't get cancelled mid-scrub.
+        .consumes_touch_drag()
         .paint_overflow(Sides::all(tokens::RING_WIDTH))
         .hit_overflow(Sides::all(tokens::HIT_OVERFLOW))
 }

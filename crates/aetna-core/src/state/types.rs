@@ -298,6 +298,37 @@ pub(crate) const MULTI_CLICK_TIME: Duration = Duration::from_millis(500);
 /// pointer jitter, narrower than a deliberate move to a new target.
 pub(crate) const MULTI_CLICK_DIST: f32 = 4.0;
 
+/// Touch-gesture state machine resolving the tap / drag / scroll
+/// ambiguity. A finger going down can become any of the three; the
+/// runner waits for movement to commit.
+///
+/// Mouse and pen pointers stay at [`TouchGestureState::None`] —
+/// they don't share this ambiguity (left-button drag *means* drag).
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) enum TouchGestureState {
+    /// Idle, or the active touch already committed to drag (subsequent
+    /// moves go through the regular Drag emission path).
+    #[default]
+    None,
+    /// A touch press is held, awaiting movement to disambiguate.
+    /// `consumes_drag` is captured at press time from the press
+    /// target's (and ancestors') `consumes_touch_drag` flag.
+    Pending {
+        initial: (f32, f32),
+        consumes_drag: bool,
+    },
+    /// The active touch crossed the threshold without consuming
+    /// drag, so subsequent moves drive scroll instead. The press
+    /// has already been cancelled.
+    Scrolling { last_pos: (f32, f32) },
+}
+
+/// How many logical pixels a touch contact must move from its initial
+/// position before the gesture state machine commits to drag or scroll.
+/// Below this, the press stays a candidate tap and `Drag` emission is
+/// suppressed.
+pub(crate) const TOUCH_DRAG_THRESHOLD: f32 = 10.0;
+
 /// Caret stays solid for this long after activity (typing, caret
 /// motion, focus arriving) before the blink cycle starts. Prevents
 /// the caret from disappearing mid-keystroke.

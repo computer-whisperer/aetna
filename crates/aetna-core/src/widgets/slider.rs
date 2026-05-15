@@ -126,6 +126,11 @@ pub fn slider(value: f32, fill_color: Color) -> El {
     // so an ancestor's `cursor_pressed` won't leak into descendants.
     .cursor(Cursor::Grab)
     .cursor_pressed(Cursor::Grabbing)
+    // Touch drag scrubs the slider; without this the runner's
+    // touch-scroll synthesis would cancel the press the moment the
+    // finger crossed the threshold and the slider would never move
+    // on touch.
+    .consumes_touch_drag()
     .layout(layout)
     .default_height(Size::Fixed(DEFAULT_HEIGHT))
     .paint_overflow(Sides::all(tokens::RING_WIDTH))

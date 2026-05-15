@@ -34,7 +34,8 @@ use crate::event::{KeyModifiers, PointerButton, PointerKind, UiTarget};
 
 pub use types::{AnimationMode, EnvelopeKind, ScrollMetrics, ThumbDrag, WidgetState};
 pub(crate) use types::{
-    ScrollAnchor, SelectionDrag, SelectionDragGranularity, VirtualAnchor, caret_blink_alpha_for,
+    ScrollAnchor, SelectionDrag, SelectionDragGranularity, TOUCH_DRAG_THRESHOLD, TouchGestureState,
+    VirtualAnchor, caret_blink_alpha_for,
 };
 
 use types::{
@@ -62,6 +63,13 @@ pub struct UiState {
     /// [`PointerKind::Mouse`] until the first ingest, which matches
     /// historical behavior on hosts without touch.
     pub pointer_kind: PointerKind,
+    /// Touch-gesture state machine. Tracks whether the active touch
+    /// contact is awaiting threshold disambiguation
+    /// ([`TouchGestureState::Pending`]), has committed to scrolling
+    /// ([`TouchGestureState::Scrolling`]), or is idle / committed to
+    /// drag ([`TouchGestureState::None`]). Mouse and pen pointers
+    /// stay at `None`.
+    pub(crate) touch_gesture: TouchGestureState,
     pub hovered: Option<UiTarget>,
     pub pressed: Option<UiTarget>,
     /// Secondary / middle button down-target, kept on a separate
