@@ -318,6 +318,8 @@ fn run_host_on_event_loop<A: WinitWgpuApp + 'static>(
         modifiers: KeyModifiers::default(),
         next_periodic_redraw: None,
         last_cursor: Cursor::Default,
+        #[cfg(target_os = "android")]
+        ime_allowed: false,
         pending_resize: None,
         next_layout_redraw: None,
         next_paint_redraw: None,
@@ -368,6 +370,10 @@ struct Host<A: WinitWgpuApp> {
     /// `set_cursor` is cheap but goes through a syscall on most
     /// platforms.
     last_cursor: Cursor,
+    /// Last Android soft-keyboard visibility state mirrored from
+    /// `Runner::focused_captures_keys`.
+    #[cfg(target_os = "android")]
+    ime_allowed: bool,
     /// Latest size from `WindowEvent::Resized` not yet applied to the
     /// surface. Compositors (Wayland especially) deliver a burst of
     /// resize events during an interactive drag; coalescing them so
@@ -472,6 +478,15 @@ fn safe_area_for_window(window: &Window, surface_size: (u32, u32), scale_factor:
 #[cfg(not(target_os = "android"))]
 fn safe_area_for_window(_window: &Window, _surface_size: (u32, u32), _scale_factor: f32) -> Sides {
     Sides::default()
+}
+
+#[cfg(target_os = "android")]
+fn sync_android_ime(window: &Window, renderer: &Runner, ime_allowed: &mut bool) {
+    let allowed = renderer.focused_captures_keys();
+    if allowed != *ime_allowed {
+        window.set_ime_allowed(allowed);
+        *ime_allowed = allowed;
+    }
 }
 
 impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
@@ -637,6 +652,7 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
             self.last_pointer = None;
             self.last_frame_at = None;
             self.next_periodic_redraw = None;
+            self.ime_allowed = false;
         }
     }
 
@@ -785,6 +801,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                         &mut self.last_primary,
                                     );
                                 }
+                                #[cfg(target_os = "android")]
+                                sync_android_ime(&gfx.window, &gfx.renderer, &mut self.ime_allowed);
                                 self.next_trigger = FrameTrigger::Pointer;
                                 gfx.window.request_redraw();
                             }
@@ -950,6 +968,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                         &mut self.last_primary,
                                     );
                                 }
+                                #[cfg(target_os = "android")]
+                                sync_android_ime(&gfx.window, &gfx.renderer, &mut self.ime_allowed);
                             }
                             TouchPhase::Moved => {
                                 let moved = gfx.renderer.pointer_moved(pointer);
@@ -1171,6 +1191,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                     scale_factor,
                                 )
                             };
+                            #[cfg(target_os = "android")]
+                            sync_android_ime(&gfx.window, &gfx.renderer, &mut self.ime_allowed);
                             let t_after_prepare = Instant::now();
                             // Cursor resolution depends on the laid-out tree
                             // and the hovered key derived from layout ids,
