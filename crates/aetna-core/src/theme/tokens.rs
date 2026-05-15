@@ -254,6 +254,20 @@ pub const RING_WIDTH: f32 = 2.0;
 /// Kept below [`RING_WIDTH`] so the focus-ring gutter usually has
 /// enough room for adjacent controls to expand without overlapping.
 pub const HIT_OVERFLOW: f32 = RING_WIDTH * 0.5;
+/// Minimum pointer-target size in logical pixels for interactive
+/// nodes — the runtime auto-inflates the hit rect of any focusable
+/// or selectable node whose painted size is smaller, splitting the
+/// deficit symmetrically so smaller controls (icon buttons, dense
+/// table cells) still meet the touch-ergonomic floor without
+/// changing what is drawn.
+///
+/// 44 logical px is the iOS HIG minimum and a slight tightening of
+/// Material's 48dp; both refer to the same 9-mm fingertip-pad
+/// research and either would work. Apps that genuinely need a
+/// smaller target can declare an explicit `hit_overflow` — auto-
+/// inflation is additive, never subtractive, so the explicit
+/// value is always honored as a floor on its own.
+pub const MIN_TOUCH_TARGET: f32 = 44.0;
 /// Background tint for selected text in `text_input` / `text_area`.
 /// Tinted accent at low alpha so glyphs stay readable through the
 /// selection rectangle.

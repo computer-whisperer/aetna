@@ -27,7 +27,8 @@ use crate::event::UiTarget;
 use crate::selection::SelectionPoint;
 use crate::state::UiState;
 use crate::text::metrics;
-use crate::tree::{El, FontWeight, Kind, Rect, TextWrap};
+use crate::theme::tokens;
+use crate::tree::{El, FontWeight, Kind, Rect, Sides, TextWrap};
 
 /// Find the topmost keyed node whose effective hit rect contains
 /// `point` (logical pixels). Returns `None` if the point hits no keyed
@@ -104,7 +105,22 @@ fn hit_test_rec(
     // returned target rect remains the transformed visual/layout rect:
     // hit overflow is an input affordance, not geometry apps should
     // use for pointer-to-value math.
-    let hit_rect = painted_rect.outset(node.hit_overflow);
+    //
+    // Min-touch-target floor: focusable / selectable nodes whose
+    // painted size is below `tokens::MIN_TOUCH_TARGET` get an extra
+    // symmetric inflation on top of any explicit `hit_overflow`.
+    // Cards, scroll regions, and other keyed-but-non-interactive
+    // surfaces are not auto-inflated — they shouldn't intercept taps
+    // from neighboring controls just because the author wanted a
+    // stable identity for state persistence.
+    let auto_inflate = if node.focusable || node.selectable {
+        min_touch_inflation(painted_rect)
+    } else {
+        Sides::default()
+    };
+    let hit_rect = painted_rect
+        .outset(node.hit_overflow)
+        .outset(auto_inflate);
     if !hit_rect.contains(point.0, point.1) {
         return Hit::Miss;
     }
@@ -813,6 +829,22 @@ fn translated(r: Rect, offset: (f32, f32)) -> Rect {
     Rect::new(r.x + offset.0, r.y + offset.1, r.w, r.h)
 }
 
+/// Compute symmetric padding to bring `painted_rect` up to
+/// [`tokens::MIN_TOUCH_TARGET`] on each axis. Returns
+/// [`Sides::default`] when both dimensions already meet or exceed
+/// the floor — small and stateless so the hit-test path can call
+/// it per node without bookkeeping.
+fn min_touch_inflation(painted_rect: Rect) -> Sides {
+    let dx = ((tokens::MIN_TOUCH_TARGET - painted_rect.w).max(0.0)) * 0.5;
+    let dy = ((tokens::MIN_TOUCH_TARGET - painted_rect.h).max(0.0)) * 0.5;
+    Sides {
+        left: dx,
+        right: dx,
+        top: dy,
+        bottom: dy,
+    }
+}
+
 fn scaled_around_center(r: Rect, s: f32) -> Rect {
     if (s - 1.0).abs() < f32::EPSILON {
         return r;
@@ -1147,6 +1179,87 @@ mod tests {
             hit_test(&tree, &state, translated).as_deref(),
             Some("x"),
             "ancestor translate must accumulate to descendants"
+        );
+    }
+
+    #[test]
+    fn min_touch_target_inflates_small_focusable_hit_rect() {
+        // A 24×24 focusable widget surrounded by enough empty space.
+        // The painted rect is below the 44px floor, so the runtime
+        // should inflate the hit area by 10px on each side
+        // ((44-24)/2 = 10) — clicks 10px outside the visual bounds
+        // still land on the widget.
+        let mut tree = column([crate::widgets::button::button("X")
+            .key("tiny")
+            .width(Size::Fixed(24.0))
+            .height(Size::Fixed(24.0))])
+        .padding(40.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        let r = find_rect(&tree, &state, "tiny").expect("tiny rect");
+        // Just outside the painted edge but inside the floor: ~9px
+        // beyond the right edge — under the 10px deficit-half, so
+        // still a hit.
+        let just_outside = (r.x + r.w + 9.0, r.center_y());
+        assert_eq!(
+            hit_test(&tree, &state, just_outside).as_deref(),
+            Some("tiny"),
+            "tap within the min-touch floor should land on the button",
+        );
+        // Past the floor (15px outside, exceeds the inflated hit
+        // area) → miss.
+        let well_past = (r.x + r.w + 15.0, r.center_y());
+        assert!(
+            hit_test(&tree, &state, well_past).is_none(),
+            "tap beyond the min-touch floor should miss",
+        );
+    }
+
+    #[test]
+    fn min_touch_target_does_not_inflate_non_interactive_keyed_node() {
+        // A small `stack(...)` keyed for state persistence is NOT
+        // focusable or selectable, so it should NOT auto-inflate.
+        // Otherwise dense card layouts with stable keys would start
+        // intercepting taps from neighboring controls.
+        // A small keyed Group node — keyed for state persistence
+        // but with no focusable / selectable flag.
+        let mut tree = El::new(Kind::Group)
+            .key("card")
+            .width(Size::Fixed(20.0))
+            .height(Size::Fixed(20.0));
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        let r = find_rect(&tree, &state, "card").expect("card rect");
+        // Just outside the painted edge — for a focusable, this
+        // would be a hit; for our non-interactive keyed node, miss.
+        let just_outside = (r.x + r.w + 5.0, r.center_y());
+        assert!(
+            hit_test(&tree, &state, just_outside).is_none(),
+            "non-interactive keyed nodes must not auto-grow their hit rect",
+        );
+    }
+
+    #[test]
+    fn min_touch_target_stacks_additively_with_explicit_hit_overflow() {
+        // A 24×24 focusable widget with an explicit
+        // `hit_overflow(20.0)`. The min-touch deficit-half is 10;
+        // total effective overflow is therefore 10 + 20 = 30px on
+        // each side. A click 25px outside the painted edge — past
+        // either floor alone but inside the sum — still hits.
+        let mut tree = column([crate::widgets::button::button("X")
+            .key("padded")
+            .width(Size::Fixed(24.0))
+            .height(Size::Fixed(24.0))
+            .hit_overflow(Sides::all(20.0))])
+        .padding(60.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 300.0, 300.0));
+        let r = find_rect(&tree, &state, "padded").expect("padded rect");
+        let stacked = (r.x + r.w + 25.0, r.center_y());
+        assert_eq!(
+            hit_test(&tree, &state, stacked).as_deref(),
+            Some("padded"),
+            "explicit hit_overflow should stack on top of the min-touch inflation",
         );
     }
 
