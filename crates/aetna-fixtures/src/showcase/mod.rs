@@ -30,7 +30,7 @@ pub mod text_inputs;
 pub mod theme_choice;
 pub mod typography;
 
-pub use shell::{DIAGNOSTICS_TOGGLE_KEY, THEME_PICKER_KEY};
+pub use shell::{DIAGNOSTICS_TOGGLE_KEY, SECTION_PICKER_KEY, THEME_PICKER_KEY};
 pub use theme_choice::ThemeChoice;
 
 /// WGSL for the liquid-glass custom shader. Surfaced through
@@ -171,6 +171,13 @@ impl Section {
     pub fn nav_key(self) -> String {
         format!("nav-{}", self.slug())
     }
+
+    /// Inverse of [`Self::slug`]. Used by the phone topbar's section
+    /// picker to map the slug emitted by `select_menu` back to a
+    /// `Section`.
+    pub fn from_slug(slug: &str) -> Option<Section> {
+        Section::ALL.into_iter().find(|s| s.slug() == slug)
+    }
 }
 
 impl Group {
@@ -216,6 +223,11 @@ pub struct Showcase {
     pub(crate) section: Section,
     pub(crate) theme_choice: ThemeChoice,
     pub(crate) theme_picker_open: bool,
+    /// Open state for the phone topbar's section dropdown. Mirrors
+    /// `theme_picker_open`; only consulted when the shell renders the
+    /// phone layout, but the field exists at all viewport sizes so
+    /// switching across the breakpoint mid-frame doesn't drop state.
+    pub(crate) section_picker_open: bool,
     /// When true, mount the host-diagnostics overlay. Defaults to false
     /// so the panel doesn't sit on top of overlay/page content unless
     /// the user opts in via the sidebar toggle.
@@ -322,7 +334,7 @@ impl App for Showcase {
             Section::Animation => animation::view(&self.animation),
             Section::Hotkeys => hotkeys::view(&self.hotkeys),
         };
-        let (main, mut layers) = shell::frame(self, body);
+        let (main, mut layers) = shell::frame(self, cx, body);
         // Mount the diagnostic overlay on top of every page when the
         // host attached a `HostDiagnostics` *and* the sidebar toggle is
         // on. Hosts that opt out (the headless render bins,
@@ -389,6 +401,23 @@ impl App for Showcase {
         ) {
             if let Some(choice) = ThemeChoice::from_token(&token) {
                 self.theme_choice = choice;
+            }
+            return;
+        }
+
+        // Phone topbar section picker. Only mounted on narrow viewports,
+        // but the handler runs unconditionally — picking via keyboard or
+        // a stale layer should still route correctly.
+        let mut slug = self.section.slug().to_string();
+        if select::apply_event(
+            &mut slug,
+            &mut self.section_picker_open,
+            &event,
+            SECTION_PICKER_KEY,
+            |s| Section::from_slug(&s).map(|sec| sec.slug().to_string()),
+        ) {
+            if let Some(section) = Section::from_slug(&slug) {
+                self.section = section;
             }
             return;
         }
