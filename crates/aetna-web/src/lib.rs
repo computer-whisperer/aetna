@@ -1492,8 +1492,8 @@ mod web_entry {
                     .ok()
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0)
-                    - vv.height() as f64)
-                    .max(0.0) as f32)
+                    - vv.height())
+                .max(0.0) as f32)
                     .max(0.0);
                 let initial_inset = if initial_inset < 16.0 {
                     0.0
@@ -1524,7 +1524,7 @@ mod web_entry {
                             .ok()
                             .and_then(|v| v.as_f64())
                             .unwrap_or(0.0);
-                        let visible_h = vv.height() as f64;
+                        let visible_h = vv.height();
                         let raw = (layout_h - visible_h).max(0.0) as f32;
                         // Same small-difference clamp as the seed —
                         // keeps URL-bar jitter from looking like a

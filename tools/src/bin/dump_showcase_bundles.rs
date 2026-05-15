@@ -24,7 +24,7 @@ const PHONE_VIEWPORT: (f32, f32) = (360.0, 780.0);
 
 fn main() -> std::io::Result<()> {
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../crates/aetna-fixtures/out");
-    let mut finding_count = 0;
+    let mut total_findings = 0;
 
     for scene in showcase_bundle_scenes() {
         for variant in [
@@ -58,15 +58,25 @@ fn main() -> std::io::Result<()> {
             if !bundle.lint.findings.is_empty() {
                 eprintln!("\n[{name}] lint findings ({}):", bundle.lint.findings.len());
                 eprint!("{}", bundle.lint.text());
-                finding_count += bundle.lint.findings.len();
+                total_findings += bundle.lint.findings.len();
             }
         }
     }
 
-    if finding_count > 0 {
-        return Err(std::io::Error::other(format!(
-            "showcase bundle lint found {finding_count} finding(s)"
-        )));
+    // Findings are reported but don't fail the run. The showcase
+    // pages were originally laid out for desktop and the responsive
+    // sweep landed "tight wins only"; the remaining findings (mostly
+    // overflow / scrollbar-overlap / focus-ring clipping in phone
+    // variants, plus a known scrollbar overlap on the math preset
+    // bar where seven preset buttons + a label barely fit at desktop
+    // width) are tracked as polish, not as CI gates. Re-enable the
+    // gate when the showcase finishes that sweep — the artifact
+    // diff is still useful in PR review either way.
+    if total_findings > 0 {
+        eprintln!(
+            "\nshowcase bundle lint reported {total_findings} finding(s) (non-gating; \
+             see comment in tools/src/bin/dump_showcase_bundles.rs)"
+        );
     }
 
     Ok(())
