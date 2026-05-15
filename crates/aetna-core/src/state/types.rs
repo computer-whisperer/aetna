@@ -298,29 +298,40 @@ pub(crate) const MULTI_CLICK_TIME: Duration = Duration::from_millis(500);
 /// pointer jitter, narrower than a deliberate move to a new target.
 pub(crate) const MULTI_CLICK_DIST: f32 = 4.0;
 
-/// Touch-gesture state machine resolving the tap / drag / scroll
-/// ambiguity. A finger going down can become any of the three; the
-/// runner waits for movement to commit.
+/// Touch-gesture state machine resolving the tap / drag / scroll /
+/// long-press ambiguity. A finger going down can become any of the
+/// four; the runner waits for movement or time to commit.
 ///
 /// Mouse and pen pointers stay at [`TouchGestureState::None`] —
-/// they don't share this ambiguity (left-button drag *means* drag).
+/// they don't share this ambiguity (left-button drag *means* drag,
+/// right-click *means* context menu).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) enum TouchGestureState {
     /// Idle, or the active touch already committed to drag (subsequent
     /// moves go through the regular Drag emission path).
     #[default]
     None,
-    /// A touch press is held, awaiting movement to disambiguate.
-    /// `consumes_drag` is captured at press time from the press
-    /// target's (and ancestors') `consumes_touch_drag` flag.
+    /// A touch press is held, awaiting movement or [`LONG_PRESS_DELAY`]
+    /// to disambiguate. `consumes_drag` is captured at press time
+    /// from the press target's (and ancestors') `consumes_touch_drag`
+    /// flag. `started_at` drives the long-press deadline check; the
+    /// runtime polls each frame and once `now - started_at >=
+    /// LONG_PRESS_DELAY`, the press transitions to [`LongPressed`].
     Pending {
         initial: (f32, f32),
         consumes_drag: bool,
+        started_at: Instant,
     },
     /// The active touch crossed the threshold without consuming
     /// drag, so subsequent moves drive scroll instead. The press
     /// has already been cancelled.
     Scrolling { last_pos: (f32, f32) },
+    /// The active touch was held in place past [`LONG_PRESS_DELAY`].
+    /// A `PointerCancel` + `LongPress` event pair has already been
+    /// emitted; subsequent moves and the eventual lift are silently
+    /// swallowed so widgets don't see a phantom click after the
+    /// long-press fires.
+    LongPressed,
 }
 
 /// How many logical pixels a touch contact must move from its initial
@@ -328,6 +339,14 @@ pub(crate) enum TouchGestureState {
 /// Below this, the press stays a candidate tap and `Drag` emission is
 /// suppressed.
 pub(crate) const TOUCH_DRAG_THRESHOLD: f32 = 10.0;
+
+/// How long a touch contact must be held in place before the runtime
+/// synthesizes a `UiEventKind::LongPress` event. 500ms matches the
+/// Android long-press default and the upper end of iOS's range; below
+/// 400ms scrolls and slow taps misfire as long-presses. Public so
+/// host code or tests that simulate touch can match the runtime's
+/// own threshold rather than guessing.
+pub const LONG_PRESS_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Caret stays solid for this long after activity (typing, caret
 /// motion, focus arriving) before the blink cycle starts. Prevents

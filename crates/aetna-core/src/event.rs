@@ -596,6 +596,28 @@ pub enum UiEventKind {
     /// currently come through as `PointerUp` rather than this event;
     /// that may change.
     PointerCancel,
+    /// A touch contact has been held in place past
+    /// [`crate::state::LONG_PRESS_DELAY`] without lifting or moving
+    /// past the gesture threshold. Fired exactly once per qualifying
+    /// press, immediately after a `PointerCancel` is dispatched to
+    /// the originally pressed target — the underlying primary press
+    /// is consumed by the long-press, so no subsequent `Drag`,
+    /// `Click`, or `PointerUp` follows. The eventual finger lift is
+    /// silently swallowed.
+    ///
+    /// `event.target` is the keyed leaf at the press point (same
+    /// node that received the cancelled `PointerDown`), `event.pointer`
+    /// is the original press coords (not the current finger position
+    /// — the contact may have drifted within the gesture-threshold
+    /// radius before firing), and `event.pointer_kind` is always
+    /// `PointerKind::Touch`.
+    ///
+    /// Mouse and pen pointers never produce this event — right-click
+    /// goes through `PointerDown` with [`PointerButton::Secondary`]
+    /// instead, which is the desktop-shape signal for the same
+    /// "open a context menu here" intent. Apps that want both paths
+    /// to drive the same menu match on either kind.
+    LongPress,
     /// A file is being dragged over the window (the user hasn't
     /// released yet). `event.path` carries the file's path; multi-file
     /// drags fire one event per file, matching the underlying winit

@@ -846,6 +846,17 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                     }
 
                     WindowEvent::RedrawRequested => {
+                        // Drain time-driven input events (touch
+                        // long-press today) before this frame's
+                        // build. The runtime folds the long-press
+                        // deadline into `next_redraw_in`, so by the
+                        // time RedrawRequested fires the deadline may
+                        // have just elapsed; dispatching here ensures
+                        // the synthesized LongPress event is visible
+                        // to the App's `build` for this frame.
+                        for event in gfx.renderer.poll_input(Instant::now()) {
+                            self.app.on_event(event);
+                        }
                         // Apply the latest coalesced resize, if any,
                         // before acquiring the next surface texture so
                         // the frame we render matches the size the

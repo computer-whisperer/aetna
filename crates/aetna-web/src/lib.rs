@@ -995,6 +995,13 @@ mod web_entry {
         /// pointermove / pointerdown / pointerup / pointercancel /
         /// pointerleave on the canvas.
         _pointer_closures: Vec<Closure<dyn FnMut(web_sys::PointerEvent)>>,
+        /// Held for drop side-effects: the JS callback that calls
+        /// `preventDefault` on `contextmenu` so the browser's native
+        /// menu doesn't pop over the canvas. Right-click already
+        /// emits `PointerButton::Secondary` through the pointer
+        /// listeners; this just suppresses the platform menu so apps
+        /// can render their own.
+        _contextmenu_closure: Option<Closure<dyn FnMut(web_sys::MouseEvent)>>,
         /// Hidden `<textarea>` that summons the on-screen keyboard
         /// when a touch press lands on an Aetna text-input widget.
         /// `None` when soft-keyboard install failed (no body, etc.)
@@ -1076,6 +1083,7 @@ mod web_entry {
                 _resize_observer: None,
                 pending_pointer: Rc::new(RefCell::new(VecDeque::new())),
                 _pointer_closures: Vec::new(),
+                _contextmenu_closure: None,
                 soft_keyboard: None,
             }
         }
@@ -1088,12 +1096,29 @@ mod web_entry {
         /// — the host uses this to set `next_trigger` for the next
         /// frame's diagnostics.
         fn drain_pending_pointer(&mut self, gfx: &mut Gfx) -> bool {
+            // Drain time-driven events (touch long-press) before any
+            // queued DOM input. Even on frames where no DOM event
+            // arrived (the user held still through the long-press
+            // deadline), this still needs to fire — `next_redraw_in`
+            // schedules the wakeup that brings us here.
+            let mut redraw = false;
+            let polled = gfx.renderer.poll_input(Instant::now());
+            if !polled.is_empty() {
+                redraw = true;
+                for event in polled {
+                    dispatch_app_event(
+                        &mut self.app,
+                        event,
+                        &gfx.renderer,
+                        &mut self.primary_selection,
+                    );
+                }
+            }
             let queue: Vec<QueuedPointer> =
                 self.pending_pointer.borrow_mut().drain(..).collect();
             if queue.is_empty() {
-                return false;
+                return redraw;
             }
-            let mut redraw = false;
             for queued in queue {
                 match queued {
                     QueuedPointer::Move(p) => {
@@ -1410,6 +1435,25 @@ mod web_entry {
                 self.soft_keyboard.as_ref(),
                 &mut self._pointer_closures,
             );
+
+            // Suppress the browser's native context menu on the
+            // canvas. Right-click already routes to the runtime as
+            // `PointerButton::Secondary` via the pointerdown listener
+            // above; without this the platform menu pops on top of
+            // the app and intercepts subsequent input. Apps that want
+            // an Aetna-rendered menu wire it through the Secondary
+            // press path as they would on native.
+            let contextmenu_closure: Closure<dyn FnMut(web_sys::MouseEvent)> =
+                Closure::new(move |event: web_sys::MouseEvent| {
+                    event.prevent_default();
+                });
+            canvas
+                .add_event_listener_with_callback(
+                    "contextmenu",
+                    contextmenu_closure.as_ref().unchecked_ref(),
+                )
+                .expect("add contextmenu listener");
+            self._contextmenu_closure = Some(contextmenu_closure);
 
             // Allow both browser backends. wgpu's synchronous
             // Instance::new() can't safely decide this: if

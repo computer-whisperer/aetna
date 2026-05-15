@@ -385,6 +385,11 @@ impl<A: App> ApplicationHandler for Host<A> {
             }
 
             WindowEvent::RedrawRequested => {
+                // Drain time-driven input events (touch long-press
+                // today) before this frame's build.
+                for event in rcx.runner.poll_input(std::time::Instant::now()) {
+                    self.app.on_event(event);
+                }
                 // Promote the pending debounce to a real recreate once
                 // it expires; otherwise render at the existing
                 // swapchain size and let the compositor scale.

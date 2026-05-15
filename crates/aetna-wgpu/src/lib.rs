@@ -1128,6 +1128,17 @@ impl Runner {
         self.core.pointer_wheel(x, y, dy)
     }
 
+    /// Drain time-driven input events whose deadline has passed (touch
+    /// long-press today; later: hold-to-repeat, etc.). Hosts call this
+    /// once per frame before dispatching pointer events. `now` is
+    /// `web_time::Instant` rather than `std::time::Instant` so the
+    /// signature compiles on wasm32 — `web_time` aliases to std on
+    /// native, so existing native callers passing `Instant::now()`
+    /// from std still work. See [`aetna_core::RunnerCore::poll_input`].
+    pub fn poll_input(&mut self, now: web_time::Instant) -> Vec<aetna_core::UiEvent> {
+        self.core.poll_input(now)
+    }
+
     /// Record draws into the host-managed render pass. Call after
     /// [`Self::prepare`]. Paint order follows the draw-op stream.
     ///

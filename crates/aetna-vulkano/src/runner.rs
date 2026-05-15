@@ -981,6 +981,15 @@ impl Runner {
         self.core.pointer_wheel(x, y, dy)
     }
 
+    /// Drain time-driven input events whose deadline has passed.
+    /// Vulkano is a native-only backend, so `std::time::Instant` is
+    /// fine here — `RunnerCore` takes `web_time::Instant` which is a
+    /// transparent alias on native targets. See
+    /// [`aetna_core::RunnerCore::poll_input`].
+    pub fn poll_input(&mut self, now: std::time::Instant) -> Vec<aetna_core::UiEvent> {
+        self.core.poll_input(now)
+    }
+
     /// Record draws into the host-managed primary command-buffer
     /// builder. Call inside the host's `begin_render_pass` /
     /// `end_render_pass` scope, with the runner's `render_pass()`.

@@ -68,7 +68,8 @@ use crate::paint::{
 };
 use crate::shader::ShaderHandle;
 use crate::state::{
-    AnimationMode, SelectionDragGranularity, TOUCH_DRAG_THRESHOLD, TouchGestureState, UiState,
+    AnimationMode, LONG_PRESS_DELAY, SelectionDragGranularity, TOUCH_DRAG_THRESHOLD,
+    TouchGestureState, UiState,
 };
 use crate::text::atlas::RunStyle;
 use crate::text::metrics::TextLayoutCacheStats;
@@ -431,6 +432,7 @@ impl RunnerCore {
                 TouchGestureState::Pending {
                     initial,
                     consumes_drag,
+                    started_at: _,
                 } => {
                     let dx = x - initial.0;
                     let dy = y - initial.1;
@@ -492,6 +494,16 @@ impl RunnerCore {
                 TouchGestureState::None => {
                     // Already committed to drag (or there was no press
                     // to gate). Fall through.
+                }
+                TouchGestureState::LongPressed => {
+                    // The long-press already fired and emitted its
+                    // PointerCancel; subsequent moves shouldn't
+                    // resurrect drag/click emission. Swallow.
+                    let needs_redraw = hover_changed || link_hover_changed || !out.is_empty();
+                    return PointerMove {
+                        events: out,
+                        needs_redraw,
+                    };
                 }
             }
         }
@@ -861,6 +873,7 @@ impl RunnerCore {
             self.ui_state.touch_gesture = TouchGestureState::Pending {
                 initial: (x, y),
                 consumes_drag,
+                started_at: now,
             };
         }
 
@@ -1078,15 +1091,17 @@ impl RunnerCore {
 
         // Touch gesture cleanup. Reset the state machine first so the
         // logic below sees a fresh slate; if the gesture had already
-        // committed to scrolling, the press has been cancelled and
-        // `pressed` is `None`, so the Click / PointerUp branches
-        // naturally no-op.
-        let was_scrolling = matches!(
+        // committed to scrolling or fired a long-press, the press has
+        // been cancelled and `pressed` is `None`, so the Click /
+        // PointerUp branches naturally no-op — but the eventual
+        // finger lift would still produce a hover transition we want
+        // to swallow, so return early.
+        let was_scrolling_or_long = matches!(
             self.ui_state.touch_gesture,
-            TouchGestureState::Scrolling { .. }
+            TouchGestureState::Scrolling { .. } | TouchGestureState::LongPressed
         );
         self.ui_state.touch_gesture = TouchGestureState::None;
-        if was_scrolling {
+        if was_scrolling_or_long {
             return Vec::new();
         }
 
@@ -1481,6 +1496,95 @@ impl RunnerCore {
         self.ui_state.pointer_wheel(tree, (x, y), dy)
     }
 
+    /// Drain any time-driven input events whose deadline has passed
+    /// at `now`. Currently the only such event is the touch
+    /// long-press: a `Pending` touch held in place past
+    /// [`LONG_PRESS_DELAY`] fires a `PointerCancel` to the originally
+    /// pressed target followed by a `LongPress` event at the original
+    /// press coords, and the gesture state transitions to
+    /// `LongPressed` so the eventual finger lift produces no further
+    /// events.
+    ///
+    /// Hosts call this once per frame *before* dispatching pointer /
+    /// keyboard events so the long-press fires deterministically
+    /// before any subsequent input. Returns `Vec::new()` when no
+    /// deadline has elapsed; cheap to call every frame.
+    pub fn poll_input(&mut self, now: Instant) -> Vec<UiEvent> {
+        let TouchGestureState::Pending {
+            initial,
+            started_at,
+            ..
+        } = self.ui_state.touch_gesture
+        else {
+            return Vec::new();
+        };
+        if now.duration_since(started_at) < LONG_PRESS_DELAY {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let modifiers = self.ui_state.modifiers;
+        let kind = PointerKind::Touch;
+        let (x, y) = initial;
+        // PointerCancel + LongPress to the originally pressed
+        // target. `cancel_press_for_scroll` already does the
+        // bookkeeping (clear pressed / pressed_secondary / hovered /
+        // selection.drag and emit PointerCancel + PointerLeave); reuse
+        // it so the two cancellation paths stay aligned.
+        let press_target = self.ui_state.pressed.clone();
+        self.cancel_press_for_scroll(&mut out, x, y, kind, modifiers);
+        if let Some(t) = press_target {
+            out.push(UiEvent {
+                key: Some(t.key.clone()),
+                target: Some(t),
+                pointer: Some((x, y)),
+                key_press: None,
+                text: None,
+                selection: None,
+                modifiers,
+                click_count: 0,
+                path: None,
+                pointer_kind: Some(kind),
+                kind: UiEventKind::LongPress,
+            });
+        } else {
+            // Press landed in dead space (no keyed leaf). Still fire
+            // the LongPress with no target so window-level handlers
+            // (drop zones, full-viewport context menus) can react.
+            out.push(UiEvent {
+                key: None,
+                target: None,
+                pointer: Some((x, y)),
+                key_press: None,
+                text: None,
+                selection: None,
+                modifiers,
+                click_count: 0,
+                path: None,
+                pointer_kind: Some(kind),
+                kind: UiEventKind::LongPress,
+            });
+        }
+        self.ui_state.touch_gesture = TouchGestureState::LongPressed;
+        out
+    }
+
+    /// Time remaining until the next time-driven input deadline at
+    /// `now`, or `None` when nothing is pending. Hosts fold this into
+    /// their redraw scheduling so a held touch fires its long-press
+    /// even when the user holds perfectly still — without it,
+    /// `request_redraw` is never called and the deadline never
+    /// fires.
+    ///
+    /// `Some(Duration::ZERO)` means "deadline already elapsed; call
+    /// `poll_input` immediately."
+    pub fn next_input_deadline(&self, now: Instant) -> Option<std::time::Duration> {
+        let TouchGestureState::Pending { started_at, .. } = self.ui_state.touch_gesture else {
+            return None;
+        };
+        let elapsed = now.duration_since(started_at);
+        Some(LONG_PRESS_DELAY.saturating_sub(elapsed))
+    }
+
     // ---- Per-frame staging ----
 
     /// Layout + state apply + animation tick + viewport projection +
@@ -1623,6 +1727,16 @@ impl RunnerCore {
         let shader_needs_redraw = ops.iter().any(|op| op_is_continuous(op, &samples_time));
         let widget_redraw =
             aggregate_redraw_within(root, viewport, &self.ui_state.layout.computed_rects);
+        // Fold the long-press deadline in so a held touch drives a
+        // redraw at the right moment even when no other animation /
+        // shader / widget signal is asking for one. Otherwise the
+        // host falls idle and `poll_input` is never called until the
+        // next pointer event.
+        let input_deadline = self.next_input_deadline(Instant::now());
+        let widget_redraw = match (widget_redraw, input_deadline) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
 
         let next_layout_redraw_in = match (needs_redraw, widget_redraw) {
             (true, Some(d)) => Some(d.min(std::time::Duration::ZERO)),
@@ -3526,6 +3640,119 @@ mod tests {
         // should be a no-op event-wise (state still gets cleared).
         let events = core.pointer_left();
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn poll_input_before_long_press_delay_emits_nothing() {
+        // A held touch that hasn't yet crossed LONG_PRESS_DELAY
+        // should not produce a long-press event when polled.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+        let _ = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        // 100ms < 500ms — too early.
+        let polled = core.poll_input(Instant::now() + Duration::from_millis(100));
+        assert!(polled.is_empty(), "should not fire before delay");
+    }
+
+    #[test]
+    fn poll_input_after_long_press_delay_fires_cancel_then_long_press() {
+        // After holding past LONG_PRESS_DELAY, poll_input emits
+        // PointerCancel (cleaning up the in-flight press) followed by
+        // a LongPress event keyed to the originally pressed target.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+        let _ = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let polled = core.poll_input(Instant::now() + LONG_PRESS_DELAY + Duration::from_millis(10));
+        let kinds: Vec<UiEventKind> = polled.iter().map(|e| e.kind).collect();
+        assert!(
+            kinds.contains(&UiEventKind::PointerCancel),
+            "expected PointerCancel before LongPress, got {kinds:?}",
+        );
+        let long_press = polled
+            .iter()
+            .find(|e| matches!(e.kind, UiEventKind::LongPress))
+            .expect("LongPress event missing");
+        assert_eq!(
+            long_press.key.as_deref(),
+            Some("btn"),
+            "LongPress should target the originally pressed node",
+        );
+        assert_eq!(
+            long_press.pointer_kind,
+            Some(PointerKind::Touch),
+            "LongPress is touch-only",
+        );
+    }
+
+    #[test]
+    fn pointer_up_after_long_press_emits_no_click() {
+        // Once the long-press fires, lifting the finger silently
+        // releases — no Click, no PointerUp routed to the original
+        // target.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+        let _ = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let _ = core.poll_input(Instant::now() + LONG_PRESS_DELAY + Duration::from_millis(10));
+        let up_events = core.pointer_up(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        assert!(
+            up_events.is_empty(),
+            "lift after long-press emits nothing, got {:?}",
+            up_events.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn moving_past_threshold_before_long_press_cancels_the_timer() {
+        // A drift past TOUCH_DRAG_THRESHOLD before the long-press
+        // deadline commits the gesture (to scroll or drag), which
+        // means the long-press should NOT fire even when we later
+        // poll past LONG_PRESS_DELAY.
+        let mut core = lay_out_input_tree(false);
+        let btn = core.rect_of_key("btn").expect("btn rect");
+        let cx = btn.x + btn.w * 0.5;
+        let cy = btn.y + btn.h * 0.5;
+        let _ = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        // Move 30px past threshold — gesture commits.
+        let mut over = Pointer::moving(cx + 30.0, cy);
+        over.kind = PointerKind::Touch;
+        let _ = core.pointer_moved(over);
+        // Poll well past the long-press deadline — should be empty.
+        let polled = core.poll_input(Instant::now() + LONG_PRESS_DELAY + Duration::from_millis(10));
+        assert!(
+            polled.is_empty(),
+            "long-press should not fire after gesture committed",
+        );
     }
 
     #[test]
