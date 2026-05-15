@@ -32,17 +32,24 @@ pub(super) const PHONE_BREAKPOINT_PX: f32 = 700.0;
 /// `overlays(main, layers)`.
 pub fn frame(app: &Showcase, cx: &BuildCx, body: El) -> (El, Vec<Option<El>>) {
     let phone = cx.viewport_below(PHONE_BREAKPOINT_PX);
-    let safe_bottom = cx.safe_area_bottom();
     let main = if phone {
         column([phone_topbar(app), content(body, true)])
     } else {
         row([sidebar_chrome(app), content(body, false)])
     };
-    // Pad the bottom by the host-reported safe-area inset (today: the
-    // on-screen keyboard's height on web). Applied at the shell root
-    // so the inset shrinks every page's scrollable region rather than
-    // requiring per-page wiring.
-    let main = main.pb(safe_bottom);
+    // Note: we deliberately do *not* apply `cx.safe_area_bottom()` as
+    // padding at the shell root. The first attempt did
+    // (`main.pb(safe_bottom)`) and it regressed soft-keyboard
+    // behavior on phone: shrinking the column from the bottom
+    // shrinks the inner scroll viewport, which can push a near-
+    // bottom focused text-input outside the scroll's clip rect; the
+    // focus pass excludes nodes whose rect falls outside their clip,
+    // `sync_focus_order` then clears focus, and the host dismisses
+    // the soft keyboard a frame later. The right fix is for each
+    // page to scroll its focused input above the inset (or apply
+    // padding inside the scroll, not outside it). The showcase just
+    // exposes `cx.safe_area_bottom()` and leaves the application
+    // layer as the consumer.
     // Each page contributes zero or one floating layer; theme picker is
     // always available across pages. `Showcase::build` wraps the result
     // in `overlays(main, layers)` and inactive layers drop out.

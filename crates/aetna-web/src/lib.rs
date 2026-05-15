@@ -1481,18 +1481,35 @@ mod web_entry {
                 && let Some(vv) = window_obj.visual_viewport()
             {
                 let cell = self.keyboard_inset_bottom.clone();
-                let win_for_redraw = window.clone();
                 let layout_window = window_obj.clone();
                 // Seed the cell with the current value so the first
                 // frame after install has the right inset (handles
                 // the case of resuming a tab where the keyboard is
-                // already up).
-                let initial_inset = (layout_window.inner_height().ok()
+                // already up). Clamp small differences (URL-bar
+                // hide/show varies inner_height vs visualViewport by
+                // ~5px on iOS Safari) so the seed reads as zero.
+                let initial_inset = ((layout_window.inner_height().ok()
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0)
                     - vv.height() as f64)
-                    .max(0.0) as f32;
+                    .max(0.0) as f32)
+                    .max(0.0);
+                let initial_inset = if initial_inset < 16.0 {
+                    0.0
+                } else {
+                    initial_inset
+                };
                 cell.set(initial_inset);
+                // Note: this listener intentionally does *not* call
+                // `request_redraw`. The keyboard appearing already
+                // chains through the focus that summoned it
+                // (animation deadlines drive the next few frames),
+                // and inserting an extra redraw here on Android
+                // raced with the just-summoned soft keyboard's
+                // focus and dismissed it almost immediately. The
+                // cell is read by `BuildCx::with_safe_area` each
+                // frame; whichever frame fires next picks up the
+                // new value.
                 let viewport_closure: Closure<dyn FnMut(web_sys::Event)> =
                     Closure::new(move |_event: web_sys::Event| {
                         let Some(window_obj) = web_sys::window() else { return };
@@ -1505,13 +1522,12 @@ mod web_entry {
                             .and_then(|v| v.as_f64())
                             .unwrap_or(0.0);
                         let visible_h = vv.height() as f64;
-                        let inset = (layout_h - visible_h).max(0.0) as f32;
+                        let raw = (layout_h - visible_h).max(0.0) as f32;
+                        // Same small-difference clamp as the seed —
+                        // keeps URL-bar jitter from looking like a
+                        // tiny keyboard.
+                        let inset = if raw < 16.0 { 0.0 } else { raw };
                         cell.set(inset);
-                        // Force a redraw so the next frame's
-                        // `BuildCx::safe_area` reflects the new
-                        // value — the keyboard appearing/disappearing
-                        // is otherwise invisible to the runtime.
-                        win_for_redraw.request_redraw();
                     });
                 vv.add_event_listener_with_callback(
                     "resize",
