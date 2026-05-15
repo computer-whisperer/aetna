@@ -985,6 +985,25 @@ impl Runner {
         self.core.file_dropped(path, x, y)
     }
 
+    /// Whether a primary press at `(x, y)` (logical px) would land
+    /// on a node that opted into `capture_keys` — the marker the
+    /// library uses for text-input-style widgets. Hosts query this
+    /// from a DOM pointerdown handler to decide whether to focus
+    /// a hidden textarea (so the soft keyboard can open in the
+    /// user-gesture context). See
+    /// [`RunnerCore::would_press_focus_text_input`] for details.
+    pub fn would_press_focus_text_input(&self, x: f32, y: f32) -> bool {
+        self.core.would_press_focus_text_input(x, y)
+    }
+
+    /// Whether the currently focused node is a text-input-style
+    /// widget (i.e. has `capture_keys` set). Hosts mirror this each
+    /// frame into platform affordances such as the on-screen
+    /// keyboard or IME compose-window placement.
+    pub fn focused_captures_keys(&self) -> bool {
+        self.core.focused_captures_keys()
+    }
+
     /// Pointer pressed at `p.x, p.y` (logical px) for `p.button`. For
     /// `Primary`, records the pressed key for press-visual feedback,
     /// updates focus, and returns a `PointerDown` event so widgets that

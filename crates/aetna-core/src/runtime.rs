@@ -282,6 +282,32 @@ impl RunnerCore {
             .and_then(|t| self.ui_state.rect_of_key(t, key))
     }
 
+    /// Whether a primary press at `(x, y)` (logical pixels) would
+    /// land on a node that opted into [`crate::tree::El::capture_keys`]
+    /// — the marker the library uses to identify text-input-style
+    /// widgets that consume raw key events when focused.
+    ///
+    /// Hosts use this to make focus-driven side-effect decisions in
+    /// the user-gesture context of a DOM pointerdown listener before
+    /// the press is actually dispatched. The most common use is the
+    /// web host's soft-keyboard plumbing: a hidden textarea must be
+    /// focused synchronously inside the pointerdown handler for iOS
+    /// to summon the on-screen keyboard, but only when the tap will
+    /// actually focus an Aetna text input. Pure read — does not
+    /// mutate any state.
+    ///
+    /// Returns `false` when the press misses every hit-test target
+    /// or the laid-out tree is not yet available.
+    pub fn would_press_focus_text_input(&self, x: f32, y: f32) -> bool {
+        let Some(tree) = self.last_tree.as_ref() else {
+            return false;
+        };
+        let Some(target) = hit_test::hit_test_target(tree, &self.ui_state, (x, y)) else {
+            return false;
+        };
+        find_capture_keys(tree, &target.node_id).unwrap_or(false)
+    }
+
     // ---- Input plumbing ----
 
     /// Pointer moved to `p.x, p.y` (logical px). Updates the hovered
@@ -1321,9 +1347,12 @@ impl RunnerCore {
     }
 
     /// Look up the focused node in the last laid-out tree and return
-    /// its `capture_keys` flag. False when no node is focused or the
-    /// tree hasn't been built yet.
-    fn focused_captures_keys(&self) -> bool {
+    /// its `capture_keys` flag — i.e. whether the focused widget is a
+    /// text-input-style consumer of raw key events. False when no
+    /// node is focused or the tree hasn't been built yet. Hosts use
+    /// this each frame to mirror "is a text input active?" into
+    /// platform UI affordances (most notably the on-screen keyboard).
+    pub fn focused_captures_keys(&self) -> bool {
         let Some(focused) = self.ui_state.focused.as_ref() else {
             return false;
         };
@@ -3270,6 +3299,28 @@ mod tests {
         // (consumes_touch_drag commits the gesture to drag rather
         // than scroll).
         assert!(kinds.contains(&UiEventKind::Drag));
+    }
+
+    #[test]
+    fn would_press_focus_text_input_distinguishes_capture_keys() {
+        // The capture-keys variant of `lay_out_input_tree` keys a
+        // text-input style widget at "ti"; the non-capture variant
+        // keys a plain focusable. The query distinguishes the two
+        // by walking find_capture_keys against the hit target.
+        let core = lay_out_input_tree(true);
+        let ti = core.rect_of_key("ti").expect("ti rect");
+        let btn = core.rect_of_key("btn").expect("btn rect");
+
+        assert!(
+            core.would_press_focus_text_input(ti.center_x(), ti.center_y()),
+            "press on capture_keys widget should report true",
+        );
+        assert!(
+            !core.would_press_focus_text_input(btn.center_x(), btn.center_y()),
+            "press on plain focusable should report false",
+        );
+        // Press in dead space → false (no hit target).
+        assert!(!core.would_press_focus_text_input(0.0, 0.0));
     }
 
     #[test]

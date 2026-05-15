@@ -497,6 +497,8 @@ mod web_entry {
         canvas: &web_sys::HtmlCanvasElement,
         window: &Arc<Window>,
         pending: &Rc<RefCell<VecDeque<QueuedPointer>>>,
+        gfx: &Rc<RefCell<Option<Gfx>>>,
+        soft_keyboard: Option<&Rc<SoftKeyboard>>,
         out: &mut Vec<Closure<dyn FnMut(web_sys::PointerEvent)>>,
     ) {
         // pointermove
@@ -523,20 +525,58 @@ mod web_entry {
             let pending = pending.clone();
             let window = window.clone();
             let canvas_for_capture = canvas.clone();
+            let gfx_for_hit = gfx.clone();
+            let soft_keyboard = soft_keyboard.cloned();
             let closure: Closure<dyn FnMut(web_sys::PointerEvent)> =
                 Closure::new(move |event: web_sys::PointerEvent| {
                     let Some(button) = pointer_button_from_event(event.button()) else {
                         return;
                     };
                     let p = pointer_from_event(&event, button);
+                    // Soft-keyboard summon must happen synchronously
+                    // inside this user-gesture handler — iOS rejects
+                    // programmatic `.focus()` from any later context.
+                    // Hit-test against the runner's last laid-out
+                    // tree (read-only borrow) to decide whether the
+                    // press would land on a text-input widget; if
+                    // so, focus the hidden textarea now. The runner-
+                    // side dispatch follows on the next frame via
+                    // the queue/drain path.
+                    let mut focused_textarea = false;
+                    if matches!(p.kind, PointerKind::Touch | PointerKind::Pen)
+                        && let Some(sk) = soft_keyboard.as_ref()
+                    {
+                        let want_keyboard = gfx_for_hit
+                            .borrow()
+                            .as_ref()
+                            .map(|g| g.renderer.would_press_focus_text_input(p.x, p.y))
+                            .unwrap_or(false);
+                        if want_keyboard {
+                            sk.focus_if_needed();
+                            focused_textarea = true;
+                        }
+                    }
                     // Take focus on tap-down so subsequent keydown
                     // events (soft keyboard, hardware keyboard on
                     // tablets) reach the canvas. winit's web backend
                     // would normally do this for compat-mouse events,
                     // but we no longer route through there.
-                    let _ = canvas_for_capture
-                        .dyn_ref::<web_sys::HtmlElement>()
-                        .and_then(|el| el.focus().ok());
+                    //
+                    // Skip when the textarea was just focused — the
+                    // canvas is fighting for the same DOM focus, and
+                    // taking it back here was preventing Android (and
+                    // iOS) from ever seeing a focused textarea long
+                    // enough to summon the on-screen keyboard.
+                    // Hardware-keyboard input into a text input still
+                    // works because keystrokes reach the textarea's
+                    // own listeners and route through `text_input` /
+                    // `key_down` the same way they would via the
+                    // canvas's keydown handler.
+                    if !focused_textarea {
+                        let _ = canvas_for_capture
+                            .dyn_ref::<web_sys::HtmlElement>()
+                            .and_then(|el| el.focus().ok());
+                    }
                     // Keep this pointer captured so a drag that
                     // slides off the canvas still produces events to
                     // the runner (essential for touch sliders and
@@ -614,6 +654,254 @@ mod web_entry {
                 )
                 .expect("add pointerleave listener");
             out.push(closure);
+        }
+    }
+
+    // ===================================================================
+    // Soft keyboard
+    //
+    // A `<canvas>` cannot summon the on-screen keyboard on touch
+    // platforms — only focusable text-input DOM elements can, and only
+    // when the focus comes from a user-gesture event handler. This
+    // module overlays a hidden `<textarea>` and synchronously focuses
+    // it from the pointerdown DOM listener when the press would land
+    // on an Aetna text-input widget. Once focused, the textarea
+    // receives `input` events for typed characters (routed to the
+    // runtime as `text_input(...)`) and `keydown` events for editing
+    // keys (routed as synthetic `key_down(Backspace, ...)`).
+    //
+    // The native host (aetna-winit-wgpu) routes hardware keyboards
+    // through winit and is unaffected by any of this. Soft keyboards
+    // on a future Android winit host would use winit's own IME path.
+    // ===================================================================
+
+    /// One discrete edit produced by the soft keyboard. Drained by
+    /// the host once per `window_event` and dispatched through the
+    /// runtime's existing keyboard / text-input entry points so the
+    /// focused widget sees the same shape it would for a hardware
+    /// keystroke.
+    enum TextEdit {
+        /// User typed text — route as `runner.text_input(s)`.
+        Insert(String),
+        /// User pressed backspace — route as
+        /// `runner.key_down(UiKey::Backspace, ...)`.
+        Backspace,
+    }
+
+    /// The hidden `<input>` that summons the soft keyboard plus its
+    /// DOM listeners and the pending-edit queue. Held by [`Host`]
+    /// for the lifetime of the page; the closures inside borrow
+    /// the queue via clones of its `Rc`.
+    ///
+    /// Modeled on egui's `text_agent.rs` after observing that
+    /// Android's keyboard refused to stay open against an
+    /// `opacity:0; pointer-events:none` element. Egui keeps the
+    /// element technically interactive (no pointer-events: none),
+    /// uses `<input type="text">` rather than `<textarea>`, and
+    /// hides it via `caret-color: transparent` +
+    /// `background-color: transparent` instead of opacity. Android
+    /// then treats it as a real focusable input and the keyboard
+    /// stays up.
+    struct SoftKeyboard {
+        input: web_sys::HtmlInputElement,
+        /// Whether we believe the input currently holds DOM focus.
+        /// Tracked here (rather than read via `document.activeElement`
+        /// every time) so `focus_if_needed` can no-op for repeated
+        /// taps that don't actually need to refocus. `Rc<Cell<_>>`
+        /// because the `blur` closure also writes to it when the OS
+        /// dismisses the keyboard outside our control.
+        focused: Rc<Cell<bool>>,
+        /// Queue of edits captured by the DOM listeners since the
+        /// last drain. Drained by [`Host`] inside `window_event`.
+        pending: Rc<RefCell<VecDeque<TextEdit>>>,
+        /// Held for drop side-effects: the `input` event closure.
+        _input_closure: Closure<dyn FnMut(web_sys::InputEvent)>,
+        /// Held for drop side-effects: the `keydown` closure that
+        /// catches editing keys (Backspace, Enter, arrow keys) the
+        /// soft keyboard fires as `keydown` rather than `input`.
+        _keydown_closure: Closure<dyn FnMut(web_sys::KeyboardEvent)>,
+        /// Held for drop side-effects: the `blur` closure that
+        /// resets `focused` when the OS / user dismisses the
+        /// keyboard outside of our control.
+        _blur_closure: Closure<dyn FnMut(web_sys::Event)>,
+    }
+
+    impl SoftKeyboard {
+        /// Create the hidden input, attach it to the document, and
+        /// wire up the listeners. Returns `None` if any DOM
+        /// operation fails (no body, etc.) — the host then runs
+        /// without soft-keyboard support, which is the correct
+        /// degradation for environments where it can't work.
+        fn install(canvas: &web_sys::HtmlCanvasElement, window: &Arc<Window>) -> Option<Self> {
+            let document = canvas.owner_document()?;
+            let input = document
+                .create_element("input")
+                .ok()?
+                .dyn_into::<web_sys::HtmlInputElement>()
+                .ok()?;
+            input.set_type("text");
+            // Visible-for-focus, invisible-for-the-eye. The element
+            // has to remain *technically* focusable for Android's
+            // keyboard to stay up — `pointer-events: none`,
+            // `opacity: 0`, and `display: none` all disqualify. We
+            // mirror egui's working configuration: a 1×1
+            // transparent-background element with the caret hidden,
+            // pinned to `(0, 0)` of the document. The canvas paints
+            // on top of everything else and absorbs every visible
+            // tap; the input is just a DOM focus target.
+            if let Some(style) = input.dyn_ref::<web_sys::HtmlElement>().map(|e| e.style()) {
+                let _ = style.set_property("position", "absolute");
+                let _ = style.set_property("top", "0");
+                let _ = style.set_property("left", "0");
+                let _ = style.set_property("width", "1px");
+                let _ = style.set_property("height", "1px");
+                let _ = style.set_property("background-color", "transparent");
+                let _ = style.set_property("border", "none");
+                let _ = style.set_property("outline", "none");
+                let _ = style.set_property("caret-color", "transparent");
+            }
+            // Attribute hygiene: prevent the on-screen keyboard from
+            // showing autocorrect suggestions / capitalization /
+            // browser autofill, which would interfere with character-
+            // by-character routing into the runtime.
+            let _ = input.set_attribute("autocapitalize", "off");
+            let _ = input.set_attribute("autocomplete", "off");
+            let _ = input.set_attribute("autocorrect", "off");
+            let _ = input.set_attribute("spellcheck", "false");
+            document.body()?.append_child(&input).ok()?;
+
+            let pending: Rc<RefCell<VecDeque<TextEdit>>> = Rc::new(RefCell::new(VecDeque::new()));
+
+            // input: fires on every character insertion and on
+            // deletes. Read inputType to discriminate; route to the
+            // pending queue and clear the input so the next event
+            // sees only the new edit (we don't keep the input's
+            // value as the source of truth — the focused Aetna
+            // widget owns the actual string).
+            //
+            // Android Gboard workaround (from egui): after a
+            // non-composition `input`, blur and refocus the element
+            // so the predictive-text suggestion bar doesn't latch
+            // invisible characters that have to be deleted before
+            // real ones. Skip during composition (IME) since blur
+            // would cancel the in-progress glyph.
+            let input_pending = pending.clone();
+            let input_window = window.clone();
+            let input_el_for_input = input.clone();
+            let input_closure: Closure<dyn FnMut(web_sys::InputEvent)> =
+                Closure::new(move |event: web_sys::InputEvent| {
+                    let composing = event.is_composing();
+                    let input_type = event.input_type();
+                    let edit = match input_type.as_str() {
+                        "deleteContentBackward" | "deleteWordBackward"
+                        | "deleteSoftLineBackward" | "deleteHardLineBackward" => {
+                            Some(TextEdit::Backspace)
+                        }
+                        _ => {
+                            let value = input_el_for_input.value();
+                            if value.is_empty() || composing {
+                                None
+                            } else {
+                                Some(TextEdit::Insert(value))
+                            }
+                        }
+                    };
+                    if !composing {
+                        input_el_for_input.set_value("");
+                        // Gboard reset.
+                        let _ = input_el_for_input.blur();
+                        let _ = input_el_for_input.focus();
+                    }
+                    if let Some(edit) = edit {
+                        input_pending.borrow_mut().push_back(edit);
+                        input_window.request_redraw();
+                    }
+                });
+            input
+                .add_event_listener_with_callback(
+                    "input",
+                    input_closure.as_ref().unchecked_ref(),
+                )
+                .ok()?;
+
+            // keydown: when our hidden input has focus, the canvas
+            // never sees keystrokes — so we have to forward editing
+            // keys (Backspace, Enter, arrows) through here. The
+            // `input` handler above also covers Backspace via
+            // inputType for the typical Android case; this catches
+            // the iPad-with-hardware-keyboard variant where
+            // Backspace fires as `keydown` only.
+            let keydown_pending = pending.clone();
+            let keydown_window = window.clone();
+            let keydown_closure: Closure<dyn FnMut(web_sys::KeyboardEvent)> =
+                Closure::new(move |event: web_sys::KeyboardEvent| {
+                    if event.key() == "Backspace" {
+                        keydown_pending.borrow_mut().push_back(TextEdit::Backspace);
+                        keydown_window.request_redraw();
+                        event.prevent_default();
+                    }
+                });
+            input
+                .add_event_listener_with_callback(
+                    "keydown",
+                    keydown_closure.as_ref().unchecked_ref(),
+                )
+                .ok()?;
+
+            // blur: keep our `focused` mirror in sync when the
+            // input loses focus outside our control (user dismissed
+            // the keyboard via the OS dismiss button, tab key,
+            // etc.). Without this, `focus_if_needed` would no-op
+            // on the next text-input tap.
+            let focused: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+            let blur_focused = focused.clone();
+            let blur_closure: Closure<dyn FnMut(web_sys::Event)> =
+                Closure::new(move |_event: web_sys::Event| {
+                    blur_focused.set(false);
+                });
+            input
+                .add_event_listener_with_callback(
+                    "blur",
+                    blur_closure.as_ref().unchecked_ref(),
+                )
+                .ok()?;
+
+            Some(Self {
+                input,
+                focused,
+                pending,
+                _input_closure: input_closure,
+                _keydown_closure: keydown_closure,
+                _blur_closure: blur_closure,
+            })
+        }
+
+        /// Focus the input so the soft keyboard opens. **Must be
+        /// called inside a user-gesture event handler** (e.g., the
+        /// pointerdown DOM closure) — iOS suppresses programmatic
+        /// focus from any other context. No-op if we believe the
+        /// input already has focus.
+        fn focus_if_needed(&self) {
+            if !self.focused.get() {
+                let _ = self.input.focus();
+                self.focused.set(true);
+            }
+        }
+
+        /// Blur the input so the soft keyboard dismisses. Safe to
+        /// call from any context. No-op when the input isn't
+        /// believed to be focused.
+        fn dismiss(&self) {
+            if self.focused.get() {
+                let _ = self.input.blur();
+                self.focused.set(false);
+            }
+        }
+
+        /// Drain pending edits captured by the listeners since the
+        /// last drain. Called by the host inside `window_event`.
+        fn drain(&self) -> Vec<TextEdit> {
+            self.pending.borrow_mut().drain(..).collect()
         }
     }
 
@@ -707,6 +995,14 @@ mod web_entry {
         /// pointermove / pointerdown / pointerup / pointercancel /
         /// pointerleave on the canvas.
         _pointer_closures: Vec<Closure<dyn FnMut(web_sys::PointerEvent)>>,
+        /// Hidden `<textarea>` that summons the on-screen keyboard
+        /// when a touch press lands on an Aetna text-input widget.
+        /// `None` when soft-keyboard install failed (no body, etc.)
+        /// — the host still runs, just without on-screen-keyboard
+        /// support. Shared with the pointerdown closure via `Rc`
+        /// clone so focus-on-press can fire in the user-gesture
+        /// context.
+        soft_keyboard: Option<Rc<SoftKeyboard>>,
     }
 
     struct Gfx {
@@ -780,6 +1076,7 @@ mod web_entry {
                 _resize_observer: None,
                 pending_pointer: Rc::new(RefCell::new(VecDeque::new())),
                 _pointer_closures: Vec::new(),
+                soft_keyboard: None,
             }
         }
 
@@ -855,6 +1152,70 @@ mod web_entry {
                 }
             }
             redraw
+        }
+
+        /// Drain edits captured by the soft-keyboard textarea since
+        /// the last `window_event` and route them through the
+        /// runner's existing keyboard / text-input entry points so
+        /// the focused widget sees the same shape it would for a
+        /// hardware keystroke. Returns `true` when at least one edit
+        /// was dispatched so the caller can mark the next-frame
+        /// trigger.
+        fn drain_soft_keyboard(&mut self, gfx: &mut Gfx) -> bool {
+            let Some(sk) = self.soft_keyboard.as_ref() else {
+                return false;
+            };
+            let edits = sk.drain();
+            if edits.is_empty() {
+                return false;
+            }
+            for edit in edits {
+                match edit {
+                    TextEdit::Insert(text) => {
+                        if let Some(event) = gfx.renderer.text_input(text) {
+                            dispatch_app_event(
+                                &mut self.app,
+                                event,
+                                &gfx.renderer,
+                                &mut self.primary_selection,
+                            );
+                        }
+                    }
+                    TextEdit::Backspace => {
+                        for event in gfx.renderer.key_down(
+                            UiKey::Backspace,
+                            self.modifiers,
+                            false,
+                        ) {
+                            dispatch_app_event(
+                                &mut self.app,
+                                event,
+                                &gfx.renderer,
+                                &mut self.primary_selection,
+                            );
+                        }
+                    }
+                }
+            }
+            true
+        }
+
+        /// Sync the soft keyboard's open/closed state with the
+        /// runner's current focus. Called once per `window_event`
+        /// after pointer / soft-keyboard drain so a press that
+        /// shifted focus away from a text input can dismiss the
+        /// on-screen keyboard within the same frame.
+        ///
+        /// We never *open* the keyboard from here — that has to
+        /// happen synchronously inside the pointerdown closure for
+        /// iOS to honor it. Closing has no such restriction.
+        fn sync_soft_keyboard_focus(&self, gfx: &Gfx) {
+            let Some(sk) = self.soft_keyboard.as_ref() else {
+                return;
+            };
+            if !gfx.renderer.focused_captures_keys() {
+                sk.dismiss();
+            }
         }
     }
 
@@ -1013,6 +1374,21 @@ mod web_entry {
                 let _ = style.set_property("touch-action", "none");
             }
 
+            // Soft-keyboard plumbing. Install before the pointer
+            // listeners so the pointerdown closure can call into it
+            // synchronously from the user-gesture context. Failure
+            // to install (no body, etc.) leaves the host running
+            // without on-screen-keyboard support, which is the
+            // correct degradation for environments where it can't
+            // work.
+            self.soft_keyboard = SoftKeyboard::install(&canvas, &window).map(Rc::new);
+            if self.soft_keyboard.is_none() {
+                log::warn!(
+                    "aetna-web: soft keyboard install failed; text input will not summon \
+                     the on-screen keyboard"
+                );
+            }
+
             // Bind DOM PointerEvent directly. winit on the browser
             // collapses touch and pen to mouse before forwarding, so
             // routing through `WindowEvent::MouseInput` would lose
@@ -1030,6 +1406,8 @@ mod web_entry {
                 &canvas,
                 &window,
                 &self.pending_pointer,
+                &self.gfx,
+                self.soft_keyboard.as_ref(),
                 &mut self._pointer_closures,
             );
 
@@ -1314,6 +1692,18 @@ mod web_entry {
             if self.drain_pending_pointer(gfx) {
                 self.next_trigger = FrameTrigger::Pointer;
             }
+            // Drain soft-keyboard edits next — order matters because
+            // a pointer event may have shifted focus to a text
+            // input, after which keystrokes captured this frame
+            // should reach the new target.
+            if self.drain_soft_keyboard(gfx) {
+                self.next_trigger = FrameTrigger::Keyboard;
+            }
+            // If focus moved off a text input this frame, dismiss
+            // the on-screen keyboard now (done after both drains so
+            // the focus state reflects everything that just
+            // happened).
+            self.sync_soft_keyboard_focus(gfx);
             let scale = gfx.window.scale_factor() as f32;
 
             match event {

@@ -55,6 +55,11 @@ web-sys = { version = "0.3", features = [
     "EventTarget",
     "HtmlCanvasElement",
     "HtmlElement",
+    "HtmlInputElement",
+    # InputEvent extends Event with `inputType` so the soft-keyboard
+    # path can distinguish character insertion ("insertText") from
+    # backspace ("deleteContentBackward") and route accordingly.
+    "InputEvent",
     "KeyboardEvent",
     "MouseEvent",
     "Navigator",
