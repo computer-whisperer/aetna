@@ -579,21 +579,9 @@ mod web_entry {
                     }
                     // Keep this pointer captured so a drag that
                     // slides off the canvas still produces events to
-                    // the runner (essential for touch sliders and
-                    // drag-select).
-                    //
-                    // Skip when the textarea was just focused — on
-                    // Firefox Android, `setPointerCapture` after a
-                    // cross-element focus shift moves the pointer-
-                    // capture target *and* the focus target to the
-                    // capturing element. The canvas would steal back
-                    // the focus the textarea just took, the keyboard
-                    // would dismiss the moment touchend fires, and a
-                    // quick tap on a text input would summon and
-                    // immediately drop the soft keyboard.
-                    if !focused_textarea {
-                        let _ = canvas_for_capture.set_pointer_capture(event.pointer_id());
-                    }
+                    // the runner (essential for touch sliders,
+                    // drag-select, and text-input scrubbing).
+                    let _ = canvas_for_capture.set_pointer_capture(event.pointer_id());
                     // When the press just summoned the on-screen
                     // keyboard, suppress the browser's default
                     // pointerdown action so it doesn't shift DOM
@@ -603,9 +591,9 @@ mod web_entry {
                     // pointerdown handling on focusable elements,
                     // and the resulting blur on our hidden input
                     // dismisses the keyboard one frame after it
-                    // appears. We also stopPropagation so document-
-                    // level listeners don't get a second crack at
-                    // shifting focus.
+                    // appears. We also stopPropagation so any
+                    // document-level listener the host page wires
+                    // doesn't get a second crack at shifting focus.
                     if focused_textarea {
                         event.prevent_default();
                         event.stop_propagation();
