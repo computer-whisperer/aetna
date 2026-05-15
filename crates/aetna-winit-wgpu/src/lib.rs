@@ -63,7 +63,7 @@ use winit::event::{ElementState, Force, MouseButton, MouseScrollDelta, TouchPhas
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 #[cfg(target_os = "android")]
-use winit::platform::android::WindowExtAndroid;
+use winit::platform::android::{EventLoopExtAndroid, WindowExtAndroid, activity::AndroidApp};
 use winit::window::{CursorIcon, Window, WindowId};
 
 /// Configuration for the optional native winit + wgpu host.
@@ -304,11 +304,15 @@ fn run_host_on_event_loop<A: WinitWgpuApp + 'static>(
     config: HostConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+    #[cfg(target_os = "android")]
+    let android_app = event_loop.android_app().clone();
     let mut host = Host {
         title,
         viewport,
         config,
         app,
+        #[cfg(target_os = "android")]
+        android_app,
         gfx: None,
         last_pointer: None,
         modifiers: KeyModifiers::default(),
@@ -351,6 +355,8 @@ struct Host<A: WinitWgpuApp> {
     viewport: Rect,
     config: HostConfig,
     app: A,
+    #[cfg(target_os = "android")]
+    android_app: AndroidApp,
     gfx: Option<Gfx>,
     /// Last pointer position in logical pixels (winit reports physical;
     /// we divide by the window's scale factor before storing).
@@ -606,8 +612,9 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
         });
         // Hand the app the device + queue so it can allocate any GPU
         // textures it intends to display via `surface()` widgets. Runs
-        // once per Host lifetime (`resumed` is idempotent thanks to
-        // the `gfx.is_some()` guard at the top).
+        // whenever a host GPU context is created; on Android this can
+        // happen again after Activity suspend/resume recreates the
+        // native window.
         let gfx = self.gfx.as_ref().unwrap();
         self.app.gpu_setup(&gfx.device, &gfx.queue);
         self.next_periodic_redraw = self
@@ -1146,6 +1153,9 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                 gfx.renderer
                                     .push_scroll_requests(self.app.drain_scroll_requests());
                                 for url in self.app.drain_link_opens() {
+                                    #[cfg(target_os = "android")]
+                                    open_link(&self.android_app, &url);
+                                    #[cfg(not(target_os = "android"))]
                                     open_link(&url);
                                 }
                                 (tree, palette)
@@ -1398,7 +1408,54 @@ fn open_link(url: &str) {
 }
 
 #[cfg(target_os = "android")]
-fn open_link(_url: &str) {}
+fn open_link(app: &AndroidApp, url: &str) {
+    let app_for_thread = app.clone();
+    let url = url.to_string();
+    app.run_on_java_main_thread(Box::new(move || {
+        let result = (|| -> jni::errors::Result<()> {
+            let jvm = unsafe { jni::JavaVM::from_raw(app_for_thread.vm_as_ptr().cast()) };
+            jvm.attach_current_thread(|env| {
+                let url = env.new_string(&url)?;
+                let uri = env
+                    .call_static_method(
+                        jni::jni_str!("android/net/Uri"),
+                        jni::jni_str!("parse"),
+                        jni::jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+                        &[jni::JValue::Object(url.as_ref())],
+                    )?
+                    .l()?;
+                let action = env
+                    .get_static_field(
+                        jni::jni_str!("android/content/Intent"),
+                        jni::jni_str!("ACTION_VIEW"),
+                        jni::jni_sig!("Ljava/lang/String;"),
+                    )?
+                    .l()?;
+                let intent = env.new_object(
+                    jni::jni_str!("android/content/Intent"),
+                    jni::jni_sig!("(Ljava/lang/String;Landroid/net/Uri;)V"),
+                    &[jni::JValue::Object(&action), jni::JValue::Object(&uri)],
+                )?;
+                let activity = unsafe {
+                    jni::objects::JObject::from_raw(
+                        env,
+                        app_for_thread.activity_as_ptr() as jni::sys::jobject,
+                    )
+                };
+                env.call_method(
+                    &activity,
+                    jni::jni_str!("startActivity"),
+                    jni::jni_sig!("(Landroid/content/Intent;)V"),
+                    &[jni::JValue::Object(&intent)],
+                )?;
+                Ok(())
+            })
+        })();
+        if let Err(err) = result {
+            eprintln!("aetna-winit-wgpu: failed to open link on Android: {err}");
+        }
+    }));
+}
 
 fn touch_pressure(force: Option<Force>) -> Option<f32> {
     match force? {

@@ -33,6 +33,9 @@ arboard = { version = "3", features = ["wayland-data-control"] }
 # blocking IO inside the call (it spawns the platform launcher).
 open = "5"
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22"
+
 [features]
 # Forwards to `aetna-core/profiling` and `aetna-wgpu/profiling`. Off by
 # default. When on, the host emits `frame::build` / `frame::prepare` /

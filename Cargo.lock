@@ -222,6 +222,7 @@ dependencies = [
  "aetna-core",
  "aetna-wgpu",
  "arboard",
+ "jni",
  "open",
  "pollster",
  "wgpu",
