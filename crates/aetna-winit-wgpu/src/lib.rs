@@ -975,7 +975,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                 let palette = theme.palette().clone();
                                 let cx = aetna_core::BuildCx::new(&theme)
                                     .with_ui_state(gfx.renderer.ui_state())
-                                    .with_diagnostics(&diagnostics);
+                                    .with_diagnostics(&diagnostics)
+                                    .with_viewport(viewport.w, viewport.h);
                                 let tree = self.app.build(&cx);
                                 gfx.renderer.set_theme(theme);
                                 gfx.renderer.set_hotkeys(self.app.hotkeys());

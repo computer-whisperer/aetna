@@ -431,8 +431,17 @@ impl<A: App> ApplicationHandler for Host<A> {
                 }
 
                 self.app.before_build();
+                let scale_factor = rcx.window.scale_factor() as f32;
+                let viewport = Rect::new(
+                    0.0,
+                    0.0,
+                    extent[0] as f32 / scale_factor,
+                    extent[1] as f32 / scale_factor,
+                );
                 let theme = self.app.theme();
-                let cx = BuildCx::new(&theme).with_ui_state(rcx.runner.ui_state());
+                let cx = BuildCx::new(&theme)
+                    .with_ui_state(rcx.runner.ui_state())
+                    .with_viewport(viewport.w, viewport.h);
                 let mut tree = self.app.build(&cx);
                 let palette = theme.palette().clone();
                 rcx.runner.set_theme(theme);
@@ -443,13 +452,6 @@ impl<A: App> ApplicationHandler for Host<A> {
                     .push_focus_requests(self.app.drain_focus_requests());
                 rcx.runner
                     .push_scroll_requests(self.app.drain_scroll_requests());
-                let scale_factor = rcx.window.scale_factor() as f32;
-                let viewport = Rect::new(
-                    0.0,
-                    0.0,
-                    extent[0] as f32 / scale_factor,
-                    extent[1] as f32 / scale_factor,
-                );
                 let prepare = rcx.runner.prepare(&mut tree, viewport, scale_factor);
 
                 let (image_index, suboptimal, acquire_future) =

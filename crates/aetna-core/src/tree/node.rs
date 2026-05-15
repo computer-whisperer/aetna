@@ -166,6 +166,28 @@ pub struct El {
     pub justify: Justify,
     pub width: Size,
     pub height: Size,
+    /// Optional lower bound on the resolved width in logical pixels.
+    /// Layout clamps the final width up to this value after `width`
+    /// resolves (Hug, Fill, or even Fixed) — useful for "this card
+    /// shrinks to fit content but never below 200px." A `Hug` parent
+    /// of a min-clamped child reflects the clamped intrinsic so the
+    /// parent grows accordingly. Composes additively with
+    /// [`Self::max_width`] and conflict-resolves to the lower bound
+    /// when both apply.
+    pub min_width: Option<f32>,
+    /// Optional upper bound on the resolved width in logical pixels.
+    /// Layout clamps the final width down to this value after `width`
+    /// resolves. Useful for capping a `Fill` child so it doesn't grow
+    /// past a readable column width. Conflict-resolves with
+    /// [`Self::min_width`] in favour of the lower bound when both
+    /// apply (matches CSS `min-width` over `max-width` precedence).
+    pub max_width: Option<f32>,
+    /// Optional lower bound on the resolved height in logical pixels.
+    /// See [`Self::min_width`] for the semantic.
+    pub min_height: Option<f32>,
+    /// Optional upper bound on the resolved height in logical pixels.
+    /// See [`Self::max_width`] for the semantic.
+    pub max_height: Option<f32>,
     /// Optional t-shirt size for stock widgets. `None` means the active
     /// theme supplies the component-class default.
     pub component_size: Option<ComponentSize>,

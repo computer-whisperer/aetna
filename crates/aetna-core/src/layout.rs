@@ -1691,7 +1691,14 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
     for (i, (c, (iw, ih))) in node.children.iter_mut().zip(intrinsics).enumerate() {
         let main_size = match main_size_of(c, iw, ih, vertical) {
             MainSize::Resolved(v) => v,
-            MainSize::Fill(w) => remaining * w.max(0.001) / fill_weight_total.max(0.001),
+            MainSize::Fill(w) => {
+                let raw = remaining * w.max(0.001) / fill_weight_total.max(0.001);
+                if vertical {
+                    clamp_h(c, raw)
+                } else {
+                    clamp_w(c, raw)
+                }
+            }
         };
 
         let cross_intent = if vertical { c.width } else { c.height };
@@ -1710,6 +1717,11 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
                 Align::Stretch => cross_extent,
                 Align::Start | Align::Center | Align::End => cross_intrinsic,
             },
+        };
+        let cross_size = if vertical {
+            clamp_w(c, cross_size)
+        } else {
+            clamp_h(c, cross_size)
         };
 
         let cross_off = match node.align {
@@ -1815,9 +1827,16 @@ enum MainSize {
 fn main_size_of(c: &El, iw: f32, ih: f32, vertical: bool) -> MainSize {
     let s = if vertical { c.height } else { c.width };
     let intr = if vertical { ih } else { iw };
+    let clamp = |v: f32| {
+        if vertical {
+            clamp_h(c, v)
+        } else {
+            clamp_w(c, v)
+        }
+    };
     match s {
-        Size::Fixed(v) => MainSize::Resolved(v),
-        Size::Hug => MainSize::Resolved(intr),
+        Size::Fixed(v) => MainSize::Resolved(clamp(v)),
+        Size::Hug => MainSize::Resolved(clamp(intr)),
         Size::Fill(w) => MainSize::Fill(w),
     }
 }
@@ -1864,6 +1883,8 @@ fn overlay_rect(c: &El, parent: Rect, align: Align, justify: Justify) -> Rect {
         Size::Hug => ih.min(parent.h),
         Size::Fill(_) => parent.h,
     };
+    let w = clamp_w(c, w);
+    let h = clamp_h(c, h);
     let x = match align {
         Align::Start | Align::Stretch => parent.x,
         Align::Center => parent.x + (parent.w - w) * 0.5,
@@ -2195,7 +2216,33 @@ fn apply_min(c: &El, mut w: f32, mut h: f32) -> (f32, f32) {
     if let Size::Fixed(v) = c.height {
         h = v;
     }
-    (w, h)
+    (clamp_w(c, w), clamp_h(c, h))
+}
+
+/// Apply [`El::min_width`] / [`El::max_width`] to a resolved width,
+/// matching CSS's `min-width` over `max-width` precedence (when both
+/// constraints conflict, the lower bound wins). Also clamps to a
+/// non-negative result so a zero-padding Hug never reports a negative
+/// intrinsic.
+pub(crate) fn clamp_w(c: &El, mut w: f32) -> f32 {
+    if let Some(max_w) = c.max_width {
+        w = w.min(max_w);
+    }
+    if let Some(min_w) = c.min_width {
+        w = w.max(min_w);
+    }
+    w.max(0.0)
+}
+
+/// Height-axis companion to [`clamp_w`].
+pub(crate) fn clamp_h(c: &El, mut h: f32) -> f32 {
+    if let Some(max_h) = c.max_height {
+        h = h.min(max_h);
+    }
+    if let Some(min_h) = c.min_height {
+        h = h.max(min_h);
+    }
+    h.max(0.0)
 }
 
 /// Approximate intrinsic measurement for `Kind::Inlines` paragraphs.
@@ -3805,6 +3852,116 @@ mod tests {
             row1_rect.y,
             row0_rect.y,
             row0_rect.y + row0_rect.h,
+        );
+    }
+
+    /// `min_width` floors a child whose resolved cross-axis size is
+    /// below the floor. Tests against an `align(Start)` column so
+    /// `Size::Fixed` doesn't get widened by the default Stretch
+    /// alignment before clamping has a chance to apply.
+    #[test]
+    fn min_width_floors_resolved_cross_axis_size() {
+        let mut root = column([crate::widgets::text::text("hi")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))
+            .min_width(120.0)])
+        .align(Align::Start)
+        .width(Size::Fixed(500.0))
+        .height(Size::Fixed(200.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 500.0, 200.0));
+        let child_rect = state.rect(&root.children[0].computed_id);
+        assert!(
+            (child_rect.w - 120.0).abs() < 0.5,
+            "expected child clamped up to 120 (intrinsic 40 < min 120), got w={}",
+            child_rect.w,
+        );
+    }
+
+    /// `max_width` caps a `Size::Fill` child even when the surrounding
+    /// row offers more space.
+    #[test]
+    fn max_width_caps_fill_child() {
+        let mut root = crate::row([crate::widgets::text::text("body")
+            .width(Size::Fill(1.0))
+            .height(Size::Fixed(20.0))
+            .max_width(160.0)])
+        .width(Size::Fixed(800.0))
+        .height(Size::Fixed(40.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 800.0, 40.0));
+        let child_rect = state.rect(&root.children[0].computed_id);
+        assert!(
+            (child_rect.w - 160.0).abs() < 0.5,
+            "expected Fill child capped at 160, got w={}",
+            child_rect.w,
+        );
+    }
+
+    /// When `min_width` and `max_width` conflict, the lower bound wins
+    /// (CSS `min-width` precedence over `max-width`).
+    #[test]
+    fn min_width_wins_over_max_width_when_conflicting() {
+        let mut root = column([crate::widgets::text::text("x")
+            .width(Size::Fixed(50.0))
+            .height(Size::Fixed(20.0))
+            .max_width(80.0)
+            .min_width(120.0)]);
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 500.0, 200.0));
+        let child_rect = state.rect(&root.children[0].computed_id);
+        assert!(
+            (child_rect.w - 120.0).abs() < 0.5,
+            "expected min_width (120) to win over max_width (80), got w={}",
+            child_rect.w,
+        );
+    }
+
+    /// `min_height` floors a Hug child column whose children sum to
+    /// less than the floor. Tested through a fixed-size parent so the
+    /// resolved rect of the inner column reflects the clamp.
+    #[test]
+    fn min_height_floors_hug_column_inside_fixed_parent() {
+        let inner = column([crate::widgets::text::text("a")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(20.0))])
+        .width(Size::Fixed(80.0))
+        .height(Size::Hug)
+        .min_height(200.0);
+        let mut root = column([inner])
+            .align(Align::Start)
+            .width(Size::Fixed(800.0))
+            .height(Size::Fixed(600.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 800.0, 600.0));
+        let inner_rect = state.rect(&root.children[0].computed_id);
+        assert!(
+            (inner_rect.h - 200.0).abs() < 0.5,
+            "expected inner column floored to min_height=200 (intrinsic ~20), got h={}",
+            inner_rect.h,
+        );
+    }
+
+    /// `max_height` caps a `Hug` overlay child below its intrinsic.
+    #[test]
+    fn max_height_caps_overlay_child_below_intrinsic() {
+        // Overlay parent sized 600x600; child Hug column whose intrinsic
+        // height is 300 (single 300-tall fixed leaf), capped at 100.
+        let mut root = crate::tree::stack([column([crate::widgets::text::text("tall")
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(300.0))])
+        .width(Size::Hug)
+        .height(Size::Hug)
+        .max_height(100.0)])
+        .width(Size::Fixed(600.0))
+        .height(Size::Fixed(600.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 600.0, 600.0));
+        let child_rect = state.rect(&root.children[0].computed_id);
+        assert!(
+            (child_rect.h - 100.0).abs() < 0.5,
+            "expected child height capped at 100, got h={}",
+            child_rect.h,
         );
     }
 }

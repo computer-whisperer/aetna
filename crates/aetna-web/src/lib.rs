@@ -1981,7 +1981,8 @@ mod web_entry {
                         let theme = self.app.theme();
                         let cx = BuildCx::new(&theme)
                             .with_ui_state(gfx.renderer.ui_state())
-                            .with_diagnostics(&diagnostics);
+                            .with_diagnostics(&diagnostics)
+                            .with_viewport(viewport_rect.w, viewport_rect.h);
                         let mut tree = self.app.build(&cx);
                         let palette = theme.palette().clone();
                         gfx.renderer.set_theme(theme);

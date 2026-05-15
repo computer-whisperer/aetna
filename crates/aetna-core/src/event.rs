@@ -640,6 +640,11 @@ pub struct BuildCx<'a> {
     theme: &'a crate::Theme,
     ui_state: Option<&'a crate::state::UiState>,
     diagnostics: Option<&'a HostDiagnostics>,
+    /// Logical-pixel viewport this frame is being built for, when the
+    /// host attached one. Apps query this via [`Self::viewport`] /
+    /// [`Self::viewport_below`] to branch layout on phone-vs-desktop
+    /// without threading the surface size through their own state.
+    viewport: Option<(f32, f32)>,
 }
 
 /// Why the current frame is being built. Hosts set this before each
@@ -825,6 +830,7 @@ impl<'a> BuildCx<'a> {
             theme,
             ui_state: None,
             diagnostics: None,
+            viewport: None,
         }
     }
 
@@ -847,6 +853,16 @@ impl<'a> BuildCx<'a> {
         self
     }
 
+    /// Attach the logical-pixel viewport size for this frame. Hosts
+    /// chain this so apps can branch on viewport metrics during build
+    /// (responsive layout, phone-vs-desktop splits) without threading
+    /// surface size through their own state. Headless render paths
+    /// without a meaningful viewport leave it unset.
+    pub fn with_viewport(mut self, width: f32, height: f32) -> Self {
+        self.viewport = Some((width, height));
+        self
+    }
+
     /// Per-frame diagnostic snapshot from the host (backend, frame
     /// cadence, trigger reason, etc.), or `None` when the host did
     /// not attach one. Apps display this in optional debug overlays.
@@ -862,6 +878,46 @@ impl<'a> BuildCx<'a> {
     /// Shorthand for `self.theme().palette()`.
     pub fn palette(&self) -> &crate::Palette {
         self.theme.palette()
+    }
+
+    /// Logical-pixel viewport `(width, height)` the host attached for
+    /// this frame, or `None` for headless render paths. Apps use this
+    /// to branch layout on viewport metrics — see [`Self::viewport_below`]
+    /// for the common phone-vs-desktop breakpoint case.
+    pub fn viewport(&self) -> Option<(f32, f32)> {
+        self.viewport
+    }
+
+    /// Logical-pixel viewport width the host attached for this frame,
+    /// or `None` when no viewport is available. Convenience for the
+    /// common single-axis branch (`cx.viewport_width().map_or(false,
+    /// |w| w < 600.0)`).
+    pub fn viewport_width(&self) -> Option<f32> {
+        self.viewport.map(|(w, _)| w)
+    }
+
+    /// Logical-pixel viewport height the host attached for this frame,
+    /// or `None` when no viewport is available.
+    pub fn viewport_height(&self) -> Option<f32> {
+        self.viewport.map(|(_, h)| h)
+    }
+
+    /// True iff the attached viewport's width is strictly less than
+    /// `threshold` logical pixels. Returns `false` when no viewport is
+    /// attached so headless / desktop-default paths fall through to
+    /// the wider branch — apps that want the opposite default can
+    /// match on [`Self::viewport_width`] directly.
+    ///
+    /// Use for the common breakpoint split:
+    /// ```ignore
+    /// if cx.viewport_below(600.0) {
+    ///     phone_layout()
+    /// } else {
+    ///     desktop_layout()
+    /// }
+    /// ```
+    pub fn viewport_below(&self, threshold: f32) -> bool {
+        self.viewport_width().is_some_and(|w| w < threshold)
     }
 
     /// Key of the leaf node currently under the pointer, or `None`
@@ -1065,4 +1121,37 @@ pub struct AppShader {
     /// any node is bound to it. The runtime ORs this into
     /// `PrepareResult::needs_redraw` per frame.
     pub samples_time: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Theme;
+
+    #[test]
+    fn viewport_unset_returns_none_and_breakpoint_returns_false() {
+        let theme = Theme::default();
+        let cx = BuildCx::new(&theme);
+        assert!(cx.viewport().is_none());
+        assert!(cx.viewport_width().is_none());
+        assert!(!cx.viewport_below(600.0));
+    }
+
+    #[test]
+    fn viewport_set_exposes_width_and_height() {
+        let theme = Theme::default();
+        let cx = BuildCx::new(&theme).with_viewport(420.0, 800.0);
+        assert_eq!(cx.viewport(), Some((420.0, 800.0)));
+        assert_eq!(cx.viewport_width(), Some(420.0));
+        assert_eq!(cx.viewport_height(), Some(800.0));
+    }
+
+    #[test]
+    fn viewport_below_uses_strict_less_than() {
+        let theme = Theme::default();
+        let cx = BuildCx::new(&theme).with_viewport(600.0, 800.0);
+        assert!(!cx.viewport_below(600.0), "boundary is exclusive");
+        assert!(cx.viewport_below(601.0));
+        assert!(!cx.viewport_below(599.0));
+    }
 }

@@ -37,6 +37,36 @@ impl El {
         self
     }
 
+    /// Lower-bound the resolved width in logical pixels. Composes with
+    /// any [`Size`] choice — `Hug` won't shrink below the floor, `Fill`
+    /// won't lose space below it. See [`El::min_width`] for the full
+    /// semantic.
+    pub fn min_width(mut self, w: f32) -> Self {
+        self.min_width = Some(w);
+        self
+    }
+
+    /// Upper-bound the resolved width in logical pixels. Pairs naturally
+    /// with `Size::Fill` to cap a column at a readable measure.
+    pub fn max_width(mut self, w: f32) -> Self {
+        self.max_width = Some(w);
+        self
+    }
+
+    /// Lower-bound the resolved height in logical pixels. See
+    /// [`Self::min_width`] for the semantic.
+    pub fn min_height(mut self, h: f32) -> Self {
+        self.min_height = Some(h);
+        self
+    }
+
+    /// Upper-bound the resolved height in logical pixels. See
+    /// [`Self::max_width`] for the semantic.
+    pub fn max_height(mut self, h: f32) -> Self {
+        self.max_height = Some(h);
+        self
+    }
+
     /// Set the t-shirt size for stock controls.
     pub fn size(mut self, size: ComponentSize) -> Self {
         self.component_size = Some(size);
