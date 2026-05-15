@@ -594,6 +594,22 @@ mod web_entry {
                     if !focused_textarea {
                         let _ = canvas_for_capture.set_pointer_capture(event.pointer_id());
                     }
+                    // When the press just summoned the on-screen
+                    // keyboard, suppress the browser's default
+                    // pointerdown action so it doesn't shift DOM
+                    // focus to the canvas (a tabindex=0 element)
+                    // after our listener returns. Android Chrome
+                    // does that focus shift as part of touch
+                    // pointerdown handling on focusable elements,
+                    // and the resulting blur on our hidden input
+                    // dismisses the keyboard one frame after it
+                    // appears. We also stopPropagation so document-
+                    // level listeners don't get a second crack at
+                    // shifting focus.
+                    if focused_textarea {
+                        event.prevent_default();
+                        event.stop_propagation();
+                    }
                     pending.borrow_mut().push_back(QueuedPointer::Down(p));
                     window.request_redraw();
                 });
@@ -1264,7 +1280,13 @@ mod web_entry {
             let Some(sk) = self.soft_keyboard.as_ref() else {
                 return;
             };
-            if !gfx.renderer.focused_captures_keys() {
+            // Only dismiss when our state says the keyboard should
+            // be down AND the DOM input still believes it's focused.
+            // Skipping the .blur() when DOM focus is already gone
+            // avoids redundant blur events; more importantly, it
+            // means a stray sync that races a still-resolving focus
+            // doesn't tear the keyboard down out from under itself.
+            if !gfx.renderer.focused_captures_keys() && sk.focused.get() {
                 sk.dismiss();
             }
         }
