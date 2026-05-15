@@ -22,7 +22,20 @@ impl UiState {
                 self.focused = Some(current.clone());
                 return;
             }
-            self.focused = None;
+            // Focus order excludes nodes whose rect doesn't intersect
+            // their inherited clip, so a focused widget that scrolled
+            // out of view (or whose ancestor scroll viewport just
+            // shrunk underneath it) is no longer in `order`. That's
+            // not the same as "focus target is gone" — the node still
+            // exists in the tree, it's just visually clipped.
+            // Clearing focus here would dismiss the soft keyboard the
+            // moment a phone's on-screen keyboard shrinks the layout
+            // viewport (Android's default), which is exactly what
+            // happens when the user taps a text input. Match HTML's
+            // shape: only clear when the node truly leaves the tree.
+            if !node_exists(root, &focused.node_id) {
+                self.focused = None;
+            }
         }
     }
 
@@ -100,5 +113,105 @@ impl UiState {
         };
         self.focused = Some(self.focus.order[next].clone());
         self.focused.as_ref()
+    }
+}
+
+/// True iff `id` matches the `computed_id` of `root` or any descendant.
+/// Used by [`UiState::sync_focus_order`] to distinguish "focused node
+/// scrolled out of clip" (keep focus) from "focused node removed from
+/// tree" (clear focus).
+fn node_exists(root: &El, id: &str) -> bool {
+    if root.computed_id == id {
+        return true;
+    }
+    root.children.iter().any(|c| node_exists(c, id))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::layout::layout;
+    use crate::state::UiState;
+    use crate::tree::{Rect, Size};
+
+    /// A focused widget that scrolls out of view (its rect leaves the
+    /// scroll's clip rect) must keep focus, not lose it. The web
+    /// host's soft-keyboard sync polls focus every frame and dismisses
+    /// the keyboard whenever focus is gone, so clearing focus on a
+    /// scroll-out turned every quick tap on a phone text input into
+    /// "summon then immediately dismiss the keyboard."
+    #[test]
+    fn focused_node_outside_clip_keeps_focus() {
+        use crate::tree::*;
+        // Scroll viewport 100px tall containing two 80px-tall
+        // focusable rows. Without scrolling, only the first row sits
+        // inside the clip; focus the second row and shrink the
+        // viewport so it falls outside, then verify focus survives.
+        let mut tree = crate::scroll([
+            crate::widgets::button::button("a")
+                .key("a")
+                .height(Size::Fixed(80.0)),
+            crate::widgets::button::button("b")
+                .key("b")
+                .height(Size::Fixed(80.0)),
+        ])
+        .height(Size::Fill(1.0));
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        state.sync_focus_order(&tree);
+        let target = state
+            .focus
+            .order
+            .iter()
+            .find(|t| t.key == "b")
+            .cloned()
+            .expect("b in focus order");
+        state.set_focus(Some(target));
+        assert_eq!(
+            state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("b"),
+            "focus should land on b before reflow",
+        );
+        // Shrink the viewport so the scroll's clip can no longer fit
+        // both buttons; b's rect (80..160) is partially inside the
+        // 0..120 clip and should still be picked up. Drop further so
+        // b is fully outside the clip (clip 0..50, b at 80..160).
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 50.0));
+        state.sync_focus_order(&tree);
+        assert_eq!(
+            state.focused.as_ref().map(|t| t.key.as_str()),
+            Some("b"),
+            "focus should survive scroll-out clipping",
+        );
+    }
+
+    /// When the focused node is genuinely removed from the tree (e.g.
+    /// the page that hosted it unmounted), focus is cleared. Mirrors
+    /// HTML's behavior of blurring an element that's removed from the
+    /// document.
+    #[test]
+    fn focused_node_removed_from_tree_clears_focus() {
+        use crate::tree::*;
+        let mut tree = crate::column([crate::widgets::button::button("a").key("a")]);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        state.sync_focus_order(&tree);
+        let target = state
+            .focus
+            .order
+            .iter()
+            .find(|t| t.key == "a")
+            .cloned()
+            .expect("a in focus order");
+        state.set_focus(Some(target));
+        assert_eq!(state.focused.as_ref().map(|t| t.key.as_str()), Some("a"));
+        // Replace the tree with an empty one — the previously focused
+        // node is gone.
+        let mut empty = crate::column(Vec::<El>::new());
+        layout(&mut empty, &mut state, Rect::new(0.0, 0.0, 200.0, 200.0));
+        state.sync_focus_order(&empty);
+        assert!(
+            state.focused.is_none(),
+            "focus should clear when the node leaves the tree",
+        );
     }
 }
