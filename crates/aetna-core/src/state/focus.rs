@@ -131,7 +131,6 @@ fn node_exists(root: &El, id: &str) -> bool {
 mod tests {
     use crate::layout::layout;
     use crate::state::UiState;
-    use crate::tree::{Rect, Size};
 
     /// A focused widget that scrolls out of view (its rect leaves the
     /// scroll's clip rect) must keep focus, not lose it. The web

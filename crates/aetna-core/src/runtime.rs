@@ -55,8 +55,8 @@ use web_time::Instant;
 
 use crate::draw_ops::{self, DrawOpsStats};
 use crate::event::{
-    KeyChord, KeyModifiers, Pointer, PointerButton, PointerId, PointerKind, UiEvent, UiEventKind,
-    UiKey, UiTarget,
+    KeyChord, KeyModifiers, Pointer, PointerButton, PointerKind, UiEvent, UiEventKind, UiKey,
+    UiTarget,
 };
 use crate::focus;
 use crate::hit_test;
@@ -2670,6 +2670,7 @@ pub trait TextRecorder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::PointerId;
     use crate::shader::{ShaderHandle, StockShader, UniformBlock};
 
     /// Minimal recorder for tests that don't exercise the text path.
