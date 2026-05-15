@@ -220,20 +220,36 @@ fn section_label(s: &str) -> El {
 }
 
 fn surface_role_tile(title: &str, token_name: &str, fill: Color) -> El {
-    card([text(title).label(), text(token_name).caption().muted()])
-        .gap(tokens::SPACE_1)
-        .padding(tokens::SPACE_3)
-        .fill(fill)
-        .radius(tokens::RADIUS_MD)
-        .height(Size::Fixed(76.0))
+    // Fill + ellipsis on the long token name so the label respects
+    // the tile width on phone viewports rather than overflowing.
+    card([
+        text(title).label().width(Size::Fill(1.0)).ellipsis(),
+        text(token_name)
+            .caption()
+            .muted()
+            .width(Size::Fill(1.0))
+            .ellipsis(),
+    ])
+    .gap(tokens::SPACE_1)
+    .padding(tokens::SPACE_3)
+    .fill(fill)
+    .radius(tokens::RADIUS_MD)
+    .height(Size::Fixed(76.0))
 }
 
 fn elevation_tile(label: &str, sub: &str, shadow: f32) -> El {
-    card([text(label).title(), text(sub).muted().small()])
-        .shadow(shadow)
-        .padding(tokens::SPACE_4)
-        .gap(tokens::SPACE_1)
-        .height(Size::Fixed(120.0))
+    card([
+        text(label).title().width(Size::Fill(1.0)).ellipsis(),
+        text(sub)
+            .muted()
+            .small()
+            .width(Size::Fill(1.0))
+            .ellipsis(),
+    ])
+    .shadow(shadow)
+    .padding(tokens::SPACE_4)
+    .gap(tokens::SPACE_1)
+    .height(Size::Fixed(120.0))
 }
 
 #[cfg(any(not(target_arch = "wasm32"), test))]

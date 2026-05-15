@@ -245,7 +245,7 @@ fn dispatch_card(state: &State) -> El {
                 .width(Size::Fill(1.0)),
             row([
                 switch(state.auto_dismiss).key(AUTO_DISMISS_KEY),
-                text(if state.auto_dismiss {
+                paragraph(if state.auto_dismiss {
                     "Auto-dismiss after a few seconds"
                 } else {
                     "Stay until manually dismissed"

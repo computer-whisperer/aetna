@@ -31,6 +31,14 @@ pub mod theme_choice;
 pub mod typography;
 
 pub use shell::{DIAGNOSTICS_TOGGLE_KEY, SECTION_PICKER_KEY, THEME_PICKER_KEY};
+
+/// Returns `true` when this frame's viewport is below the showcase's
+/// phone breakpoint. Section views call this so they can collapse rows
+/// to columns, hide secondary chrome, or wrap text differently without
+/// re-importing the breakpoint constant from `shell`.
+pub(crate) fn is_phone(cx: &BuildCx) -> bool {
+    cx.viewport_below(shell::PHONE_BREAKPOINT_PX)
+}
 pub use theme_choice::ThemeChoice;
 
 /// WGSL for the liquid-glass custom shader. Surfaced through

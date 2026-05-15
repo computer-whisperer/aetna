@@ -119,7 +119,11 @@ fn profile_card(i: usize, p: &Profile, on: bool) -> El {
             .translate(0.0, translate)
             .opacity(opacity)
             .animate(p.timing),
-        text(p.name).label(),
+        // Hug width on a label inside a narrow card forces the
+        // intrinsic content width and overflows the card on phone
+        // viewports. Filling + ellipsis lets the label respect the
+        // card's content rect.
+        text(p.name).label().width(Size::Fill(1.0)).ellipsis(),
         paragraph(p.blurb).small().muted(),
     ])
     .gap(tokens::SPACE_2)

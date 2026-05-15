@@ -220,7 +220,12 @@ fn spinner_tile(label: &str, content: El) -> El {
             .align(Align::Center)
             .justify(Justify::Center)
             .height(Size::Fixed(48.0)),
-        text(label).muted().small(),
+        text(label)
+            .muted()
+            .small()
+            .center_text()
+            .width(Size::Fill(1.0))
+            .ellipsis(),
     ])
     .padding(tokens::SPACE_4)
     .gap(tokens::SPACE_2)
@@ -228,7 +233,14 @@ fn spinner_tile(label: &str, content: El) -> El {
 }
 
 fn skeleton_tile(label: &str, content: El) -> El {
-    card([content, text(label).muted().small()])
-        .padding(tokens::SPACE_4)
-        .gap(tokens::SPACE_4)
+    card([
+        content,
+        text(label)
+            .muted()
+            .small()
+            .width(Size::Fill(1.0))
+            .ellipsis(),
+    ])
+    .padding(tokens::SPACE_4)
+    .gap(tokens::SPACE_4)
 }

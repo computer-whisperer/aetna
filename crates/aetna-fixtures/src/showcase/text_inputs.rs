@@ -66,7 +66,7 @@ impl Default for State {
 }
 
 pub fn view(state: &State, cx: &BuildCx) -> El {
-    let phone = cx.viewport_below(super::shell::PHONE_BREAKPOINT_PX);
+    let phone = super::is_phone(cx);
     let volume_card = titled_card(
         "Slider",
         [

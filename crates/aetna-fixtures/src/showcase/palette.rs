@@ -190,7 +190,7 @@ fn token_section(
     titled_card(
         title,
         [
-            text(description).muted().small(),
+            paragraph(description).muted().small(),
             swatch_grid(defs, palette),
         ],
     )
@@ -224,7 +224,15 @@ fn chip(token: TokenDef, palette: &Palette) -> El {
                 .ellipsis()
                 .nowrap_text()
                 .width(Size::Fill(1.0)),
-            mono(rgba_label(resolved)).caption().muted(),
+            // Long rgba labels (e.g. "rgba(255, 255, 255, 1.0)") are
+            // wider than a phone-shape chip; ellipsis here mirrors the
+            // token-name treatment above.
+            mono(rgba_label(resolved))
+                .caption()
+                .muted()
+                .ellipsis()
+                .nowrap_text()
+                .width(Size::Fill(1.0)),
         ])
         .gap(0.0)
         .width(Size::Fill(1.0))
@@ -242,7 +250,7 @@ fn preview_panel(title: &'static str, body: El) -> El {
     titled_card(
         title,
         [
-            text("Live components under the active palette.")
+            paragraph("Live components under the active palette.")
                 .muted()
                 .small(),
             body,
@@ -288,8 +296,12 @@ fn widget_preview() -> El {
 
 fn surface_sample(title: &'static str, fill: Color) -> El {
     card([
-        text(title).label(),
-        text("surface sample").caption().muted(),
+        text(title).label().width(Size::Fill(1.0)).ellipsis(),
+        text("surface sample")
+            .caption()
+            .muted()
+            .width(Size::Fill(1.0))
+            .ellipsis(),
     ])
     .gap(tokens::SPACE_1)
     .padding(tokens::SPACE_3)

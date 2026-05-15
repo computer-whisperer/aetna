@@ -332,7 +332,14 @@ fn tile(img: &LazyLock<Image>, label: &str) -> El {
             .height(Size::Fixed(96.0))
             .image_fit(ImageFit::Contain)
             .radius(tokens::RADIUS_MD),
-        text(label.to_string()).small().muted(),
+        // Cap the label to the tile width so longer labels truncate
+        // rather than overflow when the tile row is squeezed on phone.
+        text(label.to_string())
+            .small()
+            .muted()
+            .width(Size::Fixed(96.0))
+            .ellipsis()
+            .center_text(),
     ])
     .gap(tokens::SPACE_1)
     .align(Align::Center)
@@ -355,7 +362,12 @@ fn fit_demo(label: &str, fit: ImageFit) -> El {
             .image_fit(fit)
             .radius(tokens::RADIUS_SM)
             .stroke(tokens::BORDER),
-        text(label.to_string()).small().muted(),
+        text(label.to_string())
+            .small()
+            .muted()
+            .width(Size::Fixed(96.0))
+            .ellipsis()
+            .center_text(),
     ])
     .gap(tokens::SPACE_1)
     .align(Align::Center)
@@ -364,7 +376,14 @@ fn fit_demo(label: &str, fit: ImageFit) -> El {
 fn builtin_icon_tile(name: IconName, tint: Color) -> El {
     card([
         icon(name).icon_size(28.0).text_color(tint),
-        text(name.name()).small().muted().center_text(),
+        // Tile cards in the icon grid get squeezed on phone; let the
+        // label clip with ellipsis to the card's content rect.
+        text(name.name())
+            .small()
+            .muted()
+            .center_text()
+            .width(Size::Fill(1.0))
+            .ellipsis(),
     ])
     .gap(tokens::SPACE_1)
     .align(Align::Center)
@@ -375,7 +394,12 @@ fn builtin_icon_tile(name: IconName, tint: Color) -> El {
 fn custom_icon_tile(svg: &LazyLock<SvgIcon>, label: &str, size: f32) -> El {
     card([
         icon((**svg).clone()).icon_size(size),
-        text(label.to_string()).small().muted().center_text(),
+        text(label.to_string())
+            .small()
+            .muted()
+            .center_text()
+            .width(Size::Fill(1.0))
+            .ellipsis(),
     ])
     .gap(tokens::SPACE_2)
     .align(Align::Center)
