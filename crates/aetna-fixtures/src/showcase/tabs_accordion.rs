@@ -41,7 +41,8 @@ impl Default for State {
     }
 }
 
-pub fn view(state: &State) -> El {
+pub fn view(state: &State, cx: &BuildCx) -> El {
+    let phone = super::is_phone(cx);
     scroll([column([
         h1("Tabs & accordion"),
         paragraph(
@@ -53,13 +54,18 @@ pub fn view(state: &State) -> El {
         section_label("Tabs"),
         tabs_demo(state),
         section_label("Editor tabs"),
-        editor_tabs_demo(state),
+        editor_tabs_demo(state, phone),
         section_label("Accordion"),
         accordion_demo(state),
     ])
     .gap(tokens::SPACE_4)
     .align(Align::Stretch)
-    .padding(Sides::right(tokens::SCROLLBAR_HITBOX_WIDTH))])
+    .padding(Sides {
+        left: tokens::RING_WIDTH,
+        right: tokens::SCROLLBAR_HITBOX_WIDTH,
+        top: 0.0,
+        bottom: 0.0,
+    })])
     .height(Size::Fill(1.0))
 }
 
@@ -176,7 +182,11 @@ fn account_panel(state: &State) -> El {
                 "Bulk actions",
                 button("Actions ▾").key(TABS_TRIGGER_KEY).secondary(),
             ),
-            text(trailing_caption).small().muted(),
+            text(trailing_caption)
+                .small()
+                .muted()
+                .wrap_text()
+                .fill_width(),
         ],
     )
 }
@@ -214,7 +224,7 @@ fn kv_row(label: &str, trailing: El) -> El {
         .justify(Justify::SpaceBetween)
 }
 
-fn editor_tabs_demo(state: &State) -> El {
+fn editor_tabs_demo(state: &State, phone: bool) -> El {
     let style_picker = column([
         text("Active tab treatment").caption().muted(),
         tabs_list(
@@ -245,7 +255,7 @@ fn editor_tabs_demo(state: &State) -> El {
     .gap(tokens::SPACE_1)
     .width(Size::Fill(1.0));
 
-    let strip = editor_tabs_with(
+    let raw_strip = editor_tabs_with(
         "ta-strip",
         &state.editor_active,
         state.editor_docs.iter().map(|d| (d.clone(), d.clone())),
@@ -254,6 +264,20 @@ fn editor_tabs_demo(state: &State) -> El {
             close_visibility: state.editor_close_visibility,
         },
     );
+    // Phone wraps the strip in a horizontal scroll so a couple of long
+    // filenames + the trailing `+` button can extend past the viewport
+    // without overflowing the page column. The strip itself defaults to
+    // `Size::Fill(1.0)`; inside a horizontal scroll we override to
+    // `Size::Hug` so the strip's intrinsic width drives the scroll's
+    // content size rather than the (narrower) viewport.
+    let strip: El = if phone {
+        scroll([raw_strip.width(Size::Hug)])
+            .axis(Axis::Row)
+            .height(Size::Hug)
+            .width(Size::Fill(1.0))
+    } else {
+        raw_strip
+    };
 
     let panel = card([
         h2(state.editor_active.clone()),
@@ -266,20 +290,28 @@ fn editor_tabs_demo(state: &State) -> El {
                 "s"
             },
         ))
-        .muted(),
+        .muted()
+        .wrap_text()
+        .fill_width(),
     ])
     .gap(tokens::SPACE_2)
     .padding(tokens::SPACE_4)
     .height(Size::Fixed(140.0));
 
     let strip_and_panel = column([strip, panel]).gap(0.0);
-    column([
+    // Phone stacks the two pickers in a column so each gets the full
+    // content width — at half-width on a 360px viewport, three tabs in
+    // each picker can't fit their labels ("Lifted"/"Bottom"/...).
+    let pickers: El = if phone {
+        column([style_picker, close_picker])
+            .gap(tokens::SPACE_3)
+            .width(Size::Fill(1.0))
+    } else {
         row([style_picker, close_picker])
             .gap(tokens::SPACE_4)
-            .align(Align::Start),
-        strip_and_panel,
-    ])
-    .gap(tokens::SPACE_3)
+            .align(Align::Start)
+    };
+    column([pickers, strip_and_panel]).gap(tokens::SPACE_3)
 }
 
 fn accordion_demo(state: &State) -> El {

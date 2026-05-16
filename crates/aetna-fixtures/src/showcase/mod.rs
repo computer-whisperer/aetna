@@ -338,7 +338,7 @@ impl App for Showcase {
             Section::Status => status::view(&self.status, cx),
             Section::Media => media::view(self.animated_surface.as_ref()),
             Section::ListsTables => lists_tables::view(&self.lists_tables, cx),
-            Section::TabsAccordion => tabs_accordion::view(&self.tabs_accordion),
+            Section::TabsAccordion => tabs_accordion::view(&self.tabs_accordion, cx),
             Section::Overlays => overlays::view(&self.overlays),
             Section::PageChrome => page_chrome::view(&self.page_chrome, cx),
             Section::Animation => animation::view(&self.animation),
