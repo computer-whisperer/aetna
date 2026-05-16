@@ -1649,10 +1649,27 @@ fn layout_axis(node: &mut El, node_rect: Rect, vertical: bool, ui_state: &mut Ui
 
     let intrinsics: Vec<(f32, f32)> = {
         crate::profile_span!("layout::axis::intrinsics");
-        node.children
-            .iter()
-            .map(|c| child_intrinsic(c, vertical, cross_extent, node.align))
-            .collect()
+        if vertical {
+            // Column layout: each child measures at the parent's cross
+            // (width) extent, so wrap-text children see the width they
+            // will actually paint at. `child_intrinsic` already threads
+            // this through.
+            node.children
+                .iter()
+                .map(|c| child_intrinsic(c, vertical, cross_extent, node.align))
+                .collect()
+        } else {
+            // Row layout: mirror the two-pass measurement in
+            // `intrinsic_constrained_uncached`'s Row branch so a `Fill`
+            // child with `wrap_text` descendants reports the height it
+            // will actually paint at — not its single-line unwrapped
+            // intrinsic. Without this, e.g. a `row([column([paragraph,
+            // paragraph]).fill_width(), fixed])` shape sizes the
+            // column rect at the unwrapped height, and the wrapped
+            // text inside overflows the column vertically (the
+            // `Overflow B=N` shape that motivated this fix).
+            row_child_intrinsics(node, main_extent)
+        }
     };
 
     let mut consumed = 0.0;
@@ -1859,6 +1876,58 @@ fn child_intrinsic(
         },
     };
     intrinsic_constrained(c, available_width)
+}
+
+/// Per-child intrinsics for a horizontal-axis (row) parent, using the
+/// same two-pass distribution as `intrinsic_constrained_uncached`'s
+/// Row branch. First pass measures Fixed and Hug widths unconstrained
+/// (Hug naturally takes its intrinsic; Fixed self-resolves); second
+/// pass distributes leftover main-axis space across Fill children and
+/// re-measures each with its allocated width so wrap-text descendants
+/// shape at the width they will actually paint at, not their unwrapped
+/// intrinsic. `inner_main_extent` is the row's padded inner width.
+fn row_child_intrinsics(node: &El, inner_main_extent: f32) -> Vec<(f32, f32)> {
+    let n = node.children.len();
+    let total_gap = node.gap * n.saturating_sub(1) as f32;
+
+    let mut first: Vec<Option<(f32, f32)>> = Vec::with_capacity(n);
+    let mut consumed: f32 = 0.0;
+    let mut fill_weight_total: f32 = 0.0;
+    for c in &node.children {
+        match c.width {
+            Size::Fill(w) => {
+                fill_weight_total += w.max(0.001);
+                first.push(None);
+            }
+            _ => {
+                let (iw, ih) = intrinsic(c);
+                consumed += iw;
+                first.push(Some((iw, ih)));
+            }
+        }
+    }
+
+    let fill_remaining = (inner_main_extent - consumed - total_gap).max(0.0);
+
+    node.children
+        .iter()
+        .zip(first)
+        .map(|(c, slot)| match slot {
+            Some(rc) => rc,
+            None => {
+                let weight = match c.width {
+                    Size::Fill(w) => w.max(0.001),
+                    _ => 1.0,
+                };
+                let av = if fill_weight_total > 0.0 {
+                    fill_remaining * weight / fill_weight_total
+                } else {
+                    fill_remaining
+                };
+                intrinsic_constrained(c, Some(av))
+            }
+        })
+        .collect()
 }
 
 fn overlay_rect(c: &El, parent: Rect, align: Align, justify: Justify) -> Rect {
@@ -3939,6 +4008,44 @@ mod tests {
             (inner_rect.h - 200.0).abs() < 0.5,
             "expected inner column floored to min_height=200 (intrinsic ~20), got h={}",
             inner_rect.h,
+        );
+    }
+
+    /// Row laying out a `Fill` Hug-column with a wrap-text child must
+    /// measure the column's height at the column's allocated width, not
+    /// unconstrained. Repro for the lint regression that fires on a
+    /// `row([column([wrap_text(...).fill_width()]).fill_width(), fixed])`
+    /// shape: without the constrained measurement, the column reports
+    /// its single-line unwrapped height to the row, the row sizes the
+    /// column rect at that height, and the wrapped text then overflows
+    /// the column vertically (Overflow `B=N` finding).
+    #[test]
+    fn row_passes_allocated_width_to_hug_column_with_wrap_text_child() {
+        // 200px-wide row. The fixed child takes 40; the Fill column gets
+        // 200 - 40 - 12 (gap) = 148. The paragraph wraps at 148px to two
+        // lines; the column's intrinsic height should reflect that.
+        let mut root = crate::row([
+            column([crate::widgets::text::paragraph(
+                "A long enough description that must wrap to two lines at 148px",
+            )])
+            .width(Size::Fill(1.0)),
+            crate::widgets::text::text("ok")
+                .width(Size::Fixed(40.0))
+                .height(Size::Fixed(20.0)),
+        ])
+        .gap(12.0)
+        .align(Align::Center)
+        .width(Size::Fixed(200.0));
+        let mut state = UiState::new();
+        layout(&mut root, &mut state, Rect::new(0.0, 0.0, 200.0, 600.0));
+        // Find the column child (root.children[0]) and its paragraph leaf.
+        let col_rect = state.rect(&root.children[0].computed_id);
+        let para_rect = state.rect(&root.children[0].children[0].computed_id);
+        assert!(
+            (col_rect.h - para_rect.h).abs() < 0.5,
+            "column height ({}) should track its wrapped child's height ({})",
+            col_rect.h,
+            para_rect.h,
         );
     }
 
