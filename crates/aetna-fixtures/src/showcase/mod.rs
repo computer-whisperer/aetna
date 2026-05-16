@@ -331,7 +331,7 @@ impl App for Showcase {
             Section::Math => math::view(&self.math),
             Section::Surfaces => surfaces::view(&self.surfaces, cx),
             Section::Layout => layout::view(&self.layout, cx),
-            Section::Buttons => buttons::view(&self.buttons),
+            Section::Buttons => buttons::view(&self.buttons, cx),
             Section::Booleans => booleans::view(&self.booleans),
             Section::TextInputs => text_inputs::view(&self.text_inputs, cx),
             Section::Forms => forms::view(&self.forms),
