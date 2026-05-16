@@ -15,7 +15,8 @@ pub struct State {
 
 const MENUBAR_KEY: &str = "page-menubar";
 
-pub fn view(state: &State) -> El {
+pub fn view(state: &State, cx: &BuildCx) -> El {
+    let phone = super::is_phone(cx);
     column([
         h1("Page chrome"),
         paragraph(
@@ -40,31 +41,10 @@ pub fn view(state: &State) -> El {
         ]),
         separator(),
         section_label("Pagination"),
-        pagination_content([
-            pagination_item(pagination_previous()),
-            pagination_item(pagination_link("1", false)),
-            pagination_item(pagination_link("2", true)),
-            pagination_item(pagination_link("3", false)),
-            pagination_item(pagination_ellipsis()),
-            pagination_item(pagination_link("9", false)),
-            pagination_item(pagination_next()),
-        ]),
+        pagination_row(phone),
         separator(),
         section_label("Toolbar"),
-        toolbar([
-            toolbar_title("Document"),
-            toolbar_description("draft.md"),
-            spacer(),
-            toolbar_group([
-                button("Format").ghost().key("page-chrome-format"),
-                button("Outline").ghost().key("page-chrome-outline"),
-            ]),
-            vertical_separator(),
-            toolbar_group([
-                button("Share").secondary().key("page-chrome-share"),
-                button("Publish").primary().key("page-chrome-publish"),
-            ]),
-        ]),
+        toolbar_row(phone),
         section_label("Vertical separators in toolbars"),
         row([
             text("File").label(),
@@ -80,6 +60,79 @@ pub fn view(state: &State) -> El {
     ])
     .gap(tokens::SPACE_4)
     .height(Size::Hug)
+}
+
+/// Pagination demo. Desktop shows the full 1/2/3 … 9 strip; on phone
+/// the middle pages and last-page link drop out so prev / current /
+/// ellipsis / next still fit a 360px viewport without overflowing.
+fn pagination_row(phone: bool) -> El {
+    if phone {
+        pagination_content([
+            pagination_item(pagination_previous()),
+            pagination_item(pagination_link("2", true)),
+            pagination_item(pagination_ellipsis()),
+            pagination_item(pagination_next()),
+        ])
+    } else {
+        pagination_content([
+            pagination_item(pagination_previous()),
+            pagination_item(pagination_link("1", false)),
+            pagination_item(pagination_link("2", true)),
+            pagination_item(pagination_link("3", false)),
+            pagination_item(pagination_ellipsis()),
+            pagination_item(pagination_link("9", false)),
+            pagination_item(pagination_next()),
+        ])
+    }
+}
+
+/// Toolbar demo. Desktop fits title / description / two action groups
+/// on one row. Phone splits the title+description from the two action
+/// groups, stacking them vertically inside a single `column` so the
+/// chrome still reads as one widget.
+fn toolbar_row(phone: bool) -> El {
+    if phone {
+        column([
+            row([
+                toolbar_title("Document"),
+                toolbar_description("draft.md"),
+            ])
+            .gap(tokens::SPACE_2)
+            .align(Align::Center)
+            .width(Size::Fill(1.0)),
+            row([
+                toolbar_group([
+                    button("Format").ghost().key("page-chrome-format"),
+                    button("Outline").ghost().key("page-chrome-outline"),
+                ]),
+                spacer(),
+                toolbar_group([
+                    button("Share").secondary().key("page-chrome-share"),
+                    button("Publish").primary().key("page-chrome-publish"),
+                ]),
+            ])
+            .gap(tokens::SPACE_2)
+            .align(Align::Center)
+            .width(Size::Fill(1.0)),
+        ])
+        .gap(tokens::SPACE_2)
+        .width(Size::Fill(1.0))
+    } else {
+        toolbar([
+            toolbar_title("Document"),
+            toolbar_description("draft.md"),
+            spacer(),
+            toolbar_group([
+                button("Format").ghost().key("page-chrome-format"),
+                button("Outline").ghost().key("page-chrome-outline"),
+            ]),
+            vertical_separator(),
+            toolbar_group([
+                button("Share").secondary().key("page-chrome-share"),
+                button("Publish").primary().key("page-chrome-publish"),
+            ]),
+        ])
+    }
 }
 
 pub fn on_event(state: &mut State, event: UiEvent) {

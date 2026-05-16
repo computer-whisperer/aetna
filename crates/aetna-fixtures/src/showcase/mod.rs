@@ -340,7 +340,7 @@ impl App for Showcase {
             Section::ListsTables => lists_tables::view(&self.lists_tables),
             Section::TabsAccordion => tabs_accordion::view(&self.tabs_accordion),
             Section::Overlays => overlays::view(&self.overlays),
-            Section::PageChrome => page_chrome::view(&self.page_chrome),
+            Section::PageChrome => page_chrome::view(&self.page_chrome, cx),
             Section::Animation => animation::view(&self.animation),
             Section::Hotkeys => hotkeys::view(&self.hotkeys),
         };
