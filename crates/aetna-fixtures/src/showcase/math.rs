@@ -217,7 +217,21 @@ impl Default for State {
     }
 }
 
-pub fn view(state: &State) -> El {
+pub fn view(state: &State, cx: &BuildCx) -> El {
+    let phone = super::is_phone(cx);
+    // Phone stacks the editor + preview cards vertically so each gets
+    // the full content width; horizontal split leaves both too narrow
+    // for the markdown preview headings to render without overflow.
+    let editor_preview: El = if phone {
+        column([editor_card(state), preview_card(state)])
+            .gap(tokens::SPACE_3)
+            .width(Size::Fill(1.0))
+    } else {
+        row([editor_card(state), preview_card(state)])
+            .gap(tokens::SPACE_4)
+            .align(Align::Stretch)
+            .width(Size::Fill(1.0))
+    };
     scroll([column([
         h1("Math"),
         paragraph(
@@ -227,13 +241,10 @@ pub fn view(state: &State) -> El {
              matrices, scripts, and parser errors.",
         )
         .muted(),
-        preset_bar(state),
-        row([editor_card(state), preview_card(state)])
-            .gap(tokens::SPACE_4)
-            .align(Align::Stretch)
-            .width(Size::Fill(1.0)),
+        preset_bar(state, phone),
+        editor_preview,
         h2("Coverage"),
-        coverage_grid(),
+        coverage_grid(phone),
     ])
     .gap(tokens::SPACE_4)
     .width(Size::Fill(1.0))
@@ -281,24 +292,36 @@ pub fn drain_scroll_requests(state: &mut State) -> Vec<aetna_core::scroll::Scrol
     }
 }
 
-fn preset_bar(state: &State) -> El {
-    row([
-        text("Presets").label().muted(),
-        row(PRESETS.iter().map(|preset| {
-            let active = state.source == preset.source;
-            let button = button(preset.label).xsmall().key(preset.key);
-            if active {
-                button.primary()
-            } else {
-                button.secondary()
-            }
-        }))
-        .gap(tokens::SPACE_2)
-        .width(Size::Fill(1.0)),
-    ])
-    .gap(tokens::SPACE_3)
-    .align(Align::Center)
-    .width(Size::Fill(1.0))
+fn preset_bar(state: &State, phone: bool) -> El {
+    let buttons = row(PRESETS.iter().map(|preset| {
+        let active = state.source == preset.source;
+        let button = button(preset.label).xsmall().key(preset.key);
+        if active {
+            button.primary()
+        } else {
+            button.secondary()
+        }
+    }))
+    .gap(tokens::SPACE_2);
+    // Seven preset buttons can't all fit a 360px phone viewport. Wrap
+    // the strip in a horizontal scroll so users can swipe through them
+    // without losing access to any preset. The inner row carries
+    // RING_WIDTH vertical padding so the buttons' focus ring band sits
+    // inside the scroll's clip rect instead of being scissored.
+    let strip: El = if phone {
+        scroll([buttons
+            .width(Size::Hug)
+            .padding(Sides::xy(0.0, tokens::RING_WIDTH))])
+            .axis(Axis::Row)
+            .height(Size::Hug)
+            .width(Size::Fill(1.0))
+    } else {
+        buttons.width(Size::Fill(1.0))
+    };
+    row([text("Presets").label().muted(), strip])
+        .gap(tokens::SPACE_3)
+        .align(Align::Center)
+        .width(Size::Fill(1.0))
 }
 
 fn editor_card(state: &State) -> El {
@@ -330,19 +353,34 @@ fn preview_card(state: &State) -> El {
     .width(Size::Fill(1.0))
 }
 
-fn coverage_grid() -> El {
-    column([
-        row([nested_roots_card(), large_operator_card()])
-            .gap(tokens::SPACE_4)
-            .align(Align::Stretch)
-            .width(Size::Fill(1.0)),
-        row([mathml_import_card(), malformed_source_card()])
-            .gap(tokens::SPACE_4)
-            .align(Align::Stretch)
-            .width(Size::Fill(1.0)),
-    ])
-    .gap(tokens::SPACE_4)
-    .width(Size::Fill(1.0))
+fn coverage_grid(phone: bool) -> El {
+    // Each coverage card holds a math equation rendered at a fixed font
+    // size — at half-viewport on phone, several of those equations
+    // would exceed their card width. Stack one card per row on phone so
+    // each gets full content width.
+    if phone {
+        column([
+            nested_roots_card(),
+            large_operator_card(),
+            mathml_import_card(),
+            malformed_source_card(),
+        ])
+        .gap(tokens::SPACE_3)
+        .width(Size::Fill(1.0))
+    } else {
+        column([
+            row([nested_roots_card(), large_operator_card()])
+                .gap(tokens::SPACE_4)
+                .align(Align::Stretch)
+                .width(Size::Fill(1.0)),
+            row([mathml_import_card(), malformed_source_card()])
+                .gap(tokens::SPACE_4)
+                .align(Align::Stretch)
+                .width(Size::Fill(1.0)),
+        ])
+        .gap(tokens::SPACE_4)
+        .width(Size::Fill(1.0))
+    }
 }
 
 fn nested_roots_card() -> El {
@@ -415,7 +453,7 @@ fn malformed_source_card() -> El {
 
 fn demo_card<const N: usize>(title: &'static str, description: &'static str, body: [El; N]) -> El {
     card([
-        card_header([card_title(title), card_description(description)]),
+        card_header([card_title(title).wrap_text().fill_width(), card_description(description)]),
         card_content([column(body)
             .gap(tokens::SPACE_3)
             .align(Align::Center)

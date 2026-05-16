@@ -328,7 +328,7 @@ impl App for Showcase {
             Section::About => about::view(&self.about, cx),
             Section::Palette => palette::view(theme.palette(), cx),
             Section::Typography => typography::view(&self.typography),
-            Section::Math => math::view(&self.math),
+            Section::Math => math::view(&self.math, cx),
             Section::Surfaces => surfaces::view(&self.surfaces, cx),
             Section::Layout => layout::view(&self.layout, cx),
             Section::Buttons => buttons::view(&self.buttons, cx),
