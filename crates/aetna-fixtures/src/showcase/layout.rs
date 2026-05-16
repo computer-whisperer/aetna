@@ -25,7 +25,8 @@ impl Default for State {
     }
 }
 
-pub fn view(state: &State) -> El {
+pub fn view(state: &State, cx: &BuildCx) -> El {
+    let phone = super::is_phone(cx);
     scroll([column([
         h1("Layout"),
         paragraph(
@@ -39,7 +40,7 @@ pub fn view(state: &State) -> El {
         paragraph("Drag the divider, or focus and use Arrow keys.")
             .small()
             .muted(),
-        split_demo(state),
+        split_demo(state, phone),
         section_label("Virtual list (10,000 rows)"),
         paragraph(
             "`virtual_list` only builds rows for the visible window — \
@@ -50,7 +51,13 @@ pub fn view(state: &State) -> El {
         virtual_demo(),
     ])
     .gap(tokens::SPACE_3)
-    .align(Align::Stretch)])
+    .align(Align::Stretch)
+    .padding(Sides {
+        left: tokens::RING_WIDTH,
+        right: tokens::SCROLLBAR_HITBOX_WIDTH,
+        top: 0.0,
+        bottom: 0.0,
+    })])
     .height(Size::Fill(1.0))
 }
 
@@ -67,7 +74,16 @@ pub fn on_event(state: &mut State, event: UiEvent) {
     );
 }
 
-fn split_demo(state: &State) -> El {
+fn split_demo(state: &State, phone: bool) -> El {
+    // Phone clamps the sidebar to ~110px so the body column still has
+    // breathing room (≈190px) for a wrapped paragraph and the readout
+    // row — at the desktop default (256px) the body would only get
+    // ~30px on a 360px viewport.
+    let sidebar_w = if phone {
+        state.sidebar_w.min(110.0)
+    } else {
+        state.sidebar_w
+    };
     let files = sidebar([
         text("Files").bold(),
         text("README.md").muted(),
@@ -78,11 +94,11 @@ fn split_demo(state: &State) -> El {
     ])
     .gap(tokens::SPACE_2)
     .padding(tokens::SPACE_3)
-    .width(Size::Fixed(state.sidebar_w))
+    .width(Size::Fixed(sidebar_w))
     .radius(tokens::RADIUS_SM);
 
     let body = column([
-        text("README.md").heading(),
+        text("README.md").heading().wrap_text().fill_width(),
         text(format!(
             "Drag the divider to resize the sidebar. Width clamps \
              between {min}px and {max}px. The handle is focusable — Tab \
@@ -94,9 +110,10 @@ fn split_demo(state: &State) -> El {
             page = resize_handle::KEYBOARD_PAGE_STEP_PX as i32,
         ))
         .muted()
-        .wrap_text(),
+        .wrap_text()
+        .fill_width(),
         row([
-            text("Sidebar width:").muted(),
+            text("Sidebar width:").muted().wrap_text(),
             text(format!("{:.0} px", state.sidebar_w)).bold(),
         ])
         .gap(tokens::SPACE_2),
@@ -106,8 +123,9 @@ fn split_demo(state: &State) -> El {
     .width(Size::Fill(1.0))
     .height(Size::Fill(1.0));
 
+    let demo_height = if phone { 320.0 } else { 220.0 };
     row([files, resize_handle(Axis::Row).key(SPLIT_HANDLE_KEY), body])
-        .height(Size::Fixed(220.0))
+        .height(Size::Fixed(demo_height))
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_SM)
 }
