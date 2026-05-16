@@ -138,4 +138,36 @@ mod tests {
             Sides::all(tokens::HIT_OVERFLOW)
         );
     }
+
+    #[test]
+    fn button_with_icon_icon_size_does_not_collapse_outer() {
+        // Regression for GH #29: `.icon_size(...)` on a `button_with_icon`
+        // used to overwrite the outer width/height to `Fixed(icon_size)`,
+        // collapsing the chip to a tiny square.
+        let el = button_with_icon("folder", "Open").icon_size(tokens::ICON_XS);
+        assert!(
+            !matches!(el.width, Size::Fixed(s) if (s - tokens::ICON_XS).abs() < f32::EPSILON),
+            "outer width should not collapse to ICON_XS, got {:?}",
+            el.width,
+        );
+        assert!(
+            !matches!(el.height, Size::Fixed(s) if (s - tokens::ICON_XS).abs() < f32::EPSILON),
+            "outer height should not collapse to ICON_XS, got {:?}",
+            el.height,
+        );
+    }
+
+    #[test]
+    fn button_with_icon_icon_size_propagates_to_icon_child() {
+        let el = button_with_icon("folder", "Open").icon_size(tokens::ICON_XS);
+        let icon_child = el
+            .children
+            .iter()
+            .find(|c| matches!(&c.kind, Kind::Custom(n) if *n == "icon"))
+            .expect("button_with_icon has an icon child");
+        assert!((icon_child.font_size - tokens::ICON_XS).abs() < f32::EPSILON);
+        assert!((icon_child.line_height - tokens::ICON_XS).abs() < f32::EPSILON);
+        assert_eq!(icon_child.width, Size::Fixed(tokens::ICON_XS));
+        assert_eq!(icon_child.height, Size::Fixed(tokens::ICON_XS));
+    }
 }

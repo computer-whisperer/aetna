@@ -5,6 +5,7 @@ use crate::image::{Image, ImageFit};
 use super::color::Color;
 use super::layout_types::Size;
 use super::node::El;
+use super::semantics::Kind;
 use super::text_types::{FontFamily, FontWeight, TextAlign, TextOverflow, TextRole, TextWrap};
 
 impl El {
@@ -125,14 +126,40 @@ impl El {
         self
     }
 
+    /// Set the icon glyph metric (`font_size` + `line_height`) for this
+    /// element, and — when this element *is* an icon — its layout box.
+    ///
+    /// Kind-aware: width/height are only assigned when `self.kind` is
+    /// `Kind::Custom("icon")`. On container kinds like
+    /// [`crate::button_with_icon`] or `Kind::Custom("icon_button")`,
+    /// only `font_size` / `line_height` are set — chaining
+    /// `.icon_size(...)` no longer collapses the outer rect.
+    ///
+    /// Propagates to direct children whose `kind` is `Kind::Custom("icon")`
+    /// so a caller's `.icon_size(...)` on a container widget resizes the
+    /// inner icon child too. Containers that hold the icon deeper than
+    /// one level (or behind a layout wrapper) need to set the icon size
+    /// at the icon site directly.
     pub fn icon_size(mut self, size: f32) -> Self {
         let size = size.max(1.0);
         self.font_size = size;
         self.line_height = size;
-        self.width = Size::Fixed(size);
-        self.height = Size::Fixed(size);
-        self.explicit_width = true;
-        self.explicit_height = true;
+        if matches!(&self.kind, Kind::Custom(name) if *name == "icon") {
+            self.width = Size::Fixed(size);
+            self.height = Size::Fixed(size);
+            self.explicit_width = true;
+            self.explicit_height = true;
+        }
+        for child in self.children.iter_mut() {
+            if matches!(&child.kind, Kind::Custom(name) if *name == "icon") {
+                child.font_size = size;
+                child.line_height = size;
+                child.width = Size::Fixed(size);
+                child.height = Size::Fixed(size);
+                child.explicit_width = true;
+                child.explicit_height = true;
+            }
+        }
         self
     }
 
