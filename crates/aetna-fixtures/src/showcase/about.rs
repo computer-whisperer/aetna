@@ -150,7 +150,7 @@ pub fn view(state: &State, cx: &BuildCx) -> El {
         )
         .muted(),
         section_label("Try it"),
-        dispatch_card(state),
+        dispatch_card(state, cx),
         section_label("Animation profiles"),
         accents_card(state),
         section_label("Source"),
@@ -226,7 +226,26 @@ fn section_label(s: &str) -> El {
     h3(s).label()
 }
 
-fn dispatch_card(state: &State) -> El {
+fn dispatch_card(state: &State, cx: &BuildCx) -> El {
+    // On a 360px phone the four severity labels can't all fit at default
+    // weight inside the equal-share tabs_list — "Success"/"Warning"
+    // overflow by ~10px. Switch to compact labels below the showcase
+    // phone breakpoint.
+    let severity_labels: &[(&str, &str)] = if super::is_phone(cx) {
+        &[
+            ("info", "Info"),
+            ("success", "OK"),
+            ("warning", "Warn"),
+            ("error", "Error"),
+        ]
+    } else {
+        &[
+            ("info", "Info"),
+            ("success", "Success"),
+            ("warning", "Warning"),
+            ("error", "Error"),
+        ]
+    };
     // `card_content` defaults to no inter-child gap — slot-of-slots
     // surfaces leave that decision to the caller. Wrap the body in a
     // single column so each row breathes from the next.
@@ -241,16 +260,7 @@ fn dispatch_card(state: &State) -> El {
             )
             .small()
             .muted(),
-            tabs_list(
-                SEVERITY_KEY,
-                &state.severity,
-                [
-                    ("info", "Info"),
-                    ("success", "Success"),
-                    ("warning", "Warning"),
-                    ("error", "Error"),
-                ],
-            ),
+            tabs_list(SEVERITY_KEY, &state.severity, severity_labels.iter().copied()),
             text_input(&state.message, &state.message_selection, MESSAGE_KEY)
                 .width(Size::Fill(1.0)),
             row([
