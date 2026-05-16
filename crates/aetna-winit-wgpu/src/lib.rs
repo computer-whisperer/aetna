@@ -51,12 +51,15 @@ use aetna_core::{
 use aetna_wgpu::{MsaaTarget, Runner};
 
 const DEFAULT_SAMPLE_COUNT: u32 = 4;
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 type PlatformClipboard = Option<arboard::Clipboard>;
 #[cfg(target_os = "android")]
 struct PlatformClipboard {
     app: AndroidApp,
 }
+#[cfg(target_os = "ios")]
+#[derive(Default)]
+struct PlatformClipboard;
 
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -323,7 +326,7 @@ fn run_host_on_event_loop<A: WinitWgpuApp + 'static>(
         modifiers: KeyModifiers::default(),
         next_periodic_redraw: None,
         last_cursor: Cursor::Default,
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         ime_allowed: false,
         pending_resize: None,
         next_layout_redraw: None,
@@ -377,7 +380,7 @@ struct Host<A: WinitWgpuApp> {
     last_cursor: Cursor,
     /// Last Android soft-keyboard visibility state mirrored from
     /// `Runner::focused_captures_keys`.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     ime_allowed: bool,
     /// Latest size from `WindowEvent::Resized` not yet applied to the
     /// surface. Compositors (Wayland especially) deliver a burst of
@@ -485,8 +488,8 @@ fn safe_area_for_window(_window: &Window, _surface_size: (u32, u32), _scale_fact
     Sides::default()
 }
 
-#[cfg(target_os = "android")]
-fn sync_android_ime(window: &Window, renderer: &Runner, ime_allowed: &mut bool) {
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn sync_mobile_ime(window: &Window, renderer: &Runner, ime_allowed: &mut bool) {
     let allowed = renderer.focused_captures_keys();
     if allowed != *ime_allowed {
         window.set_ime_allowed(allowed);
@@ -806,8 +809,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                         &mut self.last_primary,
                                     );
                                 }
-                                #[cfg(target_os = "android")]
-                                sync_android_ime(&gfx.window, &gfx.renderer, &mut self.ime_allowed);
+                                #[cfg(any(target_os = "android", target_os = "ios"))]
+                                sync_mobile_ime(&gfx.window, &gfx.renderer, &mut self.ime_allowed);
                                 self.next_trigger = FrameTrigger::Pointer;
                                 gfx.window.request_redraw();
                             }
@@ -973,8 +976,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                         &mut self.last_primary,
                                     );
                                 }
-                                #[cfg(target_os = "android")]
-                                sync_android_ime(&gfx.window, &gfx.renderer, &mut self.ime_allowed);
+                                #[cfg(any(target_os = "android", target_os = "ios"))]
+                                sync_mobile_ime(&gfx.window, &gfx.renderer, &mut self.ime_allowed);
                             }
                             TouchPhase::Moved => {
                                 let moved = gfx.renderer.pointer_moved(pointer);
@@ -1180,7 +1183,9 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                 for url in self.app.drain_link_opens() {
                                     #[cfg(target_os = "android")]
                                     open_link(&self.android_app, &url);
-                                    #[cfg(not(target_os = "android"))]
+                                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                                    open_link(&url);
+                                    #[cfg(target_os = "ios")]
                                     open_link(&url);
                                 }
                                 (tree, palette)
@@ -1196,8 +1201,8 @@ impl<A: WinitWgpuApp> ApplicationHandler for Host<A> {
                                     scale_factor,
                                 )
                             };
-                            #[cfg(target_os = "android")]
-                            sync_android_ime(&gfx.window, &gfx.renderer, &mut self.ime_allowed);
+                            #[cfg(any(target_os = "android", target_os = "ios"))]
+                            sync_mobile_ime(&gfx.window, &gfx.renderer, &mut self.ime_allowed);
                             let t_after_prepare = Instant::now();
                             // Cursor resolution depends on the laid-out tree
                             // and the hovered key derived from layout ids,
@@ -1413,9 +1418,14 @@ fn pointer_button(b: MouseButton) -> Option<PointerButton> {
     }
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn new_clipboard() -> PlatformClipboard {
     arboard::Clipboard::new().ok()
+}
+
+#[cfg(target_os = "ios")]
+fn new_clipboard() -> PlatformClipboard {
+    PlatformClipboard
 }
 
 #[cfg(target_os = "android")]
@@ -1427,11 +1437,16 @@ fn new_clipboard(app: &AndroidApp) -> PlatformClipboard {
 /// default URL handler — `xdg-open` on Linux, `start` on Windows,
 /// `open` on macOS — via the `open` crate. Failures (no handler
 /// installed, sandboxed environment) are logged rather than panicking.
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn open_link(url: &str) {
     if let Err(err) = open::that_detached(url) {
         eprintln!("aetna-winit-wgpu: failed to open {url}: {err}");
     }
+}
+
+#[cfg(target_os = "ios")]
+fn open_link(url: &str) {
+    eprintln!("aetna-winit-wgpu: opening links is not wired on iOS yet: {url}");
 }
 
 #[cfg(target_os = "android")]
@@ -1595,12 +1610,15 @@ fn attach_primary_selection_text(mut event: UiEvent, clipboard: &mut PlatformCli
     event
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn set_clipboard_text(clipboard: &mut PlatformClipboard, text: String) {
     if let Some(cb) = clipboard {
         let _ = cb.set_text(text);
     }
 }
+
+#[cfg(target_os = "ios")]
+fn set_clipboard_text(_clipboard: &mut PlatformClipboard, _text: String) {}
 
 #[cfg(target_os = "android")]
 fn set_clipboard_text(clipboard: &mut PlatformClipboard, text: String) {
@@ -1609,9 +1627,14 @@ fn set_clipboard_text(clipboard: &mut PlatformClipboard, text: String) {
     }
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn get_clipboard_text(clipboard: &mut PlatformClipboard) -> Option<String> {
     clipboard.as_mut()?.get_text().ok()
+}
+
+#[cfg(target_os = "ios")]
+fn get_clipboard_text(_clipboard: &mut PlatformClipboard) -> Option<String> {
+    None
 }
 
 #[cfg(target_os = "android")]

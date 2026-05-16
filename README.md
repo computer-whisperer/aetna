@@ -152,9 +152,13 @@ crates/
   aetna-vulkano/                 vulkano backend (Runner shell + pipelines + naga compile)
   aetna-fixtures/                workspace-private Showcase + render fixtures
   aetna-winit-wgpu/              optional native winit + wgpu app host
+  aetna-android/                 NativeActivity wrapper around the winit + wgpu host
+  aetna-ios/                     UIKit/Xcode wrapper around the winit + wgpu host
   aetna-vulkano-demo/            vulkano demo harness + backend parity bins
   aetna-web/                     reusable wasm browser host
   aetna-web-showcase/            unpublished browser showcase bundle
+  aetna-android-showcase/        unpublished Android NativeActivity showcase
+  aetna-ios-showcase/            unpublished iOS staticlib showcase entry
   aetna-fonts/                   bundled Inter + JetBrains Mono + emoji/symbol faces (Roboto opt-in)
   aetna-fonts-*/                 split published font asset crates
   aetna-markdown/                markdown to El transformer
