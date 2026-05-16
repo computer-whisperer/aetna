@@ -93,13 +93,10 @@ fn pagination_row(phone: bool) -> El {
 fn toolbar_row(phone: bool) -> El {
     if phone {
         column([
-            row([
-                toolbar_title("Document"),
-                toolbar_description("draft.md"),
-            ])
-            .gap(tokens::SPACE_2)
-            .align(Align::Center)
-            .width(Size::Fill(1.0)),
+            row([toolbar_title("Document"), toolbar_description("draft.md")])
+                .gap(tokens::SPACE_2)
+                .align(Align::Center)
+                .width(Size::Fill(1.0)),
             row([
                 toolbar_group([
                     button("Format").ghost().key("page-chrome-format"),

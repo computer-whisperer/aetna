@@ -312,9 +312,9 @@ fn preset_bar(state: &State, phone: bool) -> El {
         scroll([buttons
             .width(Size::Hug)
             .padding(Sides::xy(0.0, tokens::RING_WIDTH))])
-            .axis(Axis::Row)
-            .height(Size::Hug)
-            .width(Size::Fill(1.0))
+        .axis(Axis::Row)
+        .height(Size::Hug)
+        .width(Size::Fill(1.0))
     } else {
         buttons.width(Size::Fill(1.0))
     };
@@ -453,7 +453,10 @@ fn malformed_source_card() -> El {
 
 fn demo_card<const N: usize>(title: &'static str, description: &'static str, body: [El; N]) -> El {
     card([
-        card_header([card_title(title).wrap_text().fill_width(), card_description(description)]),
+        card_header([
+            card_title(title).wrap_text().fill_width(),
+            card_description(description),
+        ]),
         card_content([column(body)
             .gap(tokens::SPACE_3)
             .align(Align::Center)

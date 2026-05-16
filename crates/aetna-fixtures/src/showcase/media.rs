@@ -284,9 +284,9 @@ where
         scroll([tiles_row
             .width(Size::Hug)
             .padding(Sides::xy(0.0, tokens::RING_WIDTH))])
-            .axis(Axis::Row)
-            .height(Size::Hug)
-            .width(Size::Fill(1.0))
+        .axis(Axis::Row)
+        .height(Size::Hug)
+        .width(Size::Fill(1.0))
     } else {
         tiles_row
     }

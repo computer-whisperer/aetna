@@ -186,7 +186,7 @@ pub fn view(state: &State, cx: &BuildCx) -> El {
         items.push(glass_demo(state, super::is_phone(cx)));
     }
     #[cfg(target_arch = "wasm32")]
-    let _ = state;
+    let _ = (state, cx);
 
     scroll([column(items).gap(tokens::SPACE_4).align(Align::Stretch)]).height(Size::Fill(1.0))
 }

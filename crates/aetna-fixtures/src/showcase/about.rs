@@ -260,7 +260,11 @@ fn dispatch_card(state: &State, cx: &BuildCx) -> El {
             )
             .small()
             .muted(),
-            tabs_list(SEVERITY_KEY, &state.severity, severity_labels.iter().copied()),
+            tabs_list(
+                SEVERITY_KEY,
+                &state.severity,
+                severity_labels.iter().copied(),
+            ),
             text_input(&state.message, &state.message_selection, MESSAGE_KEY)
                 .width(Size::Fill(1.0)),
             row([
