@@ -410,6 +410,8 @@ fn single_line_geometry(value: &str) -> TextGeometry<'_> {
 /// - [`UiEventKind::PointerDown`] — set the caret to the click position
 ///   and the anchor to the same position. With Shift held, only the
 ///   head moves (extend selection from the existing anchor).
+/// - [`UiEventKind::LongPress`] — select the word at the touch
+///   position, matching mobile text-editing conventions.
 /// - [`UiEventKind::Drag`] — extend the head to the dragged position;
 ///   the anchor stays where pointer-down placed it.
 /// - [`UiEventKind::Click`] — no-op. The selection was already
@@ -661,6 +663,19 @@ fn fold_event_local(
             if !event.modifiers.shift {
                 selection.anchor = pos;
             }
+            true
+        }
+        UiEventKind::LongPress => {
+            let (Some((px, _py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
+                return false;
+            };
+            let viewport_w = (target.rect.w - 2.0 * tokens::SPACE_3).max(0.0);
+            let x_offset = current_x_offset(value, selection.head, viewport_w, opts.mask);
+            let local_x = px - target.rect.x - tokens::SPACE_3 + x_offset;
+            let pos = caret_from_x(value, local_x, opts.mask);
+            let (lo, hi) = crate::selection::word_range_at(value, pos);
+            selection.anchor = lo;
+            selection.head = hi;
             true
         }
         UiEventKind::Drag => {
@@ -1013,7 +1028,7 @@ fn next_char_boundary(s: &str, from: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{KeyModifiers, KeyPress, Pointer, PointerButton, UiTarget};
+    use crate::event::{KeyModifiers, KeyPress, Pointer, PointerButton, PointerKind, UiTarget};
     use crate::layout::layout;
     use crate::runtime::RunnerCore;
     use crate::state::UiState;
@@ -1140,6 +1155,22 @@ mod tests {
             click_count,
             pointer_kind: None,
             kind: UiEventKind::PointerDown,
+        }
+    }
+
+    fn ev_long_press(target: UiTarget, pointer: (f32, f32)) -> UiEvent {
+        UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: Some(pointer),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 0,
+            pointer_kind: Some(PointerKind::Touch),
+            kind: UiEventKind::LongPress,
         }
     }
 
@@ -1762,6 +1793,17 @@ mod tests {
         // "world" sits at bytes 6..11.
         assert_eq!(sel.anchor, 6);
         assert_eq!(sel.head, 11);
+    }
+
+    #[test]
+    fn apply_long_press_selects_word_at_caret() {
+        let mut value = String::from("hello world");
+        let mut sel = TextSelection::caret(0);
+        let target = ti_target();
+        let event = ev_long_press(target.clone(), (target.rect.x + 4.0, target.rect.y + 18.0));
+
+        assert!(apply_event(&mut value, &mut sel, &event));
+        assert_eq!(sel, TextSelection::range(0, 5));
     }
 
     #[test]

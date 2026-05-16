@@ -599,11 +599,13 @@ pub enum UiEventKind {
     /// A touch contact has been held in place past
     /// [`crate::state::LONG_PRESS_DELAY`] without lifting or moving
     /// past the gesture threshold. Fired exactly once per qualifying
-    /// press, immediately after a `PointerCancel` is dispatched to
-    /// the originally pressed target — the underlying primary press
-    /// is consumed by the long-press, so no subsequent `Drag`,
-    /// `Click`, or `PointerUp` follows. The eventual finger lift is
-    /// silently swallowed.
+    /// press. For normal targets this is fired immediately after a
+    /// `PointerCancel` is dispatched to the originally pressed target;
+    /// the underlying primary press is consumed by the long-press, so
+    /// no subsequent `Click` or `PointerUp` follows. Capture-keys
+    /// editable targets keep the press captured so movement after the
+    /// long-press can emit `Drag` to extend text selection. The
+    /// eventual finger lift is silently swallowed.
     ///
     /// `event.target` is the keyed leaf at the press point (same
     /// node that received the cancelled `PointerDown`), `event.pointer`

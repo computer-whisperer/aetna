@@ -635,6 +635,18 @@ fn fold_event_local(value: &mut String, selection: &mut TextSelection, event: &U
             }
             true
         }
+        UiEventKind::LongPress => {
+            let (Some((px, py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
+                return false;
+            };
+            let local_x = px - target.rect.x - tokens::SPACE_3;
+            let local_y = py - target.rect.y - tokens::SPACE_2 + target.scroll_offset_y;
+            let pos = caret_from_xy(value, local_x, local_y, wrap_width);
+            let (lo, hi) = crate::selection::word_range_at(value, pos);
+            selection.anchor = lo;
+            selection.head = hi;
+            true
+        }
         UiEventKind::Drag => {
             let (Some((px, py)), Some(target)) = (event.pointer, event.target.as_ref()) else {
                 return false;
@@ -814,7 +826,7 @@ fn next_char_boundary(s: &str, from: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{KeyModifiers, KeyPress};
+    use crate::event::{KeyModifiers, KeyPress, PointerKind};
 
     /// Test key for the local-view shim. Mirrors the one in
     /// `text_input::tests`; lets the existing test bodies keep using
@@ -945,6 +957,27 @@ mod tests {
             click_count,
             pointer_kind: None,
             kind: UiEventKind::PointerDown,
+        }
+    }
+
+    fn ev_long_press(local: (f32, f32)) -> UiEvent {
+        let target = ta_target();
+        let pointer = (
+            target.rect.x + tokens::SPACE_3 + local.0,
+            target.rect.y + tokens::SPACE_2 + local.1,
+        );
+        UiEvent {
+            path: None,
+            key: Some(target.key.clone()),
+            target: Some(target),
+            pointer: Some(pointer),
+            key_press: None,
+            text: None,
+            selection: None,
+            modifiers: KeyModifiers::default(),
+            click_count: 0,
+            pointer_kind: Some(PointerKind::Touch),
+            kind: UiEventKind::LongPress,
         }
     }
 
@@ -1159,6 +1192,16 @@ mod tests {
         assert!(apply_event(&mut value, &mut sel, &down));
         assert_eq!(sel.anchor, 0);
         assert_eq!(sel.head, 5);
+    }
+
+    #[test]
+    fn long_press_selects_word_at_caret() {
+        let mut value = String::from("first second\nthird");
+        let mut sel = TextSelection::caret(0);
+        let event = ev_long_press((1.0, 1.0));
+
+        assert!(apply_event(&mut value, &mut sel, &event));
+        assert_eq!(sel, TextSelection::range(0, 5));
     }
 
     #[test]

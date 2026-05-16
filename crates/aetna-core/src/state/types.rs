@@ -332,10 +332,9 @@ pub(crate) enum TouchGestureState {
         scroll_id: Option<String>,
     },
     /// The active touch was held in place past [`LONG_PRESS_DELAY`].
-    /// A `PointerCancel` + `LongPress` event pair has already been
-    /// emitted; subsequent moves and the eventual lift are silently
-    /// swallowed so widgets don't see a phantom click after the
-    /// long-press fires.
+    /// A `LongPress` event has already been emitted. Non-editable
+    /// targets have also been cancelled; editable capture-keys targets
+    /// keep their press captured so movement can extend selection.
     LongPressed,
 }
 

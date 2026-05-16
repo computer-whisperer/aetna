@@ -523,14 +523,18 @@ impl RunnerCore {
                     // to gate). Fall through.
                 }
                 TouchGestureState::LongPressed => {
-                    // The long-press already fired and emitted its
-                    // PointerCancel; subsequent moves shouldn't
-                    // resurrect drag/click emission. Swallow.
-                    let needs_redraw = hover_changed || link_hover_changed || !out.is_empty();
-                    return PointerMove {
-                        events: out,
-                        needs_redraw,
-                    };
+                    // The long-press already fired. For static text it
+                    // may have started a runtime-owned selection drag;
+                    // for editable text it leaves the original press
+                    // captured so movement can emit Drag to the input.
+                    self.extend_selection_drag_at(x, y, kind, modifiers, &mut out);
+                    if self.ui_state.pressed.is_none() {
+                        let needs_redraw = hover_changed || link_hover_changed || !out.is_empty();
+                        return PointerMove {
+                            events: out,
+                            needs_redraw,
+                        };
+                    }
                 }
             }
         }
@@ -541,25 +545,7 @@ impl RunnerCore {
         // onto the closest selectable leaf in document order so that
         // dragging *past* the last leaf extends to its end (rather
         // than snapping the head home to the anchor leaf).
-        if let Some(drag) = self.ui_state.selection.drag.clone()
-            && let Some(tree) = self.last_tree.as_ref()
-        {
-            let raw_head =
-                head_for_drag(tree, &self.ui_state, (x, y)).unwrap_or_else(|| drag.anchor.clone());
-            let (anchor, head) = selection_range_for_drag(tree, &self.ui_state, &drag, raw_head);
-            let new_sel = crate::selection::Selection {
-                range: Some(crate::selection::SelectionRange { anchor, head }),
-            };
-            if new_sel != self.ui_state.current_selection {
-                self.ui_state.current_selection = new_sel.clone();
-                out.push(selection_event(
-                    new_sel,
-                    modifiers,
-                    Some((x, y)),
-                    Some(kind),
-                ));
-            }
-        }
+        self.extend_selection_drag_at(x, y, kind, modifiers, &mut out);
 
         // Drag: pointer moved while primary button is down → emit Drag
         // to the originally pressed target. Cursor escape from the
@@ -1046,6 +1032,37 @@ impl RunnerCore {
         ));
     }
 
+    fn extend_selection_drag_at(
+        &mut self,
+        x: f32,
+        y: f32,
+        kind: PointerKind,
+        modifiers: KeyModifiers,
+        out: &mut Vec<UiEvent>,
+    ) {
+        let Some(drag) = self.ui_state.selection.drag.clone() else {
+            return;
+        };
+        let Some(tree) = self.last_tree.as_ref() else {
+            return;
+        };
+        let raw_head =
+            head_for_drag(tree, &self.ui_state, (x, y)).unwrap_or_else(|| drag.anchor.clone());
+        let (anchor, head) = selection_range_for_drag(tree, &self.ui_state, &drag, raw_head);
+        let new_sel = crate::selection::Selection {
+            range: Some(crate::selection::SelectionRange { anchor, head }),
+        };
+        if new_sel != self.ui_state.current_selection {
+            self.ui_state.current_selection = new_sel.clone();
+            out.push(selection_event(
+                new_sel,
+                modifiers,
+                Some((x, y)),
+                Some(kind),
+            ));
+        }
+    }
+
     /// Cancel an in-flight touch press because the gesture committed
     /// to scrolling. Emits `PointerCancel` for the pressed target
     /// (so widgets can roll back any setup they did at
@@ -1125,11 +1142,11 @@ impl RunnerCore {
 
         // Touch gesture cleanup. Reset the state machine first so the
         // logic below sees a fresh slate; if the gesture had already
-        // committed to scrolling or fired a long-press, the press has
-        // been cancelled and `pressed` is `None`, so the Click /
-        // PointerUp branches naturally no-op — but the eventual
-        // finger lift would still produce a hover transition we want
-        // to swallow, so return early.
+        // committed to scrolling or fired a long-press, release should
+        // not synthesize Click / PointerUp. Editable long-press keeps a
+        // press captured for drag-extension, so clear it here.
+        let was_long_pressed =
+            matches!(self.ui_state.touch_gesture, TouchGestureState::LongPressed);
         let momentum = match &self.ui_state.touch_gesture {
             TouchGestureState::Scrolling {
                 velocity,
@@ -1149,6 +1166,13 @@ impl RunnerCore {
             if let Some((scroll_id, velocity, now)) = momentum {
                 self.ui_state
                     .start_scroll_momentum(scroll_id, velocity, now);
+            }
+            if was_long_pressed {
+                self.ui_state.pressed = None;
+                self.ui_state.pressed_secondary = None;
+                self.ui_state.pressed_link = None;
+                self.ui_state.selection.drag = None;
+                self.ui_state.set_hovered(None, Instant::now());
             }
             return Vec::new();
         }
@@ -1548,11 +1572,12 @@ impl RunnerCore {
     /// Drain any time-driven input events whose deadline has passed
     /// at `now`. Currently the only such event is the touch
     /// long-press: a `Pending` touch held in place past
-    /// [`LONG_PRESS_DELAY`] fires a `PointerCancel` to the originally
-    /// pressed target followed by a `LongPress` event at the original
-    /// press coords, and the gesture state transitions to
-    /// `LongPressed` so the eventual finger lift produces no further
-    /// events.
+    /// [`LONG_PRESS_DELAY`] fires `LongPress` at the original press
+    /// coords, usually after cancelling the originally pressed target.
+    /// Editable capture-keys targets keep their press captured so
+    /// movement can emit `Drag` for selection extension. The gesture
+    /// state transitions to `LongPressed` so the eventual finger lift
+    /// produces no further events.
     ///
     /// Hosts call this once per frame *before* dispatching pointer /
     /// keyboard events so the long-press fires deterministically
@@ -1574,13 +1599,26 @@ impl RunnerCore {
         let modifiers = self.ui_state.modifiers;
         let kind = PointerKind::Touch;
         let (x, y) = initial;
-        // PointerCancel + LongPress to the originally pressed
-        // target. `cancel_press_for_scroll` already does the
-        // bookkeeping (clear pressed / pressed_secondary / hovered /
-        // selection.drag and emit PointerCancel + PointerLeave); reuse
-        // it so the two cancellation paths stay aligned.
         let press_target = self.ui_state.pressed.clone();
-        self.cancel_press_for_scroll(&mut out, x, y, kind, modifiers);
+        let preserves_press_for_drag = press_target.as_ref().is_some_and(|t| {
+            self.last_tree
+                .as_ref()
+                .and_then(|tree| find_capture_keys(tree, &t.node_id))
+                .unwrap_or(false)
+        });
+        if preserves_press_for_drag {
+            self.ui_state.pressed_secondary = None;
+            self.ui_state.pressed_link = None;
+            self.ui_state.selection.drag = None;
+        } else {
+            // PointerCancel + LongPress to the originally pressed
+            // target. `cancel_press_for_scroll` already does the
+            // bookkeeping (clear pressed / pressed_secondary / hovered /
+            // selection.drag and emit PointerCancel + PointerLeave);
+            // reuse it so scroll-cancel and non-editable long-press
+            // cancellation stay aligned.
+            self.cancel_press_for_scroll(&mut out, x, y, kind, modifiers);
+        }
         if let Some(t) = press_target {
             out.push(UiEvent {
                 key: Some(t.key.clone()),
@@ -1612,6 +1650,14 @@ impl RunnerCore {
                 pointer_kind: Some(kind),
                 kind: UiEventKind::LongPress,
             });
+        }
+        if !preserves_press_for_drag
+            && let Some(point) = self
+                .last_tree
+                .as_ref()
+                .and_then(|t| hit_test::selection_point_at(t, &self.ui_state, (x, y)))
+        {
+            self.start_selection_drag(point, &mut out, modifiers, (x, y), 2, kind);
         }
         self.ui_state.touch_gesture = TouchGestureState::LongPressed;
         out
@@ -3821,6 +3867,49 @@ mod tests {
     }
 
     #[test]
+    fn touch_long_press_on_editable_preserves_drag_extension() {
+        let mut core = lay_out_input_tree(true);
+        let ti = core.rect_of_key("ti").expect("ti rect");
+        let cx = ti.x + 4.0;
+        let cy = ti.y + ti.h * 0.5;
+        let _ = core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+
+        let polled = core.poll_input(Instant::now() + LONG_PRESS_DELAY + Duration::from_millis(10));
+        assert!(
+            polled.iter().any(|e| e.kind == UiEventKind::LongPress),
+            "editable long-press should emit LongPress"
+        );
+        assert!(
+            !polled.iter().any(|e| e.kind == UiEventKind::PointerCancel),
+            "editable long-press keeps the press captured so drag can extend selection"
+        );
+
+        let mut moved = Pointer::moving(cx + 40.0, cy);
+        moved.kind = PointerKind::Touch;
+        let drag = core.pointer_moved(moved);
+        assert!(
+            drag.events.iter().any(|e| e.kind == UiEventKind::Drag),
+            "held touch move after editable long-press should emit Drag"
+        );
+
+        let up_events = core.pointer_up(Pointer::touch(
+            cx + 40.0,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        assert!(
+            up_events.is_empty(),
+            "long-press release should not synthesize click or pointer-up"
+        );
+    }
+
+    #[test]
     fn pointer_up_after_long_press_emits_no_click() {
         // Once the long-press fires, lifting the finger silently
         // releases — no Click, no PointerUp routed to the original
@@ -4148,6 +4237,61 @@ mod tests {
         assert_eq!(range.head.key, "p1");
         assert_eq!(range.anchor.byte, range.head.byte);
         assert!(core.ui_state.selection.drag.is_some());
+    }
+
+    #[test]
+    fn touch_long_press_on_selectable_text_selects_word_and_drags() {
+        let mut core = lay_out_paragraph_tree();
+        let p1 = core.rect_of_key("p1").expect("p1 rect");
+        let p2 = core.rect_of_key("p2").expect("p2 rect");
+        let x = p1.x + 4.0;
+        let y = p1.y + p1.h * 0.5;
+
+        let _ = core.pointer_down(Pointer::touch(
+            x,
+            y,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let polled = core.poll_input(Instant::now() + LONG_PRESS_DELAY + Duration::from_millis(10));
+        let selection = polled
+            .iter()
+            .rev()
+            .find(|e| e.kind == UiEventKind::SelectionChanged)
+            .and_then(|e| e.selection.as_ref())
+            .expect("touch long-press should select text");
+        let range = selection.range.as_ref().expect("word selection");
+        assert_eq!(range.anchor.key, "p1");
+        assert_eq!(range.head.key, "p1");
+        assert_eq!(range.anchor.byte, 0);
+        assert_eq!(range.head.byte, 5);
+        assert!(
+            core.ui_state.selection.drag.is_some(),
+            "long-pressed selectable text should stay ready for drag extension"
+        );
+
+        let mut moved = Pointer::moving(p2.x + 8.0, p2.y + p2.h * 0.5);
+        moved.kind = PointerKind::Touch;
+        let events = core.pointer_moved(moved).events;
+        let selection = events
+            .iter()
+            .find(|e| e.kind == UiEventKind::SelectionChanged)
+            .and_then(|e| e.selection.as_ref())
+            .unwrap_or(&core.ui_state.current_selection);
+        let range = selection.range.as_ref().expect("extended selection");
+        assert_eq!(range.anchor.key, "p1");
+        assert_eq!(range.head.key, "p2");
+
+        let _ = core.pointer_up(Pointer::touch(
+            p2.x + 8.0,
+            p2.y + p2.h * 0.5,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        assert!(
+            core.ui_state.selection.drag.is_none(),
+            "selection drag should end on lift"
+        );
     }
 
     #[test]
