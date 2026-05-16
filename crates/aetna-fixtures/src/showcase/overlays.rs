@@ -63,13 +63,18 @@ pub fn view(state: &State) -> El {
         .gap(tokens::SPACE_2),
         section_label("Context menu"),
         column([
-            text("Right-click or long-press anywhere in this panel.").muted(),
+            text("Right-click or long-press anywhere in this panel.")
+                .muted()
+                .wrap_text()
+                .fill_width(),
             text(match state.context_menu_at {
                 Some((x, y)) => format!("last open at ({x:.0}, {y:.0})"),
                 None => "no open yet".into(),
             })
             .small()
-            .muted(),
+            .muted()
+            .wrap_text()
+            .fill_width(),
         ])
         .gap(tokens::SPACE_2)
         .padding(tokens::SPACE_5)
@@ -77,9 +82,11 @@ pub fn view(state: &State) -> El {
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_MD)
         .key(CONTEXT_TARGET_KEY)
+        .width(Size::Fill(1.0))
         .height(Size::Fixed(120.0)),
     ])
     .gap(tokens::SPACE_4)
+    .width(Size::Fill(1.0))
     .height(Size::Hug)
 }
 
