@@ -37,6 +37,24 @@ impl El {
         self
     }
 
+    /// Shorthand for `.width(Size::Fill(1.0))` — fill the available width
+    /// of the parent (or, in a column, span its inner content box). Mirrors
+    /// CSS `width: 100%`. For a non-default weight, use `.width(Size::Fill(w))`.
+    pub fn fill_width(mut self) -> Self {
+        self.width = Size::Fill(1.0);
+        self.explicit_width = true;
+        self
+    }
+
+    /// Shorthand for `.height(Size::Fill(1.0))` — fill the available height
+    /// of the parent (or, in a row, span its inner content box). Mirrors
+    /// CSS `height: 100%`. For a non-default weight, use `.height(Size::Fill(w))`.
+    pub fn fill_height(mut self) -> Self {
+        self.height = Size::Fill(1.0);
+        self.explicit_height = true;
+        self
+    }
+
     /// Lower-bound the resolved width in logical pixels. Composes with
     /// any [`Size`] choice — `Hug` won't shrink below the floor, `Fill`
     /// won't lose space below it. See [`El::min_width`] for the full
@@ -364,6 +382,32 @@ mod tests {
             }
         );
         assert!(el.explicit_padding);
+    }
+
+    #[test]
+    fn fill_width_sets_only_width_to_fill_one() {
+        let el = fresh().fill_width();
+        assert_eq!(el.width, Size::Fill(1.0));
+        assert!(el.explicit_width);
+        assert!(!el.explicit_height);
+    }
+
+    #[test]
+    fn fill_height_sets_only_height_to_fill_one() {
+        let el = fresh().fill_height();
+        assert_eq!(el.height, Size::Fill(1.0));
+        assert!(el.explicit_height);
+        assert!(!el.explicit_width);
+    }
+
+    #[test]
+    fn fill_width_and_fill_height_compose_to_fill_size() {
+        let combined = fresh().fill_width().fill_height();
+        let either = fresh().fill_size();
+        assert_eq!(combined.width, either.width);
+        assert_eq!(combined.height, either.height);
+        assert_eq!(combined.explicit_width, either.explicit_width);
+        assert_eq!(combined.explicit_height, either.explicit_height);
     }
 
     #[test]

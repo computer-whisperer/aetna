@@ -117,7 +117,7 @@ pub fn card_description(description: impl Into<String>) -> El {
         .at_loc(Location::caller())
         .muted()
         .wrap_text()
-        .width(Size::Fill(1.0))
+        .fill_width()
 }
 
 #[track_caller]

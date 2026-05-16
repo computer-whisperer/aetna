@@ -26,7 +26,7 @@ pub fn paragraph(s: impl Into<String>) -> El {
     text(s)
         .at_loc(Location::caller())
         .wrap_text()
-        .width(Size::Fill(1.0))
+        .fill_width()
         .height(Size::Hug)
 }
 

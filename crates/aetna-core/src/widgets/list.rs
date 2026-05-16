@@ -177,7 +177,7 @@ fn list_item(
 /// so we flip them to wrap inside the content column.
 fn normalize_item_content(content: El) -> El {
     if matches!(content.kind, Kind::Text) {
-        return content.wrap_text().width(Size::Fill(1.0));
+        return content.wrap_text().fill_width();
     }
     content
 }

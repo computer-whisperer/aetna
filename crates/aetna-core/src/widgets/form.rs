@@ -114,7 +114,7 @@ pub fn form_description(description: impl Into<String>) -> El {
         .at_loc(Location::caller())
         .muted()
         .wrap_text()
-        .width(Size::Fill(1.0))
+        .fill_width()
 }
 
 #[track_caller]
@@ -124,7 +124,7 @@ pub fn form_message(message: impl Into<String>) -> El {
         .font_weight(FontWeight::Medium)
         .destructive()
         .wrap_text()
-        .width(Size::Fill(1.0))
+        .fill_width()
 }
 
 /// A labelled form row: label on the left, control on the right,

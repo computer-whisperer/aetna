@@ -321,6 +321,146 @@ contracts live on the `SurfaceRole` enum's rustdoc; reach for the
 `.selected()` / `.current()` chainables for state, and for `card()` /
 `sidebar()` / `dialog()` / `popover()` for surface containers.
 
+## El modifier reference
+
+Every modifier below is a chainable method on `El`. They compose freely
+and order rarely matters. Grouped by what you're saying. For the full
+widget surface (constructors like `card`, `tabs_list`, `dropdown_menu`,
+…), see the "Reach for these first" catalog above and the
+`aetna_core::prelude` re-exports.
+
+### Sizing
+
+| Modifier | Meaning |
+|---|---|
+| `.width(Size)` / `.height(Size)` | Set axis size. `Size::Fixed(n)`, `Size::Hug`, `Size::Fill(weight)`. |
+| `.fill_width()` / `.fill_height()` | Shorthand for `Size::Fill(1.0)` on that axis. CSS `width: 100%` / `height: 100%`. |
+| `.fill_size()` | Both axes fill. |
+| `.hug()` | Both axes hug content. |
+| `.min_width(n)` / `.max_width(n)` / `.min_height(n)` / `.max_height(n)` | Bound a resolved axis. Compose with any `Size`. |
+| `.size(ComponentSize)` / `.medium()` / `.large()` | T-shirt size for stock controls. |
+
+### Padding
+
+| Modifier | Meaning |
+|---|---|
+| `.padding(Sides or f32)` | Set all sides (wholesale, like CSS `padding`). |
+| `.pt(n)` / `.pb(n)` / `.pl(n)` / `.pr(n)` | Override one side. Mirrors Tailwind `pt-N` etc., and preserves the constructor's other sides. |
+| `.px(n)` / `.py(n)` | Override one axis. Mirrors Tailwind `px-N` / `py-N`. |
+
+### Layout (container nodes)
+
+| Modifier | Meaning |
+|---|---|
+| `.gap(n)` | Inter-child spacing. |
+| `.axis(Axis)` | Override flow direction. |
+| `.align(Align)` | Cross-axis alignment. |
+| `.justify(Justify)` | Main-axis distribution. |
+| `.clip()` | Clip overflow to this node's rect. |
+| `.scrollable()` | Make this node a scroll viewport. |
+| `.scrollbar()` / `.no_scrollbar()` | Show or suppress the draggable thumb. |
+| `.pin_end()` | Stick offset to the tail (chat/log behaviour). |
+| `.arrow_nav_siblings()` | Treat focusable children as one arrow-navigable group. |
+| `.virtual_anchor_policy(p)` | Override virtual-list anchor point. |
+| `.layout(\|cx\| -> Vec<Rect>)` | Replace child distribution with a custom function. |
+| `.child(c)` / `.children(iter)` | Append children. |
+
+### Text content
+
+| Modifier | Meaning |
+|---|---|
+| `.text(s)` | Set the text content. |
+| `.text_color(c)` / `.color(c)` | Color the run. |
+| `.text_align(a)` / `.center_text()` / `.end_text()` | Block alignment. |
+| `.text_wrap(w)` / `.wrap_text()` / `.nowrap_text()` | Wrap mode. |
+| `.text_overflow(o)` / `.ellipsis()` / `.max_lines(n)` | Truncation. |
+| `.font_size(n)` / `.line_height(n)` | Type metrics. |
+| `.font_weight(w)` / `.bold()` / `.semibold()` | Weight. |
+| `.font_family(f)` / `.inter()` / `.roboto()` | Sans face. |
+| `.mono_font_family(f)` / `.jetbrains_mono()` / `.mono()` | Mono face. |
+| `.italic()` / `.underline()` / `.strikethrough()` | Inline style. |
+| `.background(c)` | Inline-run highlight (HTML `<mark>`). |
+| `.code()` | Markdown-flavoured inline code. |
+| `.link(url)` | Link run. |
+
+### Text role presets
+
+| Modifier | Role |
+|---|---|
+| `.display()` / `.heading()` / `.title()` | h1 / h2 / h3 sizes. The `h1` / `h2` / `h3` constructors are shorthands for these on a fresh text node. |
+| `.body()` | Default running text. |
+| `.label()` | Field labels. |
+| `.caption()` | Hint / helper text. |
+| `.text_role(TextRole)` | Set the role directly when none of the above presets fit. |
+| `.small()` / `.xsmall()` | Step the text role size down. |
+| `.muted()` | Subdued foreground over any role (color only). |
+
+### Variants & states (theme-aware)
+
+| Modifier | Meaning |
+|---|---|
+| `.primary()` / `.secondary()` / `.ghost()` / `.outline()` | Button/badge variant. |
+| `.success()` / `.warning()` / `.destructive()` / `.info()` | Status color. |
+| `.selected()` / `.current()` | Active row in a collection / current nav item. |
+| `.disabled()` / `.invalid()` / `.loading()` | Interactive state. |
+
+### Visual decoration
+
+| Modifier | Meaning |
+|---|---|
+| `.fill(Color)` | Solid background fill. |
+| `.dim_fill(Color)` | Fill that envelopes from 0 → 1 with hover/press. |
+| `.stroke(Color)` / `.stroke_width(n)` | Border. |
+| `.radius(Corners or f32)` | Rounded corners. |
+| `.shadow(n)` | Drop shadow. |
+| `.surface_role(SurfaceRole)` | Token-driven decoration (Panel, Raised, Sunken, …). |
+| `.paint_overflow(Sides)` | Allow paint to extend beyond the layout rect. |
+| `.focus_ring_inside()` / `.focus_ring_outside()` | Pin focus ring position. |
+| `.tooltip(s)` | Standard tooltip text. |
+| `.cursor(Cursor)` / `.cursor_pressed(Cursor)` | Hover cursor / press-time override. |
+
+### Icon / image / vector / surface
+
+| Modifier | Meaning |
+|---|---|
+| `.icon_source(src)` / `.icon_name(src)` | Built-in `IconName` or an `SvgIcon`. |
+| `.icon_size(n)` / `.icon_stroke_width(n)` | Icon sizing. |
+| `.image(img)` / `.image_fit(f)` / `.image_tint(c)` | Raster source. |
+| `.vector_source(a)` / `.vector_painted()` / `.vector_mask(c)` / `.vector_render_mode(m)` | Vector source and paint mode. |
+| `.surface_source(s)` / `.surface_alpha(a)` / `.surface_fit(f)` / `.surface_transform(t)` | App-owned GPU texture. |
+
+### Animation, transform, custom paint
+
+| Modifier | Meaning |
+|---|---|
+| `.opacity(v)` / `.translate(x, y)` / `.scale(v)` | Per-frame transform. |
+| `.animate(Timing)` | Per-(node, prop) tween/spring. |
+| `.redraw_within(Duration)` | Ask the host to drive a frame within deadline. |
+| `.shader(ShaderBinding)` | Custom shader. |
+
+### Identity & interaction
+
+| Modifier | Meaning |
+|---|---|
+| `.key(s)` | Stable id for event routing, hit-test, and state survival across rebuilds. |
+| `.focusable()` / `.always_show_focus_ring()` | Tab participation. |
+| `.selectable()` | Static-text selection opt-in. |
+| `.capture_keys()` | Route raw key events here while focused. |
+| `.block_pointer()` | Stop pointer hits at this node. |
+| `.hit_overflow(Sides)` | Enlarge the hit area beyond the rect. |
+| `.consumes_touch_drag()` | Claim drag from a touch panner. |
+| `.alpha_follows_focused_ancestor()` / `.blink_when_focused()` / `.state_follows_interactive_ancestor()` | Inherit interaction visuals from a focused/interactive ancestor. |
+| `.hover_alpha(rest, peak)` | Custom hover envelope. |
+| `.metrics_role(MetricsRole)` | Theme-facing metrics role. |
+| `.selection_source(src)` | Override selection identity. |
+| `.at(file, line)` / `.at_loc(loc)` | Override source-location identity for `#[track_caller]`-aware widgets. |
+
+### Math
+
+| Modifier | Meaning |
+|---|---|
+| `.math_expr(expr)` / `.math_display(d)` | Lay out a `MathExpr` (MathML or TeX-parsed). |
+
 ## API layers
 
 - `prelude` — the app and widget author surface; what an LLM should
