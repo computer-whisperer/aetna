@@ -41,13 +41,27 @@ pub fn hit_test(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<Stri
 /// Find the topmost keyed node and return full target metadata.
 pub fn hit_test_target(root: &El, ui_state: &UiState, point: (f32, f32)) -> Option<UiTarget> {
     match hit_test_rec(root, ui_state, point, None, (0.0, 0.0)) {
-        Hit::Target(target) => Some(target),
+        Hit::Target(c) => Some(c.target),
         Hit::Blocked | Hit::Miss => None,
     }
 }
 
+/// A candidate hit: the node's `UiTarget` plus the squared distance
+/// from `point` to the node's *painted* rect. `distance_sq == 0` means
+/// the point falls inside the painted rect; positive values mean the
+/// point only reached this node via `hit_overflow` or the min-touch
+/// auto-inflation. Squared so picking the best candidate stays
+/// allocation-free and `sqrt`-free.
+struct Candidate {
+    target: UiTarget,
+    distance_sq: f32,
+}
+
 enum Hit {
-    Target(UiTarget),
+    Target(Candidate),
+    /// A descendant declared `block_pointer` and no keyed target above
+    /// it claimed the hit. Stops the click from leaking up to ancestors
+    /// or earlier siblings.
     Blocked,
     Miss,
 }
@@ -92,19 +106,44 @@ fn hit_test_rec(
     } else {
         inherited_clip
     };
-    // Children paint last → are on top → check first.
+    // Walk children in reverse paint order (top-most first) and pick
+    // the *closest* candidate rather than the first one encountered.
+    // Two neighboring buttons with overlapping `hit_overflow` (or
+    // overlapping min-touch-target auto-inflation) used to give the
+    // hit to whichever was later in the children list — the user
+    // would tap "closer to A" and have B fire. With distance-aware
+    // resolution a candidate whose *painted* rect actually contains
+    // the point (distance 0) always beats one only reached via
+    // inflation (distance > 0), and among equal-distance ties the
+    // higher-z (first-visited in reverse) wins — preserving the
+    // existing z-stacking semantic for overlays, scrims, and lifted
+    // children. `Hit::Blocked` short-circuits only when no target has
+    // been recorded yet; once a higher-z child has claimed a target,
+    // a lower-z descendant's `block_pointer` is irrelevant.
+    let mut best: Option<Candidate> = None;
     for child in node.children.iter().rev() {
         match hit_test_rec(child, ui_state, point, child_clip, total_translate) {
-            Hit::Target(target) => return Hit::Target(target),
-            Hit::Blocked => return Hit::Blocked,
+            Hit::Target(c) => {
+                best = Some(better(best, c));
+            }
+            Hit::Blocked => {
+                if best.is_none() {
+                    return Hit::Blocked;
+                }
+                // A descendant blocked the hit but a higher-z sibling
+                // already claimed the click — that target stands. The
+                // block region applies to ancestors/lower-z siblings,
+                // not the already-chosen winner.
+                break;
+            }
             Hit::Miss => {}
         }
     }
-    // No child hit. Self counts only if its effective hit rect contains
-    // the point AND it's keyed (author tagged it interactive). The
-    // returned target rect remains the transformed visual/layout rect:
-    // hit overflow is an input affordance, not geometry apps should
-    // use for pointer-to-value math.
+    // Self counts only if its effective hit rect contains the point
+    // AND it's keyed (author tagged it interactive). The returned
+    // target rect remains the transformed visual/layout rect: hit
+    // overflow is an input affordance, not geometry apps should use
+    // for pointer-to-value math.
     //
     // Min-touch-target floor: focusable / selectable nodes whose
     // painted size is below `tokens::MIN_TOUCH_TARGET` get an extra
@@ -120,21 +159,53 @@ fn hit_test_rec(
     };
     let hit_rect = painted_rect.outset(node.hit_overflow).outset(auto_inflate);
     if !hit_rect.contains(point.0, point.1) {
-        return Hit::Miss;
+        return match best {
+            Some(c) => Hit::Target(c),
+            None => Hit::Miss,
+        };
     }
     if let Some(key) = &node.key {
-        return Hit::Target(UiTarget {
-            key: key.clone(),
-            node_id: node.computed_id.clone(),
-            rect: painted_rect,
-            tooltip: node.tooltip.clone(),
-            scroll_offset_y: nearest_descendant_scroll_offset_y(node, ui_state),
-        });
+        let self_candidate = Candidate {
+            target: UiTarget {
+                key: key.clone(),
+                node_id: node.computed_id.clone(),
+                rect: painted_rect,
+                tooltip: node.tooltip.clone(),
+                scroll_offset_y: nearest_descendant_scroll_offset_y(node, ui_state),
+            },
+            distance_sq: point_distance_sq_from_rect(point, painted_rect),
+        };
+        return Hit::Target(better(best, self_candidate));
+    }
+    if let Some(c) = best {
+        return Hit::Target(c);
     }
     if node.block_pointer {
         return Hit::Blocked;
     }
     Hit::Miss
+}
+
+/// Pick the better of two candidates: smaller squared distance wins;
+/// on exact ties, the existing (first-recorded) one wins. Because the
+/// caller walks children in reverse paint order, "first-recorded"
+/// means "higher z", which preserves the z-stacking semantic for
+/// overlays and lifted children.
+fn better(existing: Option<Candidate>, incoming: Candidate) -> Candidate {
+    match existing {
+        Some(prev) if prev.distance_sq <= incoming.distance_sq => prev,
+        _ => incoming,
+    }
+}
+
+/// Squared euclidean distance from `point` to the nearest edge of
+/// `rect`. Returns `0.0` when the point is inside (or on the edge of)
+/// the rect. Squared because the hit-test only needs ordering — no
+/// `sqrt` needed.
+fn point_distance_sq_from_rect(point: (f32, f32), rect: Rect) -> f32 {
+    let dx = (rect.x - point.0).max(point.0 - rect.right()).max(0.0);
+    let dy = (rect.y - point.1).max(point.1 - rect.bottom()).max(0.0);
+    dx * dx + dy * dy
 }
 
 /// Find the topmost selectable + keyed text leaf containing `point`
@@ -1258,6 +1329,95 @@ mod tests {
             hit_test(&tree, &state, stacked).as_deref(),
             Some("padded"),
             "explicit hit_overflow should stack on top of the min-touch inflation",
+        );
+    }
+
+    #[test]
+    fn overlapping_inflated_siblings_go_to_closest_painted_rect() {
+        // Regression: two small focusable siblings 4px apart each
+        // auto-inflate to the 44px min-touch floor, so their inflated
+        // hit rects overlap by ~24px in the gap. With first-hit-wins
+        // in reverse paint order the later sibling always claimed
+        // the overlap, even when the cursor was clearly closer to
+        // the earlier sibling's painted rect. Distance-aware
+        // resolution lets each tap go to whichever button is closer.
+        use crate::widgets::button::button;
+        let mut tree = row([
+            button("A")
+                .key("a")
+                .width(Size::Fixed(16.0))
+                .height(Size::Fixed(16.0)),
+            crate::spacer().width(Size::Fixed(4.0)),
+            button("B")
+                .key("b")
+                .width(Size::Fixed(16.0))
+                .height(Size::Fixed(16.0)),
+        ])
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let a = find_rect(&tree, &state, "a").expect("a rect");
+        let b = find_rect(&tree, &state, "b").expect("b rect");
+        // Sanity: there's a real 4px gap and both inflations cover it.
+        let mid_y = a.center_y();
+        let just_past_a = (a.right() + 1.0, mid_y);
+        let just_before_b = (b.x - 1.0, mid_y);
+        assert_eq!(
+            hit_test(&tree, &state, just_past_a).as_deref(),
+            Some("a"),
+            "tap one pixel past A's painted edge is closer to A than B",
+        );
+        assert_eq!(
+            hit_test(&tree, &state, just_before_b).as_deref(),
+            Some("b"),
+            "tap one pixel before B's painted edge is closer to B than A",
+        );
+        // Right on the midline between the two — distance is exactly
+        // equal, z-tie-breaks to the higher-z sibling. In a row
+        // `[a, ..., b]`, b paints last → higher z → wins ties.
+        let midpoint = ((a.right() + b.x) * 0.5, mid_y);
+        assert_eq!(
+            hit_test(&tree, &state, midpoint).as_deref(),
+            Some("b"),
+            "exact-midpoint ties resolve to the higher-z sibling",
+        );
+    }
+
+    #[test]
+    fn painted_rect_containment_beats_sibling_inflation_overlap() {
+        // A small focusable widget (A) with min-touch auto-inflation
+        // sits next to a much larger non-overlapping widget (B). When
+        // the click falls *inside* A's painted rect — distance 0 —
+        // A wins even though B's inflated rect technically also
+        // covers the point. Previously the later sibling (B) would
+        // win simply because it was checked first in reverse paint
+        // order.
+        use crate::widgets::button::button;
+        let mut tree = row([
+            button("A")
+                .key("a")
+                .width(Size::Fixed(16.0))
+                .height(Size::Fixed(16.0)),
+            crate::spacer().width(Size::Fixed(4.0)),
+            // B has an aggressive hit_overflow that reaches back over
+            // A's painted rect.
+            button("B")
+                .key("b")
+                .width(Size::Fixed(16.0))
+                .height(Size::Fixed(16.0))
+                .hit_overflow(Sides::left(40.0)),
+        ])
+        .padding(20.0);
+        let mut state = UiState::new();
+        layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 200.0, 100.0));
+        let a = find_rect(&tree, &state, "a").expect("a rect");
+        // Click inside A's painted rect.
+        let inside_a = (a.center_x(), a.center_y());
+        assert_eq!(
+            hit_test(&tree, &state, inside_a).as_deref(),
+            Some("a"),
+            "tap inside A's painted rect must hit A, not a sibling whose \
+             inflation reaches over A",
         );
     }
 
