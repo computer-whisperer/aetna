@@ -188,6 +188,17 @@ pub struct LintReport {
 }
 
 impl LintReport {
+    /// Drop findings for which `pred` returns `false`. The bulk-filter
+    /// escape hatch for cases the per-node [`crate::tree::El::allow_lint`]
+    /// modifier can't reach — most notably [`FindingKind::DuplicateId`],
+    /// which is emitted post-walk and has no single attribution target.
+    /// Most apps should prefer `.allow_lint(...)` on the offending node;
+    /// reach for this only when whole-class suppression at the bundle
+    /// boundary is what you actually want.
+    pub fn retain(&mut self, mut pred: impl FnMut(&Finding) -> bool) {
+        self.findings.retain(|f| pred(f));
+    }
+
     pub fn text(&self) -> String {
         if self.findings.is_empty() {
             return "no findings\n".to_string();
@@ -247,6 +258,23 @@ pub fn lint(root: &El, ui_state: &UiState) -> LintReport {
 
 fn is_from_user(source: Source) -> bool {
     !source.from_library
+}
+
+/// Append `finding` to `r` unless `target` opted out of this finding's
+/// kind via [`El::allow_lint`]. `target` must be the node whose
+/// `computed_id` equals `finding.node_id` — i.e. the lint's attribution
+/// target. Centralizing the check here keeps every emission site honest:
+/// suppression is strictly per-attributed-node, never inherited from a
+/// parent or shared across siblings.
+fn push_for(r: &mut LintReport, target: &El, finding: Finding) {
+    debug_assert_eq!(
+        finding.node_id, target.computed_id,
+        "lint::push_for: target must be the finding's attribution node",
+    );
+    if target.allow_lint.contains(&finding.kind) {
+        return;
+    }
+    r.findings.push(finding);
 }
 
 /// Clipping context propagated through `walk`. Carries the nearest
@@ -311,43 +339,55 @@ fn walk(
             && c.token.is_none()
             && c.a > 0
         {
-            r.findings.push(Finding {
-                kind: FindingKind::RawColor,
-                node_id: n.computed_id.clone(),
-                source: n.source,
-                message: format!(
-                    "fill is a raw rgba({},{},{},{}) — use a token",
-                    c.r, c.g, c.b, c.a
-                ),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::RawColor,
+                    node_id: n.computed_id.clone(),
+                    source: n.source,
+                    message: format!(
+                        "fill is a raw rgba({},{},{},{}) — use a token",
+                        c.r, c.g, c.b, c.a
+                    ),
+                },
+            );
         }
         if let Some(c) = n.stroke
             && c.token.is_none()
             && c.a > 0
         {
-            r.findings.push(Finding {
-                kind: FindingKind::RawColor,
-                node_id: n.computed_id.clone(),
-                source: n.source,
-                message: format!(
-                    "stroke is a raw rgba({},{},{},{}) — use a token",
-                    c.r, c.g, c.b, c.a
-                ),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::RawColor,
+                    node_id: n.computed_id.clone(),
+                    source: n.source,
+                    message: format!(
+                        "stroke is a raw rgba({},{},{},{}) — use a token",
+                        c.r, c.g, c.b, c.a
+                    ),
+                },
+            );
         }
         if let Some(c) = n.text_color
             && c.token.is_none()
             && c.a > 0
         {
-            r.findings.push(Finding {
-                kind: FindingKind::RawColor,
-                node_id: n.computed_id.clone(),
-                source: n.source,
-                message: format!(
-                    "text_color is a raw rgba({},{},{},{}) — use a token",
-                    c.r, c.g, c.b, c.a
-                ),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::RawColor,
+                    node_id: n.computed_id.clone(),
+                    source: n.source,
+                    message: format!(
+                        "text_color is a raw rgba({},{},{},{}) — use a token",
+                        c.r, c.g, c.b, c.a
+                    ),
+                },
+            );
         }
         // `.tooltip()` on an unkeyed node — silently dead, because
         // hit-test only returns keyed nodes, so hover never lands on
@@ -355,17 +395,21 @@ fn walk(
         // Same "modifier requires unrelated state to take effect"
         // shape as the dead-`.ellipsis()` finding below.
         if n.tooltip.is_some() && n.key.is_none() {
-            r.findings.push(Finding {
-                kind: FindingKind::DeadTooltip,
-                node_id: n.computed_id.clone(),
-                source: n.source,
-                message: ".tooltip() on a node without .key() never fires — hit-test only \
-                     returns keyed nodes, so hover skips past this leaf to the nearest \
-                     keyed ancestor. Add .key(\"…\") on the same node that carries the \
-                     tooltip; for info-only chrome inside list rows, a synthetic key \
-                     like \"row:{idx}.<part>\" is enough."
-                    .to_string(),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::DeadTooltip,
+                    node_id: n.computed_id.clone(),
+                    source: n.source,
+                    message: ".tooltip() on a node without .key() never fires — hit-test only \
+                         returns keyed nodes, so hover skips past this leaf to the nearest \
+                         keyed ancestor. Add .key(\"…\") on the same node that carries the \
+                         tooltip; for info-only chrome inside list rows, a synthetic key \
+                         like \"row:{idx}.<part>\" is enough."
+                        .to_string(),
+                },
+            );
         }
 
         // SurfaceRole::Panel only paints stroke + shadow on top of the
@@ -375,15 +419,19 @@ fn walk(
         // decorative but `button(...).ghost()` legitimately leaves a
         // Raised node with no fill, so the lint stays narrow.)
         if n.fill.is_none() && matches!(n.surface_role, SurfaceRole::Panel) {
-            r.findings.push(Finding {
-                kind: FindingKind::MissingSurfaceFill,
-                node_id: n.computed_id.clone(),
-                source: n.source,
-                message:
-                    "surface_role(Panel) without a fill paints only stroke + shadow — \
-                     wrap in card() / sidebar() / dialog() for the canonical recipe, or set .fill(tokens::CARD)"
-                        .to_string(),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::MissingSurfaceFill,
+                    node_id: n.computed_id.clone(),
+                    source: n.source,
+                    message:
+                        "surface_role(Panel) without a fill paints only stroke + shadow — \
+                         wrap in card() / sidebar() / dialog() for the canonical recipe, or set .fill(tokens::CARD)"
+                            .to_string(),
+                },
+            );
         }
 
         if matches!(n.surface_role, SurfaceRole::Panel) {
@@ -419,16 +467,20 @@ fn walk(
                 let sidebar_width = matches!(n.width, Size::Fixed(w) if (w - crate::tokens::SIDEBAR_WIDTH).abs() < 0.5);
                 if !is_panel_surface {
                     if sidebar_width {
-                        r.findings.push(Finding {
-                            kind: FindingKind::ReinventedWidget,
-                            node_id: n.computed_id.clone(),
-                            source: n.source,
-                            message:
-                                "Group with fill=CARD, stroke=BORDER, width=SIDEBAR_WIDTH reinvents sidebar() — \
-                                 use sidebar([sidebar_header(...), sidebar_group([sidebar_menu([sidebar_menu_button(label, current)])])]) \
-                                 for the panel surface and the canonical row recipe"
-                                    .to_string(),
-                        });
+                        push_for(
+                            r,
+                            n,
+                            Finding {
+                                kind: FindingKind::ReinventedWidget,
+                                node_id: n.computed_id.clone(),
+                                source: n.source,
+                                message:
+                                    "Group with fill=CARD, stroke=BORDER, width=SIDEBAR_WIDTH reinvents sidebar() — \
+                                     use sidebar([sidebar_header(...), sidebar_group([sidebar_menu([sidebar_menu_button(label, current)])])]) \
+                                     for the panel surface and the canonical row recipe"
+                                        .to_string(),
+                            },
+                        );
                     } else {
                         // Any other Group with the canonical card-tone
                         // pair is a hand-rolled card-or-aside surface.
@@ -439,16 +491,20 @@ fn walk(
                         // it. Mention sidebar() too, since for full-bleed
                         // panels with custom widths (e.g. inspector
                         // rails) the right answer might be sidebar().
-                        r.findings.push(Finding {
-                            kind: FindingKind::ReinventedWidget,
-                            node_id: n.computed_id.clone(),
-                            source: n.source,
-                            message:
-                                "Group with fill=CARD, stroke=BORDER reinvents the panel-surface recipe — \
-                                 use card([card_header([card_title(\"...\")]), card_content([...])]) / titled_card(\"Title\", [...]) for boxed content, \
-                                 or sidebar([...]) for a full-height nav/inspector pane (sidebar() also handles the custom-width case via .width(Size::Fixed(...)))"
-                                    .to_string(),
-                        });
+                        push_for(
+                            r,
+                            n,
+                            Finding {
+                                kind: FindingKind::ReinventedWidget,
+                                node_id: n.computed_id.clone(),
+                                source: n.source,
+                                message:
+                                    "Group with fill=CARD, stroke=BORDER reinvents the panel-surface recipe — \
+                                     use card([card_header([card_title(\"...\")]), card_content([...])]) / titled_card(\"Title\", [...]) for boxed content, \
+                                     or sidebar([...]) for a full-height nav/inspector pane (sidebar() also handles the custom-width case via .width(Size::Fixed(...)))"
+                                        .to_string(),
+                            },
+                        );
                     }
                 }
             }
@@ -548,12 +604,16 @@ fn walk(
                         "text content exceeds its box by X={overflow_x:.0} Y={overflow_y:.0}; use paragraph()/wrap_text(), a wider box, or explicit clipping"
                     )
                 };
-                r.findings.push(Finding {
-                    kind,
-                    node_id: n.computed_id.clone(),
-                    source: blame,
-                    message,
-                });
+                push_for(
+                    r,
+                    n,
+                    Finding {
+                        kind,
+                        node_id: n.computed_id.clone(),
+                        source: blame,
+                        message,
+                    },
+                );
             }
         }
     }
@@ -632,15 +692,19 @@ fn walk(
             let dx_right = (c_rect.right() - computed.right()).max(0.0);
             let dy_top = (computed.y - c_rect.y).max(0.0);
             let dy_bottom = (c_rect.bottom() - computed.bottom()).max(0.0);
-            r.findings.push(Finding {
-                kind: FindingKind::Overflow,
-                node_id: c.computed_id.clone(),
-                source: blame,
-                message: format!(
-                    "child overflows parent {parent_id} by L={dx_left:.0} R={dx_right:.0} T={dy_top:.0} B={dy_bottom:.0}",
-                    parent_id = n.computed_id,
-                ),
-            });
+            push_for(
+                r,
+                c,
+                Finding {
+                    kind: FindingKind::Overflow,
+                    node_id: c.computed_id.clone(),
+                    source: blame,
+                    message: format!(
+                        "child overflows parent {parent_id} by L={dx_left:.0} R={dx_right:.0} T={dy_top:.0} B={dy_bottom:.0}",
+                        parent_id = n.computed_id,
+                    ),
+                },
+            );
         }
 
         // Dead `.ellipsis()` chain on a Hug child of an overran flex
@@ -660,14 +724,18 @@ fn walk(
             && c.text_overflow == TextOverflow::Ellipsis
             && let Some(blame) = child_blame
         {
-            r.findings.push(Finding {
-                kind: FindingKind::TextOverflow,
-                node_id: c.computed_id.clone(),
-                source: blame,
-                message:
-                    ".ellipsis() has no effect on Size::Hug text — Hug forces the rect to the intrinsic content width, so the truncation budget equals the content and no glyph is ever trimmed. Set Size::Fill(_) or Size::Fixed(_) on the text or on a wrapping container so the layout can constrain the rect."
-                        .to_string(),
-            });
+            push_for(
+                r,
+                c,
+                Finding {
+                    kind: FindingKind::TextOverflow,
+                    node_id: c.computed_id.clone(),
+                    source: blame,
+                    message:
+                        ".ellipsis() has no effect on Size::Hug text — Hug forces the rect to the intrinsic content width, so the truncation budget equals the content and no glyph is ever trimmed. Set Size::Fill(_) or Size::Fixed(_) on the text or on a wrapping container so the layout can constrain the rect."
+                            .to_string(),
+                },
+            );
         }
 
         // Corner stackup: a filled child paints into a rounded
@@ -797,18 +865,22 @@ fn lint_hit_overflow_collisions(
             } else {
                 left
             };
-            r.findings.push(Finding {
-                kind: FindingKind::HitOverflowCollision,
-                node_id: owner.computed_id.clone(),
-                source: blame,
-                message: format!(
-                    "expanded hit targets for sibling keys `{earlier}` and `{later}` overlap by {w:.0}x{h:.0}px — \
-                     hit-test resolves the collision by paint order, so `{later}` owns that invisible band. \
-                     Reduce `.hit_overflow(...)`, add real gap/padding, or make one visible row/control own the full intended target.",
-                    w = overlap.w,
-                    h = overlap.h,
-                ),
-            });
+            push_for(
+                r,
+                owner,
+                Finding {
+                    kind: FindingKind::HitOverflowCollision,
+                    node_id: owner.computed_id.clone(),
+                    source: blame,
+                    message: format!(
+                        "expanded hit targets for sibling keys `{earlier}` and `{later}` overlap by {w:.0}x{h:.0}px — \
+                         hit-test resolves the collision by paint order, so `{later}` owns that invisible band. \
+                         Reduce `.hit_overflow(...)`, add real gap/padding, or make one visible row/control own the full intended target.",
+                        w = overlap.w,
+                        h = overlap.h,
+                    ),
+                },
+            );
         }
     }
 }
@@ -892,18 +964,22 @@ fn check_corner_stackup(
             "Corners { tl, tr, br, bl } with the matching corner set",
         ),
     };
-    r.findings.push(Finding {
-        kind: FindingKind::CornerStackup,
-        node_id: child.computed_id.clone(),
-        source: blame,
-        message: format!(
-            "filled child paints into {descriptor} (rounded parent, max radius={pr_max:.0}) — \
-             the flat corners obscure the parent's curve and stroke. \
-             Set `.radius({helper})` on the child so its corners follow the parent's curve, \
-             or add padding to the parent so the child is inset from the curve.",
-            pr_max = pr.max(),
-        ),
-    });
+    push_for(
+        r,
+        child,
+        Finding {
+            kind: FindingKind::CornerStackup,
+            node_id: child.computed_id.clone(),
+            source: blame,
+            message: format!(
+                "filled child paints into {descriptor} (rounded parent, max radius={pr_max:.0}) — \
+                 the flat corners obscure the parent's curve and stroke. \
+                 Set `.radius({helper})` on the child so its corners follow the parent's curve, \
+                 or add padding to the parent so the child is inset from the curve.",
+                pr_max = pr.max(),
+            ),
+        },
+    );
 }
 
 /// Detects [`FindingKind::UnpaddedSurfacePanel`]: a Panel surface
@@ -986,17 +1062,21 @@ fn check_unpadded_surface_panel(
         return;
     }
     let joined = sides.join("/");
-    r.findings.push(Finding {
-        kind: FindingKind::UnpaddedSurfacePanel,
-        node_id: panel.computed_id.clone(),
-        source: blame,
-        message: format!(
-            "Panel-surface children sit flush against the {joined} edge — \
-             wrap content in the slot anatomy (`card_header(...)` / `card_content(...)` / `card_footer(...)` \
-             each bake `SPACE_6` padding), or pad the panel itself \
-             (e.g. `.padding(Sides::all(tokens::SPACE_4))` for dense list-row cards).",
-        ),
-    });
+    push_for(
+        r,
+        panel,
+        Finding {
+            kind: FindingKind::UnpaddedSurfacePanel,
+            node_id: panel.computed_id.clone(),
+            source: blame,
+            message: format!(
+                "Panel-surface children sit flush against the {joined} edge — \
+                 wrap content in the slot anatomy (`card_header(...)` / `card_content(...)` / `card_footer(...)` \
+                 each bake `SPACE_6` padding), or pad the panel itself \
+                 (e.g. `.padding(Sides::all(tokens::SPACE_4))` for dense list-row cards).",
+            ),
+        },
+    );
 }
 
 fn check_focus_ring_obscured(
@@ -1054,14 +1134,18 @@ fn check_focus_ring_obscured(
             0.0
         };
         if dx_left + dx_right + dy_top + dy_bottom > 0.5 {
-            r.findings.push(Finding {
-                kind: FindingKind::FocusRingObscured,
-                node_id: n.computed_id.clone(),
-                source: blame,
-                message: format!(
-                    "focus ring band clipped by ancestor scissor (L={dx_left:.0} R={dx_right:.0} T={dy_top:.0} B={dy_bottom:.0}) — give a clipping ancestor padding ≥ tokens::RING_WIDTH on the clipped side",
-                ),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::FocusRingObscured,
+                    node_id: n.computed_id.clone(),
+                    source: blame,
+                    message: format!(
+                        "focus ring band clipped by ancestor scissor (L={dx_left:.0} R={dx_right:.0} T={dy_top:.0} B={dy_bottom:.0}) — give a clipping ancestor padding ≥ tokens::RING_WIDTH on the clipped side",
+                    ),
+                },
+            );
         }
     }
 
@@ -1073,15 +1157,19 @@ fn check_focus_ring_obscured(
         if let Some(side) = bleed_occlusion(n_rect, ring_overflow, sib_rect)
             && paints_pixels(sib)
         {
-            r.findings.push(Finding {
-                kind: FindingKind::FocusRingObscured,
-                node_id: n.computed_id.clone(),
-                source: blame,
-                message: format!(
-                    "focus ring band occluded on the {side} edge by later-painted sibling {sib_id} — increase gap to ≥ tokens::RING_WIDTH or restructure so the neighbor doesn't sit on the edge",
-                    sib_id = sib.computed_id,
-                ),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::FocusRingObscured,
+                    node_id: n.computed_id.clone(),
+                    source: blame,
+                    message: format!(
+                        "focus ring band occluded on the {side} edge by later-painted sibling {sib_id} — increase gap to ≥ tokens::RING_WIDTH or restructure so the neighbor doesn't sit on the edge",
+                        sib_id = sib.computed_id,
+                    ),
+                },
+            );
             // First occluder is enough — don't double-report.
             break;
         }
@@ -1131,16 +1219,20 @@ fn check_scrollbar_overlap(
     if overlap_x <= 0.5 {
         return;
     }
-    r.findings.push(Finding {
-        kind: FindingKind::ScrollbarObscuresFocusable,
-        node_id: n.computed_id.clone(),
-        source: blame,
-        message: format!(
-            "scrollbar thumb overlaps this focusable on the right edge by {overlap_x:.0}px (thumb x={thumb_left:.0}..{thumb_right:.0}; control x={ctrl_x:.0}..{ctrl_right:.0}) — move horizontal padding *inside* the scroll, onto a wrapper that constrains children to a narrower content rect, so the thumb sits in a reserved gutter to the right of content",
-            ctrl_x = n_rect.x,
-            ctrl_right = n_rect.right(),
-        ),
-    });
+    push_for(
+        r,
+        n,
+        Finding {
+            kind: FindingKind::ScrollbarObscuresFocusable,
+            node_id: n.computed_id.clone(),
+            source: blame,
+            message: format!(
+                "scrollbar thumb overlaps this focusable on the right edge by {overlap_x:.0}px (thumb x={thumb_left:.0}..{thumb_right:.0}; control x={ctrl_x:.0}..{ctrl_right:.0}) — move horizontal padding *inside* the scroll, onto a wrapper that constrains children to a narrower content rect, so the thumb sits in a reserved gutter to the right of content",
+                ctrl_x = n_rect.x,
+                ctrl_right = n_rect.right(),
+            ),
+        },
+    );
 }
 
 /// True if `n` paints visible pixels (so it can occlude a sibling's
@@ -1220,13 +1312,17 @@ fn lint_row_alignment(
         let top_pinned = (child_rect.y - inner.y).abs() <= 0.5;
         let visibly_short = child_rect.h + 2.0 < inner.h;
         if top_pinned && visibly_short {
-            r.findings.push(Finding {
-                kind: FindingKind::Alignment,
-                node_id: n.computed_id.clone(),
-                source: blame,
-                message: "row has a fixed-size visual child pinned to the top beside text; add .align(Align::Center) to vertically center row content"
-                    .to_string(),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::Alignment,
+                    node_id: n.computed_id.clone(),
+                    source: blame,
+                    message: "row has a fixed-size visual child pinned to the top beside text; add .align(Align::Center) to vertically center row content"
+                        .to_string(),
+                },
+            );
             return;
         }
     }
@@ -1263,13 +1359,17 @@ fn lint_overlay_alignment(
         let visibly_narrow = child_rect.w + 2.0 < inner.w;
         let visibly_short = child_rect.h + 2.0 < inner.h;
         if left_pinned && top_pinned && visibly_narrow && visibly_short {
-            r.findings.push(Finding {
-                kind: FindingKind::Alignment,
-                node_id: n.computed_id.clone(),
-                source: blame,
-                message: "overlay has a smaller fixed-size visual child pinned to the top-left; add .align(Align::Center).justify(Justify::Center) to center overlay content"
-                    .to_string(),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::Alignment,
+                    node_id: n.computed_id.clone(),
+                    source: blame,
+                    message: "overlay has a smaller fixed-size visual child pinned to the top-left; add .align(Align::Center).justify(Justify::Center) to center overlay content"
+                        .to_string(),
+                },
+            );
             return;
         }
     }
@@ -1292,15 +1392,19 @@ fn lint_row_visual_text_spacing(n: &El, ui_state: &UiState, r: &mut LintReport, 
         let text_rect = ui_state.rect(&text.computed_id);
         let gap = text_rect.x - visual_rect.right();
         if gap < 4.0 {
-            r.findings.push(Finding {
-                kind: FindingKind::Spacing,
-                node_id: n.computed_id.clone(),
-                source: blame,
-                message: format!(
-                    "row places text {:.0}px after an icon/control slot; add .gap(tokens::SPACE_2) or use a stock menu/list row",
-                    gap.max(0.0)
-                ),
-            });
+            push_for(
+                r,
+                n,
+                Finding {
+                    kind: FindingKind::Spacing,
+                    node_id: n.computed_id.clone(),
+                    source: blame,
+                    message: format!(
+                        "row places text {:.0}px after an icon/control slot; add .gap(tokens::SPACE_2) or use a stock menu/list row",
+                        gap.max(0.0)
+                    ),
+                },
+            );
             return;
         }
     }
@@ -2839,6 +2943,158 @@ mod tests {
                 .iter()
                 .any(|f| f.kind == FindingKind::UnpaddedSurfacePanel),
             "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn raw_color_fires_without_allow_lint() {
+        // Sanity check for the suppression tests below — confirms the
+        // baseline finding exists when nothing is silenced. A raw rgba
+        // fill on a Group is the textbook RawColor case.
+        let root = crate::column(Vec::<El>::new())
+            .fill(crate::Color::rgba(40, 50, 60, 255))
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(40.0));
+
+        let report = lint_one(root);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::RawColor),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn allow_lint_silences_finding_on_same_node() {
+        // The same shape as the sanity test, plus `.allow_lint(RawColor)`
+        // on the offending node. The finding must not fire.
+        let root = crate::column(Vec::<El>::new())
+            .fill(crate::Color::rgba(40, 50, 60, 255))
+            .allow_lint(FindingKind::RawColor)
+            .width(Size::Fixed(40.0))
+            .height(Size::Fixed(40.0));
+
+        let report = lint_one(root);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::RawColor),
+            "expected RawColor silenced on the allowed node, got:\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn allow_lint_does_not_leak_to_siblings() {
+        // Sibling 1 silences RawColor on itself; sibling 2 keeps the
+        // raw fill. Only sibling 1's finding should be missing.
+        let row = crate::row([
+            crate::column(Vec::<El>::new())
+                .fill(crate::Color::rgba(40, 50, 60, 255))
+                .allow_lint(FindingKind::RawColor)
+                .width(Size::Fixed(20.0))
+                .height(Size::Fixed(20.0)),
+            crate::column(Vec::<El>::new())
+                .fill(crate::Color::rgba(70, 80, 90, 255))
+                .width(Size::Fixed(20.0))
+                .height(Size::Fixed(20.0)),
+        ])
+        .width(Size::Fixed(160.0))
+        .height(Size::Fixed(40.0));
+
+        let report = lint_one(row);
+        let raw_color_count = report
+            .findings
+            .iter()
+            .filter(|f| f.kind == FindingKind::RawColor)
+            .count();
+        assert_eq!(
+            raw_color_count,
+            1,
+            "expected exactly one RawColor finding (the un-silenced sibling), got:\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn allow_lint_does_not_propagate_to_descendants() {
+        // Parent silences RawColor on itself; child has its own raw
+        // fill. The parent's allow_lint must not silence the child.
+        let parent = crate::column([crate::column(Vec::<El>::new())
+            .fill(crate::Color::rgba(70, 80, 90, 255))
+            .width(Size::Fixed(20.0))
+            .height(Size::Fixed(20.0))])
+        .fill(crate::Color::rgba(40, 50, 60, 255))
+        .allow_lint(FindingKind::RawColor)
+        .width(Size::Fixed(40.0))
+        .height(Size::Fixed(40.0));
+
+        let report = lint_one(parent);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::RawColor),
+            "child RawColor must still fire when only parent silenced it, got:\n{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn allow_lint_silences_text_overflow_on_same_node() {
+        // The clipped-nowrap text from `clipped_nowrap_text_reports_text_overflow`,
+        // plus `.allow_lint(FindingKind::TextOverflow)`. The text-overflow
+        // finding's attribution target is the text node itself.
+        let root = crate::text("A very long dashboard label")
+            .allow_lint(FindingKind::TextOverflow)
+            .width(Size::Fixed(42.0))
+            .height(Size::Fixed(20.0));
+
+        let report = lint_one(root);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::TextOverflow),
+            "{}",
+            report.text()
+        );
+    }
+
+    #[test]
+    fn lint_report_retain_drops_matching_findings() {
+        // The escape hatch for cases per-node allow can't reach —
+        // notably DuplicateId, which is emitted post-walk and has no
+        // attribution target to mark. Build a tree with two
+        // explicitly-keyed siblings sharing a key (the only way to
+        // collide computed_id under the path-based scheme), confirm
+        // the finding fires, then retain it away.
+        let root = crate::row([crate::text("a").key("dup"), crate::text("b").key("dup")])
+            .width(Size::Fixed(160.0))
+            .height(Size::Fixed(20.0));
+
+        let mut report = lint_one(root);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::DuplicateId),
+            "baseline DuplicateId must fire, got:\n{}",
+            report.text()
+        );
+
+        report.retain(|f| f.kind != FindingKind::DuplicateId);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::DuplicateId),
+            "retain should have dropped DuplicateId, got:\n{}",
             report.text()
         );
     }

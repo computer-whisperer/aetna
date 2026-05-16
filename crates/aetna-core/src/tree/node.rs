@@ -158,6 +158,22 @@ pub struct El {
     pub hover_alpha: Option<HoverAlpha>,
     pub source: Source,
 
+    /// Lint kinds the bundle's lint pass should treat as intentional on
+    /// this node. Each entry suppresses one
+    /// [`crate::bundle::lint::FindingKind`] on this specific node only —
+    /// it does **not** propagate to descendants, and it only matches
+    /// findings whose attribution target *is* this node. Authored via
+    /// [`Self::allow_lint`]. Whole-class or pattern-based suppression
+    /// (e.g. `DuplicateId`, which has no per-node target) is the
+    /// province of [`crate::bundle::lint::LintReport::retain`].
+    ///
+    /// Stock widgets do not call [`Self::allow_lint`]; the showcase
+    /// fixture does not call it either (it is a dogfood standard that
+    /// every showcase lint be addressed in widgets / layout rather than
+    /// silenced). User apps may opt out per-node when a finding is
+    /// genuinely intentional in their domain.
+    pub allow_lint: Vec<crate::bundle::lint::FindingKind>,
+
     // Layout
     pub axis: Axis,
     pub gap: f32,

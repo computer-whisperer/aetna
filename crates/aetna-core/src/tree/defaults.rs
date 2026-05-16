@@ -33,6 +33,7 @@ impl Default for El {
             state_follows_interactive_ancestor: false,
             hover_alpha: None,
             source: Source::default(),
+            allow_lint: Vec::new(),
             axis: Axis::Overlay,
             gap: 0.0,
             padding: Sides::zero(),

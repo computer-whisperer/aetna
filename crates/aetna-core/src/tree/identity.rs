@@ -222,4 +222,34 @@ impl El {
         self.source.from_library = true;
         self
     }
+
+    /// Suppress a single [`crate::bundle::lint::FindingKind`] on this
+    /// node. The bundle's lint pass will skip findings of that kind
+    /// whose attribution target is this exact node — siblings,
+    /// descendants, and ancestors are unaffected, so a stray
+    /// suppression cannot silently swallow real bugs elsewhere in the
+    /// tree. Chain to silence multiple kinds:
+    /// `el.allow_lint(FindingKind::RawColor).allow_lint(FindingKind::MissingSurfaceFill)`.
+    ///
+    /// Reach for this when a finding is *genuinely intentional* in your
+    /// app — a hand-rolled custom-shader surface where the raw color is
+    /// the point, a deliberately bare `Panel` you'll fill later, a
+    /// hover-reveal action whose hit-overflow collision is by design.
+    /// If you find yourself sprinkling it widely, the lint is probably
+    /// catching a real shape worth fixing.
+    ///
+    /// Whole-class suppression (e.g. silencing every
+    /// [`crate::bundle::lint::FindingKind::DuplicateId`] at the bundle
+    /// boundary) lives on the [`crate::bundle::lint::LintReport`]
+    /// itself — see [`crate::bundle::lint::LintReport::retain`].
+    ///
+    /// **Dogfood:** stock widgets and the aetna showcase fixture do
+    /// not call this — every finding raised inside aetna's own code
+    /// gets fixed at the source.
+    pub fn allow_lint(mut self, kind: crate::bundle::lint::FindingKind) -> Self {
+        if !self.allow_lint.contains(&kind) {
+            self.allow_lint.push(kind);
+        }
+        self
+    }
 }
