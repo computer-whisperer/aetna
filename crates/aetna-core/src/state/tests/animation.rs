@@ -35,8 +35,11 @@ fn live_mode_eases_hover_envelope_over_multiple_ticks() {
 
     state.hovered = Some(target(&tree, &state, "inc"));
     state.apply_to_state();
-    let needs_redraw =
-        state.tick_visual_animations(&mut tree, t0 + std::time::Duration::from_millis(8), &Palette::default());
+    let needs_redraw = state.tick_visual_animations(
+        &mut tree,
+        t0 + std::time::Duration::from_millis(8),
+        &Palette::default(),
+    );
     let mid = envelope_for(&tree, &state, "inc", EnvelopeKind::Hover).expect("hover envelope");
 
     assert!(
@@ -265,8 +268,11 @@ fn app_fill_eases_in_live_mode() {
         .animate(Timing::SPRING_STANDARD)])])
     .padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-    let needs_redraw =
-        state.tick_visual_animations(&mut tree_b, t0 + std::time::Duration::from_millis(8), &Palette::default());
+    let needs_redraw = state.tick_visual_animations(
+        &mut tree_b,
+        t0 + std::time::Duration::from_millis(8),
+        &Palette::default(),
+    );
     let mid = find_fill(&tree_b, "x").expect("mid fill");
 
     assert!(
@@ -312,7 +318,11 @@ fn token_tagged_fill_eases_through_draw_ops_without_snapping() {
         .animate(Timing::SPRING_STANDARD)])])
     .padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-    state.tick_visual_animations(&mut tree_b, t0 + std::time::Duration::from_millis(8), &Palette::default());
+    state.tick_visual_animations(
+        &mut tree_b,
+        t0 + std::time::Duration::from_millis(8),
+        &Palette::default(),
+    );
 
     // Drive the rendered output through draw_ops; the apply_state
     // path is what previously snapped the in-flight rgb.
@@ -400,7 +410,10 @@ fn spring_color_converges_to_target_token_near_equilibrium() {
         let f = cb.fill.expect("fill present");
         if f.token == Some("primary") {
             settled_to_token = true;
-            assert_eq!((f.r, f.g, f.b), (tokens::PRIMARY.r, tokens::PRIMARY.g, tokens::PRIMARY.b));
+            assert_eq!(
+                (f.r, f.g, f.b),
+                (tokens::PRIMARY.r, tokens::PRIMARY.g, tokens::PRIMARY.b)
+            );
             break;
         }
     }

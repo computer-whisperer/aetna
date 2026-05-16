@@ -1508,12 +1508,20 @@ mod tests {
         assert_eq!(caret_alpha(&tree, &state), Some(255));
 
         // t = 1100ms → second half of cycle, off.
-        state.tick_visual_animations(&mut tree, activity_at + Duration::from_millis(1100), &Palette::default());
+        state.tick_visual_animations(
+            &mut tree,
+            activity_at + Duration::from_millis(1100),
+            &Palette::default(),
+        );
         pin_focus(&mut state);
         assert_eq!(caret_alpha(&tree, &state), Some(0));
 
         // t = 1600ms → back on.
-        state.tick_visual_animations(&mut tree, activity_at + Duration::from_millis(1600), &Palette::default());
+        state.tick_visual_animations(
+            &mut tree,
+            activity_at + Duration::from_millis(1600),
+            &Palette::default(),
+        );
         pin_focus(&mut state);
         assert_eq!(caret_alpha(&tree, &state), Some(255));
 
@@ -1548,7 +1556,11 @@ mod tests {
         // Drive activity to deep into the off phase.
         let t0 = Instant::now();
         state.bump_caret_activity(t0);
-        state.tick_visual_animations(&mut tree, t0 + Duration::from_millis(1100), &Palette::default());
+        state.tick_visual_animations(
+            &mut tree,
+            t0 + Duration::from_millis(1100),
+            &Palette::default(),
+        );
         assert_eq!(state.caret.blink_alpha, 0.0, "deep in off phase");
 
         // Re-bump (e.g. user typed) — alpha snaps back to solid.

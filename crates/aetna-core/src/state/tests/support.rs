@@ -2,10 +2,10 @@
 
 pub(crate) use super::super::*;
 pub(crate) use crate::cursor::Cursor;
-pub(crate) use crate::palette::Palette;
 pub(crate) use crate::event::{KeyChord, UiEventKind, UiKey};
 pub(crate) use crate::hit_test::hit_test;
 pub(crate) use crate::layout::{assign_ids, layout};
+pub(crate) use crate::palette::Palette;
 pub(crate) use crate::tree::*;
 pub(crate) use crate::{button, column, row, scroll};
 pub(crate) use web_time::Instant;
