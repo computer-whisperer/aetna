@@ -16,7 +16,8 @@ pub struct State {
     pub toast_fires: u32,
 }
 
-pub fn view(state: &State) -> El {
+pub fn view(state: &State, cx: &BuildCx) -> El {
+    let phone = super::is_phone(cx);
     scroll([column([
         h1("Status & feedback"),
         paragraph(
@@ -60,16 +61,7 @@ pub fn view(state: &State) -> El {
         ])
         .gap(tokens::SPACE_2),
         section_label("Badges"),
-        row([
-            badge("default"),
-            badge("info").info(),
-            badge("success").success(),
-            badge("warning").warning(),
-            badge("destructive").destructive(),
-            badge("muted").muted(),
-        ])
-        .gap(tokens::SPACE_2)
-        .align(Align::Center),
+        badge_strip(phone),
         section_label("Progress"),
         column([
             row([
@@ -93,52 +85,9 @@ pub fn view(state: &State) -> El {
         ])
         .gap(tokens::SPACE_2),
         section_label("Spinners"),
-        row([
-            spinner_tile("Default", spinner()),
-            spinner_tile(
-                "Primary",
-                spinner_with_color(tokens::PRIMARY)
-                    .width(Size::Fixed(28.0))
-                    .height(Size::Fixed(28.0)),
-            ),
-            spinner_tile(
-                "Destructive",
-                spinner_with_color(tokens::DESTRUCTIVE)
-                    .width(Size::Fixed(36.0))
-                    .height(Size::Fixed(36.0)),
-            ),
-            spinner_tile(
-                "Inline label",
-                row([spinner(), text("Loading…").muted()])
-                    .gap(tokens::SPACE_2)
-                    .align(Align::Center),
-            ),
-        ])
-        .gap(tokens::SPACE_3),
+        spinner_strip(phone),
         section_label("Skeletons"),
-        row([
-            skeleton_tile(
-                "Lines",
-                column([
-                    skeleton().width(Size::Fixed(180.0)),
-                    skeleton().width(Size::Fixed(140.0)),
-                    skeleton().width(Size::Fixed(110.0)),
-                ])
-                .gap(tokens::SPACE_2)
-                .align(Align::Start),
-            ),
-            skeleton_tile(
-                "Avatar placeholder",
-                row([
-                    skeleton_circle(40.0),
-                    skeleton_circle(32.0),
-                    skeleton_circle(24.0),
-                ])
-                .gap(tokens::SPACE_2)
-                .align(Align::Center),
-            ),
-        ])
-        .gap(tokens::SPACE_3),
+        skeleton_strip(phone),
         section_label("Toasts"),
         paragraph(
             "Each button queues a `ToastSpec`; the runtime drains them \
@@ -243,4 +192,119 @@ fn skeleton_tile(label: &str, content: El) -> El {
     ])
     .padding(tokens::SPACE_4)
     .gap(tokens::SPACE_4)
+}
+
+/// Six badges split into two rows of three on phone, which keeps each
+/// label readable instead of squeezing them under their pill padding.
+fn badge_strip(phone: bool) -> El {
+    if phone {
+        column([
+            row([
+                badge("default"),
+                badge("info").info(),
+                badge("success").success(),
+            ])
+            .gap(tokens::SPACE_2)
+            .align(Align::Center),
+            row([
+                badge("warning").warning(),
+                badge("destructive").destructive(),
+                badge("muted").muted(),
+            ])
+            .gap(tokens::SPACE_2)
+            .align(Align::Center),
+        ])
+        .gap(tokens::SPACE_2)
+    } else {
+        row([
+            badge("default"),
+            badge("info").info(),
+            badge("success").success(),
+            badge("warning").warning(),
+            badge("destructive").destructive(),
+            badge("muted").muted(),
+        ])
+        .gap(tokens::SPACE_2)
+        .align(Align::Center)
+    }
+}
+
+/// Four spinner variants share one phone row only if we drop the
+/// "Inline label" tile to its own row underneath — the spinner+text
+/// composition needs more horizontal space than a quarter-viewport tile
+/// can give it.
+fn spinner_strip(phone: bool) -> El {
+    let default_tile = || spinner_tile("Default", spinner());
+    let primary_tile = || {
+        spinner_tile(
+            "Primary",
+            spinner_with_color(tokens::PRIMARY)
+                .width(Size::Fixed(28.0))
+                .height(Size::Fixed(28.0)),
+        )
+    };
+    let destructive_tile = || {
+        spinner_tile(
+            "Destructive",
+            spinner_with_color(tokens::DESTRUCTIVE)
+                .width(Size::Fixed(36.0))
+                .height(Size::Fixed(36.0)),
+        )
+    };
+    let inline_tile = || {
+        spinner_tile(
+            "Inline label",
+            row([spinner(), text("Loading…").muted()])
+                .gap(tokens::SPACE_2)
+                .align(Align::Center),
+        )
+    };
+    if phone {
+        column([
+            row([default_tile(), primary_tile(), destructive_tile()]).gap(tokens::SPACE_3),
+            inline_tile(),
+        ])
+        .gap(tokens::SPACE_3)
+    } else {
+        row([
+            default_tile(),
+            primary_tile(),
+            destructive_tile(),
+            inline_tile(),
+        ])
+        .gap(tokens::SPACE_3)
+    }
+}
+
+/// Two skeleton tiles side by side. On phone the "Lines" placeholder
+/// shrinks its fixed-width skeletons so they fit under one half-tile.
+fn skeleton_strip(phone: bool) -> El {
+    let (line_a, line_b, line_c) = if phone {
+        (96.0, 76.0, 60.0)
+    } else {
+        (180.0, 140.0, 110.0)
+    };
+    row([
+        skeleton_tile(
+            "Lines",
+            column([
+                skeleton().width(Size::Fixed(line_a)),
+                skeleton().width(Size::Fixed(line_b)),
+                skeleton().width(Size::Fixed(line_c)),
+            ])
+            .gap(tokens::SPACE_2)
+            .align(Align::Start),
+        ),
+        skeleton_tile(
+            "Avatar placeholder",
+            row([
+                skeleton_circle(40.0),
+                skeleton_circle(32.0),
+                skeleton_circle(24.0),
+            ])
+            .gap(tokens::SPACE_2)
+            .align(Align::Center),
+        ),
+    ])
+    .gap(tokens::SPACE_3)
 }

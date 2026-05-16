@@ -335,7 +335,7 @@ impl App for Showcase {
             Section::Booleans => booleans::view(&self.booleans),
             Section::TextInputs => text_inputs::view(&self.text_inputs, cx),
             Section::Forms => forms::view(&self.forms),
-            Section::Status => status::view(&self.status),
+            Section::Status => status::view(&self.status, cx),
             Section::Media => media::view(self.animated_surface.as_ref()),
             Section::ListsTables => lists_tables::view(&self.lists_tables),
             Section::TabsAccordion => tabs_accordion::view(&self.tabs_accordion),
