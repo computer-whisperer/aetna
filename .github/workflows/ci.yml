@@ -76,3 +76,16 @@ jobs:
       # Catch wgpu / winit / wasm-bindgen API drift here before it lands.
       - run: cargo clippy -p aetna-web --target wasm32-unknown-unknown --locked -- -D warnings
       - run: cargo clippy -p aetna-web-showcase --target wasm32-unknown-unknown --locked -- -D warnings
+
+  ios:
+    name: iOS Rust staticlib
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p aetna-ios -p aetna-ios-showcase --target aarch64-apple-ios --locked
+      - run: cargo check -p aetna-ios -p aetna-ios-showcase --target aarch64-apple-ios-sim --locked
+      - run: cargo build -p aetna-ios-showcase --lib --release --target aarch64-apple-ios --locked
