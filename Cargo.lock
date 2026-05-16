@@ -122,6 +122,23 @@ name = "aetna-fonts-symbols"
 version = "0.1.0"
 
 [[package]]
+name = "aetna-ios"
+version = "0.3.5"
+dependencies = [
+ "aetna-core",
+ "aetna-winit-wgpu",
+]
+
+[[package]]
+name = "aetna-ios-showcase"
+version = "0.3.5"
+dependencies = [
+ "aetna-core",
+ "aetna-fixtures",
+ "aetna-ios",
+]
+
+[[package]]
 name = "aetna-markdown"
 version = "0.3.5"
 dependencies = [
