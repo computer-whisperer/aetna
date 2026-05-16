@@ -839,17 +839,21 @@ pub fn clipboard_request_for(event: &UiEvent, opts: &TextInputOpts<'_>) -> Optio
     if mods.alt || mods.shift {
         return None;
     }
-    // Either Ctrl (Linux / Windows) or Logo / Cmd (macOS).
-    if !(mods.ctrl || mods.logo) {
-        return None;
-    }
-    let UiKey::Character(c) = &kp.key else {
-        return None;
-    };
-    let kind = match c.to_ascii_lowercase().as_str() {
-        "c" => ClipboardKind::Copy,
-        "x" => ClipboardKind::Cut,
-        "v" => ClipboardKind::Paste,
+    let kind = match &kp.key {
+        UiKey::Character(c) if mods.ctrl || mods.logo => match c.to_ascii_lowercase().as_str() {
+            "c" => ClipboardKind::Copy,
+            "x" => ClipboardKind::Cut,
+            "v" => ClipboardKind::Paste,
+            _ => return None,
+        },
+        // Android and some desktop keyboards have semantic clipboard
+        // keys. Hosts surface those through `UiKey::Other` today.
+        UiKey::Other(action) if !mods.ctrl && !mods.logo => match action.as_str() {
+            "Copy" => ClipboardKind::Copy,
+            "Cut" => ClipboardKind::Cut,
+            "Paste" => ClipboardKind::Paste,
+            _ => return None,
+        },
         _ => return None,
     };
     if opts.is_masked() && matches!(kind, ClipboardKind::Copy | ClipboardKind::Cut) {
@@ -2049,6 +2053,23 @@ mod tests {
         };
         let e = ev_key_with_mods(UiKey::Character("c".into()), logo);
         assert_eq!(clipboard_request(&e), Some(ClipboardKind::Copy));
+    }
+
+    #[test]
+    fn clipboard_request_detects_semantic_clipboard_keys() {
+        let cases = [
+            ("Copy", ClipboardKind::Copy),
+            ("Cut", ClipboardKind::Cut),
+            ("Paste", ClipboardKind::Paste),
+        ];
+        for (action, expected) in cases {
+            let e = ev_key(UiKey::Other(action.into()));
+            assert_eq!(
+                clipboard_request(&e),
+                Some(expected),
+                "semantic key {action:?}"
+            );
+        }
     }
 
     #[test]

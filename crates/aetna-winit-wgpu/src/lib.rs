@@ -54,8 +54,9 @@ const DEFAULT_SAMPLE_COUNT: u32 = 4;
 #[cfg(not(target_os = "android"))]
 type PlatformClipboard = Option<arboard::Clipboard>;
 #[cfg(target_os = "android")]
-#[derive(Default)]
-struct PlatformClipboard;
+struct PlatformClipboard {
+    app: AndroidApp,
+}
 
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -306,6 +307,10 @@ fn run_host_on_event_loop<A: WinitWgpuApp + 'static>(
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
     #[cfg(target_os = "android")]
     let android_app = event_loop.android_app().clone();
+    #[cfg(not(target_os = "android"))]
+    let clipboard = new_clipboard();
+    #[cfg(target_os = "android")]
+    let clipboard = new_clipboard(&android_app);
     let mut host = Host {
         title,
         viewport,
@@ -345,7 +350,7 @@ fn run_host_on_event_loop<A: WinitWgpuApp + 'static>(
         last_text_layout_shaped_bytes: 0,
         frame_index: 0,
         backend: "?",
-        clipboard: new_clipboard(),
+        clipboard,
         last_primary: String::new(),
     };
     event_loop.run_app(&mut host)?;
@@ -1414,8 +1419,8 @@ fn new_clipboard() -> PlatformClipboard {
 }
 
 #[cfg(target_os = "android")]
-fn new_clipboard() -> PlatformClipboard {
-    PlatformClipboard
+fn new_clipboard(app: &AndroidApp) -> PlatformClipboard {
+    PlatformClipboard { app: app.clone() }
 }
 
 /// Open a URL surfaced by `App::drain_link_opens` through the OS's
@@ -1598,7 +1603,11 @@ fn set_clipboard_text(clipboard: &mut PlatformClipboard, text: String) {
 }
 
 #[cfg(target_os = "android")]
-fn set_clipboard_text(_clipboard: &mut PlatformClipboard, _text: String) {}
+fn set_clipboard_text(clipboard: &mut PlatformClipboard, text: String) {
+    if let Err(err) = set_android_clipboard_text(&clipboard.app, &text) {
+        eprintln!("aetna-winit-wgpu: failed to set Android clipboard: {err}");
+    }
+}
 
 #[cfg(not(target_os = "android"))]
 fn get_clipboard_text(clipboard: &mut PlatformClipboard) -> Option<String> {
@@ -1606,8 +1615,148 @@ fn get_clipboard_text(clipboard: &mut PlatformClipboard) -> Option<String> {
 }
 
 #[cfg(target_os = "android")]
-fn get_clipboard_text(_clipboard: &mut PlatformClipboard) -> Option<String> {
-    None
+fn get_clipboard_text(clipboard: &mut PlatformClipboard) -> Option<String> {
+    match get_android_clipboard_text(&clipboard.app) {
+        Ok(text) => text,
+        Err(err) => {
+            eprintln!("aetna-winit-wgpu: failed to read Android clipboard: {err}");
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn set_android_clipboard_text(app: &AndroidApp, text: &str) -> jni::errors::Result<()> {
+    use jni::refs::Reference as _;
+
+    let jvm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) };
+    jvm.attach_current_thread(|env| {
+        let activity = unsafe {
+            jni::objects::JObject::from_raw(env, app.activity_as_ptr() as jni::sys::jobject)
+        };
+        let service_name = env.new_string("clipboard")?;
+        let clipboard = env
+            .call_method(
+                &activity,
+                jni::jni_str!("getSystemService"),
+                jni::jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
+                &[jni::JValue::Object(service_name.as_ref())],
+            )?
+            .l()?;
+        if clipboard.is_null() {
+            return Ok(());
+        }
+
+        let label = env.new_string("Aetna")?;
+        let text = env.new_string(text)?;
+        let clip = env
+            .call_static_method(
+                jni::jni_str!("android/content/ClipData"),
+                jni::jni_str!("newPlainText"),
+                jni::jni_sig!(
+                    "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"
+                ),
+                &[
+                    jni::JValue::Object(label.as_ref()),
+                    jni::JValue::Object(text.as_ref()),
+                ],
+            )?
+            .l()?;
+        env.call_method(
+            &clipboard,
+            jni::jni_str!("setPrimaryClip"),
+            jni::jni_sig!("(Landroid/content/ClipData;)V"),
+            &[jni::JValue::Object(&clip)],
+        )?;
+        Ok(())
+    })
+}
+
+#[cfg(target_os = "android")]
+fn get_android_clipboard_text(app: &AndroidApp) -> jni::errors::Result<Option<String>> {
+    use jni::refs::Reference as _;
+
+    let jvm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) };
+    jvm.attach_current_thread(|env| {
+        let activity = unsafe {
+            jni::objects::JObject::from_raw(env, app.activity_as_ptr() as jni::sys::jobject)
+        };
+        let service_name = env.new_string("clipboard")?;
+        let clipboard = env
+            .call_method(
+                &activity,
+                jni::jni_str!("getSystemService"),
+                jni::jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
+                &[jni::JValue::Object(service_name.as_ref())],
+            )?
+            .l()?;
+        if clipboard.is_null() {
+            return Ok(None);
+        }
+
+        let clip = env
+            .call_method(
+                &clipboard,
+                jni::jni_str!("getPrimaryClip"),
+                jni::jni_sig!("()Landroid/content/ClipData;"),
+                &[],
+            )?
+            .l()?;
+        if clip.is_null() {
+            return Ok(None);
+        }
+
+        let item_count = env
+            .call_method(
+                &clip,
+                jni::jni_str!("getItemCount"),
+                jni::jni_sig!("()I"),
+                &[],
+            )?
+            .i()?;
+        if item_count <= 0 {
+            return Ok(None);
+        }
+
+        let item = env
+            .call_method(
+                &clip,
+                jni::jni_str!("getItemAt"),
+                jni::jni_sig!("(I)Landroid/content/ClipData$Item;"),
+                &[jni::JValue::Int(0)],
+            )?
+            .l()?;
+        if item.is_null() {
+            return Ok(None);
+        }
+
+        let text = env
+            .call_method(
+                &item,
+                jni::jni_str!("coerceToText"),
+                jni::jni_sig!("(Landroid/content/Context;)Ljava/lang/CharSequence;"),
+                &[jni::JValue::Object(&activity)],
+            )?
+            .l()?;
+        if text.is_null() {
+            return Ok(None);
+        }
+
+        let text = env
+            .call_method(
+                &text,
+                jni::jni_str!("toString"),
+                jni::jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
+        if text.is_null() {
+            return Ok(None);
+        }
+
+        let text = env.cast_local::<jni::objects::JString>(text)?;
+        Ok(Some(text.try_to_string(env)?))
+    })
 }
 
 mod primary {
