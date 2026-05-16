@@ -151,7 +151,8 @@ const EXTENSION_TOKENS: &[TokenDef] = &[
     },
 ];
 
-pub fn view(palette: &Palette) -> El {
+pub fn view(palette: &Palette, cx: &BuildCx) -> El {
+    let phone = super::is_phone(cx);
     scroll([column([
         h1("Palette"),
         paragraph(
@@ -162,7 +163,7 @@ pub fn view(palette: &Palette) -> El {
              are stored verbatim and looked up at paint time.",
         )
         .muted(),
-        preview_panel("Stock widgets", widget_preview()),
+        preview_panel("Stock widgets", widget_preview(phone)),
         token_section(
             "Core tokens",
             "The shadcn-shaped semantic vocabulary.",
@@ -177,7 +178,13 @@ pub fn view(palette: &Palette) -> El {
         ),
     ])
     .gap(tokens::SPACE_4)
-    .align(Align::Stretch)])
+    .align(Align::Stretch)
+    .padding(Sides {
+        left: tokens::RING_WIDTH,
+        right: tokens::SCROLLBAR_HITBOX_WIDTH,
+        top: 0.0,
+        bottom: 0.0,
+    })])
     .height(Size::Fill(1.0))
 }
 
@@ -258,8 +265,29 @@ fn preview_panel(title: &'static str, body: El) -> El {
     )
 }
 
-fn widget_preview() -> El {
-    column([
+fn widget_preview(phone: bool) -> El {
+    // Phone collapses the buttons and badges rows so the palette preview
+    // can show every variant without spilling past 360px content. Desktop
+    // keeps both as a single line — the showcase reads better when each
+    // taxonomy is a horizontal sweep.
+    let buttons_row: El = if phone {
+        column([
+            row([
+                button("Primary").primary().small(),
+                button("Secondary").secondary().small(),
+                button("Outline").outline().small(),
+            ])
+            .gap(tokens::SPACE_2)
+            .align(Align::Center),
+            row([
+                button("Ghost").ghost().small(),
+                button("Destructive").destructive().small(),
+            ])
+            .gap(tokens::SPACE_2)
+            .align(Align::Center),
+        ])
+        .gap(tokens::SPACE_2)
+    } else {
         row([
             button("Primary").primary(),
             button("Secondary").secondary(),
@@ -268,7 +296,10 @@ fn widget_preview() -> El {
             button("Destructive").destructive(),
         ])
         .gap(tokens::SPACE_2)
-        .align(Align::Center),
+        .align(Align::Center)
+    };
+    column([
+        buttons_row,
         row([
             badge("info").info(),
             badge("success").success(),

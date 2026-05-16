@@ -326,7 +326,7 @@ impl App for Showcase {
         let theme = self.theme();
         let body = match self.section {
             Section::About => about::view(&self.about, cx),
-            Section::Palette => palette::view(theme.palette()),
+            Section::Palette => palette::view(theme.palette(), cx),
             Section::Typography => typography::view(&self.typography),
             Section::Math => math::view(&self.math),
             Section::Surfaces => surfaces::view(&self.surfaces, cx),
