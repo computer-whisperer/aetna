@@ -329,7 +329,7 @@ impl App for Showcase {
             Section::Palette => palette::view(theme.palette()),
             Section::Typography => typography::view(&self.typography),
             Section::Math => math::view(&self.math),
-            Section::Surfaces => surfaces::view(&self.surfaces),
+            Section::Surfaces => surfaces::view(&self.surfaces, cx),
             Section::Layout => layout::view(&self.layout),
             Section::Buttons => buttons::view(&self.buttons),
             Section::Booleans => booleans::view(&self.booleans),

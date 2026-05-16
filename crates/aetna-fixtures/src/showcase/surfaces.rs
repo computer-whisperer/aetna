@@ -98,7 +98,7 @@ const GLASS_PRESETS: &[GlassPreset] = &[
 #[cfg(any(not(target_arch = "wasm32"), test))]
 const DRIFT_OFFSETS: &[f32] = &[0.0, -120.0, 120.0];
 
-pub fn view(state: &State) -> El {
+pub fn view(state: &State, cx: &BuildCx) -> El {
     // Web builds run without the backdrop-sampling capability the
     // liquid-glass shader needs (WebGL2 surfaces don't advertise
     // COPY_SRC, so the snapshot copy can't run). Drop the demo and the
@@ -183,7 +183,7 @@ pub fn view(state: &State) -> El {
             )
             .muted(),
         );
-        items.push(glass_demo(state));
+        items.push(glass_demo(state, super::is_phone(cx)));
     }
     #[cfg(target_arch = "wasm32")]
     let _ = state;
@@ -266,21 +266,29 @@ fn glass_backdrop() -> El {
 }
 
 #[cfg(any(not(target_arch = "wasm32"), test))]
-fn glass_card(preset: &GlassPreset, drift_x: f32) -> El {
+fn glass_card(preset: &GlassPreset, drift_x: f32, phone: bool) -> El {
+    let (next_label, drift_label) = if phone {
+        ("Next", "Drift")
+    } else {
+        ("Next preset", "Drift →")
+    };
     column([
         text("Liquid glass")
             .bold()
             .font_size(22.0)
             .text_color(tokens::PRIMARY_FOREGROUND),
-        text(preset.blurb).text_color(tokens::PRIMARY_FOREGROUND),
+        text(preset.blurb)
+            .text_color(tokens::PRIMARY_FOREGROUND)
+            .wrap_text()
+            .fill_width(),
         spacer(),
         row([
             text(format!("preset: {}", preset.label))
                 .bold()
                 .text_color(tokens::PRIMARY_FOREGROUND),
             spacer(),
-            button("Next preset").key(GLASS_NEXT_KEY).secondary(),
-            button("Drift →").key(GLASS_DRIFT_KEY).primary(),
+            button(next_label).key(GLASS_NEXT_KEY).secondary(),
+            button(drift_label).key(GLASS_DRIFT_KEY).primary(),
         ])
         .gap(tokens::SPACE_2),
     ])
@@ -295,20 +303,24 @@ fn glass_card(preset: &GlassPreset, drift_x: f32) -> El {
             )
             .vec4("vec_c", [28.0, 0.0, 0.0, 0.0]),
     )
-    .width(Size::Fixed(420.0))
-    .height(Size::Fixed(220.0))
+    .width(Size::Fixed(if phone { 280.0 } else { 420.0 }))
+    .height(Size::Fixed(if phone { 200.0 } else { 220.0 }))
     .translate(drift_x, 0.0)
     .animate(Timing::SPRING_BOUNCY)
 }
 
 #[cfg(any(not(target_arch = "wasm32"), test))]
-fn glass_demo(state: &State) -> El {
+fn glass_demo(state: &State, phone: bool) -> El {
     let preset = &GLASS_PRESETS[state.glass_preset % GLASS_PRESETS.len()];
-    let drift_x = DRIFT_OFFSETS[state.glass_drift % DRIFT_OFFSETS.len()];
-    stack([glass_backdrop(), glass_card(preset, drift_x)])
+    let raw_drift = DRIFT_OFFSETS[state.glass_drift % DRIFT_OFFSETS.len()];
+    // 360px phone viewport can't afford the desktop ±120 drift without
+    // the card sliding under the scroll gutter. Narrow the drift to fit
+    // a 280px card inside ~336px of phone content with a few px slack.
+    let drift_x = if phone { raw_drift * 0.4 } else { raw_drift };
+    stack([glass_backdrop(), glass_card(preset, drift_x, phone)])
         .align(Align::Center)
         .justify(Justify::Center)
-        .height(Size::Fixed(280.0))
+        .height(Size::Fixed(if phone { 240.0 } else { 280.0 }))
         .stroke(tokens::BORDER)
         .radius(tokens::RADIUS_LG)
 }
