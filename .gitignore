@@ -20,6 +20,11 @@ tools/out/
 crates/aetna-web/pkg/
 crates/aetna-web-showcase/pkg/
 
+# Xcode local state for the iOS showcase package.
+ios/*.xcodeproj/xcuserdata/
+ios/*.xcodeproj/project.xcworkspace/
+ios/DerivedData/
+
 # Reference web harnesses — source + lockfiles are tracked, generated
 # dependencies/builds/screenshots are local artifacts.
 references/*/node_modules/

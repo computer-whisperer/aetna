@@ -1,9 +1,9 @@
 # Aetna iOS Showcase
 
-This folder tracks the native iOS packaging plan for
+This folder contains the native iOS packaging for
 `crates/aetna-ios-showcase`. The Rust crate builds as a `staticlib` and
-exports `start_winit_app()`, which an Xcode app target should call from
-its Objective-C or Swift entry point.
+exports `start_winit_app()`, which the checked-in Xcode app target calls
+from `main.m`.
 
 The Rust side is intentionally the same shape as Android:
 
@@ -14,7 +14,33 @@ The Rust side is intentionally the same shape as Android:
 - The app still owns normal `aetna_core::App` state and rendering
   declarations.
 
-## Build From macOS
+## Build From Xcode
+
+Open the project:
+
+```bash
+open ios/AetnaShowcase.xcodeproj
+```
+
+Select the `Aetna Showcase` target and set a signing team if you are
+deploying to a physical device. The target has a "Build Rust staticlib"
+build phase that runs `ios/scripts/build-rust.sh` before the Objective-C
+app links.
+
+The Xcode target currently uses release Rust builds for both Debug and
+Release app configurations. That mirrors the Android package because
+unoptimized Rust is not useful for this GPU-heavy showcase.
+
+Supported destinations:
+
+- iOS device: `aarch64-apple-ios`
+- Apple Silicon simulator: `aarch64-apple-ios-sim`
+
+The project excludes `x86_64` simulator builds for now so the link path
+can stay deterministic. Intel simulator support would need either an
+`x86_64-apple-ios` slice or an `.xcframework`.
+
+## Build Rust Directly
 
 Install the iOS Rust target that matches the Xcode destination:
 
@@ -35,31 +61,28 @@ For the simulator on Apple Silicon:
 cargo build -p aetna-ios-showcase --release --target aarch64-apple-ios-sim
 ```
 
-Link the resulting archive into an Xcode iOS app target:
+The Xcode project links the resulting archive:
 
 ```text
 target/aarch64-apple-ios/release/libaetna_ios_showcase.a
 ```
 
-The Xcode target needs to link the Apple frameworks used by winit and
-wgpu's Metal backend, typically:
+The app links the native libraries reported by `rustc
+--print=native-static-libs` for this staticlib, including:
 
 ```text
 UIKit
 Foundation
+CoreFoundation
 QuartzCore
 Metal
-CoreGraphics
-CoreFoundation
+libobjc
+libiconv
 ```
 
-Declare the Rust entry point in a bridging header or Objective-C source:
-
-```c
-void start_winit_app(void);
-```
-
-Then call `start_winit_app()` once from the app entry path.
+Winit's iOS event loop calls `UIApplicationMain` itself, so the app's
+Objective-C `main.m` calls `start_winit_app()` directly rather than
+calling `UIApplicationMain` first.
 
 ## Current Limitations
 
