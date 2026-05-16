@@ -236,7 +236,13 @@ pub fn view(state: &State) -> El {
         coverage_grid(),
     ])
     .gap(tokens::SPACE_4)
-    .width(Size::Fill(1.0))])
+    .width(Size::Fill(1.0))
+    .padding(Sides {
+        left: tokens::RING_WIDTH,
+        right: tokens::SCROLLBAR_HITBOX_WIDTH,
+        top: 0.0,
+        bottom: 0.0,
+    })])
     .height(Size::Fill(1.0))
 }
 
@@ -280,7 +286,7 @@ fn preset_bar(state: &State) -> El {
         text("Presets").label().muted(),
         row(PRESETS.iter().map(|preset| {
             let active = state.source == preset.source;
-            let button = button(preset.label).key(preset.key);
+            let button = button(preset.label).xsmall().key(preset.key);
             if active {
                 button.primary()
             } else {
