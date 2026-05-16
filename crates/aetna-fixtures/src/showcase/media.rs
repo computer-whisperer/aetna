@@ -136,7 +136,8 @@ fn make_ring(w: u32, h: u32) -> Image {
     Image::from_rgba8(w, h, pixels)
 }
 
-pub fn view(animated_surface: Option<&AppTexture>) -> El {
+pub fn view(animated_surface: Option<&AppTexture>, cx: &BuildCx) -> El {
+    let phone = super::is_phone(cx);
     scroll([column([
         h1("Media"),
         paragraph(
@@ -160,74 +161,95 @@ pub fn view(animated_surface: Option<&AppTexture>) -> El {
         section_card(
             "Avatars",
             "Image, fallback initials, or a colored shape — same anatomy.",
-            [row([
-                avatar_image(GRID_RG.clone()),
-                avatar_image(GRID_GB.clone()),
-                avatar_initials("CB"),
-                avatar_initials("AK"),
-                avatar_fallback("Max Leiter"),
-            ])
-            .gap(tokens::SPACE_3)
-            .align(Align::Center)],
+            [phone_scrollable_row(
+                phone,
+                [
+                    avatar_image(GRID_RG.clone()),
+                    avatar_image(GRID_GB.clone()),
+                    avatar_initials("CB"),
+                    avatar_initials("AK"),
+                    avatar_fallback("Max Leiter"),
+                ],
+                tokens::SPACE_3,
+                Align::Center,
+            )],
         ),
         section_card(
             "Raster images",
             "Test patterns generated in code so the fixture is self-contained.",
-            [row([
-                tile(&GRID_RG, "gradient"),
-                tile(&GRID_GB, "moss"),
-                tile(&GRID_CHECKER, "checker"),
-                tile(&GRID_RING, "ring"),
-            ])
-            .gap(tokens::SPACE_3)
-            .align(Align::Center)],
+            [phone_scrollable_row(
+                phone,
+                [
+                    tile(&GRID_RG, "gradient"),
+                    tile(&GRID_GB, "moss"),
+                    tile(&GRID_CHECKER, "checker"),
+                    tile(&GRID_RING, "ring"),
+                ],
+                tokens::SPACE_3,
+                Align::Center,
+            )],
         ),
         section_card(
             "Tints share one texture",
             "Four references to the same Image with different `image_tint(...)` colors — content-hashed into one GPU upload.",
-            [row([
-                tinted_avatar(Color::rgb(96, 165, 250)),
-                tinted_avatar(Color::rgb(244, 114, 182)),
-                tinted_avatar(Color::rgb(248, 113, 113)),
-                tinted_avatar(Color::rgb(132, 204, 22)),
-            ])
-            .gap(tokens::SPACE_2)],
+            [phone_scrollable_row(
+                phone,
+                [
+                    tinted_avatar(Color::rgb(96, 165, 250)),
+                    tinted_avatar(Color::rgb(244, 114, 182)),
+                    tinted_avatar(Color::rgb(248, 113, 113)),
+                    tinted_avatar(Color::rgb(132, 204, 22)),
+                ],
+                tokens::SPACE_2,
+                Align::Center,
+            )],
         ),
         section_card(
             "ImageFit modes",
             "Same image, four projections into identically-sized boxes.",
-            [row([
-                fit_demo("Contain", ImageFit::Contain),
-                fit_demo("Cover", ImageFit::Cover),
-                fit_demo("Fill", ImageFit::Fill),
-                fit_demo("None", ImageFit::None),
-            ])
-            .gap(tokens::SPACE_3)],
+            [phone_scrollable_row(
+                phone,
+                [
+                    fit_demo("Contain", ImageFit::Contain),
+                    fit_demo("Cover", ImageFit::Cover),
+                    fit_demo("Fill", ImageFit::Fill),
+                    fit_demo("None", ImageFit::None),
+                ],
+                tokens::SPACE_3,
+                Align::Start,
+            )],
         ),
         section_card(
             "Built-in lucide icons (monochrome / MSDF)",
             "`icon(IconName::*)` paints through the monochrome MSDF atlas.",
-            [row([
-                builtin_icon_tile(IconName::Activity, tokens::WARNING),
-                builtin_icon_tile(IconName::Bell, tokens::PRIMARY),
-                builtin_icon_tile(IconName::Check, tokens::SUCCESS),
-                builtin_icon_tile(IconName::AlertCircle, tokens::DESTRUCTIVE),
-                builtin_icon_tile(IconName::Settings, tokens::FOREGROUND),
-            ])
-            .gap(tokens::SPACE_3)],
+            [phone_scrollable_row(
+                phone,
+                [
+                    builtin_icon_tile(IconName::Activity, tokens::WARNING),
+                    builtin_icon_tile(IconName::Bell, tokens::PRIMARY),
+                    builtin_icon_tile(IconName::Check, tokens::SUCCESS),
+                    builtin_icon_tile(IconName::AlertCircle, tokens::DESTRUCTIVE),
+                    builtin_icon_tile(IconName::Settings, tokens::FOREGROUND),
+                ],
+                tokens::SPACE_3,
+                Align::Stretch,
+            )],
         ),
         section_card(
             "Gradient SVGs (custom / tessellated)",
             "App-supplied SvgIcon — gradients route through the tessellated path with per-vertex colour.",
-            [row([
-                custom_icon_tile(&PIPEWIRE_VOLUME, "pipewire", 72.0),
-                custom_icon_tile(&LINEAR_HORIZONTAL, "linear h", 56.0),
-                custom_icon_tile(&LINEAR_DIAGONAL, "diagonal", 56.0),
-                custom_icon_tile(&RADIAL_BBOX, "radial", 56.0),
-                custom_icon_tile(&STROKED_GRADIENT, "stroked", 56.0),
-            ])
-            .gap(tokens::SPACE_3)
-            .align(Align::Center)],
+            [phone_scrollable_row(
+                phone,
+                [
+                    custom_icon_tile(&PIPEWIRE_VOLUME, "pipewire", 72.0),
+                    custom_icon_tile(&LINEAR_HORIZONTAL, "linear h", 56.0),
+                    custom_icon_tile(&LINEAR_DIAGONAL, "diagonal", 56.0),
+                    custom_icon_tile(&RADIAL_BBOX, "radial", 56.0),
+                    custom_icon_tile(&STROKED_GRADIENT, "stroked", 56.0),
+                ],
+                tokens::SPACE_3,
+                Align::Center,
+            )],
         ),
         section_card(
             "Programmatic vectors (vector() + PathBuilder)",
@@ -236,33 +258,62 @@ pub fn view(animated_surface: Option<&AppTexture>) -> El {
              scaling; multi-colour or gradient assets fall back to lyon tessellation. \
              Identical geometry hashes into one atlas slot, so a list of merge curves \
              with recurring (lane_delta, row_span) pairs shares cached rasterisations.",
-            [vector_demo_row()],
+            [vector_demo_row(phone)],
         ),
     ])
     .gap(tokens::SPACE_4)
-    .align(Align::Stretch)])
+    .align(Align::Stretch)
+    .padding(Sides {
+        left: tokens::RING_WIDTH,
+        right: tokens::SCROLLBAR_HITBOX_WIDTH,
+        top: 0.0,
+        bottom: 0.0,
+    })])
     .height(Size::Fill(1.0))
 }
 
-fn vector_demo_row() -> El {
-    row([
-        vector_tile("merge curve", curve_asset(0, 3, 4), 80.0, 100.0),
-        vector_tile("steeper curve", curve_asset(0, 4, 3), 100.0, 80.0),
-        vector_tile(
-            "filled diamond",
-            diamond_asset(Color::rgb(244, 114, 182)),
-            48.0,
-            48.0,
-        ),
-        vector_tile(
-            "rounded path",
-            squiggle_asset(Color::rgb(96, 165, 250)),
-            120.0,
-            48.0,
-        ),
-    ])
-    .gap(tokens::SPACE_4)
-    .align(Align::Center)
+/// Wraps a row of fixed-size tiles in a horizontal scroll on phone so
+/// they don't overflow the page column when their summed widths exceed
+/// the viewport.
+fn phone_scrollable_row<I>(phone: bool, tiles: I, gap: f32, align: Align) -> El
+where
+    I: IntoIterator<Item = El>,
+{
+    let tiles_row = row(tiles).gap(gap).align(align);
+    if phone {
+        scroll([tiles_row
+            .width(Size::Hug)
+            .padding(Sides::xy(0.0, tokens::RING_WIDTH))])
+            .axis(Axis::Row)
+            .height(Size::Hug)
+            .width(Size::Fill(1.0))
+    } else {
+        tiles_row
+    }
+}
+
+fn vector_demo_row(phone: bool) -> El {
+    phone_scrollable_row(
+        phone,
+        [
+            vector_tile("merge curve", curve_asset(0, 3, 4), 80.0, 100.0),
+            vector_tile("steeper curve", curve_asset(0, 4, 3), 100.0, 80.0),
+            vector_tile(
+                "filled diamond",
+                diamond_asset(Color::rgb(244, 114, 182)),
+                48.0,
+                48.0,
+            ),
+            vector_tile(
+                "rounded path",
+                squiggle_asset(Color::rgb(96, 165, 250)),
+                120.0,
+                48.0,
+            ),
+        ],
+        tokens::SPACE_4,
+        Align::Center,
+    )
 }
 
 fn vector_tile(label: &str, asset: VectorAsset, w: f32, h: f32) -> El {
@@ -317,12 +368,17 @@ fn squiggle_asset(color: Color) -> VectorAsset {
 }
 
 fn section_card<I: IntoIterator<Item = El>>(title: &str, blurb: &str, body: I) -> El {
-    titled_card(
-        title,
-        std::iter::once(paragraph(blurb).muted().small())
-            .chain(body)
-            .collect::<Vec<_>>(),
-    )
+    // Inline the titled_card construction so we can make the title wrap
+    // — several media section titles are wider than phone-narrowed
+    // cards ("Built-in lucide icons (monochrome / MSDF)" etc.).
+    card([
+        card_header([card_title(title).wrap_text().fill_width()]),
+        card_content(
+            std::iter::once(paragraph(blurb).muted().small())
+                .chain(body)
+                .collect::<Vec<_>>(),
+        ),
+    ])
 }
 
 fn tile(img: &LazyLock<Image>, label: &str) -> El {
