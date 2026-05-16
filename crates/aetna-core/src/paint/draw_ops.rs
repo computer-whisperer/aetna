@@ -2315,7 +2315,7 @@ mod tests {
             let mut state = UiState::new();
             layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
             state.set_animation_mode(crate::state::AnimationMode::Settled);
-            state.tick_visual_animations(&mut tree, web_time::Instant::now());
+            state.tick_visual_animations(&mut tree, web_time::Instant::now(), &Palette::default());
 
             let ops = draw_ops(&tree, &state);
             let badge = find_quad(&ops, "badge").expect("badge quad");
@@ -2346,7 +2346,7 @@ mod tests {
             state.hovered = Some(container_target);
             state.apply_to_state();
             state.set_animation_mode(crate::state::AnimationMode::Settled);
-            state.tick_visual_animations(&mut tree, web_time::Instant::now());
+            state.tick_visual_animations(&mut tree, web_time::Instant::now(), &Palette::default());
 
             let ops = draw_ops(&tree, &state);
             let badge = find_quad(&ops, "badge").expect("badge quad");
@@ -2393,7 +2393,7 @@ mod tests {
         state.hovered = Some(close_target);
         state.apply_to_state();
         state.set_animation_mode(crate::state::AnimationMode::Settled);
-        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+        state.tick_visual_animations(&mut tree, web_time::Instant::now(), &Palette::default());
 
         let ops = draw_ops(&tree, &state);
         let close = find_quad(&ops, "close").expect("close quad");
@@ -2437,7 +2437,7 @@ mod tests {
         let mut state = UiState::new();
         layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
         state.set_animation_mode(crate::state::AnimationMode::Settled);
-        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+        state.tick_visual_animations(&mut tree, web_time::Instant::now(), &Palette::default());
 
         let ops = draw_ops(&tree, &state);
         let tagged = find_quad(&ops, "tagged").expect("tagged quad");
@@ -2507,7 +2507,7 @@ mod tests {
         state.hovered = Some(play);
         state.apply_to_state();
         state.set_animation_mode(crate::state::AnimationMode::Settled);
-        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+        state.tick_visual_animations(&mut tree, web_time::Instant::now(), &Palette::default());
 
         let ops = draw_ops(&tree, &state);
         let pill = find_quad(&ops, "pill").expect("pill quad");
@@ -2552,7 +2552,7 @@ mod tests {
         state.focus_visible = true;
         state.apply_to_state();
         state.set_animation_mode(crate::state::AnimationMode::Settled);
-        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+        state.tick_visual_animations(&mut tree, web_time::Instant::now(), &Palette::default());
 
         let ops = draw_ops(&tree, &state);
         let close = find_quad(&ops, "close").expect("close quad");
@@ -2603,7 +2603,7 @@ mod tests {
         state.hovered = Some(other);
         state.apply_to_state();
         state.set_animation_mode(crate::state::AnimationMode::Settled);
-        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+        state.tick_visual_animations(&mut tree, web_time::Instant::now(), &Palette::default());
 
         let ops = draw_ops(&tree, &state);
         let badge = find_quad(&ops, "badge").expect("badge quad");
@@ -2658,7 +2658,7 @@ mod tests {
         state.pressed = Some(container_target);
         state.apply_to_state();
         state.set_animation_mode(crate::state::AnimationMode::Settled);
-        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+        state.tick_visual_animations(&mut tree, web_time::Instant::now(), &Palette::default());
 
         // The thumb's *own* envelopes stay zero — only the container
         // got the press. But via the cascade flag, the thumb's paint
@@ -4094,7 +4094,7 @@ mod tests {
         state.focus_visible = true;
         state.apply_to_state();
         state.set_animation_mode(crate::state::AnimationMode::Settled);
-        state.tick_visual_animations(&mut tree, web_time::Instant::now());
+        state.tick_visual_animations(&mut tree, web_time::Instant::now(), &Palette::default());
 
         let item_rect = state.rect_of_key(&tree, "item").expect("item rect");
         let ops = draw_ops(&tree, &state);

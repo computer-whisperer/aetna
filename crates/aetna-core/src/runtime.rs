@@ -1784,7 +1784,8 @@ impl RunnerCore {
             });
             let animations = {
                 crate::profile_span!("prepare::layout::tick_animations");
-                self.ui_state.tick_visual_animations(root, Instant::now())
+                self.ui_state
+                    .tick_visual_animations(root, Instant::now(), self.theme.palette())
             };
             animations || tooltip_pending || toast_pending || scroll_momentum_pending
         };
@@ -4072,7 +4073,7 @@ mod tests {
         let mut t = PrepareTimings::default();
         core.snapshot(&tree, &mut t);
         core.ui_state
-            .tick_visual_animations(&mut tree, web_time::Instant::now());
+            .tick_visual_animations(&mut tree, web_time::Instant::now(), theme.palette());
         let card_at_rest = tree.children[0].clone();
         assert!((card_at_rest.scale - 1.0).abs() < 1e-3);
 
@@ -4093,7 +4094,7 @@ mod tests {
         core.ui_state.sync_focus_order(&tree);
         core.snapshot(&tree, &mut t);
         core.ui_state
-            .tick_visual_animations(&mut tree, web_time::Instant::now());
+            .tick_visual_animations(&mut tree, web_time::Instant::now(), theme.palette());
         let card_hot = tree.children[0].clone();
         assert!(
             (card_hot.scale - 1.05).abs() < 1e-3,
@@ -4114,7 +4115,7 @@ mod tests {
         core.ui_state.sync_focus_order(&tree);
         core.snapshot(&tree, &mut t);
         core.ui_state
-            .tick_visual_animations(&mut tree, web_time::Instant::now());
+            .tick_visual_animations(&mut tree, web_time::Instant::now(), theme.palette());
         let card_after = tree.children[0].clone();
         assert!((card_after.scale - 1.0).abs() < 1e-3);
     }

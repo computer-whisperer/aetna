@@ -1030,6 +1030,7 @@ mod tests {
     use super::*;
     use crate::event::{KeyModifiers, KeyPress, Pointer, PointerButton, PointerKind, UiTarget};
     use crate::layout::layout;
+    use crate::palette::Palette;
     use crate::runtime::RunnerCore;
     use crate::state::UiState;
     use crate::text::metrics;
@@ -1336,7 +1337,7 @@ mod tests {
         // SELECTION_BG_UNFOCUSED rgb (alpha is multiplied by `opacity`
         // so we compare rgb only).
         state.apply_to_state();
-        state.tick_visual_animations(&mut tree, Instant::now());
+        state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
         let unfocused = band_fill(&tree, &state).expect("band quad emitted");
         assert_eq!(
             (unfocused.r, unfocused.g, unfocused.b),
@@ -1359,7 +1360,7 @@ mod tests {
             .clone();
         state.set_focus(Some(target));
         state.apply_to_state();
-        state.tick_visual_animations(&mut tree, Instant::now());
+        state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
         let focused = band_fill(&tree, &state).expect("band quad emitted");
         assert_eq!(
             (focused.r, focused.g, focused.b),
@@ -1406,7 +1407,7 @@ mod tests {
 
         // Initially unfocused: focus envelope settles to 0.
         state.apply_to_state();
-        state.tick_visual_animations(&mut tree, Instant::now());
+        state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
         let caret_alpha = caret_fill_alpha(&tree, &state);
         assert_eq!(caret_alpha, Some(0), "unfocused → caret invisible");
 
@@ -1420,7 +1421,7 @@ mod tests {
             .clone();
         state.set_focus(Some(target));
         state.apply_to_state();
-        state.tick_visual_animations(&mut tree, Instant::now());
+        state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
         let caret_alpha = caret_fill_alpha(&tree, &state);
         assert_eq!(
             caret_alpha,
@@ -1502,17 +1503,17 @@ mod tests {
         };
 
         // t = 0 → grace, on.
-        state.tick_visual_animations(&mut tree, activity_at);
+        state.tick_visual_animations(&mut tree, activity_at, &Palette::default());
         pin_focus(&mut state);
         assert_eq!(caret_alpha(&tree, &state), Some(255));
 
         // t = 1100ms → second half of cycle, off.
-        state.tick_visual_animations(&mut tree, activity_at + Duration::from_millis(1100));
+        state.tick_visual_animations(&mut tree, activity_at + Duration::from_millis(1100), &Palette::default());
         pin_focus(&mut state);
         assert_eq!(caret_alpha(&tree, &state), Some(0));
 
         // t = 1600ms → back on.
-        state.tick_visual_animations(&mut tree, activity_at + Duration::from_millis(1600));
+        state.tick_visual_animations(&mut tree, activity_at + Duration::from_millis(1600), &Palette::default());
         pin_focus(&mut state);
         assert_eq!(caret_alpha(&tree, &state), Some(255));
 
@@ -1547,7 +1548,7 @@ mod tests {
         // Drive activity to deep into the off phase.
         let t0 = Instant::now();
         state.bump_caret_activity(t0);
-        state.tick_visual_animations(&mut tree, t0 + Duration::from_millis(1100));
+        state.tick_visual_animations(&mut tree, t0 + Duration::from_millis(1100), &Palette::default());
         assert_eq!(state.caret.blink_alpha, 0.0, "deep in off phase");
 
         // Re-bump (e.g. user typed) — alpha snaps back to solid.
@@ -1571,7 +1572,7 @@ mod tests {
         state.sync_focus_order(&tree);
 
         // No focus → no redraw demand from blink.
-        let no_focus = state.tick_visual_animations(&mut tree, Instant::now());
+        let no_focus = state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
         assert!(!no_focus, "without focus, blink doesn't request redraws");
 
         // Focus the input → tick should keep requesting redraws so
@@ -1584,7 +1585,7 @@ mod tests {
             .unwrap()
             .clone();
         state.set_focus(Some(target));
-        let focused = state.tick_visual_animations(&mut tree, Instant::now());
+        let focused = state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
         assert!(focused, "focused capture_keys node → tick demands redraws");
     }
 

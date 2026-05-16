@@ -256,6 +256,15 @@ const SPRING_MAX_SUBSTEP: f32 = 1.0 / 250.0;
 
 /// In-flight animation state for one (node, prop) pair. Stored on
 /// [`crate::state::UiState`] keyed by `(ComputedId, AnimProp)`.
+///
+/// `current` is the read-back view consumed by `write_prop` — for
+/// `AnimValue::Color` that's u8 rgba. The integrator's per-frame
+/// motion near equilibrium is sub-integer in rgb units (typical
+/// `vel * dt ≈ 0.1–0.4` once the spring is close to target), so
+/// integrating against the rounded view loses fractional progress
+/// every frame and the integrator freezes a few rgb units off
+/// target. `current_precise` is the lossless f32 mirror integrators
+/// actually read and write across ticks.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Animation {
@@ -268,11 +277,16 @@ pub struct Animation {
     /// For tweens, the value at `started_at`. Springs are fully
     /// determined by current+velocity, so `from` stays `None`.
     pub from: Option<AnimValue>,
+    /// Lossless f32 mirror of `current` for the integrator. See struct
+    /// doc — `AnimValue::Color` stores u8, which silently freezes the
+    /// spring once per-frame motion drops below 0.5 rgb units.
+    current_precise: AnimChannels,
 }
 
 impl Animation {
     pub fn new(current: AnimValue, target: AnimValue, timing: Timing, now: Instant) -> Self {
-        let n = current.channels().n;
+        let channels = current.channels();
+        let n = channels.n;
         let from = match timing {
             Timing::Tween(_) => Some(current),
             Timing::Spring(_) => None,
@@ -285,6 +299,7 @@ impl Animation {
             started_at: now,
             last_step: now,
             from,
+            current_precise: channels,
         }
     }
 
@@ -309,7 +324,8 @@ impl Animation {
     /// path so SVG/PNG fixtures don't depend on integrator timing.
     pub fn settle(&mut self) {
         self.current = self.target;
-        let n = self.current.channels().n;
+        self.current_precise = self.target.channels();
+        let n = self.current_precise.n;
         self.velocity = AnimChannels::zero(n);
         self.from = None;
     }
@@ -331,7 +347,11 @@ impl Animation {
         if dt <= 0.0 {
             return self.is_settled();
         }
-        let mut cur = self.current.channels();
+        let mut cur = if self.current_precise.n == self.current.channels().n {
+            self.current_precise
+        } else {
+            self.current.channels()
+        };
         let tgt = self.target.channels();
         let mut vel = if self.velocity.n == cur.n {
             self.velocity
@@ -367,9 +387,11 @@ impl Animation {
         }
         if all_settled {
             self.current = self.target;
+            self.current_precise = tgt;
             self.velocity = AnimChannels::zero(cur.n);
             return true;
         }
+        self.current_precise = cur;
         self.current = self.current.from_channels(cur);
         self.velocity = vel;
         false
@@ -379,6 +401,7 @@ impl Animation {
         let elapsed = now.saturating_duration_since(self.started_at);
         if elapsed >= cfg.duration {
             self.current = self.target;
+            self.current_precise = self.target.channels();
             return true;
         }
         let from = self.from.unwrap_or(self.current).channels();
@@ -392,6 +415,7 @@ impl Animation {
         for i in 0..from.n {
             next.v[i] = from.v[i] + (tgt.v[i] - from.v[i]) * eased;
         }
+        self.current_precise = next;
         self.current = self.current.from_channels(next);
         false
     }

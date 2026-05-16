@@ -46,13 +46,13 @@ fn widget_state_gc_when_node_leaves_tree() {
     let inc_id = find_id(&tree_a, "inc").expect("inc id");
     // Seed widget_state on the inc button.
     state.widget_state_mut::<TestCaret>(&inc_id).position = 99;
-    state.tick_visual_animations(&mut tree_a, Instant::now());
+    state.tick_visual_animations(&mut tree_a, Instant::now(), &Palette::default());
     assert!(state.widget_state::<TestCaret>(&inc_id).is_some());
 
     // Rebuild without inc. The GC sweep on the next tick should drop it.
     let mut tree_b = column([crate::text("0"), row([button("-").key("dec")])]).padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-    state.tick_visual_animations(&mut tree_b, Instant::now());
+    state.tick_visual_animations(&mut tree_b, Instant::now(), &Palette::default());
     assert!(
         state.widget_state::<TestCaret>(&inc_id).is_none(),
         "stale widget_state for inc was not GC'd"

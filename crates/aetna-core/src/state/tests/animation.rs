@@ -10,7 +10,7 @@ fn settled_mode_snaps_hover_envelope_to_one() {
     state.hovered = Some(target(&tree, &state, "inc"));
     state.apply_to_state();
 
-    let needs_redraw = state.tick_visual_animations(&mut tree, Instant::now());
+    let needs_redraw = state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
 
     assert!(!needs_redraw, "Settled mode should never report in flight");
     assert_eq!(
@@ -31,12 +31,12 @@ fn live_mode_eases_hover_envelope_over_multiple_ticks() {
     // strictly between 0 and 1 — neither snapped to either end.
     let (mut tree, mut state) = lay_out_counter();
     let t0 = Instant::now();
-    state.tick_visual_animations(&mut tree, t0);
+    state.tick_visual_animations(&mut tree, t0, &Palette::default());
 
     state.hovered = Some(target(&tree, &state, "inc"));
     state.apply_to_state();
     let needs_redraw =
-        state.tick_visual_animations(&mut tree, t0 + std::time::Duration::from_millis(8));
+        state.tick_visual_animations(&mut tree, t0 + std::time::Duration::from_millis(8), &Palette::default());
     let mid = envelope_for(&tree, &state, "inc", EnvelopeKind::Hover).expect("hover envelope");
 
     assert!(
@@ -62,7 +62,7 @@ fn build_value_change_survives_hover_envelope() {
     state.set_animation_mode(AnimationMode::Settled);
     state.hovered = Some(target(&tree_a, &state, "x"));
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree_a, Instant::now());
+    state.tick_visual_animations(&mut tree_a, Instant::now(), &Palette::default());
     assert_eq!(
         envelope_for(&tree_a, &state, "x", EnvelopeKind::Hover),
         Some(1.0)
@@ -73,7 +73,7 @@ fn build_value_change_survives_hover_envelope() {
         column([row([button("X").key("x").fill(Color::rgb(0, 0, 255))])]).padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree_b, Instant::now());
+    state.tick_visual_animations(&mut tree_b, Instant::now(), &Palette::default());
 
     let observed = find_fill(&tree_b, "x").expect("x fill");
     assert_eq!(
@@ -93,7 +93,7 @@ fn focus_ring_alpha_eases_in_and_out() {
     state.set_animation_mode(AnimationMode::Settled);
 
     // No focus → alpha settled at 0.
-    state.tick_visual_animations(&mut tree, Instant::now());
+    state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
     assert_eq!(
         envelope_for(&tree, &state, "inc", EnvelopeKind::FocusRing),
         Some(0.0)
@@ -106,7 +106,7 @@ fn focus_ring_alpha_eases_in_and_out() {
     state.focused = Some(target(&tree, &state, "inc"));
     state.set_focus_visible(true);
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree, Instant::now());
+    state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
     assert_eq!(
         envelope_for(&tree, &state, "inc", EnvelopeKind::FocusRing),
         Some(1.0)
@@ -117,7 +117,7 @@ fn focus_ring_alpha_eases_in_and_out() {
     layout(&mut tree, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
     state.focused = None;
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree, Instant::now());
+    state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
     assert_eq!(
         envelope_for(&tree, &state, "inc", EnvelopeKind::FocusRing),
         Some(0.0)
@@ -136,7 +136,7 @@ fn focus_ring_stays_dim_when_focus_is_not_visible() {
     // on Tab / pointer-down). Don't raise it here.
     assert!(!state.focus_visible);
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree, Instant::now());
+    state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
     assert_eq!(
         envelope_for(&tree, &state, "inc", EnvelopeKind::FocusRing),
         Some(0.0),
@@ -161,7 +161,7 @@ fn focus_ring_lights_up_on_always_show_focus_ring_widgets_even_without_focus_vis
     state.focused = Some(target(&tree, &state, "field"));
     assert!(!state.focus_visible);
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree, Instant::now());
+    state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
     assert_eq!(
         envelope_for(&tree, &state, "field", EnvelopeKind::FocusRing),
         Some(1.0),
@@ -191,7 +191,7 @@ fn focus_ring_stays_on_when_focused_node_is_also_hovered() {
     state.focused = Some(field.clone());
     state.hovered = Some(field);
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree, Instant::now());
+    state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
 
     assert_eq!(
         envelope_for(&tree, &state, "field", EnvelopeKind::FocusRing),
@@ -218,7 +218,7 @@ fn app_fill_settles_to_new_value_in_settled_mode() {
     layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
 
     state.set_animation_mode(AnimationMode::Settled);
-    state.tick_visual_animations(&mut tree_a, Instant::now());
+    state.tick_visual_animations(&mut tree_a, Instant::now(), &Palette::default());
     assert_eq!(
         find_fill(&tree_a, "x").map(|c| (c.r, c.g, c.b)),
         Some((255, 0, 0))
@@ -234,7 +234,7 @@ fn app_fill_settles_to_new_value_in_settled_mode() {
     ])
     .padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-    state.tick_visual_animations(&mut tree_b, Instant::now());
+    state.tick_visual_animations(&mut tree_b, Instant::now(), &Palette::default());
 
     assert_eq!(
         find_fill(&tree_b, "x").map(|c| (c.r, c.g, c.b)),
@@ -257,7 +257,7 @@ fn app_fill_eases_in_live_mode() {
     layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
 
     let t0 = Instant::now();
-    state.tick_visual_animations(&mut tree_a, t0);
+    state.tick_visual_animations(&mut tree_a, t0, &Palette::default());
 
     let mut tree_b = column([row([button("X")
         .key("x")
@@ -266,7 +266,7 @@ fn app_fill_eases_in_live_mode() {
     .padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
     let needs_redraw =
-        state.tick_visual_animations(&mut tree_b, t0 + std::time::Duration::from_millis(8));
+        state.tick_visual_animations(&mut tree_b, t0 + std::time::Duration::from_millis(8), &Palette::default());
     let mid = find_fill(&tree_b, "x").expect("mid fill");
 
     assert!(
@@ -304,7 +304,7 @@ fn token_tagged_fill_eases_through_draw_ops_without_snapping() {
     let mut state = UiState::new();
     layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
     let t0 = Instant::now();
-    state.tick_visual_animations(&mut tree_a, t0);
+    state.tick_visual_animations(&mut tree_a, t0, &Palette::default());
 
     let mut tree_b = column([row([button("X")
         .key("x")
@@ -312,7 +312,7 @@ fn token_tagged_fill_eases_through_draw_ops_without_snapping() {
         .animate(Timing::SPRING_STANDARD)])])
     .padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-    state.tick_visual_animations(&mut tree_b, t0 + std::time::Duration::from_millis(8));
+    state.tick_visual_animations(&mut tree_b, t0 + std::time::Duration::from_millis(8), &Palette::default());
 
     // Drive the rendered output through draw_ops; the apply_state
     // path is what previously snapped the in-flight rgb.
@@ -348,6 +348,126 @@ fn token_tagged_fill_eases_through_draw_ops_without_snapping() {
 }
 
 #[test]
+fn spring_color_converges_to_target_token_near_equilibrium() {
+    // Regression: `Animation::current` stored u8 rgba via
+    // `AnimValue::Color`. The integrator read channels as f32 each
+    // tick, integrated by `vel * h ≈ 0.1–0.4` per substep near the
+    // target, then wrote back through `from_channels` which rounds to
+    // u8 — destroying sub-integer progress every frame. Near
+    // equilibrium the per-frame f32 motion was below 0.5, so the
+    // rounded value froze a few rgb units past the target with the
+    // token cleared, and `palette.resolve` then painted that frozen
+    // intermediate rgb forever. Fix stores a lossless f32 mirror
+    // (`current_precise`) for the integrator.
+    //
+    // This test simulates a checkbox click (false → true) and ticks
+    // long enough that, prior to the fix, the spring would still be
+    // stuck a few units off PRIMARY with `token: None`. After the
+    // fix the spring settles and `current` snaps back to
+    // `target == tokens::PRIMARY`, with the token preserved.
+    use crate::tokens;
+    use crate::widgets::checkbox::checkbox;
+    use std::time::Duration;
+
+    fn tree(v: bool) -> El {
+        column([checkbox(v).key("agree")]).padding(8.0)
+    }
+    fn find_cb(n: &El) -> Option<&El> {
+        if matches!(n.kind, Kind::Custom("checkbox")) {
+            return Some(n);
+        }
+        n.children.iter().find_map(find_cb)
+    }
+
+    let palette = Palette::default();
+    let mut state = UiState::new();
+    let vp = Rect::new(0.0, 0.0, 200.0, 60.0);
+    let mut t = tree(false);
+    layout(&mut t, &mut state, vp);
+    let t0 = Instant::now();
+    state.tick_visual_animations(&mut t, t0, &palette);
+
+    // Tick 1.5 s of 16 ms frames as the build flips to checked. That's
+    // ~6× the SPRING_STANDARD settle time; if the integrator can settle
+    // at all it'll have done so well before this point.
+    let mut settled_to_token = false;
+    for i in 1..=96 {
+        let mut t = tree(true);
+        layout(&mut t, &mut state, vp);
+        let now_i = t0 + Duration::from_millis(16 * i);
+        state.tick_visual_animations(&mut t, now_i, &palette);
+        let cb = find_cb(&t).unwrap();
+        let f = cb.fill.expect("fill present");
+        if f.token == Some("primary") {
+            settled_to_token = true;
+            assert_eq!((f.r, f.g, f.b), (tokens::PRIMARY.r, tokens::PRIMARY.g, tokens::PRIMARY.b));
+            break;
+        }
+    }
+    assert!(
+        settled_to_token,
+        "spring fill must converge to `target` and restore the token; \
+         pre-fix this froze at ~(253,253,253) with token=None forever",
+    );
+}
+
+#[test]
+fn anim_target_uses_active_palette_rgb_not_compile_time_constant() {
+    // Regression: `compute_target` returned `n.fill` directly. Tokens'
+    // compile-time rgb constants carry the default-dark palette
+    // values, so on any non-default palette the animation interpolated
+    // through the wrong color space. On radix slate blue dark, a
+    // checkbox transition would walk the default-dark (9→250) gray
+    // ramp mid-flight and only show slate blue's (0,144,255) at the
+    // moment the spring settled. Fix resolves the target through the
+    // active palette in `compute_target`.
+    use crate::theme::Theme;
+    use crate::widgets::checkbox::checkbox;
+    use std::time::Duration;
+
+    fn tree(v: bool) -> El {
+        column([checkbox(v).key("agree")]).padding(8.0)
+    }
+    fn find_cb(n: &El) -> Option<&El> {
+        if matches!(n.kind, Kind::Custom("checkbox")) {
+            return Some(n);
+        }
+        n.children.iter().find_map(find_cb)
+    }
+
+    let theme = Theme::radix_slate_blue_dark();
+    let palette = theme.palette();
+    let mut state = UiState::new();
+    let vp = Rect::new(0.0, 0.0, 200.0, 60.0);
+    let mut t = tree(false);
+    layout(&mut t, &mut state, vp);
+    let t0 = Instant::now();
+    state.tick_visual_animations(&mut t, t0, palette);
+
+    // Mid-flight after click. The rendered fill must lie on slate
+    // blue's CARD (24,25,27) → PRIMARY (0,144,255) line: R dropping
+    // toward 0, G rising toward 144, B rising toward 255 — strictly
+    // R < G < B. The default-dark CARD (9,9,11) → PRIMARY (250,250,250)
+    // ramp would have R ≈ G ≈ B at any sample point, so the strict
+    // ordering rules it out.
+    let mut t = tree(true);
+    layout(&mut t, &mut state, vp);
+    state.tick_visual_animations(&mut t, t0 + Duration::from_millis(64), palette);
+    let cb = find_cb(&t).unwrap();
+    let f = cb.fill.expect("fill present");
+    assert!(
+        f.r < f.g && f.g < f.b,
+        "mid-flight rgb must lie on slate blue's ramp (R<G<B), not on the \
+         default-dark gray ramp (R≈G≈B). got fill={f:?}",
+    );
+    assert!(
+        f.b as i32 - f.r as i32 > 30,
+        "mid-flight rgb must have meaningfully diverged on the slate blue \
+         line, not just one rounding step apart. got fill={f:?}",
+    );
+}
+
+#[test]
 fn app_translate_eases_on_rebuild() {
     use crate::anim::Timing;
     let mut tree_a = column([row([button("slide")
@@ -358,7 +478,7 @@ fn app_translate_eases_on_rebuild() {
     let mut state = UiState::new();
     layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
     state.set_animation_mode(AnimationMode::Settled);
-    state.tick_visual_animations(&mut tree_a, Instant::now());
+    state.tick_visual_animations(&mut tree_a, Instant::now(), &Palette::default());
 
     // Rebuild with a different translate.
     let mut tree_b = column([row([button("slide")
@@ -367,7 +487,7 @@ fn app_translate_eases_on_rebuild() {
         .animate(Timing::SPRING_STANDARD)])])
     .padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-    state.tick_visual_animations(&mut tree_b, Instant::now());
+    state.tick_visual_animations(&mut tree_b, Instant::now(), &Palette::default());
 
     let n = find_node(&tree_b, "s").expect("s node");
     assert!((n.translate.0 - 100.0).abs() < 0.5);
@@ -394,7 +514,7 @@ fn state_envelope_composes_on_app_eased_fill() {
     state.set_animation_mode(AnimationMode::Settled);
     state.hovered = Some(target(&tree, &state, "x"));
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree, Instant::now());
+    state.tick_visual_animations(&mut tree, Instant::now(), &Palette::default());
 
     // Build fill survives untouched (envelope handles the delta).
     let n_fill = find_fill(&tree, "x").expect("x fill");
@@ -424,11 +544,11 @@ fn app_animation_skipped_when_animate_not_set() {
     let mut tree_a = column([row([swatch(Color::rgb(255, 0, 0))])]).padding(20.0);
     let mut state = UiState::new();
     layout(&mut tree_a, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-    state.tick_visual_animations(&mut tree_a, Instant::now());
+    state.tick_visual_animations(&mut tree_a, Instant::now(), &Palette::default());
 
     let mut tree_b = column([row([swatch(Color::rgb(0, 0, 255))])]).padding(20.0);
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
-    state.tick_visual_animations(&mut tree_b, Instant::now());
+    state.tick_visual_animations(&mut tree_b, Instant::now(), &Palette::default());
 
     let observed = find_fill(&tree_b, "x").expect("x fill");
     assert_eq!(
@@ -446,7 +566,7 @@ fn animation_entries_gc_when_node_leaves_tree() {
     let (mut tree_a, mut state) = lay_out_counter();
     state.hovered = Some(target(&tree_a, &state, "inc"));
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree_a, Instant::now());
+    state.tick_visual_animations(&mut tree_a, Instant::now(), &Palette::default());
     let inc_id_a = find_id(&tree_a, "inc").expect("inc id");
     assert!(
         state
@@ -462,7 +582,7 @@ fn animation_entries_gc_when_node_leaves_tree() {
     layout(&mut tree_b, &mut state, Rect::new(0.0, 0.0, 400.0, 200.0));
     state.hovered = None;
     state.apply_to_state();
-    state.tick_visual_animations(&mut tree_b, Instant::now());
+    state.tick_visual_animations(&mut tree_b, Instant::now(), &Palette::default());
     assert!(
         !state
             .animation

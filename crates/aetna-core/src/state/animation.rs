@@ -7,6 +7,7 @@ use web_time::Instant;
 use crate::anim::AnimProp;
 use crate::anim::tick::{HotTargets, is_in_flight, tick_node};
 use crate::event::UiTarget;
+use crate::palette::Palette;
 use crate::tree::El;
 
 use super::{AnimationMode, EnvelopeKind, UiState, caret_blink_alpha_for};
@@ -42,7 +43,12 @@ impl UiState {
     ///
     /// Returns `true` if any animation is still in flight; the host
     /// should request another redraw next frame.
-    pub fn tick_visual_animations(&mut self, root: &mut El, now: Instant) -> bool {
+    pub fn tick_visual_animations(
+        &mut self,
+        root: &mut El,
+        now: Instant,
+        palette: &Palette,
+    ) -> bool {
         let mut visited: HashSet<(String, AnimProp)> = HashSet::new();
         let mut needs_redraw = false;
         let mode = self.animation.mode;
@@ -63,6 +69,7 @@ impl UiState {
             &mut visited,
             now,
             mode,
+            palette,
             &mut needs_redraw,
         );
         // GC: drop animations whose node left the tree this frame.

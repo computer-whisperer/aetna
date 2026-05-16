@@ -15,6 +15,7 @@ use rustc_hash::FxHashMap;
 use web_time::Instant;
 
 use crate::anim::{AnimProp, AnimValue, Animation, Timing};
+use crate::palette::Palette;
 use crate::state::query::target_in_subtree;
 use crate::state::{AnimationMode, EnvelopeKind};
 use crate::tree::{El, InteractionState};
@@ -84,6 +85,7 @@ pub(crate) fn tick_node(
     visited: &mut HashSet<(String, AnimProp)>,
     now: Instant,
     mode: AnimationMode,
+    palette: &Palette,
     needs_redraw: &mut bool,
 ) {
     if !node.computed_id.is_empty() {
@@ -102,6 +104,7 @@ pub(crate) fn tick_node(
                     visited,
                     now,
                     mode,
+                    palette,
                     needs_redraw,
                 );
             }
@@ -123,6 +126,7 @@ pub(crate) fn tick_node(
                     visited,
                     now,
                     mode,
+                    palette,
                     needs_redraw,
                 );
             }
@@ -148,6 +152,7 @@ pub(crate) fn tick_node(
                     visited,
                     now,
                     mode,
+                    palette,
                     needs_redraw,
                 );
             }
@@ -164,6 +169,7 @@ pub(crate) fn tick_node(
             visited,
             now,
             mode,
+            palette,
             needs_redraw,
         );
     }
@@ -182,13 +188,14 @@ fn process_prop(
     visited: &mut HashSet<(String, AnimProp)>,
     now: Instant,
     mode: AnimationMode,
+    palette: &Palette,
     needs_redraw: &mut bool,
 ) {
     let state = node_states
         .get(&node.computed_id)
         .copied()
         .unwrap_or_default();
-    let Some(target) = compute_target(node, prop, state, hot, focus_visible) else {
+    let Some(target) = compute_target(node, prop, state, hot, focus_visible, palette) else {
         return;
     };
     let key = (node.computed_id.clone(), prop);
@@ -226,6 +233,7 @@ fn compute_target(
     state: InteractionState,
     hot: HotTargets<'_>,
     focus_visible: bool,
+    palette: &Palette,
 ) -> Option<AnimValue> {
     let in_subtree = |target: Option<&str>| -> bool {
         target.is_some_and(|t| target_in_subtree(&n.computed_id, t))
@@ -279,9 +287,18 @@ fn compute_target(
         } else {
             0.0
         })),
-        AnimProp::AppFill => n.fill.map(AnimValue::Color),
-        AnimProp::AppStroke => n.stroke.map(AnimValue::Color),
-        AnimProp::AppTextColor => n.text_color.map(AnimValue::Color),
+        // Resolve through the active palette so the integration walks
+        // the user's palette's rgb space (e.g., slate blue's PRIMARY
+        // (0,144,255)), not the compile-time baked default-dark rgb on
+        // the token constant. Without this the in-flight color reads
+        // against default-dark values and only snaps to the user's
+        // palette when the animation settles — visible as a brief
+        // wrong-palette flash mid-transition. `palette.resolve`
+        // preserves the token name on the returned color, so settled
+        // values stay tokenized for downstream palette swaps.
+        AnimProp::AppFill => n.fill.map(|c| AnimValue::Color(palette.resolve(c))),
+        AnimProp::AppStroke => n.stroke.map(|c| AnimValue::Color(palette.resolve(c))),
+        AnimProp::AppTextColor => n.text_color.map(|c| AnimValue::Color(palette.resolve(c))),
         AnimProp::AppOpacity => Some(AnimValue::Float(n.opacity)),
         AnimProp::AppScale => Some(AnimValue::Float(n.scale)),
         AnimProp::AppTranslateX => Some(AnimValue::Float(n.translate.0)),
