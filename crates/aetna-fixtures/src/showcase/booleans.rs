@@ -33,7 +33,7 @@ impl Default for State {
 }
 
 pub fn view(state: &State) -> El {
-    column([
+    scroll([column([
         h1("Booleans"),
         paragraph(
             "Three small primitives for yes/no/which-one. Switch and \
@@ -69,7 +69,7 @@ pub fn view(state: &State) -> El {
             "A bundled daily summary, instead of per-event email.",
         ),
         section_label("Radio group"),
-        text("Pick the active theme — three mutually-exclusive options.")
+        paragraph("Pick the active theme — three mutually-exclusive options.")
             .small()
             .muted(),
         radio_group(
@@ -80,7 +80,15 @@ pub fn view(state: &State) -> El {
     ])
     .gap(tokens::SPACE_4)
     .align(Align::Start)
+    .width(Size::Fill(1.0))
     .height(Size::Hug)
+    .padding(Sides {
+        left: tokens::RING_WIDTH,
+        right: tokens::SCROLLBAR_HITBOX_WIDTH,
+        top: 0.0,
+        bottom: 0.0,
+    })])
+    .height(Size::Fill(1.0))
 }
 
 pub fn on_event(state: &mut State, e: UiEvent) {
@@ -102,21 +110,29 @@ fn section_label(s: &str) -> El {
 fn checkbox_row(key: &str, value: bool, label: &str, description: &str) -> El {
     row([
         checkbox(value).key(key.to_string()),
-        column([text(label).label(), text(description).muted().small()])
-            .gap(tokens::SPACE_1)
-            .width(Size::Fill(1.0)),
+        column([
+            text(label).label().wrap_text().fill_width(),
+            text(description).muted().small().wrap_text().fill_width(),
+        ])
+        .gap(tokens::SPACE_1)
+        .width(Size::Fill(1.0)),
     ])
     .gap(tokens::SPACE_3)
     .align(Align::Center)
+    .width(Size::Fill(1.0))
 }
 
 fn switch_row(key: &str, value: bool, label: &str, description: &str) -> El {
     row([
-        column([text(label).label(), text(description).muted().small()])
-            .gap(tokens::SPACE_1)
-            .width(Size::Fill(1.0)),
+        column([
+            text(label).label().wrap_text().fill_width(),
+            text(description).muted().small().wrap_text().fill_width(),
+        ])
+        .gap(tokens::SPACE_1)
+        .width(Size::Fill(1.0)),
         switch(value).key(key.to_string()),
     ])
     .gap(tokens::SPACE_3)
     .align(Align::Center)
+    .width(Size::Fill(1.0))
 }
