@@ -23,7 +23,8 @@ impl Default for State {
     }
 }
 
-pub fn view(state: &State) -> El {
+pub fn view(state: &State, cx: &BuildCx) -> El {
+    let phone = super::is_phone(cx);
     scroll([column([
         h1("Lists & tables"),
         paragraph(
@@ -36,12 +37,18 @@ pub fn view(state: &State) -> El {
         section_label("Plain rows"),
         plain_list(state),
         section_label("Items"),
-        items_demo(state),
+        items_demo(state, phone),
         section_label("Table"),
         table_demo(),
     ])
     .gap(tokens::SPACE_4)
-    .align(Align::Stretch)])
+    .align(Align::Stretch)
+    .padding(Sides {
+        left: tokens::RING_WIDTH,
+        right: tokens::SCROLLBAR_HITBOX_WIDTH,
+        top: 0.0,
+        bottom: 0.0,
+    })])
     .height(Size::Fill(1.0))
 }
 
@@ -91,7 +98,7 @@ fn plain_list(state: &State) -> El {
     column(rows).gap(tokens::SPACE_2)
 }
 
-fn items_demo(state: &State) -> El {
+fn items_demo(state: &State, phone: bool) -> El {
     let recent = titled_card(
         "Recent repositories",
         [item_group([
@@ -153,7 +160,13 @@ fn items_demo(state: &State) -> El {
         ])],
     );
 
-    row([recent, team]).gap(tokens::SPACE_4).align(Align::Start)
+    if phone {
+        column([recent, team])
+            .gap(tokens::SPACE_4)
+            .width(Size::Fill(1.0))
+    } else {
+        row([recent, team]).gap(tokens::SPACE_4).align(Align::Start)
+    }
 }
 
 fn selectable_item(
