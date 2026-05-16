@@ -63,20 +63,9 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-    // Findings are reported but don't fail the run. The showcase
-    // pages were originally laid out for desktop and the responsive
-    // sweep landed "tight wins only"; the remaining findings (mostly
-    // overflow / scrollbar-overlap / focus-ring clipping in phone
-    // variants, plus a known scrollbar overlap on the math preset
-    // bar where seven preset buttons + a label barely fit at desktop
-    // width) are tracked as polish, not as CI gates. Re-enable the
-    // gate when the showcase finishes that sweep — the artifact
-    // diff is still useful in PR review either way.
     if total_findings > 0 {
-        eprintln!(
-            "\nshowcase bundle lint reported {total_findings} finding(s) (non-gating; \
-             see comment in tools/src/bin/dump_showcase_bundles.rs)"
-        );
+        eprintln!("\nshowcase bundle lint reported {total_findings} finding(s)");
+        std::process::exit(1);
     }
 
     Ok(())
