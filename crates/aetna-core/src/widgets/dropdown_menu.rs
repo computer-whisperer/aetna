@@ -18,7 +18,7 @@ use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
-use crate::widgets::popover::{Anchor, popover};
+use crate::widgets::popover::{Anchor, MenuDensity, apply_menu_density, popover};
 use crate::widgets::separator::separator;
 use crate::widgets::text::{mono, text};
 use crate::{IntoIconSource, icon};
@@ -33,6 +33,20 @@ pub fn dropdown_menu(
         key,
         Anchor::below_key(trigger_key),
         dropdown_menu_content(children),
+    )
+}
+
+#[track_caller]
+pub fn dropdown_menu_with_density(
+    key: impl Into<String>,
+    trigger_key: impl Into<String>,
+    density: MenuDensity,
+    children: impl IntoIterator<Item = impl Into<El>>,
+) -> El {
+    popover(
+        key,
+        Anchor::below_key(trigger_key),
+        dropdown_menu_content_with_density(children, density),
     )
 }
 
@@ -59,6 +73,19 @@ where
         .height(Size::Hug)
         .axis(Axis::Column)
         .align(Align::Stretch)
+}
+
+#[track_caller]
+pub fn dropdown_menu_content_with_density<I, E>(children: I, density: MenuDensity) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    let children = children
+        .into_iter()
+        .map(Into::into)
+        .map(|item| apply_menu_density(item, density));
+    dropdown_menu_content(children).at_loc(Location::caller())
 }
 
 #[track_caller]
@@ -121,6 +148,15 @@ where
         .axis(Axis::Row)
         .align(Align::Center)
         .justify(Justify::Start)
+}
+
+#[track_caller]
+pub fn dropdown_menu_item_with_density<I, E>(children: I, density: MenuDensity) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    apply_menu_density(dropdown_menu_item(children), density).at_loc(Location::caller())
 }
 
 #[track_caller]
@@ -219,6 +255,42 @@ mod tests {
         assert_eq!(item.children[1].text.as_deref(), Some("Copy"));
         assert_eq!(item.children[1].width, Size::Fill(1.0));
         assert_eq!(item.children[2].text.as_deref(), Some("Ctrl+C"));
+    }
+
+    #[test]
+    fn dropdown_menu_with_touch_density_expands_action_rows() {
+        let menu = dropdown_menu_with_density(
+            "actions",
+            "actions-trigger",
+            MenuDensity::Touch,
+            [
+                dropdown_menu_label("Workspace"),
+                dropdown_menu_item_with_shortcut("Copy", "Ctrl+C"),
+            ],
+        );
+        let item = &menu.children[1].children[0].children[1];
+
+        assert_eq!(item.kind, Kind::Custom("dropdown_menu_item"));
+        assert_eq!(
+            item.height,
+            Size::Fixed(crate::widgets::popover::TOUCH_MENU_ITEM_HEIGHT)
+        );
+        assert_eq!(item.padding.left, tokens::SPACE_4);
+        assert_eq!(item.padding.right, tokens::SPACE_4);
+    }
+
+    #[test]
+    fn dropdown_menu_item_with_density_expands_single_row() {
+        let item = dropdown_menu_item_with_density(
+            [dropdown_menu_icon("copy"), dropdown_menu_item_label("Copy")],
+            MenuDensity::Touch,
+        );
+
+        assert_eq!(
+            item.height,
+            Size::Fixed(crate::widgets::popover::TOUCH_MENU_ITEM_HEIGHT)
+        );
+        assert_eq!(item.padding.left, tokens::SPACE_4);
     }
 
     #[test]

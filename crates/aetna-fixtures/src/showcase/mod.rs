@@ -231,11 +231,13 @@ pub struct Showcase {
     pub(crate) section: Section,
     pub(crate) theme_choice: ThemeChoice,
     pub(crate) theme_picker_open: bool,
+    pub(crate) theme_picker_density: MenuDensity,
     /// Open state for the phone topbar's section dropdown. Mirrors
     /// `theme_picker_open`; only consulted when the shell renders the
     /// phone layout, but the field exists at all viewport sizes so
     /// switching across the breakpoint mid-frame doesn't drop state.
     pub(crate) section_picker_open: bool,
+    pub(crate) section_picker_density: MenuDensity,
     /// When true, mount the host-diagnostics overlay. Defaults to false
     /// so the panel doesn't sit on top of overlay/page content unless
     /// the user opts in via the sidebar toggle.
@@ -407,6 +409,15 @@ impl App for Showcase {
             THEME_PICKER_KEY,
             |s| ThemeChoice::from_token(&s).map(|c| c.token().to_string()),
         ) {
+            if event.is_click_or_activate(THEME_PICKER_KEY) {
+                self.theme_picker_density = if self.theme_picker_open {
+                    MenuDensity::from_event(&event)
+                } else {
+                    MenuDensity::Compact
+                };
+            } else if !self.theme_picker_open {
+                self.theme_picker_density = MenuDensity::Compact;
+            }
             if let Some(choice) = ThemeChoice::from_token(&token) {
                 self.theme_choice = choice;
             }
@@ -424,6 +435,15 @@ impl App for Showcase {
             SECTION_PICKER_KEY,
             |s| Section::from_slug(&s).map(|sec| sec.slug().to_string()),
         ) {
+            if event.is_click_or_activate(SECTION_PICKER_KEY) {
+                self.section_picker_density = if self.section_picker_open {
+                    MenuDensity::from_event(&event)
+                } else {
+                    MenuDensity::Compact
+                };
+            } else if !self.section_picker_open {
+                self.section_picker_density = MenuDensity::Compact;
+            }
             if let Some(section) = Section::from_slug(&slug) {
                 self.section = section;
             }
@@ -508,4 +528,35 @@ fn nav_section(key: &str) -> Option<Section> {
 /// drop out of the tree entirely.
 fn overlay_root(main: El, layers: Vec<Option<El>>) -> El {
     overlays(main, layers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn trigger_event(key: &str, pointer_kind: Option<PointerKind>) -> UiEvent {
+        let mut event = UiEvent::synthetic_click(key);
+        event.pointer_kind = pointer_kind;
+        event
+    }
+
+    #[test]
+    fn section_picker_records_touch_density_when_opened_by_touch() {
+        let mut app = Showcase::default();
+
+        app.on_event(trigger_event(SECTION_PICKER_KEY, Some(PointerKind::Touch)));
+
+        assert!(app.section_picker_open);
+        assert_eq!(app.section_picker_density, MenuDensity::Touch);
+    }
+
+    #[test]
+    fn theme_picker_records_compact_density_when_opened_by_mouse() {
+        let mut app = Showcase::default();
+
+        app.on_event(trigger_event(THEME_PICKER_KEY, Some(PointerKind::Mouse)));
+
+        assert!(app.theme_picker_open);
+        assert_eq!(app.theme_picker_density, MenuDensity::Compact);
+    }
 }

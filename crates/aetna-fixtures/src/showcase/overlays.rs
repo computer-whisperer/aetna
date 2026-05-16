@@ -25,7 +25,9 @@ pub struct State {
     pub sheet_open: bool,
     pub popover_open: bool,
     pub dropdown_open: bool,
+    pub dropdown_menu_density: MenuDensity,
     pub context_menu_at: Option<(f32, f32)>,
+    pub context_menu_density: MenuDensity,
 }
 
 pub fn view(state: &State) -> El {
@@ -59,9 +61,9 @@ pub fn view(state: &State) -> El {
                 .key(DROPDOWN_TRIGGER_KEY),
         ])
         .gap(tokens::SPACE_2),
-        section_label("Context menu (right-click below)"),
+        section_label("Context menu"),
         column([
-            text("Right-click anywhere in this panel.").muted(),
+            text("Right-click or long-press anywhere in this panel.").muted(),
             text(match state.context_menu_at {
                 Some((x, y)) => format!("last open at ({x:.0}, {y:.0})"),
                 None => "no open yet".into(),
@@ -82,11 +84,16 @@ pub fn view(state: &State) -> El {
 }
 
 pub fn on_event(state: &mut State, e: UiEvent) {
-    if matches!(e.kind, UiEventKind::SecondaryClick)
+    if matches!(e.kind, UiEventKind::SecondaryClick | UiEventKind::LongPress)
         && e.route() == Some(CONTEXT_TARGET_KEY)
         && let (Some(x), Some(y)) = (e.pointer_x(), e.pointer_y())
     {
         state.context_menu_at = Some((x, y));
+        state.context_menu_density = if matches!(e.kind, UiEventKind::LongPress) {
+            MenuDensity::Touch
+        } else {
+            MenuDensity::Compact
+        };
         return;
     }
     if !matches!(e.kind, UiEventKind::Click | UiEventKind::Activate) {
@@ -101,17 +108,26 @@ pub fn on_event(state: &mut State, e: UiEvent) {
         Some("ov-open-dialog") => state.dialog_open = true,
         Some("ov-open-sheet") => state.sheet_open = true,
         Some(POPOVER_TRIGGER_KEY) => state.popover_open = !state.popover_open,
-        Some(DROPDOWN_TRIGGER_KEY) => state.dropdown_open = !state.dropdown_open,
+        Some(DROPDOWN_TRIGGER_KEY) => {
+            state.dropdown_open = !state.dropdown_open;
+            state.dropdown_menu_density = if state.dropdown_open {
+                MenuDensity::from_event(&e)
+            } else {
+                MenuDensity::Compact
+            };
+        }
         Some(k) if k == dismiss_dialog || k == "ov-dialog-save" => state.dialog_open = false,
         Some(k) if k == dismiss_sheet || k == "ov-sheet-reset" || k == "ov-sheet-apply" => {
             state.sheet_open = false
         }
         Some(k) if k == dismiss_popover => state.popover_open = false,
         Some(k) if k == dismiss_dropdown || k.starts_with("ov-dropdown-action:") => {
-            state.dropdown_open = false
+            state.dropdown_open = false;
+            state.dropdown_menu_density = MenuDensity::Compact
         }
         Some(k) if k == dismiss_context || k.starts_with("ov-context-action:") => {
-            state.context_menu_at = None
+            state.context_menu_at = None;
+            state.context_menu_density = MenuDensity::Compact
         }
         _ => {}
     }
@@ -146,9 +162,10 @@ pub fn popover_layer(app: &Showcase) -> Option<El> {
 
 pub fn dropdown_layer(app: &Showcase) -> Option<El> {
     (app.section == Section::Overlays && app.overlays.dropdown_open).then(|| {
-        dropdown_menu(
+        dropdown_menu_with_density(
             DROPDOWN_KEY,
             DROPDOWN_TRIGGER_KEY,
+            app.overlays.dropdown_menu_density,
             [
                 dropdown_menu_label("Workspace"),
                 dropdown_menu_item_with_icon_and_shortcut(IconName::Plus, "New project", "⌘N")
@@ -172,9 +189,10 @@ pub fn context_menu_layer(app: &Showcase) -> Option<El> {
         return None;
     }
     app.overlays.context_menu_at.map(|(x, y)| {
-        context_menu(
+        context_menu_with_density(
             CONTEXT_MENU_KEY,
             (x, y),
+            app.overlays.context_menu_density,
             [
                 menu_item("Copy").key("ov-context-action:copy"),
                 menu_item("Cut").key("ov-context-action:cut"),
@@ -239,4 +257,111 @@ fn yn(b: bool) -> &'static str {
 
 fn section_label(s: &str) -> El {
     h3(s).label()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn context_open_event(kind: UiEventKind) -> UiEvent {
+        let mut event = UiEvent::synthetic_click(CONTEXT_TARGET_KEY);
+        event.kind = kind;
+        event.pointer = Some((42.0, 64.0));
+        event
+    }
+
+    fn dropdown_trigger_event(pointer_kind: Option<PointerKind>) -> UiEvent {
+        let mut event = UiEvent::synthetic_click(DROPDOWN_TRIGGER_KEY);
+        event.pointer_kind = pointer_kind;
+        event
+    }
+
+    fn collect_menu_item_heights(el: &El, heights: &mut Vec<Size>) {
+        if matches!(
+            el.kind,
+            Kind::Custom("menu_item") | Kind::Custom("dropdown_menu_item")
+        ) {
+            heights.push(el.height);
+        }
+        for child in &el.children {
+            collect_menu_item_heights(child, heights);
+        }
+    }
+
+    #[test]
+    fn context_menu_opens_from_secondary_click() {
+        let mut state = State::default();
+
+        on_event(&mut state, context_open_event(UiEventKind::SecondaryClick));
+
+        assert_eq!(state.context_menu_at, Some((42.0, 64.0)));
+        assert_eq!(state.context_menu_density, MenuDensity::Compact);
+    }
+
+    #[test]
+    fn context_menu_opens_from_long_press() {
+        let mut state = State::default();
+
+        on_event(&mut state, context_open_event(UiEventKind::LongPress));
+
+        assert_eq!(state.context_menu_at, Some((42.0, 64.0)));
+        assert_eq!(state.context_menu_density, MenuDensity::Touch);
+    }
+
+    #[test]
+    fn dropdown_menu_uses_touch_density_for_touch_trigger() {
+        let mut app = Showcase::with_section(Section::Overlays);
+
+        on_event(
+            &mut app.overlays,
+            dropdown_trigger_event(Some(PointerKind::Touch)),
+        );
+        let layer = dropdown_layer(&app).unwrap();
+        let mut heights = Vec::new();
+
+        collect_menu_item_heights(&layer, &mut heights);
+
+        assert_eq!(app.overlays.dropdown_menu_density, MenuDensity::Touch);
+        assert_eq!(heights, vec![Size::Fixed(TOUCH_MENU_ITEM_HEIGHT); 5]);
+    }
+
+    #[test]
+    fn dropdown_menu_uses_stock_density_for_mouse_trigger() {
+        let mut app = Showcase::with_section(Section::Overlays);
+
+        on_event(
+            &mut app.overlays,
+            dropdown_trigger_event(Some(PointerKind::Mouse)),
+        );
+        let layer = dropdown_layer(&app).unwrap();
+        let mut heights = Vec::new();
+
+        collect_menu_item_heights(&layer, &mut heights);
+
+        assert_eq!(app.overlays.dropdown_menu_density, MenuDensity::Compact);
+        assert_eq!(heights, vec![Size::Fixed(30.0); 5]);
+    }
+
+    #[test]
+    fn context_menu_uses_stock_density_for_secondary_click() {
+        let app = Showcase::with_overlay_context_menu_at(42.0, 64.0);
+        let layer = context_menu_layer(&app).unwrap();
+        let mut heights = Vec::new();
+
+        collect_menu_item_heights(&layer, &mut heights);
+
+        assert_eq!(heights, vec![Size::Fixed(28.0); 5]);
+    }
+
+    #[test]
+    fn context_menu_uses_touch_density_for_long_press() {
+        let mut app = Showcase::with_overlay_context_menu_at(42.0, 64.0);
+        app.overlays.context_menu_density = MenuDensity::Touch;
+        let layer = context_menu_layer(&app).unwrap();
+        let mut heights = Vec::new();
+
+        collect_menu_item_heights(&layer, &mut heights);
+
+        assert_eq!(heights, vec![Size::Fixed(TOUCH_MENU_ITEM_HEIGHT); 5]);
+    }
 }

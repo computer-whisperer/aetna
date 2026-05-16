@@ -76,7 +76,9 @@ use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
-use crate::widgets::popover::{Anchor, menu_item, popover, popover_panel};
+use crate::widgets::popover::{
+    Anchor, MenuDensity, apply_menu_density, menu_item, popover, popover_panel,
+};
 use crate::{icon, text};
 
 /// What a routed [`UiEvent`] means for a controlled select keyed `key`.
@@ -257,6 +259,25 @@ where
     V: std::fmt::Display,
     L: Into<String>,
 {
+    select_menu_with_density(key, options, MenuDensity::Compact).at_loc(Location::caller())
+}
+
+/// Density-aware variant of [`select_menu`].
+///
+/// Use [`MenuDensity::from_event`] with the event that opened the
+/// trigger when a touch-originated select should use larger option
+/// rows.
+#[track_caller]
+pub fn select_menu_with_density<I, V, L>(
+    key: impl Into<String>,
+    options: I,
+    density: MenuDensity,
+) -> El
+where
+    I: IntoIterator<Item = (V, L)>,
+    V: std::fmt::Display,
+    L: Into<String>,
+{
     // Capture once so the user's call site flows through to each
     // `menu_item`. `#[track_caller]` doesn't propagate through
     // `.map(...)` closures, so the items would otherwise record the
@@ -271,6 +292,7 @@ where
                 .at_loc(caller)
                 .key(select_option_key(&key, &value))
         })
+        .map(|item| apply_menu_density(item, density))
         .collect();
     popover(key.clone(), Anchor::below_key(key), popover_panel(items))
 }
@@ -310,6 +332,25 @@ mod tests {
         assert_eq!(panel.children.len(), 2);
         assert_eq!(panel.children[0].key.as_deref(), Some("color:option:red"));
         assert_eq!(panel.children[1].key.as_deref(), Some("color:option:blue"));
+    }
+
+    #[test]
+    fn select_menu_with_touch_density_expands_options() {
+        let menu = select_menu_with_density(
+            "color",
+            [("red", "Red"), ("blue", "Blue")],
+            MenuDensity::Touch,
+        );
+        let panel = &menu.children[1].children[0];
+
+        assert_eq!(
+            panel.children[0].height,
+            Size::Fixed(crate::widgets::popover::TOUCH_MENU_ITEM_HEIGHT)
+        );
+        assert_eq!(
+            panel.children[1].height,
+            Size::Fixed(crate::widgets::popover::TOUCH_MENU_ITEM_HEIGHT)
+        );
     }
 
     #[test]

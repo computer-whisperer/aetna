@@ -94,10 +94,12 @@ pub use crate::widgets::dialog::{
     dialog, dialog_content, dialog_description, dialog_footer, dialog_header, dialog_title,
 };
 pub use crate::widgets::dropdown_menu::{
-    self, dropdown_menu, dropdown_menu_content, dropdown_menu_group, dropdown_menu_icon,
-    dropdown_menu_item, dropdown_menu_item_label, dropdown_menu_item_with_icon,
+    self, dropdown_menu, dropdown_menu_content, dropdown_menu_content_with_density,
+    dropdown_menu_group, dropdown_menu_icon, dropdown_menu_item, dropdown_menu_item_label,
+    dropdown_menu_item_with_density, dropdown_menu_item_with_icon,
     dropdown_menu_item_with_icon_and_shortcut, dropdown_menu_item_with_shortcut,
     dropdown_menu_label, dropdown_menu_separator, dropdown_menu_shortcut,
+    dropdown_menu_with_density,
 };
 pub use crate::widgets::editor_tabs::{
     self, ActiveTabStyle, CloseVisibility, EditorTabsAction, EditorTabsConfig, editor_tab,
@@ -127,13 +129,15 @@ pub use crate::widgets::pagination::{
     pagination_next, pagination_previous,
 };
 pub use crate::widgets::popover::{
-    Anchor, Side, anchor_rect, context_menu, dropdown, menu_item, popover, popover_panel,
+    Anchor, MenuDensity, Side, TOUCH_MENU_ITEM_HEIGHT, anchor_rect, apply_menu_density,
+    context_menu, context_menu_with_density, dropdown, menu_item, menu_item_with_density, popover,
+    popover_panel,
 };
 pub use crate::widgets::progress::{self, progress, progress_indeterminate};
 pub use crate::widgets::radio::{self, RadioAction, radio_group, radio_item, radio_option_key};
 pub use crate::widgets::resize_handle::{self, ResizeDrag, ResizeWeightsDrag, resize_handle};
 pub use crate::widgets::select::{
-    self, SelectAction, select_menu, select_option_key, select_trigger,
+    self, SelectAction, select_menu, select_menu_with_density, select_option_key, select_trigger,
 };
 pub use crate::widgets::separator::{separator, vertical_separator};
 pub use crate::widgets::sheet::{

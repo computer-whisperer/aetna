@@ -55,12 +55,14 @@ pub fn frame(app: &Showcase, cx: &BuildCx, body: El) -> (El, Vec<Option<El>>) {
     // always available across pages. `Showcase::build` wraps the result
     // in `overlays(main, layers)` and inactive layers drop out.
     let layers = vec![
-        app.theme_picker_open.then(theme_picker_menu),
+        app.theme_picker_open
+            .then(|| theme_picker_menu(app.theme_picker_density)),
         // Section picker only relevant on phone, but mounting the menu
         // when its open flag is set is unconditional — the picker
         // can't be opened when its trigger isn't in the tree, so this
         // is correct on desktop too.
-        app.section_picker_open.then(section_picker_menu),
+        app.section_picker_open
+            .then(|| section_picker_menu(app.section_picker_density)),
         super::overlays::dialog_layer(app),
         super::overlays::sheet_layer(app),
         super::overlays::popover_layer(app),
@@ -143,12 +145,12 @@ fn diagnostics_toggle(active: bool) -> El {
     .align(Align::Center)
 }
 
-fn theme_picker_menu() -> El {
+fn theme_picker_menu(density: MenuDensity) -> El {
     let options = ThemeChoice::ALL
         .iter()
         .map(|c| (c.token(), c.label()))
         .collect::<Vec<_>>();
-    select_menu(THEME_PICKER_KEY, options)
+    select_menu_with_density(THEME_PICKER_KEY, options, density)
 }
 
 /// Phone-only top bar: section picker (the wide column on the left so
@@ -195,7 +197,7 @@ fn diagnostics_toggle_compact(active: bool) -> El {
     switch(active).key(DIAGNOSTICS_TOGGLE_KEY)
 }
 
-fn section_picker_menu() -> El {
+fn section_picker_menu(density: MenuDensity) -> El {
     // Group sections by their parent Group so the dropdown reads like
     // the sidebar nav. `select_menu` doesn't natively render group
     // headers, so we just flatten in nav order — same order the
@@ -204,7 +206,7 @@ fn section_picker_menu() -> El {
         .iter()
         .map(|s| (s.slug().to_string(), s.label()))
         .collect();
-    select_menu(SECTION_PICKER_KEY, options)
+    select_menu_with_density(SECTION_PICKER_KEY, options, density)
 }
 
 /// Content panel. Padding shrinks on phone so the page body has
@@ -224,4 +226,41 @@ fn content(body: El, phone: bool, safe: Sides) -> El {
         })
         .width(Size::Fill(1.0))
         .height(Size::Fill(1.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn collect_menu_item_heights(el: &El, heights: &mut Vec<Size>) {
+        if matches!(el.kind, Kind::Custom("menu_item")) {
+            heights.push(el.height);
+        }
+        for child in &el.children {
+            collect_menu_item_heights(child, heights);
+        }
+    }
+
+    #[test]
+    fn section_picker_menu_uses_touch_density() {
+        let menu = section_picker_menu(MenuDensity::Touch);
+        let mut heights = Vec::new();
+
+        collect_menu_item_heights(&menu, &mut heights);
+
+        assert_eq!(
+            heights,
+            vec![Size::Fixed(TOUCH_MENU_ITEM_HEIGHT); Section::ALL.len()]
+        );
+    }
+
+    #[test]
+    fn theme_picker_menu_keeps_compact_density_by_default() {
+        let menu = theme_picker_menu(MenuDensity::Compact);
+        let mut heights = Vec::new();
+
+        collect_menu_item_heights(&menu, &mut heights);
+
+        assert_eq!(heights, vec![Size::Fixed(28.0); ThemeChoice::ALL.len()]);
+    }
 }

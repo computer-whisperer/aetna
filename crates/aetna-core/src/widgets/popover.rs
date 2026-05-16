@@ -49,10 +49,72 @@
 
 use std::panic::Location;
 
+use crate::event::{PointerKind, UiEvent};
 use crate::metrics::MetricsRole;
 use crate::style::StyleProfile;
 use crate::tokens;
 use crate::tree::*;
+
+/// Minimum comfortable row height for touch-opened action menus.
+pub const TOUCH_MENU_ITEM_HEIGHT: f32 = 48.0;
+
+/// Density applied to action menu rows.
+///
+/// Menus opened by a precise pointer stay compact. Menus opened from
+/// touch should use the larger variant so each action has a platform-
+/// sized tap target.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MenuDensity {
+    /// Desktop / pointer density.
+    #[default]
+    Compact,
+    /// Touch density with larger row targets.
+    Touch,
+}
+
+impl MenuDensity {
+    /// Resolve a menu density from the pointer modality that opened it.
+    pub fn from_pointer_kind(kind: Option<PointerKind>) -> Self {
+        if matches!(kind, Some(PointerKind::Touch)) {
+            Self::Touch
+        } else {
+            Self::Compact
+        }
+    }
+
+    /// Resolve a menu density from the event that opened it.
+    pub fn from_event(event: &UiEvent) -> Self {
+        Self::from_pointer_kind(event.pointer_kind)
+    }
+}
+
+/// Apply a density to all stock menu rows in a subtree.
+///
+/// This lets higher-level menu constructors keep accepting ordinary
+/// `menu_item(...)` / `dropdown_menu_item(...)` children while adapting
+/// the final menu surface for touch.
+pub fn apply_menu_density(mut el: El, density: MenuDensity) -> El {
+    apply_menu_density_to_tree(&mut el, density);
+    el
+}
+
+fn apply_menu_density_to_tree(el: &mut El, density: MenuDensity) {
+    if matches!(density, MenuDensity::Touch)
+        && matches!(
+            el.kind,
+            Kind::Custom("menu_item") | Kind::Custom("dropdown_menu_item")
+        )
+    {
+        el.height = Size::Fixed(TOUCH_MENU_ITEM_HEIGHT);
+        el.padding = Sides::xy(tokens::SPACE_4, 0.0);
+        el.explicit_height = true;
+        el.explicit_padding = true;
+    }
+
+    for child in &mut el.children {
+        apply_menu_density_to_tree(child, density);
+    }
+}
 use crate::widgets::overlay::overlay;
 
 /// Default spacing between a tooltip / floating surface and its
@@ -368,6 +430,11 @@ pub fn menu_item(label: impl Into<String>) -> El {
         .justify(Justify::Start)
 }
 
+#[track_caller]
+pub fn menu_item_with_density(label: impl Into<String>, density: MenuDensity) -> El {
+    apply_menu_density(menu_item(label), density).at_loc(Location::caller())
+}
+
 /// Right-click context menu — popover anchored at a logical-pixel
 /// point with menu items inside a stock [`popover_panel`]. Apps
 /// capture the click position from `UiEvent.pointer` on a
@@ -383,6 +450,28 @@ where
         Anchor::at_point(point.0, point.1),
         popover_panel(items),
     )
+}
+
+#[track_caller]
+pub fn context_menu_with_density<I, E>(
+    key: impl Into<String>,
+    point: (f32, f32),
+    density: MenuDensity,
+    items: I,
+) -> El
+where
+    I: IntoIterator<Item = E>,
+    E: Into<El>,
+{
+    context_menu(
+        key,
+        point,
+        items
+            .into_iter()
+            .map(Into::into)
+            .map(|item| apply_menu_density(item, density)),
+    )
+    .at_loc(Location::caller())
 }
 
 /// Dropdown menu — popover anchored below a trigger by key, with menu
@@ -692,9 +781,38 @@ mod tests {
     }
 
     #[test]
+    fn menu_item_with_touch_density_expands_row() {
+        let item = menu_item_with_density("Copy", MenuDensity::Touch);
+
+        assert_eq!(item.height, Size::Fixed(TOUCH_MENU_ITEM_HEIGHT));
+        assert_eq!(item.padding.left, tokens::SPACE_4);
+        assert_eq!(item.padding.right, tokens::SPACE_4);
+    }
+
+    #[test]
     fn context_menu_anchors_at_click_point() {
         let cm = context_menu("ctx", (120.0, 80.0), [menu_item("Cut"), menu_item("Copy")]);
         let scrim = &cm.children[0];
         assert_eq!(scrim.key.as_deref(), Some("ctx:dismiss"));
+    }
+
+    #[test]
+    fn context_menu_with_touch_density_expands_rows() {
+        let cm = context_menu_with_density(
+            "ctx",
+            (120.0, 80.0),
+            MenuDensity::Touch,
+            [menu_item("Cut"), menu_item("Copy")],
+        );
+        let panel = &cm.children[1].children[0];
+
+        assert_eq!(
+            panel.children[0].height,
+            Size::Fixed(TOUCH_MENU_ITEM_HEIGHT)
+        );
+        assert_eq!(
+            panel.children[1].height,
+            Size::Fixed(TOUCH_MENU_ITEM_HEIGHT)
+        );
     }
 }
