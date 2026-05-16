@@ -427,11 +427,11 @@ impl RunnerCore {
         // emission. Mouse and pen pointers stay at `None` here and
         // bypass the machine entirely.
         if matches!(kind, PointerKind::Touch) {
-            match self.ui_state.touch_gesture {
+            match self.ui_state.touch_gesture.clone() {
                 TouchGestureState::Pending {
                     initial,
                     consumes_drag,
-                    started_at: _,
+                    started_at,
                 } => {
                     let dx = x - initial.0;
                     let dy = y - initial.1;
@@ -459,8 +459,7 @@ impl RunnerCore {
                         // stops receiving further events for this
                         // gesture, then fold this move's delta into
                         // the scroll routing.
-                        self.ui_state.touch_gesture =
-                            TouchGestureState::Scrolling { last_pos: (x, y) };
+                        let now = Instant::now();
                         self.cancel_press_for_scroll(&mut out, x, y, kind, modifiers);
                         // Sign: a finger dragging *down* should expose
                         // content above (scroll position decreases).
@@ -468,21 +467,52 @@ impl RunnerCore {
                         // convention where positive = scroll-down, so
                         // we negate the finger's positive Δy.
                         let scroll_dy = initial.1 - y;
-                        if let Some(tree) = self.last_tree.as_ref() {
-                            self.ui_state.pointer_wheel(tree, (x, y), scroll_dy);
-                        }
+                        let step = self.last_tree.as_ref().and_then(|tree| {
+                            self.ui_state.scroll_by_pointer(tree, initial, scroll_dy)
+                        });
+                        let dt = now
+                            .duration_since(started_at)
+                            .as_secs_f32()
+                            .max(1.0 / 120.0);
+                        let velocity = step.as_ref().map(|s| s.applied_delta / dt).unwrap_or(0.0);
+                        self.ui_state.touch_gesture = TouchGestureState::Scrolling {
+                            last_pos: (x, y),
+                            last_time: now,
+                            velocity,
+                            scroll_id: step.map(|s| s.scroll_id),
+                        };
                         return PointerMove {
                             events: out,
                             needs_redraw: true,
                         };
                     }
                 }
-                TouchGestureState::Scrolling { last_pos } => {
+                TouchGestureState::Scrolling {
+                    last_pos,
+                    last_time,
+                    velocity,
+                    scroll_id,
+                } => {
+                    let now = Instant::now();
                     let scroll_dy = last_pos.1 - y;
-                    self.ui_state.touch_gesture = TouchGestureState::Scrolling { last_pos: (x, y) };
-                    if let Some(tree) = self.last_tree.as_ref() {
-                        self.ui_state.pointer_wheel(tree, (x, y), scroll_dy);
-                    }
+                    let step = scroll_id
+                        .as_ref()
+                        .and_then(|id| self.ui_state.scroll_by_id(id, scroll_dy))
+                        .or_else(|| {
+                            self.last_tree.as_ref().and_then(|tree| {
+                                self.ui_state.scroll_by_pointer(tree, (x, y), scroll_dy)
+                            })
+                        });
+                    let dt = now.duration_since(last_time).as_secs_f32().max(1.0 / 240.0);
+                    let sample_velocity =
+                        step.as_ref().map(|s| s.applied_delta / dt).unwrap_or(0.0);
+                    let velocity = sample_velocity * 0.65 + velocity * 0.35;
+                    self.ui_state.touch_gesture = TouchGestureState::Scrolling {
+                        last_pos: (x, y),
+                        last_time: now,
+                        velocity,
+                        scroll_id: step.map(|s| s.scroll_id).or(scroll_id),
+                    };
                     return PointerMove {
                         events: out,
                         needs_redraw: true,
@@ -586,6 +616,7 @@ impl RunnerCore {
         self.ui_state.pressed = None;
         self.ui_state.pressed_secondary = None;
         self.ui_state.touch_gesture = TouchGestureState::None;
+        self.ui_state.cancel_scroll_momentum();
         // Pointer leaves the window → no link is hovered or pressed
         // anymore. Clearing here keeps a stale `Pointer` cursor from
         // sticking after the user moves the mouse out of the canvas
@@ -711,6 +742,7 @@ impl RunnerCore {
             x, y, button, kind, ..
         } = p;
         self.ui_state.pointer_kind = kind;
+        self.ui_state.cancel_scroll_momentum();
         // Scrollbar track pre-empts normal hit-test: a primary press
         // inside a scrollable's track column either captures a thumb
         // drag (when the press lands inside the visible thumb rect)
@@ -1098,12 +1130,26 @@ impl RunnerCore {
         // PointerUp branches naturally no-op — but the eventual
         // finger lift would still produce a hover transition we want
         // to swallow, so return early.
+        let momentum = match &self.ui_state.touch_gesture {
+            TouchGestureState::Scrolling {
+                velocity,
+                scroll_id,
+                ..
+            } if matches!(kind, PointerKind::Touch) => {
+                Some((scroll_id.clone(), *velocity, Instant::now()))
+            }
+            _ => None,
+        };
         let was_scrolling_or_long = matches!(
             self.ui_state.touch_gesture,
             TouchGestureState::Scrolling { .. } | TouchGestureState::LongPressed
         );
         self.ui_state.touch_gesture = TouchGestureState::None;
         if was_scrolling_or_long {
+            if let Some((scroll_id, velocity, now)) = momentum {
+                self.ui_state
+                    .start_scroll_momentum(scroll_id, velocity, now);
+            }
             return Vec::new();
         }
 
@@ -1495,6 +1541,7 @@ impl RunnerCore {
         let Some(tree) = self.last_tree.as_ref() else {
             return false;
         };
+        self.ui_state.cancel_scroll_momentum();
         self.ui_state.pointer_wheel(tree, (x, y), dy)
     }
 
@@ -1516,7 +1563,7 @@ impl RunnerCore {
             initial,
             started_at,
             ..
-        } = self.ui_state.touch_gesture
+        } = self.ui_state.touch_gesture.clone()
         else {
             return Vec::new();
         };
@@ -1580,7 +1627,11 @@ impl RunnerCore {
     /// `Some(Duration::ZERO)` means "deadline already elapsed; call
     /// `poll_input` immediately."
     pub fn next_input_deadline(&self, now: Instant) -> Option<std::time::Duration> {
-        let TouchGestureState::Pending { started_at, .. } = self.ui_state.touch_gesture else {
+        if self.ui_state.has_scroll_momentum() {
+            return Some(std::time::Duration::ZERO);
+        }
+        let TouchGestureState::Pending { started_at, .. } = self.ui_state.touch_gesture.clone()
+        else {
             return None;
         };
         let elapsed = now.duration_since(started_at);
@@ -1615,6 +1666,7 @@ impl RunnerCore {
         F: Fn(&ShaderHandle) -> bool,
     {
         let t0 = Instant::now();
+        let scroll_momentum_pending = self.ui_state.tick_scroll_momentum(t0);
         // Tooltip + toast synthesis run before the real layout: assign
         // ids first so the tooltip pass can resolve the hover anchor
         // by computed_id, then append the runtime-managed floating
@@ -1688,7 +1740,7 @@ impl RunnerCore {
                 crate::profile_span!("prepare::layout::tick_animations");
                 self.ui_state.tick_visual_animations(root, Instant::now())
             };
-            animations || tooltip_pending || toast_pending
+            animations || tooltip_pending || toast_pending || scroll_momentum_pending
         };
         let t_after_layout = Instant::now();
         timings.layout_intrinsic_cache = layout::take_intrinsic_cache_stats();
@@ -1729,11 +1781,11 @@ impl RunnerCore {
         let shader_needs_redraw = ops.iter().any(|op| op_is_continuous(op, &samples_time));
         let widget_redraw =
             aggregate_redraw_within(root, viewport, &self.ui_state.layout.computed_rects);
-        // Fold the long-press deadline in so a held touch drives a
-        // redraw at the right moment even when no other animation /
-        // shader / widget signal is asking for one. Otherwise the
-        // host falls idle and `poll_input` is never called until the
-        // next pointer event.
+        // Fold time-driven input in so held touches and active touch
+        // momentum drive redraws even when no other animation / shader
+        // / widget signal is asking for one. Otherwise the host falls
+        // idle and input physics never advance until the next pointer
+        // event.
         let input_deadline = self.next_input_deadline(Instant::now());
         let widget_redraw = match (widget_redraw, input_deadline) {
             (Some(a), Some(b)) => Some(a.min(b)),
@@ -3621,6 +3673,73 @@ mod tests {
         assert!(
             !up_kinds.contains(&UiEventKind::Click),
             "scroll-committed gesture must not fire Click on release, got {up_kinds:?}",
+        );
+    }
+
+    #[test]
+    fn touch_scroll_release_starts_momentum_after_fast_swipe_outside_viewport() {
+        use crate::tree::*;
+        let mut tree = crate::scroll((0..20).map(|i| {
+            crate::widgets::button::button(format!("row {i}"))
+                .key(format!("row{i}"))
+                .height(Size::Fixed(50.0))
+        }))
+        .key("list")
+        .height(Size::Fixed(120.0));
+        let mut core = RunnerCore::new();
+        crate::layout::layout(
+            &mut tree,
+            &mut core.ui_state,
+            Rect::new(0.0, 0.0, 200.0, 120.0),
+        );
+        core.ui_state.sync_focus_order(&tree);
+        let mut t = PrepareTimings::default();
+        core.snapshot(&tree, &mut t);
+        let scroll_id = core
+            .last_tree
+            .as_ref()
+            .map(|t| t.computed_id.clone())
+            .expect("scroll id");
+
+        let row1 = core.rect_of_key("row1").expect("row1");
+        let cx = row1.x + row1.w * 0.5;
+        let cy = row1.y + row1.h * 0.5;
+
+        core.pointer_down(Pointer::touch(
+            cx,
+            cy,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+        let mut up_finger = Pointer::moving(cx, cy - 80.0);
+        up_finger.kind = PointerKind::Touch;
+        core.pointer_moved(up_finger);
+        let before_release = core.ui_state().scroll_offset(&scroll_id);
+        core.pointer_up(Pointer::touch(
+            cx,
+            cy - 80.0,
+            PointerButton::Primary,
+            PointerId::PRIMARY,
+        ));
+
+        assert!(
+            core.ui_state.has_scroll_momentum(),
+            "quick touch scroll release should retain inertial velocity"
+        );
+        assert_eq!(
+            core.next_input_deadline(Instant::now()),
+            Some(Duration::ZERO),
+            "active scroll momentum should request the next layout frame"
+        );
+
+        let ticked = core
+            .ui_state
+            .tick_scroll_momentum(Instant::now() + Duration::from_millis(16));
+        let after_tick = core.ui_state().scroll_offset(&scroll_id);
+        assert!(ticked, "momentum tick should report visual work");
+        assert!(
+            after_tick > before_release,
+            "momentum should continue in release direction: before={before_release}, after={after_tick}"
         );
     }
 

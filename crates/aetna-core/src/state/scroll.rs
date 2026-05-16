@@ -3,9 +3,19 @@
 use crate::hit_test::scroll_targets_at;
 use crate::tree::{El, Rect};
 
-use super::UiState;
+use super::{
+    UiState,
+    types::{SCROLL_MOMENTUM_DECAY_PER_SEC, SCROLL_MOMENTUM_STOP_VELOCITY, ScrollMomentum},
+};
+use web_time::Instant;
 
 const WHEEL_EPSILON: f32 = 0.5;
+
+#[derive(Clone, Debug)]
+pub(crate) struct ScrollStep {
+    pub scroll_id: String,
+    pub applied_delta: f32,
+}
 
 impl UiState {
     /// Seed or read the persistent scroll offset for `id`. Use this to
@@ -83,39 +93,128 @@ impl UiState {
     /// its stored offset. Hosts use this to decide whether to request a
     /// redraw.
     pub fn pointer_wheel(&mut self, root: &El, point: (f32, f32), dy: f32) -> bool {
+        self.scroll_by_pointer(root, point, dy).is_some()
+    }
+
+    pub(crate) fn scroll_by_pointer(
+        &mut self,
+        root: &El,
+        point: (f32, f32),
+        dy: f32,
+    ) -> Option<ScrollStep> {
         if dy.abs() <= f32::EPSILON {
-            return false;
+            return None;
         }
-        let targets = scroll_targets_at(root, self, point);
-        for id in targets.into_iter().rev() {
-            let Some(metrics) = self.scroll.metrics.get(&id).copied() else {
-                continue;
-            };
-            if metrics.max_offset <= WHEEL_EPSILON {
-                continue;
+        for id in scroll_targets_at(root, self, point).into_iter().rev() {
+            if let Some(step) = self.scroll_by_id(&id, dy) {
+                return Some(step);
             }
-            let current = self
-                .scroll
-                .offsets
-                .get(&id)
-                .copied()
-                .unwrap_or(0.0)
-                .clamp(0.0, metrics.max_offset);
-            let can_scroll = if dy > 0.0 {
-                current < metrics.max_offset - WHEEL_EPSILON
-            } else {
-                current > WHEEL_EPSILON
-            };
-            if !can_scroll {
-                continue;
-            }
-            let next = (current + dy).clamp(0.0, metrics.max_offset);
-            if (next - current).abs() <= f32::EPSILON {
-                continue;
-            }
-            self.scroll.offsets.insert(id, next);
+        }
+        None
+    }
+
+    pub(crate) fn scroll_by_id(&mut self, id: &str, dy: f32) -> Option<ScrollStep> {
+        if dy.abs() <= f32::EPSILON {
+            return None;
+        }
+        let metrics = self.scroll.metrics.get(id).copied()?;
+        if metrics.max_offset <= WHEEL_EPSILON {
+            return None;
+        }
+        let current = self
+            .scroll
+            .offsets
+            .get(id)
+            .copied()
+            .unwrap_or(0.0)
+            .clamp(0.0, metrics.max_offset);
+        let can_scroll = if dy > 0.0 {
+            current < metrics.max_offset - WHEEL_EPSILON
+        } else {
+            current > WHEEL_EPSILON
+        };
+        if !can_scroll {
+            return None;
+        }
+        let next = (current + dy).clamp(0.0, metrics.max_offset);
+        if (next - current).abs() <= f32::EPSILON {
+            return None;
+        }
+        self.scroll.offsets.insert(id.to_owned(), next);
+        Some(ScrollStep {
+            scroll_id: id.to_owned(),
+            applied_delta: next - current,
+        })
+    }
+
+    pub(crate) fn start_scroll_momentum(
+        &mut self,
+        scroll_id: Option<String>,
+        velocity: f32,
+        now: Instant,
+    ) {
+        let Some(scroll_id) = scroll_id else {
+            self.scroll.momentum = None;
+            return;
+        };
+        if velocity.abs() < super::types::SCROLL_MOMENTUM_MIN_VELOCITY {
+            self.scroll.momentum = None;
+            return;
+        }
+        self.scroll.momentum = Some(ScrollMomentum {
+            scroll_id,
+            velocity,
+            last_tick: now,
+        });
+    }
+
+    pub(crate) fn cancel_scroll_momentum(&mut self) {
+        self.scroll.momentum = None;
+    }
+
+    pub(crate) fn has_scroll_momentum(&self) -> bool {
+        self.scroll.momentum.is_some()
+    }
+
+    pub(crate) fn tick_scroll_momentum(&mut self, now: Instant) -> bool {
+        let Some(mut momentum) = self.scroll.momentum.take() else {
+            return false;
+        };
+        let dt = now
+            .duration_since(momentum.last_tick)
+            .as_secs_f32()
+            .clamp(0.0, 0.050);
+        momentum.last_tick = now;
+        if dt <= f32::EPSILON {
+            self.scroll.momentum = Some(momentum);
             return true;
         }
-        false
+
+        let Some(metrics) = self.scroll.metrics.get(&momentum.scroll_id).copied() else {
+            return false;
+        };
+        if metrics.max_offset <= WHEEL_EPSILON {
+            return false;
+        }
+        let current = self
+            .scroll
+            .offsets
+            .get(&momentum.scroll_id)
+            .copied()
+            .unwrap_or(0.0)
+            .clamp(0.0, metrics.max_offset);
+        let next = (current + momentum.velocity * dt).clamp(0.0, metrics.max_offset);
+        let changed = (next - current).abs() > f32::EPSILON;
+        if changed {
+            self.scroll.offsets.insert(momentum.scroll_id.clone(), next);
+        }
+
+        let hit_edge = (next <= WHEEL_EPSILON && momentum.velocity < 0.0)
+            || (next >= metrics.max_offset - WHEEL_EPSILON && momentum.velocity > 0.0);
+        momentum.velocity *= (-SCROLL_MOMENTUM_DECAY_PER_SEC * dt).exp();
+        if !hit_edge && momentum.velocity.abs() > SCROLL_MOMENTUM_STOP_VELOCITY {
+            self.scroll.momentum = Some(momentum);
+        }
+        changed || self.scroll.momentum.is_some()
     }
 }

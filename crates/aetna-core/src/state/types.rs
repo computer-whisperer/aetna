@@ -305,7 +305,7 @@ pub(crate) const MULTI_CLICK_DIST: f32 = 4.0;
 /// Mouse and pen pointers stay at [`TouchGestureState::None`] —
 /// they don't share this ambiguity (left-button drag *means* drag,
 /// right-click *means* context menu).
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) enum TouchGestureState {
     /// Idle, or the active touch already committed to drag (subsequent
     /// moves go through the regular Drag emission path).
@@ -325,7 +325,12 @@ pub(crate) enum TouchGestureState {
     /// The active touch crossed the threshold without consuming
     /// drag, so subsequent moves drive scroll instead. The press
     /// has already been cancelled.
-    Scrolling { last_pos: (f32, f32) },
+    Scrolling {
+        last_pos: (f32, f32),
+        last_time: Instant,
+        velocity: f32,
+        scroll_id: Option<String>,
+    },
     /// The active touch was held in place past [`LONG_PRESS_DELAY`].
     /// A `PointerCancel` + `LongPress` event pair has already been
     /// emitted; subsequent moves and the eventual lift are silently
@@ -339,6 +344,18 @@ pub(crate) enum TouchGestureState {
 /// Below this, the press stays a candidate tap and `Drag` emission is
 /// suppressed.
 pub(crate) const TOUCH_DRAG_THRESHOLD: f32 = 10.0;
+
+/// Minimum scroll velocity, in logical pixels per second, needed to
+/// continue scrolling after a touch release.
+pub(crate) const SCROLL_MOMENTUM_MIN_VELOCITY: f32 = 80.0;
+
+/// Scroll momentum stops once friction decays below this velocity.
+pub(crate) const SCROLL_MOMENTUM_STOP_VELOCITY: f32 = 12.0;
+
+/// Exponential friction applied to touch scroll momentum. Larger means
+/// shorter glide. `4.8` lands in the native-feeling range without making
+/// long content feel runaway.
+pub(crate) const SCROLL_MOMENTUM_DECAY_PER_SEC: f32 = 4.8;
 
 /// How long a touch contact must be held in place before the runtime
 /// synthesizes a `UiEventKind::LongPress` event. 500ms matches the
@@ -401,6 +418,14 @@ pub struct ThumbDrag {
     pub max_offset: f32,
 }
 
+/// Active inertial scroll after a touch-drag release.
+#[derive(Clone, Debug)]
+pub(crate) struct ScrollMomentum {
+    pub scroll_id: String,
+    pub velocity: f32,
+    pub last_tick: Instant,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct VirtualAnchor {
     pub row_key: String,
@@ -451,6 +476,10 @@ pub(crate) struct ScrollState {
     /// Pre-empts normal hit-test so thumb drags don't also fire
     /// app-level pointer events.
     pub(crate) thumb_drag: Option<ThumbDrag>,
+    /// Active touch momentum for a scroll container. This is updated
+    /// during `prepare_layout` before layout reads the scroll offsets,
+    /// then cleared when velocity decays or an edge is hit.
+    pub(crate) momentum: Option<ScrollMomentum>,
     /// Per-virtual-list row-height measurement cache, keyed by the
     /// virtual list node's `computed_id`, stable row identity, and
     /// layout-width bucket. Filled by `VirtualMode::Dynamic` as rows
